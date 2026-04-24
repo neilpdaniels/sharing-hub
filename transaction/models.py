@@ -36,89 +36,57 @@ class Transaction(models.Model):
                                     related_name='rel_order_passive',
                                      blank=True, null=True)
     order_passive_description = models.TextField(blank=True, max_length=250)    
+    RENTAL_ENQUIRY = 'RENQ'
+    RENTAL_AGREED = 'RAGR'
+    RENTAL_INITIATED = 'RINT'
+    RENTAL_RETURNED = 'RRTN'
+    DEPOSIT_RETURNED = 'DRET'
+    DEPOSIT_REDUCED = 'DRED'
+    MEDIATION_REQUIRED = 'DMED'
+
     NEW = 'NEW'
-    NEW_TIMEOUT = 'NEWTOUT'
-    PAYMENT_PROCESSING = 'PAYPROC'
-    DELIVERY_PROCESSING = 'DELPROC'
     CANCEL_REQUESTED = 'CREQ'
-    CANCEL_CANCELLED = 'CCAN'
     CANCEL_ACCEPTED = 'CACK'
-    CANCEL_REFUSED = 'CREF'
     DISPUTE_REQUESTED = 'DREQ'
-    DISPUTE_RESOLVED = 'DRES'
-    DISPUTE_TIMEOUT = 'DTOUT'
-    COMPLETED_ACK = 'COMP'
-    PENDING = 'PEND'
-    PENDING_TIMEOUT = 'PENDTOUT'
-    RETURN_PENDING = 'RTNPND'
-    RETURNED_ACK = 'RTNACK'
-    PENDING_BOTH = 'PBOTH'
-    PENDING_BUYER = 'PBUY'
-    PENDING_SELLER = 'PSELL'
-    VOIDED =  'VOID'
 
-    PAYMENT_NOT_SENT = 'PYNOTSNT'
-    PAYMENT_SENT = 'PYSNT'
-    PAYMENT_ACKED = 'PYACK'
-    REFUND_REQUESTED = 'REFREQ'
-    REFUND_REJECTED = 'REFREJ'
-    REFUND_SENT = 'REFSNT'
-    REFUND_ACKED = 'REFACK'
-    PAYMENT_TIMEOUT = 'PAYTOUT'
-    REFUND_TIMEOUT = 'REFTOUT'
-    REFUND_COMPLETE = 'REFACK'
-    FUNDS_RELEASED = 'FUNDRE'
-    FUNDS_IN_ESCROW = 'ESCROW'
+    PAYMENT_PENDING = 'PAYPEND'
+    PAYMENT_CAPTURED_PLACEHOLDER = 'PAYCAP'
+    PAYMENT_NOT_REQUIRED = 'PAYNA'
 
-    PRODUCT_NOT_SENT = 'PNOTSNT'
-    PRODUCT_SENT = 'PSENT'
-    PRODUCT_RECEIVED = 'PREC'
-    PRODUCT_NOT_AS_SHOWN = 'PNACK'
-    PRODUCT_VERIFIED_OK = 'PACK'
-    PRODUCT_NOT_RECEIVED = 'PNOTREC'
-    PRODUCT_NOT_SENT_TIMEOUT = 'PNOTSNTTOUT'
-    PRODUCT_NOT_RECEIVED_TIMEOUT = 'PNOTRECTOUT'
-    PRODUCT_RETURNED = 'PRET'
-    PRODUCT_RETURNED_ACKED = 'PRETACK'
-    PRODUCT_RETURNED_TIMEOUT = 'PRETTOUT'
+    DEPOSIT_PENDING = 'DEPPEND'
+    DEPOSIT_HELD_PLACEHOLDER = 'DEPHOLD'
+    DEPOSIT_RETURNED_FULL = 'DEPRETF'
+    DEPOSIT_RETURNED_REDUCED = 'DEPRETR'
+    DEPOSIT_MEDIATION = 'DEPMED'
+
+    CONDITION_PENDING = 'CONDPEND'
+    CHECKOUT_VIDEO_ADDED = 'CHKVID'
+    RETURN_VIDEO_ADDED = 'RTNVID'
 
 
     TRANSACTION_STATUS_CHOICES = (
-        (NEW, 'New'),
-        (NEW_TIMEOUT, 'New Timeout'),
-        (PAYMENT_PROCESSING, 'Awaiting Payment to ESCROW'),
-        (DELIVERY_PROCESSING, 'Delivery process pending'),
-        (CANCEL_REQUESTED,'Cancel Requested'),
-        (CANCEL_CANCELLED,'Cancellation reversed'),
-        (CANCEL_ACCEPTED,'Cancel Accepted'),
-        (CANCEL_REFUSED,'Cancel Refused'),
-        (DISPUTE_REQUESTED, 'Dispute Request Raised'),
-        (DISPUTE_RESOLVED, 'Dispute Resolved'),
-        (DISPUTE_TIMEOUT, 'Dispute Timeout'),
-        (COMPLETED_ACK, 'Completed'),
-        (PENDING, 'Pending'),
-        (PENDING_TIMEOUT, 'Pending Timeout'),
-        (RETURN_PENDING, 'Return Pending'),
-        (RETURNED_ACK, 'Return Ack'),
-        (PENDING_BOTH, 'Pending term acceptance - both parties'),
-        (PENDING_BUYER, 'Pending term acceptance - buyer'),
-        (PENDING_SELLER, 'Pending term acceptance - seller'),
-        (VOIDED, 'Transaction Voided - terms rejected'),
-        (FUNDS_IN_ESCROW, 'Funds received and protected in escrow'),
-        (PRODUCT_NOT_AS_SHOWN, 'Product Not as Advertised'),
-        (PRODUCT_VERIFIED_OK, 'Product Verified OK'),
+        (RENTAL_ENQUIRY, 'Enquiry for rental'),
+        (RENTAL_AGREED, 'Rental agreed'),
+        (RENTAL_INITIATED, 'Rental initiated'),
+        (RENTAL_RETURNED, 'Rental returned'),
+        (DEPOSIT_RETURNED, 'Deposit returned'),
+        (DEPOSIT_REDUCED, 'Reduced deposit return agreed'),
+        (MEDIATION_REQUIRED, 'Mediation required'),
+        (CANCEL_REQUESTED, 'Cancellation requested'),
+        (CANCEL_ACCEPTED, 'Cancelled'),
+        (DISPUTE_REQUESTED, 'Dispute requested'),
     )
     transaction_status = models.CharField(
         'transaction status',
         max_length=20,
         choices=TRANSACTION_STATUS_CHOICES,
-        default=NEW,
+        default=RENTAL_ENQUIRY,
     )
     prev_transaction_status = models.CharField(
         'previous transaction status',
         max_length=20,
         choices=TRANSACTION_STATUS_CHOICES,
-        default=NEW,
+        default=RENTAL_ENQUIRY,
     )
     transaction_status_raised_by = models.ForeignKey('auth.User', 
                                     related_name='status_raised_by',
@@ -127,45 +95,42 @@ class Transaction(models.Model):
 
 
     PAYMENT_STATUS_CHOICES = (
-        (PAYMENT_NOT_SENT, 'Payment Not Sent'),
-        (PAYMENT_SENT, 'Payment Sent'),
-        (PAYMENT_ACKED, 'Payment Received'),
-        (REFUND_REQUESTED, 'Refund Requested'),
-        (REFUND_REJECTED, 'Refund Rejected'),
-        (REFUND_SENT, 'Refund Sent'),
-        (REFUND_ACKED, 'Refund Received'),
-        (PAYMENT_TIMEOUT, 'Payment Timeout'),
-        (REFUND_TIMEOUT, 'Refund Timeout'),
-        (REFUND_COMPLETE, 'Refund Completed'),
-        (FUNDS_IN_ESCROW, 'Funds received and protected in escrow'),
-        (FUNDS_RELEASED, 'Funds released to seller'),
+        (PAYMENT_PENDING, 'Pending capture'),
+        (PAYMENT_CAPTURED_PLACEHOLDER, 'Captured (placeholder)'),
+        (PAYMENT_NOT_REQUIRED, 'Not required'),
     )
     payment_status = models.CharField(
         'payment status',
         max_length=20,
         choices=PAYMENT_STATUS_CHOICES,
-        default=PAYMENT_NOT_SENT,
+        default=PAYMENT_PENDING,
+    )
+
+    DEPOSIT_STATUS_CHOICES = (
+        (DEPOSIT_PENDING, 'Pending hold'),
+        (DEPOSIT_HELD_PLACEHOLDER, 'Held (placeholder)'),
+        (DEPOSIT_RETURNED_FULL, 'Returned in full'),
+        (DEPOSIT_RETURNED_REDUCED, 'Returned with reduction'),
+        (DEPOSIT_MEDIATION, 'Mediation required'),
+    )
+    deposit_status = models.CharField(
+        'deposit status',
+        max_length=20,
+        choices=DEPOSIT_STATUS_CHOICES,
+        default=DEPOSIT_PENDING,
     )
 
 
     PRODUCT_STATUS_CHOICES = (
-        (PRODUCT_NOT_SENT, 'Product Not Sent'),
-        (PRODUCT_SENT, 'Product Sent'),
-        (PRODUCT_RECEIVED, 'Product Received'),
-        (PRODUCT_NOT_AS_SHOWN, 'Product Not as Advertised'),
-        (PRODUCT_VERIFIED_OK, 'Product Verified OK'),
-        (PRODUCT_NOT_RECEIVED, 'Product Not Received'),
-        (PRODUCT_NOT_SENT_TIMEOUT, 'Product Not Sent Timeout'),
-        (PRODUCT_NOT_RECEIVED_TIMEOUT, 'Product Not Received Timeout'),
-        (PRODUCT_RETURNED, 'Product Returned'),
-        (PRODUCT_RETURNED_ACKED, 'Product Returned Received'),
-        (PRODUCT_RETURNED_TIMEOUT, 'Product Received Timeout')
+        (CONDITION_PENDING, 'Condition evidence pending'),
+        (CHECKOUT_VIDEO_ADDED, 'Checkout condition video added'),
+        (RETURN_VIDEO_ADDED, 'Return condition video added'),
     )
     product_status = models.CharField(
         'product status',
         max_length=20,
         choices=PRODUCT_STATUS_CHOICES,
-        default=PRODUCT_NOT_SENT,
+        default=CONDITION_PENDING,
     )
 
     # public view of transaction ref to avoid sequential numbers
@@ -174,6 +139,19 @@ class Transaction(models.Model):
     transpact_text_status = models.CharField(max_length=500, blank=True, null=True)
     transpact_update_datetime = models.DateTimeField(blank=True, null=True)
     transpact_scraped_datetime = models.DateTimeField(blank=True, null=True)
+
+    rental_start_date = models.DateField(blank=True, null=True)
+    rental_end_date = models.DateField(blank=True, null=True)
+    enquiry_message = models.TextField(blank=True, max_length=1000)
+
+    checkout_condition_video_url = models.URLField(blank=True, max_length=500)
+    return_condition_video_url = models.URLField(blank=True, max_length=500)
+
+    payment_collected_placeholder = models.BooleanField(default=False)
+    deposit_collected_placeholder = models.BooleanField(default=False)
+    payment_placeholder_notes = models.TextField(blank=True, max_length=1000)
+    deposit_placeholder_notes = models.TextField(blank=True, max_length=1000)
+    deposit_resolution_notes = models.TextField(blank=True, max_length=1000)
     # naming is wrong, but this is in case the orders are matched systematically rather than manually
     order_aggressive = models.ForeignKey(Order, on_delete=models.CASCADE,
                                         related_name='rel_order_aggressive',

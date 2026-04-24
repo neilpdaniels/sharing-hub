@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse, JsonResponse, Http404
 from django.contrib.auth import authenticate, login
 from .forms import OrderEditForm, OrderExpireForm
-from .forms import OrderAddForm, OrderImageForm, OrderHitForm, LetPriceBandFormSet
+from .forms import OrderAddForm, OrderImageForm, LetPriceBandFormSet, RentalEnquiryForm
 from .forms import TransactionMessageImageForm, TransactionMessageAddForm
 from django.contrib.auth.decorators import login_required
 from common.models import Order, Product, OrderImage, TransactionFee, OrderBlockedDate
@@ -22,7 +22,6 @@ from .helpers import returnFeeValue, getTransactionStepAndAction
 import os
 import json
 from django.core.files import File
-from transaction.tasks import createNewTransaction, getUserTransactions
 
 
 @login_required
@@ -56,6 +55,7 @@ def add_order(request, product_id=None):
 
             # Save blocked dates from calendar
             blocked_raw = request.POST.get('blocked_dates', '')
+            blocked_handover_raw = request.POST.get('blocked_handover_dates', '')
             if blocked_raw:
                 import datetime
                 for ds in blocked_raw.split(','):
@@ -67,6 +67,22 @@ def add_order(request, product_id=None):
                                 order=order, date=d,
                                 defaults={'reason': OrderBlockedDate.MANUAL}
                             )
+                        except ValueError:
+                            pass
+            if blocked_handover_raw:
+                import datetime
+                for ds in blocked_handover_raw.split(','):
+                    ds = ds.strip()
+                    if ds:
+                        try:
+                            d = datetime.date.fromisoformat(ds)
+                            if not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.BOOKED).exists() \
+                               and not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.MANUAL).exists():
+                                OrderBlockedDate.objects.get_or_create(
+                                    order=order,
+                                    date=d,
+                                    defaults={'reason': OrderBlockedDate.HANDOVER_UNAVAILABLE},
+                                )
                         except ValueError:
                             pass
 
@@ -108,6 +124,7 @@ def add_order(request, product_id=None):
         'order_image_form': order_image_form,
         'product': product,
         'blocked_dates_json': '[]',
+        'blocked_handover_dates_json': '[]',
     }
     return render(request, 'transaction/add_order.html', context)
 
@@ -143,8 +160,12 @@ def edit_order(request, order_id=None):
             band_formset.save()
 
             # Replace manually blocked dates from calendar selections.
-            OrderBlockedDate.objects.filter(order=order, reason=OrderBlockedDate.MANUAL).delete()
+            OrderBlockedDate.objects.filter(
+                order=order,
+                reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.HANDOVER_UNAVAILABLE],
+            ).delete()
             blocked_raw = request.POST.get('blocked_dates', '')
+            blocked_handover_raw = request.POST.get('blocked_handover_dates', '')
             if blocked_raw:
                 import datetime
                 for ds in blocked_raw.split(','):
@@ -157,6 +178,22 @@ def edit_order(request, order_id=None):
                                 date=d,
                                 defaults={'reason': OrderBlockedDate.MANUAL},
                             )
+                        except ValueError:
+                            pass
+            if blocked_handover_raw:
+                import datetime
+                for ds in blocked_handover_raw.split(','):
+                    ds = ds.strip()
+                    if ds:
+                        try:
+                            d = datetime.date.fromisoformat(ds)
+                            if not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.BOOKED).exists() \
+                               and not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.MANUAL).exists():
+                                OrderBlockedDate.objects.get_or_create(
+                                    order=order,
+                                    date=d,
+                                    defaults={'reason': OrderBlockedDate.HANDOVER_UNAVAILABLE},
+                                )
                         except ValueError:
                             pass
 
@@ -207,7 +244,14 @@ def edit_order(request, order_id=None):
     main_image = next((img for img in order_images if img.is_main), None)
     if not main_image and order_images:
         main_image = order_images[0]
-    blocked_dates = [bd.date.isoformat() for bd in order.blocked_dates.all()]
+    blocked_dates = [
+        bd.date.isoformat()
+        for bd in order.blocked_dates.filter(reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.BOOKED])
+    ]
+    blocked_handover_dates = [
+        bd.date.isoformat()
+        for bd in order.blocked_dates.filter(reason=OrderBlockedDate.HANDOVER_UNAVAILABLE)
+    ]
 
     context = {
         'order_form': order_form,
@@ -220,6 +264,7 @@ def edit_order(request, order_id=None):
         'order_image_ids_str': order_image_ids_str,
         'main_image_id': str(main_image.id) if main_image else '',
         'blocked_dates_json': json.dumps(blocked_dates),
+        'blocked_handover_dates_json': json.dumps(blocked_handover_dates),
     }
     return render(request, 'transaction/add_order.html', context)
 
@@ -320,242 +365,193 @@ def get_fee(request):
 
 @login_required
 def hit_order(request, order_id=None):
-    order = None
-    hit_direction = None
-    fees = {}
-    all_fees = TransactionFee.objects.all()
-    for fee in all_fees:
-        fees[fee] = fee.transactionfeeband_set.all().order_by('-price')
+    order = get_object_or_404(Order, id=order_id)
+    blocked_dates = set(
+        order.blocked_dates.filter(reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.BOOKED]).values_list('date', flat=True)
+    )
+    handover_dates = set(
+        order.blocked_dates.filter(reason=OrderBlockedDate.HANDOVER_UNAVAILABLE).values_list('date', flat=True)
+    )
 
-    if request.method=='POST':
-        order = get_object_or_404(Order, id=order_id)
-        error = False
-        if request.user != order.user:
-            if float(request.POST['order_required_price']) == float(order.price):
-                if int(order.quantity) >= int(request.POST['quantity']) and order.expiry_date > timezone.now():
-                    for fee in all_fees:
-                        # check each fee is as expected
-                        if fee.slug in request.POST:
-                            price_supplied = float(request.POST[fee.slug])
-                            price_calculated = returnFeeValue(fee, int(request.POST['quantity']), float(request.POST['order_required_price']) , order)
-                            if price_supplied != price_calculated:
-                                error = True    
-                                messages.error(request, 'Fee supplied value does not match calculated: {}, {}:{} '.format(fee.name, price_supplied, price_calculated))                            
-                        elif order.direction == Order.TO_LET:
-                            # easy at present as all fees on buyer
-                            error = True
-                            messages.error(request, 'Missing fee: {}'.format(fee.name))                            
-                            messages.error(request, 'Missing fee: {}'.format(request.POST))                            
+    def _price_per_day_for_days(rental_days):
+        bands = list(order.price_bands.all().order_by('duration_days'))
+        for band in bands:
+            if rental_days <= int(band.duration_days):
+                return float(band.price_per_day)
+        return float(order.price)
 
-                    if error is not True: 
-                        txn = Transaction()
-                        txn.price = order.price
-                        txn.quantity = int(request.POST['quantity'])
-                        txn.order_passive = order
-                        txn.order_passive_description = order.description # snapshot in case changed
-                        txn.product = order.product
-                        txn.user_aggressive = request.user
-                        txn.user_passive = order.user
-                        
-                        current_spot_value = 0
-                        price_as_pct_spot_value = 0
-                        txn.current_spot_value = current_spot_value
-                        txn.price_as_pct_spot_value = price_as_pct_spot_value
-                        txn.save()
-                        
-                        # save txn images
-                        for ordImage in order.images.filter(active=True):
-                            txn_image = TransactionImage()
-                            txn_image.image = File(ordImage.image, ordImage.image.name)
-                            txn_image.transaction = txn
-                            txn_image.save()
+    if request.user == order.user:
+        messages.error(request, "You can't rent your own listing")
+        return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
-                        # save txn charges
-                        for fee in all_fees:
-                            # check each fee is as expected
-                            if fee.name in request.POST:
-                                txn_charge = TransactionCharge()
-                                txn_charge.transaction = txn
-                                txn_charge.transaction_fee = fee
-                                txn_charge.user_to_pay = request.user
-                                txn_charge.price = round(float(request.POST[fee.name]),2)
-                                txn_charge.save()
-                            else:
-                                # can really just use this without the "POST" values, maybe this is a touch more lightweight
-                                txn_charge = TransactionCharge()
-                                txn_charge.transaction = txn
-                                txn_charge.transaction_fee = fee
-                                txn_charge.user_to_pay = request.user
-                                fee_price = returnFeeValue(fee, int(request.POST['quantity']), float(request.POST['order_required_price']), order)
-                                txn_charge.price = round(float(fee_price),2)
-                                txn_charge.save()
+    if request.method == 'POST':
+        order_hit_form = RentalEnquiryForm(
+            data=request.POST,
+            blocked_dates=blocked_dates,
+            handover_dates=handover_dates,
+            expiry_date=order.expiry_date.date() if order.expiry_date else None,
+            max_rental_days=order.max_rental_days,
+        )
+        if order_hit_form.is_valid():
+            if order.expiry_date <= timezone.now() or order.status != Order.ACTIVE:
+                messages.error(request, 'This listing is no longer available.')
+                return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
-                        # reduce order and expire if 0 qty
-                        order.quantity = order.quantity - txn.quantity
-                        if order.quantity == 0:
-                            order.expiry_date = timezone.now()
-                        order.save()
+            start_date = order_hit_form.cleaned_data['rental_start_date']
+            end_date = order_hit_form.cleaned_data['rental_end_date']
+            rental_days = (end_date - start_date).days + 1
+            price_per_day = _price_per_day_for_days(rental_days)
 
-                        # context = {
-                        #     'order' : order,
-                        #     'transaction' : txn,
-                        # }
+            txn = Transaction.objects.create(
+                price=price_per_day,
+                quantity=1,
+                order_passive=order,
+                order_passive_description=order.description,
+                product=order.product,
+                user_aggressive=request.user,
+                user_passive=order.user,
+                current_spot_value=0,
+                price_as_pct_spot_value=0,
+                transaction_status=Transaction.RENTAL_ENQUIRY,
+                prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+                payment_status=Transaction.PAYMENT_PENDING,
+                deposit_status=Transaction.DEPOSIT_PENDING,
+                product_status=Transaction.CONDITION_PENDING,
+                rental_start_date=start_date,
+                rental_end_date=end_date,
+                enquiry_message=order_hit_form.cleaned_data.get('enquiry_message', ''),
+            )
 
-                        # messages.success(request, 'Order hit successfully')
-                        #return render(request, 'transaction/hit_order_done.html', context)``
-                        messages_ = None
-                        charges = None
-                        txnImages = None
-                        total_px = 0
-                        total_fees = 0
-                        total_items = 0
-                        step, next_action = getTransactionStepAndAction(txn, request)
-                        
-                        if txn.user_passive == request.user or txn.user_aggressive == request.user:
-                            transaction = txn
-                            messages_ = sorted(sorted((txn.transactionmessage_set.all()),
-                            key=attrgetter('created'),reverse=True),
-                            key=attrgetter('read_by_user_to'))
-                            charges = txn.transactioncharge_set.all()
-                            total_px = txn.quantity * txn.price
-                            total_items = txn.quantity * txn.price
-                            for charge in charges:
-                                total_px += charge.price
-                                total_fees += charge.price
-                            txnImages = txn.transactionimage_set.all()
+            for ord_image in order.images.filter(active=True):
+                txn_image = TransactionImage()
+                txn_image.image = File(ord_image.image, ord_image.image.name)
+                txn_image.transaction = txn
+                txn_image.save()
 
-
-                        context = {
-                            'transaction' : transaction,
-                            'charges' : charges,
-                            'messages_' : messages_,
-                            'total_px' : total_px,
-                            'txnImages' : txnImages,
-                            'total_items' : total_items,
-                            'total_fees' : total_fees,
-                            'step' : step,
-                            'next_action' : next_action
-                        }
-                        messages.success(request, 'Order hit successfully - transaction created')
-                        createNewTransaction.delay(int(transaction.id))
-                        getUserTransactions.delay(int(request.user.id))
-
-                        return render(request, 'transaction/view_transaction.html', context)
-                else:
-                    messages.error(request, 'Order is no longer available')
-                    error = True
-            else:
-                messages.error(request, 'Order price has changed - please review/retry')
-                error = True
-        else:
-            messages.error(request, 'You can\'t buy/sell from yourself')
-            error = True
-
-        if error:
-            product_url = request.build_absolute_uri(reverse('navigation:productPage' ,
-                kwargs={'product_slug': order.product.slug}))
-            return redirect(product_url)
+            messages.success(request, 'Rental enquiry sent.')
+            return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
     else:
-        order = get_object_or_404(Order, id=order_id)
-        order_hit_form = OrderHitForm(instance=order)
+        order_hit_form = RentalEnquiryForm(
+            blocked_dates=blocked_dates,
+            handover_dates=handover_dates,
+            expiry_date=order.expiry_date.date() if order.expiry_date else None,
+            max_rental_days=order.max_rental_days,
+        )
 
-        sharing_hub_tooltip = "SharingHub charges a small fee on all tranactions"
-        # fees2 = {
-            # 'sharing_hub' : [1, sharing_hub_tooltip]
-        # }
-        # postage = Postage.objects.all().order_by('-price')
+    price_bands = list(order.price_bands.all().order_by('duration_days').values('duration_days', 'price_per_day'))
+    blocked_dates_json = json.dumps(sorted([d.isoformat() for d in blocked_dates]))
+    handover_dates_json = json.dumps(sorted([d.isoformat() for d in handover_dates]))
+    price_bands_json = json.dumps(price_bands)
 
-        if order.direction == 'S':
-            hit_direction = "Buy"
-            # postage_tooltip = "Postage is paid by the buyer.  Postage is always insured royal mail special delivery, insured to the correct value"
-            # fees2['postage'] = [0, postage_tooltip]
-            # escrow_tooltip = "Escrow is mandatory. We've search for the best value FCA regulated escrow client whose rates are very competative"
-            # fees2['escrow'] = [5.98, escrow_tooltip]
-        else:
-            hit_direction = "Sell"
-        
-        
-        context = {
-            'order' : order,
-            'order_hit_form' : order_hit_form,
-            'hit_direction' : hit_direction,
-            'fees' : fees,
-            'item_weight' : order.product.weight,
-        }
-        return render(request, 'transaction/hit_order.html', context)
+    context = {
+        'order': order,
+        'order_hit_form': order_hit_form,
+        'blocked_dates_json': blocked_dates_json,
+        'handover_dates_json': handover_dates_json,
+        'price_bands_json': price_bands_json,
+    }
+    return render(request, 'transaction/hit_order.html', context)
 
 
 @login_required
 def view_transaction(request, transaction_reference=None):
-    transaction = None
-    messages_ = None
-    charges = None
-    txnImages = None
-    total_px = 0
-    total_fees = 0
-    total_items = 0
-    step = -1
-    next_action = False
     txn = get_object_or_404(Transaction, transaction_reference=transaction_reference)
+    if txn.user_passive != request.user and txn.user_aggressive != request.user:
+        raise Http404
 
+    is_lender = (request.user == txn.user_passive)
+    is_renter = (request.user == txn.user_aggressive)
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '').strip()
+
+        if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.RENTAL_AGREED
+            txn.save()
+            messages.success(request, 'Rental agreed.')
+
+        elif action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
+            checkout_video = request.POST.get('checkout_video_url', '').strip()
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.RENTAL_INITIATED
+            txn.checkout_condition_video_url = checkout_video
+            if checkout_video:
+                txn.product_status = txn.CHECKOUT_VIDEO_ADDED
+
+            payment_collected = bool(request.POST.get('payment_collected_placeholder'))
+            deposit_collected = bool(request.POST.get('deposit_collected_placeholder'))
+            txn.payment_collected_placeholder = payment_collected
+            txn.deposit_collected_placeholder = deposit_collected
+            txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER if payment_collected else txn.PAYMENT_PENDING
+            txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if deposit_collected else txn.DEPOSIT_PENDING
+            txn.payment_placeholder_notes = request.POST.get('payment_placeholder_notes', '').strip()
+            txn.deposit_placeholder_notes = request.POST.get('deposit_placeholder_notes', '').strip()
+            txn.save()
+            messages.success(request, 'Rental initiated. Checkout evidence and placeholders saved.')
+
+        elif action == 'mark_returned' and txn.transaction_status == txn.RENTAL_INITIATED and (is_lender or is_renter):
+            return_video = request.POST.get('return_video_url', '').strip()
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.RENTAL_RETURNED
+            txn.return_condition_video_url = return_video
+            if return_video:
+                txn.product_status = txn.RETURN_VIDEO_ADDED
+            txn.save()
+            messages.success(request, 'Rental marked as returned.')
+
+        elif action == 'deposit_full' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED:
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.DEPOSIT_RETURNED
+            txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
+            txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
+            txn.save()
+            messages.success(request, 'Deposit marked as returned in full.')
+
+        elif action == 'deposit_reduced' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED:
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.DEPOSIT_REDUCED
+            txn.deposit_status = txn.DEPOSIT_RETURNED_REDUCED
+            txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
+            txn.save()
+            messages.success(request, 'Reduced deposit return recorded.')
+
+        elif action == 'mediation_required' and (is_lender or is_renter) and txn.transaction_status == txn.RENTAL_RETURNED:
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.MEDIATION_REQUIRED
+            txn.deposit_status = txn.DEPOSIT_MEDIATION
+            txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
+            txn.save()
+            messages.warning(request, 'Mediation required has been recorded.')
+
+        else:
+            messages.error(request, 'That action is not available for the current state.')
+
+        return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+    messages_ = sorted(
+        sorted((txn.transactionmessage_set.all()), key=attrgetter('created'), reverse=True),
+        key=attrgetter('read_by_user_to')
+    )
+    charges = txn.transactioncharge_set.all()
+    txn_images = txn.transactionimage_set.all()
+    total_items = txn.quantity * txn.price
+    total_fees = sum(charge.price for charge in charges)
+    total_px = total_items + total_fees
     step, next_action = getTransactionStepAndAction(txn, request)
 
-    # # work out step 
-    # if txn.transaction_status != txn.CANCEL_ACCEPTED and txn.transaction_status != txn.COMPLETED_ACK \
-    #     and txn.transaction_status != txn.CANCEL_REQUESTED and txn.transaction_status != txn.DISPUTE_REQUESTED:
-    #     if txn.payment_status == txn.PAYMENT_NOT_SENT or txn.payment_status == txn.PAYMENT_TIMEOUT:
-    #         step = 1
-    #         if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-    #             or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):
-    #             next_action = True
-    #     elif txn.payment_status == txn.PAYMENT_SENT:
-    #         step = 2
-    #         if (txn.user_passive == request.user and txn.order_passive.direction == "S") \
-    #         or (txn.user_aggressive == request.user and txn.order_passive.direction == "B"):
-    #             next_action = True
-    # if txn.transaction_status != txn.CANCEL_ACCEPTED and txn.transaction_status != txn.COMPLETED_ACK \
-    #     and txn.transaction_status != txn.DISPUTE_REQUESTED:
-    #     if txn.payment_status == txn.PAYMENT_SENT or txn.payment_status == txn.PAYMENT_ACKED:
-    #         if txn.product_status == txn.PRODUCT_NOT_SENT or txn.product_status == txn.PRODUCT_NOT_SENT_TIMEOUT:
-    #             step = 3
-    #             if (txn.user_passive == request.user and txn.order_passive.direction == "S") \
-    #             or (txn.user_aggressive == request.user and txn.order_passive.direction == "B"):
-    #                 next_action = True
-    #         elif txn.product_status == txn.PRODUCT_SENT:
-    #             step = 4
-    #             if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-    #             or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):    
-    #                 next_action = True
-    #         elif txn.product_status == txn.PRODUCT_RECEIVED:
-    #             step = 5
-    #             if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-    #             or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):
-    #                 next_action = True
-    
-    if txn.user_passive == request.user or txn.user_aggressive == request.user:
-        transaction = txn
-        messages_ = sorted(sorted((txn.transactionmessage_set.all()),
-        key=attrgetter('created'),reverse=True),
-        key=attrgetter('read_by_user_to'))
-        charges = txn.transactioncharge_set.all()
-        total_px = txn.quantity * txn.price
-        total_items = txn.quantity * txn.price
-        for charge in charges:
-            total_px += charge.price
-            total_fees += charge.price
-        txnImages = txn.transactionimage_set.all()
-
-
     context = {
-        'transaction' : transaction,
-        'charges' : charges,
-        'messages_' : messages_,
-        'total_px' : total_px,
-        'txnImages' : txnImages,
-        'total_items' : total_items,
-        'total_fees' : total_fees,
-        'step' : step,
-        'next_action' : next_action
+        'transaction': txn,
+        'charges': charges,
+        'messages_': messages_,
+        'total_px': total_px,
+        'txnImages': txn_images,
+        'total_items': total_items,
+        'total_fees': total_fees,
+        'step': step,
+        'next_action': next_action,
+        'is_lender': is_lender,
+        'is_renter': is_renter,
     }
     return render(request, 'transaction/view_transaction.html', context)
 
@@ -590,263 +586,27 @@ def transaction_add_message(request):
 @login_required
 @ajax_required
 def set_payment_state(request):
-    transaction_ref = request.GET.get('transaction_ref', None)
-    newState = request.GET.get('newState', None)
-    message = request.GET.get('message', None)
-    status = 'NOK'
-
-    txn = get_object_or_404(Transaction, transaction_reference=transaction_ref)
-    if txn.user_passive == request.user or txn.user_aggressive == request.user:
-        if txn.transaction_status != txn.DISPUTE_REQUESTED:
-            # BUYER TASKS
-            if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):
-
-                if newState == txn.PAYMENT_SENT:
-                    if txn.payment_status == txn.PAYMENT_NOT_SENT or txn.payment_status == txn.PAYMENT_TIMEOUT:
-                        txn.payment_status = newState
-                        txn.transaction_status = txn.PAYMENT_PROCESSING
-                        txn.save()
-                        messages.success(request, 'Payment Status Updated')
-                        status = 'OK'
-                        if message is not None and message != '':
-                            txn_message = TransactionMessage()
-                            txn_message.user_from = request.user
-                            if txn.user_passive == request.user:
-                                txn_message.user_to = txn.user_aggressive
-                            else:
-                                txn_message.user_to = txn.user_passive
-                            txn_message.transaction = txn
-                            txn_message.description = message
-                            txn_message.subject = txn.get_payment_status_display()
-                            txn_message.save()
-            
-            # SELLER TASKS
-            if (txn.user_passive == request.user and txn.order_passive.direction == "S") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "B"):
-                if newState == txn.PAYMENT_ACKED:
-                    if txn.payment_status == txn.PAYMENT_SENT:
-                        txn.payment_status = newState
-                        txn.save()
-                        messages.success(request, 'Payment Status Updated')
-                        status = 'OK'
-                        if message is not None and message != '':
-                            txn_message = TransactionMessage()
-                            txn_message.user_from = request.user
-                            if txn.user_passive == request.user:
-                                txn_message.user_to = txn.user_aggressive
-                            else:
-                                txn_message.user_to = txn.user_passive
-                            txn_message.transaction = txn
-                            txn_message.description = message
-                            txn_message.subject = txn.get_payment_status_display()
-                            txn_message.save()
-
-    content = {
-        'status' : status
-    }
-    return JsonResponse(content)
+    return JsonResponse({
+        'status': 'NOK',
+        'message': 'Legacy payment endpoint disabled. Use the rental workflow actions on the transaction page.',
+    })
 
 @login_required
 @ajax_required
 def set_product_state(request):
-    transaction_ref = request.GET.get('transaction_ref', None)
-    newState = request.GET.get('newState', None)
-    message = request.GET.get('message', None)
-
-    status = 'NOK'
-
-    txn = get_object_or_404(Transaction, transaction_reference=transaction_ref)
-    if txn.user_passive == request.user or txn.user_aggressive == request.user:
-        if txn.transaction_status != txn.DISPUTE_REQUESTED:
-
-            # SELLER TASKS
-            if (txn.user_passive == request.user and txn.order_passive.direction == "S") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "B"):
-                if newState == txn.PRODUCT_SENT:
-                    if txn.payment_status == txn.FUNDS_IN_ESCROW or txn.payment_status == txn.FUNDS_RELEASED:
-                        if txn.product_status == txn.PRODUCT_NOT_SENT or txn.product_status == txn.PRODUCT_NOT_SENT_TIMEOUT:
-                            txn.product_status = newState
-                            if txn.payment_status == txn.PAYMENT_SENT:  
-                                txn.payment_status = txn.PAYMENT_ACKED
-                            txn.transaction_status = txn.DELIVERY_PROCESSING
-                            txn.save()
-                            messages.success(request, 'Delivery Status Updated')
-                            status = 'OK'
-                            if message is not None and message != '':
-                                txn_message = TransactionMessage()
-                                txn_message.user_from = request.user
-                                if txn.user_passive == request.user:
-                                    txn_message.user_to = txn.user_aggressive
-                                else:
-                                    txn_message.user_to = txn.user_passive
-                                txn_message.transaction = txn
-                                txn_message.description = message
-                                txn_message.subject = txn.get_product_status_display()
-                                txn_message.save()
-
-
-            # BUYER TASKS
-            if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):
-                if newState == txn.PRODUCT_RECEIVED:
-                    if txn.payment_status == txn.FUNDS_IN_ESCROW or txn.payment_status == txn.FUNDS_RELEASED:
-                        if txn.product_status == txn.PRODUCT_SENT:
-                            txn.product_status = newState
-                            txn.save()
-                            messages.success(request, 'Delivery Status Updated')
-                            status = 'OK'
-                            if message is not None and message != '':
-                                txn_message = TransactionMessage()
-                                txn_message.user_from = request.user
-                                if txn.user_passive == request.user:
-                                    txn_message.user_to = txn.user_aggressive
-                                else:
-                                    txn_message.user_to = txn.user_passive
-                                txn_message.transaction = txn
-                                txn_message.description = message
-                                txn_message.subject = txn.get_product_status_display()
-                                txn_message.save()
-
-                if newState == txn.PRODUCT_VERIFIED_OK:
-                    if txn.payment_status == txn.FUNDS_IN_ESCROW or txn.payment_status == txn.FUNDS_RELEASED:
-                        if txn.product_status == txn.PRODUCT_RECEIVED or txn.product_status == txn.PRODUCT_NOT_AS_SHOWN:
-                            txn.product_status = newState
-                            txn.save()
-                            messages.success(request, 'Delivery Status Updated - Transaction now complete')
-                            status = 'OK'
-                            if message is not None and message != '':
-                                txn_message = TransactionMessage()
-                                txn_message.user_from = request.user
-                                if txn.user_passive == request.user:
-                                    txn_message.user_to = txn.user_aggressive
-                                else:
-                                    txn_message.user_to = txn.user_passive
-                                txn_message.transaction = txn
-                                txn_message.description = message
-                                txn_message.subject = txn.get_product_status_display()
-                                txn_message.save()
-
-                if newState == txn.PRODUCT_NOT_AS_SHOWN:
-                    if txn.payment_status == txn.FUNDS_IN_ESCROW or txn.payment_status == txn.FUNDS_RELEASED:
-                        if txn.product_status == txn.PRODUCT_RECEIVED or txn.product_status == txn.PRODUCT_VERIFIED_OK:
-                            txn.product_status = newState
-                            txn.save()
-                            messages.success(request, 'Delivery Status Updated - Transaction now complete')
-                            status = 'OK'
-                            if message is not None and message != '':
-                                txn_message = TransactionMessage()
-                                txn_message.user_from = request.user
-                                if txn.user_passive == request.user:
-                                    txn_message.user_to = txn.user_aggressive
-                                else:
-                                    txn_message.user_to = txn.user_passive
-                                txn_message.transaction = txn
-                                txn_message.description = message
-                                txn_message.subject = txn.get_product_status_display()
-                                txn_message.save()
-
-        
-    content = {
-        'status' : status
-    }
-    return JsonResponse(content)
+    return JsonResponse({
+        'status': 'NOK',
+        'message': 'Legacy product endpoint disabled. Use the rental workflow actions on the transaction page.',
+    })
 
     
 @login_required
 @ajax_required
 def set_transaction_state(request):
-    transaction_ref = request.GET.get('transaction_ref', None)
-    newState = request.GET.get('newState', None)
-    message = request.GET.get('message', None)
-    status = 'NOK'
-
-    txn = get_object_or_404(Transaction, transaction_reference=transaction_ref)
-    if txn.user_passive == request.user or txn.user_aggressive == request.user:
-        if newState == txn.CANCEL_CANCELLED:
-            if txn.transaction_status == txn.CANCEL_REQUESTED:
-                if txn.transaction_status_raised_by == request.user:
-                    txn.transaction_status = txn.NEW
-                    txn.transaction_status_raised_by = request.user
-                    txn.save()
-                    messages.success(request, 'Cancellation request reversed - Transaction set to {}'.format(txn.get_transaction_status_display()))
-                    status = 'OK'
-                    if message is not None and message != '':
-                        txn_message = TransactionMessage()
-                        txn_message.user_from = request.user
-                        if txn.user_passive == request.user:
-                            txn_message.user_to = txn.user_aggressive
-                        else:
-                            txn_message.user_to = txn.user_passive
-                        txn_message.transaction = txn
-                        txn_message.description = message
-                        txn_message.subject = "Cancellation request reversed"
-                        txn_message.save()
-
-        if newState == txn.CANCEL_REQUESTED:
-            if txn.transaction_status == txn.NEW \
-                or txn.transaction_status == txn.NEW_TIMEOUT \
-                or txn.transaction_status == txn.CANCEL_REFUSED:
-                if txn.payment_status == txn.PAYMENT_NOT_SENT or txn.payment_status == txn.PAYMENT_TIMEOUT:
-                    txn.transaction_status = newState
-                    txn.transaction_status_raised_by = request.user
-                    txn.save()
-                    messages.success(request, 'Cancel Requested')
-                    status = 'OK'
-                    if message is not None and message != '':
-                        txn_message = TransactionMessage()
-                        txn_message.user_from = request.user
-                        if txn.user_passive == request.user:
-                            txn_message.user_to = txn.user_aggressive
-                        else:
-                            txn_message.user_to = txn.user_passive
-                        txn_message.transaction = txn
-                        txn_message.description = message
-                        txn_message.subject = txn.get_transaction_status_display()
-                        txn_message.save()
-
-        if newState == txn.CANCEL_ACCEPTED:
-            if txn.transaction_status_raised_by != request.user and txn.transaction_status == txn.CANCEL_REQUESTED:
-                txn.transaction_status = newState
-                txn.transaction_status_raised_by = request.user
-                txn.save()
-                messages.success(request, 'Cancel Accepted')
-                status = 'OK'
-                if message is not None and message != '':
-                    txn_message = TransactionMessage()
-                    txn_message.user_from = request.user
-                    if txn.user_passive == request.user:
-                        txn_message.user_to = txn.user_aggressive
-                    else:
-                        txn_message.user_to = txn.user_passive
-                    txn_message.transaction = txn
-                    txn_message.description = message
-                    txn_message.subject = txn.get_transaction_status_display()
-                    txn_message.save()
-
-        if newState == txn.CANCEL_REFUSED:
-            if txn.transaction_status_raised_by != request.user and txn.transaction_status == txn.CANCEL_REQUESTED:
-                txn.transaction_status = newState
-                txn.transaction_status_raised_by = request.user
-                txn.save()
-                messages.success(request, txn.get_transaction_status_display())
-                status = 'OK'
-                if message is not None and message != '':
-                    txn_message = TransactionMessage()
-                    txn_message.user_from = request.user
-                    if txn.user_passive == request.user:
-                        txn_message.user_to = txn.user_aggressive
-                    else:
-                        txn_message.user_to = txn.user_passive
-                    txn_message.transaction = txn
-                    txn_message.description = message
-                    txn_message.subject = txn.get_transaction_status_display()
-                    txn_message.save()
-
-    content = {
-        'status' : status
-    }
-    return JsonResponse(content)
+    return JsonResponse({
+        'status': 'NOK',
+        'message': 'Legacy transaction endpoint disabled. Use the rental workflow actions on the transaction page.',
+    })
 
 @login_required
 def raise_dispute(request, transaction_reference=None):
@@ -916,10 +676,9 @@ def raise_dispute(request, transaction_reference=None):
 
 @ajax_required
 def transpact_refresh(request):
-    transaction_id = request.POST.get('transaction_id', None)
-    getUserTransactions.delay(int(request.user.id))
     content = {
-        'status' : 'OK',
+        'status' : 'NOK',
+        'message': 'Transpact refresh is disabled in the new rental workflow.',
     }
     return JsonResponse(content)
 

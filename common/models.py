@@ -197,6 +197,22 @@ class Order(models.Model):
     description = models.TextField(blank=True, max_length=500)
     additional_comments = models.TextField(blank=True, max_length=500)
 
+    FRIENDS_ONLY = 'FRIENDS'
+    PUBLIC_ONLY = 'PUBLIC'
+    FRIENDS_AND_PUBLIC = 'BOTH'
+    LET_VISIBILITY_CHOICES = (
+        (FRIENDS_ONLY, 'Let to friends only'),
+        (PUBLIC_ONLY, 'Let to public only'),
+        (FRIENDS_AND_PUBLIC, 'Let to both'),
+    )
+    let_visibility = models.CharField(
+        max_length=8,
+        choices=LET_VISIBILITY_CHOICES,
+        default=FRIENDS_AND_PUBLIC,
+        db_index=True,
+        help_text='Who can see and rent this listing'
+    )
+
     # Letting-specific fields
     deposit = models.FloatField(
         null=True, blank=True,
@@ -329,7 +345,12 @@ class OrderBlockedDate(models.Model):
     date = models.DateField(db_index=True)
     MANUAL = 'M'
     BOOKED = 'B'
-    REASON_CHOICES = ((MANUAL, 'Manual'), (BOOKED, 'Booked'))
+    HANDOVER_UNAVAILABLE = 'H'
+    REASON_CHOICES = (
+        (MANUAL, 'Manual'),
+        (BOOKED, 'Booked'),
+        (HANDOVER_UNAVAILABLE, 'Unavailable for collection/drop-off'),
+    )
     reason = models.CharField(max_length=1, choices=REASON_CHOICES, default=MANUAL)
 
     class Meta:

@@ -4,7 +4,7 @@
 {% block content %}
 <div class="container mt-4">
 
-  <div class="row">
+  <div class="row mb-3">
     <div class="col-md-12">
       <h3>My Friends</h3>
     </div>
@@ -65,6 +65,11 @@
           <form method="post" action="{% url 'friends:reject_request' f.id %}" class="d-inline ml-1">
             {% csrf_token %}
             <button class="btn btn-sm btn-outline-secondary">Decline</button>
+          </form>
+          <form method="post" action="{% url 'friends:block_friend' f.user_from.id %}" class="d-inline ml-1"
+                onsubmit="return confirm('Block {{ f.user_from.username }}?');">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-danger">Block</button>
           </form>
         </span>
       </li>

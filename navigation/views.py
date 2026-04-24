@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse, Http404
+from django.http import HttpResponseForbidden
 from django.http import JsonResponse
 from common.models import Category, Product, Order, System
 from common.models import BestPricedForCategory, BestPricedForProduct
@@ -62,12 +63,14 @@ def browseCategory(request, cat_slug=None):
     # Geocode location or fall back to user profile
     browse_lat = None
     browse_lon = None
+    browse_postcode = None
     if location:
         from common.geocoding import PostcodeGeocoder
         coords = PostcodeGeocoder.geocode_location(location)
         if coords:
             browse_lat = float(coords['latitude'])
             browse_lon = float(coords['longitude'])
+            browse_postcode = coords.get('postcode', location).upper()
         else:
             messages.warning(request, f'"{location}" could not be found. Please try a UK postcode or town name.')
             location = ''
@@ -78,6 +81,7 @@ def browseCategory(request, cat_slug=None):
                 browse_lat = float(profile.latitude)
                 browse_lon = float(profile.longitude)
                 location = profile.postcode or ''
+                browse_postcode = (profile.postcode or '').upper()
         except Exception:
             pass
 
@@ -191,7 +195,24 @@ def browseCategory(request, cat_slug=None):
         chosen_attributes['friends_only'] = "True"
 
     # Distance filtering + nearest sort (Python-side, requires geocoded location)
-    if browse_lat and browse_lon:
+    if distance_filter == 0:
+        # 0 km filter: show only products with orders in the same postcode
+        if browse_postcode:
+            products_list = []
+            for product in products:
+                has_matching_postcode = product.order_set.filter(
+                    status=Order.ACTIVE,
+                    postcode__iexact=browse_postcode
+                ).exists()
+                if has_matching_postcode:
+                    product._browse_distance = 0
+                    products_list.append(product)
+            totalProductsCount = len(products_list)
+            paginagor = Paginator(products_list, 20)
+        else:
+            totalProductsCount = 0
+            paginagor = Paginator([], 20)
+    elif browse_lat and browse_lon:
         from common.geocoding import PostcodeGeocoder as _G
         products_list = []
         for product in products:
@@ -303,6 +324,7 @@ def search(request):
 
     latitude = None
     longitude = None
+    search_postcode = None
     display_location = None
     location_not_found = False
 
@@ -318,6 +340,7 @@ def search(request):
         try:
             user_profile = request.user.profile
             location = user_profile.postcode or ''
+            search_postcode = (user_profile.postcode or '').upper()
             if user_profile.latitude and user_profile.longitude:
                 latitude = user_profile.latitude
                 longitude = user_profile.longitude
@@ -331,6 +354,7 @@ def search(request):
         if coords:
             latitude = coords['latitude']
             longitude = coords['longitude']
+            search_postcode = coords.get('postcode', location).upper()
             display_location = coords.get('display_name', location)
             if request.user.is_authenticated:
                 try:
@@ -375,7 +399,18 @@ def search(request):
             orders = orders.filter(product__category_id__in=category_ids)
 
     # Distance filtering
-    if latitude and longitude and not location_not_found:
+    if max_distance_km == 0:
+        # 0 km filter: show only orders from the same postcode
+        if search_postcode:
+            result_orders = []
+            for order in orders:
+                if order.postcode and order.postcode.upper() == search_postcode:
+                    order.distance = 0
+                    result_orders.append(order)
+            nearby_orders = result_orders
+        else:
+            nearby_orders = []
+    elif latitude and longitude and not location_not_found:
         from common.geocoding import PostcodeGeocoder as _G
         result_orders = []
         for order in orders:
@@ -479,12 +514,15 @@ def productPage(request, product_slug):
 
     page_lat = None
     page_lon = None
+    search_postcode = None
+    
     if location:
         from common.geocoding import PostcodeGeocoder
         coords = PostcodeGeocoder.geocode_location(location)
         if coords:
             page_lat = float(coords['latitude'])
             page_lon = float(coords['longitude'])
+            search_postcode = coords.get('postcode', location).upper()
         else:
             messages.warning(request, f'"{location}" could not be found.')
             location = ''
@@ -495,19 +533,38 @@ def productPage(request, product_slug):
                 page_lat = float(profile.latitude)
                 page_lon = float(profile.longitude)
                 location = profile.postcode or ''
+                search_postcode = (profile.postcode or '').upper()
         except Exception:
             pass
 
     friends_only = request.GET.get('friends_only', None)
     friend_user_ids = []
+    blocked_user_ids = set()
+    blocked_by_user_ids = set()
+    
     if request.user.is_authenticated:
-        from friends.models import FriendsHelper
+        from friends.models import FriendsHelper, BlockedUser
         friend_user_ids = list(FriendsHelper.get_visible_friend_ids(request.user))
+        blocked_user_ids = FriendsHelper.get_blocked_user_ids(request.user)
+        blocked_by_user_ids = FriendsHelper.get_blocked_by_user_ids(request.user)
         if friends_only:
             sell_orders = sell_orders.filter(user_id__in=friend_user_ids)
 
     # Distance filter (Python-side)
-    if page_lat and page_lon and distance_filter != 'any':
+    if distance_filter == 0:
+        # 0 km filter: show only listings from the same postcode
+        if search_postcode:
+            def _same_postcode(qs):
+                result = []
+                for o in qs:
+                    o.distance_km = 0 if o.postcode and o.postcode.upper() == search_postcode else None
+                    if o.postcode and o.postcode.upper() == search_postcode:
+                        result.append(o)
+                return result
+            sell_orders = _same_postcode(sell_orders)
+        else:
+            sell_orders = []
+    elif page_lat and page_lon and distance_filter != 'any':
         from common.geocoding import PostcodeGeocoder as _G
         def _within(qs):
             result = []
@@ -527,8 +584,21 @@ def productPage(request, product_slug):
         for o in sell_orders:
             o.distance_km = None
 
-    # Annotate each order with its main image
+    # Annotate each order with display information and apply audience visibility rules.
+    visible_orders = []
     for o in sell_orders:
+        is_owner = request.user.is_authenticated and request.user == o.user
+        is_friend_of_lender = request.user.is_authenticated and (o.user_id in friend_user_ids)
+        
+        # Skip if either user has blocked the other
+        if request.user.is_authenticated and not is_owner:
+            if o.user_id in blocked_user_ids or o.user_id in blocked_by_user_ids:
+                continue
+
+        # Friends-only listings are hidden from non-friends (except owner).
+        if o.let_visibility == Order.FRIENDS_ONLY and not is_owner and not is_friend_of_lender:
+            continue
+
         o.main_image = o.images.filter(is_main=True).first()
         o.available_on_needed_date = None
         if needed_date:
@@ -536,7 +606,23 @@ def productPage(request, product_slug):
                 o.available_on_needed_date = False
             else:
                 o.available_on_needed_date = not o.blocked_dates.filter(date=needed_date).exists()
-        o.total_price = (o.price * needed_days) if needed_days else None
+
+        can_use_mates_rate = (
+            is_friend_of_lender
+            and o.let_visibility in (Order.FRIENDS_ONLY, Order.FRIENDS_AND_PUBLIC)
+            and o.mates_rates is not None
+        )
+        o.is_mates_rate_applied = can_use_mates_rate
+        o.display_price = o.mates_rates if can_use_mates_rate else o.price
+        if can_use_mates_rate and o.mates_deposit is not None:
+            o.display_deposit = o.mates_deposit
+        else:
+            o.display_deposit = o.deposit
+        o.total_price = (o.display_price * needed_days) if needed_days else None
+
+        visible_orders.append(o)
+
+    sell_orders = visible_orders
 
     # Sort
     if sort_by == 'nearest':
@@ -774,11 +860,50 @@ def expandOrder(request):
     order = get_object_or_404(Order, id=order_id)
     orderImages = order.images.filter(active=True)
     price_bands = order.price_bands.all()
+    friendship = None
+    friendship_status = None
+    friendship_i_sent = False
+    is_friend_of_lender = False
+    display_price = order.price
+    display_deposit = order.deposit
+    is_owner = request.user.is_authenticated and request.user == order.user
+    
+    if request.user.is_authenticated and request.user != order.user:
+        from friends.models import Friendship, FriendsHelper, BlockedUser
+        
+        # Check if blocked
+        if BlockedUser.objects.filter(
+            Q(blocked_by=request.user, blocked_user=order.user) |
+            Q(blocked_by=order.user, blocked_user=request.user)
+        ).exists():
+            return HttpResponseForbidden('You cannot view this listing.')
+        
+        is_friend_of_lender = order.user_id in FriendsHelper.get_visible_friend_ids(request.user)
+        if is_friend_of_lender and order.mates_rates is not None and order.let_visibility in (Order.FRIENDS_ONLY, Order.FRIENDS_AND_PUBLIC):
+            display_price = order.mates_rates
+            if order.mates_deposit is not None:
+                display_deposit = order.mates_deposit
+        friendship = Friendship.objects.filter(
+            Q(user_from=request.user, user_to=order.user) |
+            Q(user_from=order.user, user_to=request.user)
+        ).first()
+        if friendship:
+            friendship_status = friendship.status
+            friendship_i_sent = friendship.user_from_id == request.user.id
+
+    if order.let_visibility == Order.FRIENDS_ONLY and not is_owner and not is_friend_of_lender:
+        return HttpResponseForbidden('This listing is only visible to friends.')
     template = loader.get_template('navigation/orderAjax.html')
     content = {
         'order': order,
         'orderImages': orderImages,
         'price_bands': price_bands,
+        'friendship': friendship,
+        'friendship_status': friendship_status,
+        'friendship_i_sent': friendship_i_sent,
+        'is_friend_of_lender': is_friend_of_lender,
+        'display_price': display_price,
+        'display_deposit': display_deposit,
     }
     return HttpResponse(template.render(content, request))
 

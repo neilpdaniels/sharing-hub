@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% load bootstrap4 %}
+
+{% block content %}
+<div class="container mt-4">
+
+  <div class="row mb-4">
+    <div class="col-md-12">
+      <h3>Blocked Users</h3>
+      <p class="text-muted mb-0">
+        Users you've blocked won't be able to see your listings, and you won't see theirs. 
+        They won't be notified that they're blocked.
+      </p>
+    </div>
+  </div>
+
+  {# ── Blocked users list ────────────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header">
+      <strong>Blocked Users</strong>
+      <span class="badge badge-secondary ml-1">{{ blocked|length }}</span>
+    </div>
+    {% if blocked %}
+    <ul class="list-group list-group-flush">
+      {% for b in blocked %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <span>
+          <strong>{{ b.blocked_user.get_full_name|default:b.blocked_user.username }}</strong>
+          <small class="text-muted ml-2">{{ b.blocked_user.email }}</small>
+          <small class="text-muted ml-2">· blocked {{ b.created_at|timesince }} ago</small>
+                  {% if b.report_flagged %}<span class="badge badge-warning ml-2" title="Reported to admin"><i class="fas fa-flag"></i> Reported</span>{% endif %}
+        </span>
+        <form method="post" action="{% url 'friends:unblock_user' b.blocked_user.id %}" class="d-inline"
+              onsubmit="return confirm('Unblock {{ b.blocked_user.username }}?');">
+          {% csrf_token %}
+          <button class="btn btn-sm btn-outline-success">Unblock</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="card-body text-muted">You haven't blocked anyone yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="mt-3">
+    <a href="{% url 'friends:my_friends' %}" class="btn btn-outline-secondary">Back to Friends</a>
+  </div>
+
+</div>
+{% endblock %}

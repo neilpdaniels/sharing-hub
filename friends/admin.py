@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Friendship
+from .models import Friendship, BlockedUser
 from simple_history.admin import SimpleHistoryAdmin
 
 
@@ -20,6 +20,28 @@ class FriendshipAdmin(SimpleHistoryAdmin):
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(BlockedUser)
+class BlockedUserAdmin(SimpleHistoryAdmin):
+    list_display = ('blocked_by', 'blocked_user', 'report_flagged', 'created_at')
+    list_filter = ('report_flagged', 'created_at')
+    search_fields = ('blocked_by__username', 'blocked_user__username')
+    readonly_fields = ('created_at',)
+    ordering = ('-created_at',)
+    
+    fieldsets = (
+        ('Users', {
+            'fields': ('blocked_by', 'blocked_user')
+        }),
+        ('Report Status', {
+            'fields': ('report_flagged',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at',),
             'classes': ('collapse',)
         }),
     )

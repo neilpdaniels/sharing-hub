@@ -103,39 +103,26 @@ def returnFeeValue(fee, qty, unit_price, order):
     return toReturn
 
 def getTransactionStepAndAction(txn, request):
-    step = 0
-    next_action = True
-    # work out step 
-    if txn.transaction_status != txn.CANCEL_ACCEPTED and txn.transaction_status != txn.COMPLETED_ACK \
-        and txn.transaction_status != txn.CANCEL_REQUESTED and txn.transaction_status != txn.DISPUTE_REQUESTED:
-        if txn.payment_status == txn.PAYMENT_NOT_SENT or txn.payment_status == txn.PAYMENT_TIMEOUT:
-            step = 1
-            if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):
-                next_action = True
-        elif txn.payment_status == txn.PAYMENT_SENT:
-            step = 2
-            if (txn.user_passive == request.user and txn.order_passive.direction == "S") \
-            or (txn.user_aggressive == request.user and txn.order_passive.direction == "B"):
-                next_action = True
-    if txn.transaction_status != txn.CANCEL_ACCEPTED and txn.transaction_status != txn.COMPLETED_ACK \
-        and txn.transaction_status != txn.DISPUTE_REQUESTED:
-        if txn.payment_status == txn.PAYMENT_SENT or txn.payment_status == txn.PAYMENT_ACKED:
-            if txn.product_status == txn.PRODUCT_NOT_SENT or txn.product_status == txn.PRODUCT_NOT_SENT_TIMEOUT:
-                step = 3
-                if (txn.user_passive == request.user and txn.order_passive.direction == "S") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "B"):
-                    next_action = True
-            elif txn.product_status == txn.PRODUCT_SENT:
-                step = 4
-                if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):    
-                    next_action = True
-            elif txn.product_status == txn.PRODUCT_RECEIVED:
-                step = 5
-                if (txn.user_passive == request.user and txn.order_passive.direction == "B") \
-                or (txn.user_aggressive == request.user and txn.order_passive.direction == "S"):
-                    next_action = True
+    step = 1
+    next_action = False
+    is_lender = (txn.user_passive == request.user)
+
+    if txn.transaction_status == txn.RENTAL_ENQUIRY:
+        step = 1
+        next_action = is_lender
+    elif txn.transaction_status == txn.RENTAL_AGREED:
+        step = 2
+        next_action = is_lender
+    elif txn.transaction_status == txn.RENTAL_INITIATED:
+        step = 3
+        next_action = True
+    elif txn.transaction_status == txn.RENTAL_RETURNED:
+        step = 4
+        next_action = is_lender
+    elif txn.transaction_status in (txn.DEPOSIT_RETURNED, txn.DEPOSIT_REDUCED, txn.MEDIATION_REQUIRED):
+        step = 5
+        next_action = False
+
     return step, next_action
 
 

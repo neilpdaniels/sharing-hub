@@ -176,3 +176,66 @@ class FriendsHelper:
     @staticmethod
     def get_pending_requests(user):
         return Friendship.objects.filter(user_to=user, status=Friendship.PENDING)
+
+    @staticmethod
+    def get_blocked_user_ids(user):
+        """Return a set of user IDs that this user has blocked."""
+        return set(BlockedUser.objects.filter(blocked_by=user).values_list('blocked_user_id', flat=True))
+
+    @staticmethod
+    def get_blocked_by_user_ids(user):
+        """Return a set of user IDs that have blocked this user."""
+        return set(BlockedUser.objects.filter(blocked_user=user).values_list('blocked_by_id', flat=True))
+
+    @staticmethod
+    def is_blocked(user1, user2):
+        """Check if user1 has blocked user2 or vice versa."""
+        return BlockedUser.objects.filter(
+            models.Q(blocked_by=user1, blocked_user=user2) |
+            models.Q(blocked_by=user2, blocked_user=user1)
+        ).exists()
+
+
+class BlockedUser(models.Model):
+    """
+    Represents a block relationship between two users.
+    When user A (blocked_by) blocks user B (blocked_user):
+    - A cannot see B's listings
+    - B cannot see A's listings
+    - B does not receive notification of being blocked
+    """
+
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='users_i_blocked',
+        on_delete=models.CASCADE,
+        help_text="User who performed the block"
+    )
+    blocked_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='blocked_by_users',
+        on_delete=models.CASCADE,
+        help_text="User who was blocked"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    report_flagged = models.BooleanField(
+        default=False,
+        help_text="Whether this block was reported to admin"
+    )
+
+    history = HistoricalRecords()
+
+    class Meta:
+        unique_together = ('blocked_by', 'blocked_user')
+        indexes = [
+            models.Index(fields=['blocked_by']),
+            models.Index(fields=['blocked_user']),
+        ]
+
+    def clean(self):
+        if self.blocked_by_id == self.blocked_user_id:
+            raise ValidationError("You cannot block yourself.")
+
+    def __str__(self):
+        return f"{self.blocked_by.username} blocked {self.blocked_user.username}"

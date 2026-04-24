@@ -1,7 +1,7 @@
 from django import forms
 from common.models import Order, OrderImage, LetPriceBand
 from .models import TransactionMessage, TransactionMessageImage
-from datetime import datetime
+from datetime import datetime, date
 import logging
 
 class OrderAddForm(forms.ModelForm):
@@ -33,6 +33,7 @@ class OrderAddForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = (
+            'let_visibility',
             'expiry_date',
             'price',
             'radius_km',
@@ -50,6 +51,7 @@ class OrderAddForm(forms.ModelForm):
             'longitude',
         )
         labels = {
+            'let_visibility': 'Who can rent this listing?',
             'price': 'Price per day (£)',
             'radius_km': 'Maximum let radius (km)',
             'deposit': 'Deposit (£)',
@@ -124,6 +126,58 @@ class OrderHitForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = ('quantity',)
+
+
+class RentalEnquiryForm(forms.Form):
+    rental_start_date = forms.DateField(
+        input_formats=['%d/%m/%Y', '%Y-%m-%d'],
+        widget=forms.DateInput(attrs={'placeholder': 'dd/mm/yyyy', 'autocomplete': 'off'}),
+    )
+    rental_end_date = forms.DateField(
+        input_formats=['%d/%m/%Y', '%Y-%m-%d'],
+        widget=forms.DateInput(attrs={'placeholder': 'dd/mm/yyyy', 'autocomplete': 'off'}),
+    )
+    enquiry_message = forms.CharField(required=False, max_length=1000, widget=forms.Textarea(attrs={'rows': 4}))
+
+    def __init__(self, *args, **kwargs):
+        self.blocked_dates = set(kwargs.pop('blocked_dates', set()))
+        self.handover_dates = set(kwargs.pop('handover_dates', set()))
+        self.expiry_date = kwargs.pop('expiry_date', None)
+        self.max_rental_days = kwargs.pop('max_rental_days', None)
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start = cleaned_data.get('rental_start_date')
+        end = cleaned_data.get('rental_end_date')
+        if not start or not end:
+            return cleaned_data
+
+        if end < start:
+            raise forms.ValidationError('Return date must be on or after the start date.')
+
+        today = date.today()
+        if start < today:
+            raise forms.ValidationError('Start date cannot be in the past.')
+
+        if self.expiry_date and (start > self.expiry_date or end > self.expiry_date):
+            raise forms.ValidationError('Selected dates must be before the listing expiry date.')
+
+        rental_days = (end - start).days + 1
+        if self.max_rental_days and rental_days > int(self.max_rental_days):
+            raise forms.ValidationError(f'This listing allows a maximum of {self.max_rental_days} day(s) per booking.')
+
+        if start in self.handover_dates or end in self.handover_dates:
+            raise forms.ValidationError('Selected start/end date is unavailable for collection or drop-off.')
+
+        from datetime import timedelta
+        cur = start
+        while cur <= end:
+            if cur in self.blocked_dates:
+                raise forms.ValidationError('One or more selected dates are unavailable.')
+            cur += timedelta(days=1)
+
+        return cleaned_data
 
 class OrderImageForm(forms.ModelForm):
     class Meta:

@@ -4,13 +4,10 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 from django.http import HttpResponseForbidden
 from django.db.models import Q
-from .models import Friendship, FriendsHelper
+
+from .models import Friendship, BlockedUser
 from .forms import AddFriendForm
 
-
-# ---------------------------------------------------------------------------
-# Consolidated "My Friends" hub
-# ---------------------------------------------------------------------------
 
 @login_required
 def my_friends(request):
@@ -45,18 +42,14 @@ def my_friends(request):
     return render(request, 'friends/my_friends.html', context)
 
 
-# ---------------------------------------------------------------------------
-# Add friend by email
-# ---------------------------------------------------------------------------
-
 @login_required
 def add_friend(request):
+    """Send friend request by username/email or invite if email is not registered."""
     if request.method != 'POST':
         return redirect('friends:my_friends')
 
     form = AddFriendForm(request.POST)
     if not form.is_valid():
-        # Re-render hub with the form errors
         user = request.user
         accepted = Friendship.objects.filter(
             status=Friendship.ACCEPTED,
@@ -71,17 +64,18 @@ def add_friend(request):
             user_from=user, status=Friendship.PENDING
         ).select_related('user_to')
         return render(request, 'friends/my_friends.html', {
-            'accepted': accepted, 'paused': paused,
-            'pending_received': pending_received, 'pending_sent': pending_sent,
+            'accepted': accepted,
+            'paused': paused,
+            'pending_received': pending_received,
+            'pending_sent': pending_sent,
             'add_form': form,
         })
 
     email = form.cleaned_data['email']
     username = form.cleaned_data['username']
 
-    # Resolve target user
     if username:
-        target_user = User.objects.get(username=username)  # validated in form
+        target_user = User.objects.get(username=username)
     elif email:
         try:
             target_user = User.objects.get(email__iexact=email)
@@ -91,41 +85,106 @@ def add_friend(request):
         target_user = None
 
     if target_user and target_user == request.user:
-        messages.error(request, "You cannot add yourself as a friend.")
+        messages.error(request, 'You cannot add yourself as a friend.')
         return redirect('friends:my_friends')
 
     if target_user:
-        existing = Friendship.objects.filter(
-            Q(user_from=request.user, user_to=target_user) |
-            Q(user_from=target_user, user_to=request.user)
-        ).first()
-        if existing:
-            status_labels = {
-                Friendship.ACCEPTED: "You are already friends.",
-                Friendship.PENDING:  "A friend request is already pending.",
-                Friendship.PAUSED:   "Your friendship is currently paused.",
-                Friendship.BLOCKED:  "You cannot add this user.",
-            }
-            messages.warning(request, status_labels.get(existing.status, "A connection already exists."))
-        else:
-            friendship = Friendship(user_from=request.user, user_to=target_user)
-            friendship.full_clean()
-            friendship.save()
-            from .tasks import send_friend_request_notification
-            send_friend_request_notification.delay(request.user.id, target_user.id)
-            messages.success(request, f"Friend request sent to {target_user.get_full_name() or target_user.username}.")
+        _create_friend_request_with_messages(request, target_user)
     else:
-        # Non-member — send invite email (only possible via email path)
         from .tasks import send_friend_invite_email
         send_friend_invite_email.delay(request.user.id, email)
-        messages.success(request, f"An invitation to join has been sent to {email}.")
+        messages.success(request, f'An invitation to join has been sent to {email}.')
 
     return redirect('friends:my_friends')
 
 
-# ---------------------------------------------------------------------------
-# Accept / reject / cancel
-# ---------------------------------------------------------------------------
+@login_required
+def add_friend_user(request, user_id):
+    """Send friend request directly to a known user id (used from product page)."""
+    if request.method != 'POST':
+        return redirect('friends:my_friends')
+
+    target_user = get_object_or_404(User, id=user_id)
+    if target_user == request.user:
+        messages.error(request, 'You cannot add yourself as a friend.')
+        return redirect('friends:my_friends')
+
+    _create_friend_request_with_messages(request, target_user)
+
+    back_url = request.META.get('HTTP_REFERER')
+    if back_url:
+        return redirect(back_url)
+    return redirect('friends:my_friends')
+
+
+@login_required
+def add_to_my_list_user(request, user_id):
+    """Add a user to my one-way friend list without sending them a request."""
+    if request.method != 'POST':
+        return redirect('friends:my_friends')
+
+    target_user = get_object_or_404(User, id=user_id)
+    if target_user == request.user:
+        messages.error(request, 'You cannot add yourself to your list.')
+        return redirect('friends:my_friends')
+
+    if BlockedUser.objects.filter(
+        Q(blocked_by=request.user, blocked_user=target_user) |
+        Q(blocked_by=target_user, blocked_user=request.user)
+    ).exists():
+        messages.warning(request, 'You cannot add this user to your list.')
+    else:
+        existing = Friendship.objects.filter(
+            Q(user_from=request.user, user_to=target_user) |
+            Q(user_from=target_user, user_to=request.user)
+        ).first()
+
+        if existing:
+            status_labels = {
+                Friendship.ACCEPTED: 'You are already connected with this user.',
+                Friendship.PENDING: 'A connection with this user already exists.',
+                Friendship.PAUSED: 'Your connection with this user is currently paused.',
+                Friendship.BLOCKED: 'You cannot add this user to your list.',
+            }
+            messages.warning(request, status_labels.get(existing.status, 'A connection already exists.'))
+        else:
+            # Reverse-direction pending gives request.user immediate visibility
+            # of target_user friends-only listings without notifying target_user.
+            Friendship.objects.create(
+                user_from=target_user,
+                user_to=request.user,
+                status=Friendship.PENDING,
+            )
+            messages.success(request, f"{target_user.get_full_name() or target_user.username} added to your list.")
+
+    back_url = request.META.get('HTTP_REFERER')
+    if back_url:
+        return redirect(back_url)
+    return redirect('friends:my_friends')
+
+
+def _create_friend_request_with_messages(request, target_user):
+    existing = Friendship.objects.filter(
+        Q(user_from=request.user, user_to=target_user) |
+        Q(user_from=target_user, user_to=request.user)
+    ).first()
+    if existing:
+        status_labels = {
+            Friendship.ACCEPTED: 'You are already friends.',
+            Friendship.PENDING: 'A friend request is already pending.',
+            Friendship.PAUSED: 'Your friendship is currently paused.',
+            Friendship.BLOCKED: 'You cannot add this user.',
+        }
+        messages.warning(request, status_labels.get(existing.status, 'A connection already exists.'))
+        return
+
+    friendship = Friendship(user_from=request.user, user_to=target_user)
+    friendship.full_clean()
+    friendship.save()
+    from .tasks import send_friend_request_notification
+    send_friend_request_notification.delay(request.user.id, target_user.id)
+    messages.success(request, f'Friend request sent to {target_user.get_full_name() or target_user.username}.')
+
 
 @login_required
 def accept_request(request, friendship_id):
@@ -133,10 +192,10 @@ def accept_request(request, friendship_id):
     if friendship.user_to != request.user:
         return HttpResponseForbidden()
     if friendship.status != Friendship.PENDING:
-        messages.warning(request, "This request is no longer pending.")
+        messages.warning(request, 'This request is no longer pending.')
     else:
         friendship.accept()
-        messages.success(request, f"You are now friends with {friendship.user_from.get_full_name() or friendship.user_from.username}!")
+        messages.success(request, f'You are now friends with {friendship.user_from.get_full_name() or friendship.user_from.username}!')
     return redirect('friends:my_friends')
 
 
@@ -146,11 +205,11 @@ def reject_request(request, friendship_id):
     if friendship.user_to != request.user:
         return HttpResponseForbidden()
     if friendship.status != Friendship.PENDING:
-        messages.warning(request, "This request is no longer pending.")
+        messages.warning(request, 'This request is no longer pending.')
     else:
         username = friendship.user_from.username
         friendship.reject()
-        messages.success(request, f"Friend request from {username} declined.")
+        messages.success(request, f'Friend request from {username} declined.')
     return redirect('friends:my_friends')
 
 
@@ -160,17 +219,13 @@ def cancel_request(request, friendship_id):
     if friendship.user_from != request.user:
         return HttpResponseForbidden()
     if friendship.status != Friendship.PENDING:
-        messages.warning(request, "This request is no longer pending.")
+        messages.warning(request, 'This request is no longer pending.')
     else:
         username = friendship.user_to.username
         friendship.reject()
-        messages.success(request, f"Friend request to {username} cancelled.")
+        messages.success(request, f'Friend request to {username} cancelled.')
     return redirect('friends:my_friends')
 
-
-# ---------------------------------------------------------------------------
-# Pause / unpause
-# ---------------------------------------------------------------------------
 
 @login_required
 def pause_friendship(request, friendship_id):
@@ -179,7 +234,7 @@ def pause_friendship(request, friendship_id):
         return HttpResponseForbidden()
     try:
         friendship.pause()
-        messages.success(request, "Friendship paused.")
+        messages.success(request, 'Friendship paused.')
     except Exception as e:
         messages.error(request, str(e))
     return redirect('friends:my_friends')
@@ -192,15 +247,11 @@ def unpause_friendship(request, friendship_id):
         return HttpResponseForbidden()
     try:
         friendship.unpause()
-        messages.success(request, "Friendship resumed.")
+        messages.success(request, 'Friendship resumed.')
     except Exception as e:
         messages.error(request, str(e))
     return redirect('friends:my_friends')
 
-
-# ---------------------------------------------------------------------------
-# Remove / block
-# ---------------------------------------------------------------------------
 
 @login_required
 def remove_friend(request, friendship_id):
@@ -209,26 +260,7 @@ def remove_friend(request, friendship_id):
         return HttpResponseForbidden()
     other = friendship.user_to if friendship.user_from == request.user else friendship.user_from
     friendship.delete()
-    messages.success(request, f"You removed {other.get_full_name() or other.username} from your friends.")
-    return redirect('friends:my_friends')
-
-
-# ---------------------------------------------------------------------------
-# Legacy list views (kept for back-compat, redirect to hub)
-# ---------------------------------------------------------------------------
-
-@login_required
-def friends_list(request):
-    return redirect('friends:my_friends')
-
-
-@login_required
-def pending_requests(request):
-    return redirect('friends:my_friends')
-
-
-@login_required
-def sent_requests(request):
+    messages.success(request, f'You removed {other.get_full_name() or other.username} from your friends.')
     return redirect('friends:my_friends')
 
 
@@ -247,170 +279,86 @@ def block_friend(request, user_id):
             Friendship.objects.create(user_from=request.user, user_to=user_to_block, status=Friendship.BLOCKED)
     else:
         Friendship.objects.create(user_from=request.user, user_to=user_to_block, status=Friendship.BLOCKED)
-    messages.success(request, f"You blocked {user_to_block.username}.")
+    messages.success(request, f'You blocked {user_to_block.username}.')
     return redirect('friends:my_friends')
 
-    """Display the logged-in user's friend list."""
+
+# Blocked Users Management
+
+@login_required
+def blocked_users(request):
+    """Display list of users the current user has blocked."""
     user = request.user
-    friends = FriendsHelper.get_friends(user)
+    blocked = BlockedUser.objects.filter(blocked_by=user).select_related('blocked_user')
     
     context = {
-        'friends': friends.order_by('username'),
-        'total_friends': friends.count(),
+        'blocked': blocked,
     }
-    return render(request, 'friends/friends_list.html', context)
+    return render(request, 'friends/blocked_users.html', context)
+
+
+@login_required
+def block_user(request, user_id):
+    """Block a user (prevent them from seeing our listings and vice versa)."""
+    user_to_block = get_object_or_404(User, id=user_id)
+    
+    if user_to_block == request.user:
+        messages.error(request, 'You cannot block yourself.')
+        return redirect('friends:blocked_users')
+    
+    # Check if already blocked
+    if BlockedUser.objects.filter(blocked_by=request.user, blocked_user=user_to_block).exists():
+        messages.warning(request, f'{user_to_block.username} is already blocked.')
+        return redirect('friends:blocked_users')
+    
+    # Create block record
+    report_flagged = request.POST.get('report_flagged') == 'on'
+    BlockedUser.objects.create(
+        blocked_by=request.user,
+        blocked_user=user_to_block,
+        report_flagged=report_flagged
+    )
+    
+    # If we have an active friendship, remove it
+    Friendship.objects.filter(
+        Q(user_from=request.user, user_to=user_to_block) |
+        Q(user_from=user_to_block, user_to=request.user)
+    ).delete()
+    
+    messages.success(request, f'You blocked {user_to_block.get_full_name() or user_to_block.username}.')
+    
+    back_url = request.META.get('HTTP_REFERER')
+    if back_url and 'blocked' not in back_url:
+        return redirect(back_url)
+    return redirect('friends:blocked_users')
+
+
+@login_required
+def unblock_user(request, user_id):
+    """Unblock a user."""
+    user_to_unblock = get_object_or_404(User, id=user_id)
+    
+    block = BlockedUser.objects.filter(blocked_by=request.user, blocked_user=user_to_unblock).first()
+    if not block:
+        messages.warning(request, f'{user_to_unblock.username} is not blocked.')
+        return redirect('friends:blocked_users')
+    
+    block.delete()
+    messages.success(request, f'You unblocked {user_to_unblock.get_full_name() or user_to_unblock.username}.')
+    return redirect('friends:blocked_users')
+
+
+# legacy redirects
+@login_required
+def friends_list(request):
+    return redirect('friends:my_friends')
 
 
 @login_required
 def pending_requests(request):
-    """Display pending friend requests for the logged-in user."""
-    user = request.user
-    pending = FriendsHelper.get_pending_requests(user)
-    
-    context = {
-        'pending_requests': pending.order_by('-created_at'),
-        'total_pending': pending.count(),
-    }
-    return render(request, 'friends/pending_requests.html', context)
+    return redirect('friends:my_friends')
 
 
 @login_required
 def sent_requests(request):
-    """Display friend requests sent by the logged-in user."""
-    user = request.user
-    sent = Friendship.objects.filter(
-        user_from=user,
-        status=Friendship.PENDING
-    ).order_by('-created_at')
-    
-    context = {
-        'sent_requests': sent,
-        'total_sent': sent.count(),
-    }
-    return render(request, 'friends/sent_requests.html', context)
-
-
-@login_required
-def add_friend(request):
-    """Send a friend request to another user."""
-    if request.method == 'POST':
-        form = AddFriendForm(request.POST)
-        if form.is_valid():
-            friend_user = form.cleaned_data['friend_username']
-            try:
-                FriendsHelper.add_friend(request.user, friend_user)
-                messages.success(request, f"Friend request sent to {friend_user.username}!")
-                return redirect('friends:friends_list')
-            except Exception as e:
-                messages.error(request, str(e))
-    else:
-        form = AddFriendForm()
-    
-    context = {'form': form}
-    return render(request, 'friends/add_friend.html', context)
-
-
-@login_required
-def accept_request(request, friendship_id):
-    """Accept a pending friend request."""
-    friendship = get_object_or_404(Friendship, id=friendship_id)
-    
-    # Only the recipient can accept
-    if friendship.user_to != request.user:
-        return HttpResponseForbidden("You cannot accept this request.")
-    
-    if friendship.status != Friendship.PENDING:
-        messages.warning(request, "This request is no longer pending.")
-        return redirect('friends:pending_requests')
-    
-    friendship.accept()
-    messages.success(request, f"You are now friends with {friendship.user_from.username}!")
-    return redirect('friends:pending_requests')
-
-
-@login_required
-def reject_request(request, friendship_id):
-    """Reject a pending friend request."""
-    friendship = get_object_or_404(Friendship, id=friendship_id)
-    
-    # Only the recipient can reject
-    if friendship.user_to != request.user:
-        return HttpResponseForbidden("You cannot reject this request.")
-    
-    if friendship.status != Friendship.PENDING:
-        messages.warning(request, "This request is no longer pending.")
-        return redirect('friends:pending_requests')
-    
-    username = friendship.user_from.username
-    friendship.reject()
-    messages.success(request, f"Friend request from {username} rejected.")
-    return redirect('friends:pending_requests')
-
-
-@login_required
-def remove_friend(request, user_id):
-    """Remove a friend."""
-    friend = get_object_or_404(User, id=user_id)
-    
-    try:
-        FriendsHelper.remove_friend(request.user, friend)
-        messages.success(request, f"You removed {friend.username} from your friends.")
-    except Exception as e:
-        messages.error(request, str(e))
-    
-    return redirect('friends:friends_list')
-
-
-@login_required
-def cancel_request(request, friendship_id):
-    """Cancel a sent friend request."""
-    friendship = get_object_or_404(Friendship, id=friendship_id)
-    
-    # Only the sender can cancel
-    if friendship.user_from != request.user:
-        return HttpResponseForbidden("You cannot cancel this request.")
-    
-    if friendship.status != Friendship.PENDING:
-        messages.warning(request, "This request is no longer pending.")
-        return redirect('friends:sent_requests')
-    
-    username = friendship.user_to.username
-    friendship.reject()
-    messages.success(request, f"Friend request to {username} cancelled.")
-    return redirect('friends:sent_requests')
-
-
-@login_required
-def block_friend(request, user_id):
-    """Block a user."""
-    user_to_block = get_object_or_404(User, id=user_id)
-    
-    # Check if friendship exists
-    friendship = Friendship.objects.filter(
-        Q(user_from=request.user, user_to=user_to_block) |
-        Q(user_from=user_to_block, user_to=request.user)
-    ).first()
-    
-    if friendship:
-        if friendship.user_from == request.user:
-            friendship.block()
-        else:
-            # If they sent the request, delete it and create a new blocked one
-            friendship.delete()
-            blocked = Friendship(
-                user_from=request.user,
-                user_to=user_to_block,
-                status=Friendship.BLOCKED
-            )
-            blocked.save()
-    else:
-        # Create a new blocked friendship
-        blocked = Friendship(
-            user_from=request.user,
-            user_to=user_to_block,
-            status=Friendship.BLOCKED
-        )
-        blocked.save()
-    
-    messages.success(request, f"You blocked {user_to_block.username}.")
-    return redirect('friends:friends_list')
+    return redirect('friends:my_friends')

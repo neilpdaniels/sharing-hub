@@ -147,6 +147,7 @@
             <div class="col-auto">
               <select name="distance" style="font-size:0.78rem; height:24px; padding:0 4px; border:1px solid #ced4da; border-radius:4px; background:white; -webkit-appearance:none; -moz-appearance:none; appearance:none; background-image:none; width:60px; text-align:center; cursor:pointer;">
                 <option value="any">Any</option>
+                <option value="0">0 km</option>
                 <option value="2">2 km</option>
                 <option value="5">5 km</option>
                 <option value="10" selected>10 km</option>
@@ -194,6 +195,7 @@
         <li><a href="{% url 'edit'  %}">Account Profile</a></li>
         {% if user.is_authenticated %}
         <li><a href="{% url 'friends:my_friends' %}">Friends</a></li>
+        <li><a href="{% url 'friends:blocked_users' %}">Blocked Users</a></li>
         {% endif %}
       </ul>
     </div>

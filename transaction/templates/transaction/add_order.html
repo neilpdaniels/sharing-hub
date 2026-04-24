@@ -27,6 +27,14 @@
         {% bootstrap_form_errors order_form %}
         {% for band_form in band_formset %}{% bootstrap_form_errors band_form %}{% endfor %}
 
+        {# ── Audience ── #}
+        <div class="card mb-3">
+          <div class="card-header font-weight-bold">Who can rent this listing?</div>
+          <div class="card-body">
+            {% bootstrap_field order_form.let_visibility %}
+          </div>
+        </div>
+
         {# ── Description ── #}
         <div class="card mb-3">
           <div class="card-header font-weight-bold">About the item</div>
@@ -63,10 +71,13 @@
         <div class="card mb-3">
           <div class="card-header font-weight-bold">Pricing</div>
           <div class="card-body">
-            {% bootstrap_field order_form.price %}
-            {% bootstrap_field order_form.max_rental_days %}
-            {% bootstrap_field order_form.deposit %}
+            <div id="public-pricing-fields">
+              {% bootstrap_field order_form.price %}
+              {% bootstrap_field order_form.max_rental_days %}
+              {% bootstrap_field order_form.deposit %}
+            </div>
 
+            <div id="dynamic-price-bands-wrap">
             <hr>
             <h6 class="font-weight-bold">Dynamic price bands
               <small class="text-muted font-weight-normal">— optional: lower per-day rate for longer rentals</small>
@@ -98,6 +109,7 @@
                 <span class="fas fa-plus-circle"></span> Add price band
               </a>
             </div>
+            </div>
 
             {# empty form template for JS cloning #}
             <div style="display:none" id="empty-band-template">
@@ -122,12 +134,14 @@
               {% endwith %}
             </div>
 
-            <hr>
-            <h6 class="font-weight-bold">Mates rates
-              <small class="text-muted font-weight-normal">— optional: discounted pricing for friends</small>
-            </h6>
-            {% bootstrap_field order_form.mates_rates %}
-            {% bootstrap_field order_form.mates_deposit %}
+            <div id="mates-rates-wrap">
+              <hr>
+              <h6 class="font-weight-bold">Mates rates
+                <small class="text-muted font-weight-normal">— optional: discounted pricing for friends</small>
+              </h6>
+              {% bootstrap_field order_form.mates_rates %}
+              {% bootstrap_field order_form.mates_deposit %}
+            </div>
           </div>
         </div>
 
@@ -145,6 +159,7 @@
               #avail-legend { display:flex; gap:16px; margin-bottom:10px; font-size:0.82rem; align-items:center; flex-wrap:wrap; }
               .leg-free   { display:inline-block; width:14px; height:14px; background:#d4edda; border-radius:3px; }
               .leg-block  { display:inline-block; width:14px; height:14px; background:#f8d7da; border-radius:3px; }
+              .leg-handover { display:inline-block; width:14px; height:14px; background:#ffe8cc; border-radius:3px; }
               .leg-past   { display:inline-block; width:14px; height:14px; background:#e9ecef; border-radius:3px; }
               .leg-beyond { display:inline-block; width:14px; height:14px; background:#fff3cd; border-radius:3px; }
               #avail-nav  { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
@@ -166,6 +181,7 @@
               .avail-day:hover:not(.avail-past):not(.avail-beyond) { opacity:0.75; }
               .avail-free    { background:#d4edda; color:#155724; }
               .avail-blocked { background:#f8d7da; color:#721c24; }
+              .avail-handover { background:#ffe8cc; color:#9a6700; }
               .avail-past    { background:#e9ecef; color:#adb5bd; cursor:default; }
               .avail-beyond  { background:#fff3cd; color:#856404; cursor:default; }
               .avail-blank   { }
@@ -179,6 +195,7 @@
             <div id="avail-legend">
               <span class="leg-free"></span> Available &nbsp;
               <span class="leg-block"></span> Blocked &nbsp;
+              <span class="leg-handover"></span> Unavailable for collection/drop-off &nbsp;
               <span class="leg-past"></span> Past &nbsp;
               <span class="leg-beyond"></span> After listing expiry
             </div>
@@ -191,6 +208,7 @@
 
             <div id="avail-calendar"></div>
             <input type="hidden" name="blocked_dates" id="blocked_dates" value="">
+            <input type="hidden" name="blocked_handover_dates" id="blocked_handover_dates" value="">
           </div>
         </div>
 
@@ -274,6 +292,24 @@ function toggleDeliveryCost() {
 $('#id_collection_policy').on('change', toggleDeliveryCost);
 toggleDeliveryCost();
 
+function toggleAudiencePricing() {
+  var vis = $('#id_let_visibility').val();
+  if (vis === 'PUBLIC') {
+    $('#mates-rates-wrap').hide();
+  } else {
+    $('#mates-rates-wrap').show();
+  }
+  if (vis === 'FRIENDS') {
+    $('#public-pricing-fields').css('opacity', '0.65');
+    $('#dynamic-price-bands-wrap').hide();
+  } else {
+    $('#public-pricing-fields').css('opacity', '1');
+    $('#dynamic-price-bands-wrap').show();
+  }
+}
+$('#id_let_visibility').on('change', toggleAudiencePricing);
+toggleAudiencePricing();
+
 // Dynamic price band add + delete
 var totalBands = parseInt($('#id_price_bands-TOTAL_FORMS').val());
 $('#add-band-row').on('click', function() {
@@ -351,8 +387,11 @@ $('#add-order-form').on('submit', function(e) {
   var COL_TO_JSDAY = [1,2,3,4,5,6,0];
 
   var preloaded = {{ blocked_dates_json|safe }};
+  var preloadedHandover = {{ blocked_handover_dates_json|safe }};
   var blockedDates = new Set(preloaded);
-  var blockedWeekdays = new Set(); // JS day numbers whose ALL occurrences are blocked
+  var handoverDates = new Set(preloadedHandover);
+  var blockedWeekdays = new Set();
+  var handoverWeekdays = new Set();
   var today = new Date(); today.setHours(0,0,0,0);
 
   // Current displayed month offset from today's month
@@ -382,6 +421,11 @@ $('#add-order-form').on('submit', function(e) {
       blockedWeekdays.forEach(function(jsDay) {
         getActiveWeekdayDates(jsDay).forEach(function(ds) { blockedDates.add(ds); });
       });
+      handoverWeekdays.forEach(function(jsDay) {
+        getActiveWeekdayDates(jsDay).forEach(function(ds) {
+          if (!blockedDates.has(ds)) handoverDates.add(ds);
+        });
+      });
       syncHidden();
       // Navigate to the expiry month so the boundary is visible
       var monthDiff = (expiryDate.getFullYear() - today.getFullYear()) * 12
@@ -407,36 +451,84 @@ $('#add-order-form').on('submit', function(e) {
 
   function syncHidden() {
     document.getElementById('blocked_dates').value = Array.from(blockedDates).sort().join(',');
+    document.getElementById('blocked_handover_dates').value = Array.from(handoverDates).sort().join(',');
+  }
+
+  function dayClassFor(ds, thisDate) {
+    var isPast = thisDate < today;
+    var isBeyond = !isPast && expiryDate && thisDate > expiryDate;
+    if (isPast) return 'avail-past';
+    if (isBeyond) return 'avail-beyond';
+    if (blockedDates.has(ds)) return 'avail-blocked';
+    if (handoverDates.has(ds)) return 'avail-handover';
+    return 'avail-free';
+  }
+
+  function getDateState(ds) {
+    if (blockedDates.has(ds)) return 'blocked';
+    if (handoverDates.has(ds)) return 'handover';
+    return 'available';
+  }
+
+  function nextState(state) {
+    if (state === 'available') return 'blocked';
+    if (state === 'blocked') return 'handover';
+    return 'available';
+  }
+
+  function applyState(ds, state) {
+    blockedDates.delete(ds);
+    handoverDates.delete(ds);
+    if (state === 'blocked') blockedDates.add(ds);
+    if (state === 'handover') handoverDates.add(ds);
   }
 
   function updateDowButtons() {
     document.querySelectorAll('.avail-dow-btn[data-jsday]').forEach(function(btn) {
       var jsDay = parseInt(btn.dataset.jsday);
       var dates = getActiveWeekdayDates(jsDay);
-      var blockedCount = dates.filter(function(ds){ return blockedDates.has(ds); }).length;
+      var availableCount = 0;
+      var blockedCount = 0;
+      var handoverCount = 0;
+      dates.forEach(function(ds) {
+        var state = getDateState(ds);
+        if (state === 'available') availableCount++;
+        else if (state === 'blocked') blockedCount++;
+        else handoverCount++;
+      });
       if (dates.length === 0) {
         btn.style.background = '#f0f0f0'; btn.style.color = '#495057';
+      } else if (availableCount === dates.length) {
+        btn.style.background = '#d4edda'; btn.style.color = '#155724';
       } else if (blockedCount === dates.length) {
         btn.style.background = '#f8d7da'; btn.style.color = '#721c24';
-      } else if (blockedCount === 0) {
-        btn.style.background = '#d4edda'; btn.style.color = '#155724';
+      } else if (handoverCount === dates.length) {
+        btn.style.background = '#ffe8cc'; btn.style.color = '#9a6700';
       } else {
-        btn.style.background = '#fff3cd'; btn.style.color = '#856404';
+        // Mixed state: keep weekday header in available styling so single-day edits do not look warning-like.
+        btn.style.background = '#d4edda'; btn.style.color = '#155724';
       }
     });
   }
 
   function toggleDate(ds, cell) {
-    if (blockedDates.has(ds)) {
-      blockedDates.delete(ds);
-      cell.className = 'avail-day avail-free';
-      // Weekday is no longer fully blocked
-      var d = new Date(ds + 'T00:00:00');
+    var d = new Date(ds + 'T00:00:00');
+    var state = getDateState(ds);
+    var target = nextState(state);
+    applyState(ds, target);
+
+    if (target === 'blocked') {
+      blockedWeekdays.add(d.getDay());
+      handoverWeekdays.delete(d.getDay());
+    } else if (target === 'handover') {
+      handoverWeekdays.add(d.getDay());
       blockedWeekdays.delete(d.getDay());
     } else {
-      blockedDates.add(ds);
-      cell.className = 'avail-day avail-blocked';
+      blockedWeekdays.delete(d.getDay());
+      handoverWeekdays.delete(d.getDay());
     }
+
+    cell.className = 'avail-day ' + dayClassFor(ds, d);
     syncHidden();
     updateDowButtons();
   }
@@ -457,13 +549,29 @@ $('#add-order-form').on('submit', function(e) {
       btn.dataset.jsday = jsDay;
       btn.addEventListener('click', (function(jsDay) { return function() {
         var allDates = getActiveWeekdayDates(jsDay);
-        var allBlocked = allDates.length > 0 && allDates.every(function(ds){ return blockedDates.has(ds); });
-        if (allBlocked) {
-          blockedWeekdays.delete(jsDay);
-          allDates.forEach(function(ds) { blockedDates.delete(ds); });
-        } else {
+        if (!allDates.length) return;
+
+        var allAvailable = allDates.every(function(ds){ return getDateState(ds) === 'available'; });
+        var allBlocked = allDates.every(function(ds){ return getDateState(ds) === 'blocked'; });
+        var allHandover = allDates.every(function(ds){ return getDateState(ds) === 'handover'; });
+
+        var current = 'mixed';
+        if (allAvailable) current = 'available';
+        else if (allBlocked) current = 'blocked';
+        else if (allHandover) current = 'handover';
+
+        var target = (current === 'mixed') ? 'blocked' : nextState(current);
+        allDates.forEach(function(ds) { applyState(ds, target); });
+
+        if (target === 'blocked') {
           blockedWeekdays.add(jsDay);
-          allDates.forEach(function(ds) { blockedDates.add(ds); });
+          handoverWeekdays.delete(jsDay);
+        } else if (target === 'handover') {
+          handoverWeekdays.add(jsDay);
+          blockedWeekdays.delete(jsDay);
+        } else {
+          handoverWeekdays.delete(jsDay);
+          blockedWeekdays.delete(jsDay);
         }
         syncHidden();
         render();
@@ -483,10 +591,7 @@ $('#add-order-form').on('submit', function(e) {
       var thisDate = new Date(year, month, day);
       var isPast = thisDate < today;
       var isBeyond = !isPast && expiryDate && thisDate > expiryDate;
-      var cls;
-      if (isPast)        cls = 'avail-past';
-      else if (isBeyond) cls = 'avail-beyond';
-      else               cls = blockedDates.has(ds) ? 'avail-blocked' : 'avail-free';
+      var cls = dayClassFor(ds, thisDate);
 
       var cell = document.createElement('div');
       cell.className = 'avail-day ' + cls;
@@ -525,6 +630,7 @@ $('#add-order-form').on('submit', function(e) {
   document.getElementById('id_expiry_date').addEventListener('input', updateExpiryDisplay);
 
   window.availUpdateExpiry = updateExpiryDisplay;
+  syncHidden();
   updateExpiryDisplay();
 })();
 // ──────────────────────────────────────────────────────────────────────────

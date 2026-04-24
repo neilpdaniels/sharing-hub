@@ -1,211 +1,333 @@
 {% extends "base.html" %}
-
 {% load bootstrap4 %}
 
-{% block title %}Hit order{% endblock %}
-{% if order %}
+{% block title %}Start Rental Enquiry{% endblock %}
+
 {% block content %}
-<div class="container">
-        <div class="row">
-          <div class="col-lg-2"></div>
-            <div class="col-lg-8">
-    <p>Please verify the price below (it's possible it will have refreshed from spot) and confirm you wish to {{ hit_direction|lower }} in this order?</p>
-    <form action="." method="post" enctype="multipart/form-data">
-        {# if order quantity > 1 , else just put hidden as 1 #}
-        {% bootstrap_form order_hit_form %}
-        {% csrf_token %}
+<div class="container mt-4 mb-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h3 class="mb-3">Start Rental Enquiry</h3>
+            <p class="text-muted">
+                                Pick your rental dates from the availability calendar below.
+                                Daily pricing updates automatically based on duration bands.
+            </p>
 
-        <div class="form-group">
-            <label class="control-label" for="order_price">Price per item ({{ order.currency }})</label>
-            <input type="text" name="order_price" id="id_order_price" class="form-control" value="{{ order.price }}" disabled />
-        </div>
-        <div class="form-group">
-            <label class="control-label" for="order_description">Description</label>
-            <textarea name="order_description" class="form-control" disabled rows="7">{{ order.description }}</textarea>
-        </div>
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">{{ order.product.name }}</h5>
+                                        <p class="mb-1"><strong>Base daily price:</strong> £{{ order.price }}</p>
+                    <p class="mb-3"><strong>Deposit:</strong> £{{ order.deposit }}</p>
 
-        {% if order.direction == 'S' %}
-            <h5>Transaction Costs</h5><p>Paid by buyer</p>
-            {% for fee_key, fee_value in fees.items %}
-            <div class="form-group">
-                <label class="control-label" for="{{fee_key.slug|lower}}">{% if fee_key.url %}<a href="{{fee_key.url}}">{% endif %}{{fee_key.tooltip}}{% if fee_value.count == 1 %}: {% if fee_value.0.price_style == 'A' %}£{% endif %}{{fee_value.0.price}}{% if fee_value.0.price_style == 'A' %} per transaction{% endif %}{% if fee_value.0.price_style == 'P' %}% of gross total{% endif %}{% endif %}{% if fee_key.url %}</a>{% endif %}</label>
-                <div class="input-group">
-                <input type="text" name="{{fee_key.slug}}" id="id_{{fee_key.slug|lower}}" class="form-control" value="{% if fee_value.count == 1 %}{% if fee_value.0.price_style == 'A' %}{{fee_value.0.price}}{% else %}0{% endif %}{% else %}0{% endif %}" disabled />
-                {% if fee_key.popover %}
-                <div class="input-group-append">
-                    <span class="input-group-text">
-                        <a href="javascript:void(0);" data-toggle="{{fee_key.slug|lower}}_popover" data-placement="left" title="" data-content="{{fee_key.popover}}" data-original-title="Fee info: {{fee_key.name}}"><span class="fa fa-info-circle" id="{{fee_key.slug|lower}}_info"></span>
-                        </a>
-                    </span>
-                </div>
-                {% endif %}
+                                        {% if order_hit_form.non_field_errors %}
+                                        <div class="alert alert-danger">{{ order_hit_form.non_field_errors }}</div>
+                                        {% endif %}
+
+                    <form action="." method="post" novalidate>
+                        {% csrf_token %}
+
+                                                <style>
+                                                    #enq-legend { display:flex; gap:14px; margin-bottom:10px; font-size:0.82rem; align-items:center; flex-wrap:wrap; }
+                                                    .leg-free { display:inline-block; width:14px; height:14px; background:#d4edda; border-radius:3px; }
+                                                    .leg-blocked { display:inline-block; width:14px; height:14px; background:#f8d7da; border-radius:3px; }
+                                                    .leg-selected { display:inline-block; width:14px; height:14px; background:#cce5ff; border-radius:3px; }
+                                                    .leg-handover { display:inline-block; width:14px; height:14px; background:#ffe8cc; border-radius:3px; }
+                                                    .leg-past { display:inline-block; width:14px; height:14px; background:#e9ecef; border-radius:3px; }
+                                                    .leg-beyond { display:inline-block; width:14px; height:14px; background:#fff3cd; border-radius:3px; }
+                                                    #enq-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+                                                    #enq-nav button { background:none; border:1px solid #dee2e6; border-radius:4px; padding:2px 10px; cursor:pointer; }
+                                                    #enq-nav button:hover { background:#f0f0f0; }
+                                                    .enq-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+                                                    .enq-dow { background:#f0f0f0; border:1px solid #dee2e6; border-radius:3px; font-size:0.68rem; padding:3px 1px; text-align:center; font-weight:bold; color:#495057; }
+                                                    .enq-day { border-radius:3px; font-size:0.75rem; padding:6px 2px; text-align:center; user-select:none; }
+                                                    .enq-clickable { cursor:pointer; }
+                                                    .enq-clickable:hover { opacity:0.75; }
+                                                    .enq-free { background:#d4edda; color:#155724; }
+                                                    .enq-blocked { background:#f8d7da; color:#721c24; }
+                                                    .enq-handover { background:#ffe8cc; color:#9a6700; }
+                                                    .enq-selected { background:#cce5ff; color:#004085; }
+                                                    .enq-past { background:#e9ecef; color:#adb5bd; }
+                                                    .enq-beyond { background:#fff3cd; color:#856404; }
+                                                    .enq-blank { }
+                                                </style>
+
+                                                <div class="form-row">
+                                                    <div class="form-group col-md-6">
+                                                        <label for="id_rental_start_date">Start date</label>
+                                                        <input type="text" class="form-control" id="id_rental_start_date" name="rental_start_date" placeholder="dd/mm/yyyy" value="{{ order_hit_form.rental_start_date.value|default:'' }}" autocomplete="off" required>
+                                                        {% if order_hit_form.rental_start_date.errors %}
+                                                        <div class="text-danger small mt-1">{{ order_hit_form.rental_start_date.errors|striptags }}</div>
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="form-group col-md-6">
+                                                        <label for="id_rental_end_date">End date</label>
+                                                        <input type="text" class="form-control" id="id_rental_end_date" name="rental_end_date" placeholder="dd/mm/yyyy" value="{{ order_hit_form.rental_end_date.value|default:'' }}" autocomplete="off" required>
+                                                        {% if order_hit_form.rental_end_date.errors %}
+                                                        <div class="text-danger small mt-1">{{ order_hit_form.rental_end_date.errors|striptags }}</div>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+
+                                                <div class="border rounded p-2 mb-3" style="background:#fafafa;">
+                                                    <div id="enq-legend">
+                                                        <span class="leg-free"></span> Available
+                                                        <span class="leg-blocked"></span> Unavailable
+                                                        <span class="leg-handover"></span> No collection/drop-off
+                                                        <span class="leg-selected"></span> Selected range
+                                                        <span class="leg-past"></span> Past
+                                                        <span class="leg-beyond"></span> After expiry
+                                                    </div>
+                                                    <div id="enq-nav">
+                                                        <button type="button" id="enq-prev">&#8592;</button>
+                                                        <strong id="enq-month-label"></strong>
+                                                        <button type="button" id="enq-next">&#8594;</button>
+                                                    </div>
+                                                    <div id="enq-calendar"></div>
+                                                </div>
+
+                                                <div class="alert alert-info" id="pricing-summary" style="font-size:0.9rem;">
+                                                    <div><strong>Applied daily price:</strong> £<span id="price-per-day">{{ order.price|floatformat:2 }}</span></div>
+                                                    <div><strong>Band:</strong> <span id="price-band-note">Base daily price</span></div>
+                                                    <div><strong>Estimated rental subtotal:</strong> £<span id="price-subtotal">{{ order.price|floatformat:2 }}</span></div>
+                                                    {% if order.max_rental_days %}
+                                                    <div class="text-muted">Maximum booking length: {{ order.max_rental_days }} day(s)</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                {% bootstrap_field order_hit_form.enquiry_message %}
+                        <button type="submit" class="btn btn-primary">Send Enquiry</button>
+                    </form>
                 </div>
             </div>
-            {% endfor %}
-        {% endif %}
-        {% if order.direction == 'S' %}
-        <h4>Total to pay: £<span id="id_total_price"></span></h4>
-        {% else %}
-        <h4>Total to be received:  £<span id="id_total_price"></span></h4>
-        {% endif %}
-
-        
-        {% csrf_token %}
-        <input type="hidden" name="order_id" value="{{ order.id }}">
-        <input type="hidden" name="order_required_price" value="{{ order.price }}">
-        <p><input id="form-submit" type="submit" value="Yes"  style="display: none;" ></p>
-    </form>
-    
-    <button type="button" class="btn btn-primary js-form-submit">
-        <span class="fas fa-floppy-save"></span> Confirm 
-        {% if order.direction == 'S' %}
-        Purchase
-        {% else %}
-        Sale
-        {% endif %}
-    </button>
+        </div>
+    </div>
 </div>
-</div>
-</div>
-
 {% endblock %}
 
 {% block domready %}
-{# set default quantity to 1 #}
-$('#id_quantity').val(1);
-
-{% for fee_key, fee_value in fees.items %}
-
-    {% if fee_key.slug == 'royal_mail_special_delivery_pre_1pm' %}
-        function calculate{{fee_key.slug|lower}}(qty) {
-            var csrftoken = $('[name="csrfmiddlewaretoken"]').val();
-            $('#id_{{fee_key.slug|lower}}').val('awaiting reply')
-            $.ajax({
-                url : '{% url "transaction:get_fee" %}',
-                type: 'POST',
-                data: { 
-                    'csrfmiddlewaretoken': csrftoken,
-                    order_id: "{{ order.id }}",
-                    fee_slug : "{{ fee_key.slug }}",
-                    quantity : qty,
-                    order_required_price : {{ order.price }}
-                },
-            }).done(handleData_{{fee_key.slug|lower}});
-        }
-        function handleData_{{fee_key.slug|lower}}(data) {   
-            if (data.status == 'OK') {
-                $('#id_{{fee_key.slug|lower}}').val(data.price_calculated)
-                $('#id_total_price').html(calculateTotalPrice())
-            }
-        }
-    {% else %}
-        {% if fee_value.count == 1 %}
-            {% if fee_value.0.price_style == 'P' %}
-                function calculate{{fee_key.slug|lower}}(qty) {
-                    var toReturn = qty * {{ order.price }} * ({{fee_value.0.price}}/100)
-                    return toReturn.toFixed(2)
-                }
-                $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
-            {% endif %}
-        {% else %}
-            {# doesnt handle multi bands and percentage #}
-            {% if fee_value.0.price_style == 'A' %}
-
-            function min{{fee_key.slug|lower}}ForWeight(qty) {
-                var weight = {{ item_weight }}
-                var total_weight = qty * weight
-                var toReturn = 0
-            {% for row in fee_value %}
-                if ( total_weight <= {{row.max_weight}}) {
-                    toReturn = {{row.price}}
-                }
-            {% endfor %}
-            return toReturn;
-            }
-            function min{{fee_key.slug|lower}}ForValue(qty) {
-                var total_cost = qty * {{ order.price }}
-                var toReturn = 0
-            {% for row in fee_value %}
-                if ( total_cost <= {{row.max_price}}) {
-                    toReturn = {{row.price}}
-                }
-            {% endfor %}
-            return toReturn;
-            } 
-            function calculate{{fee_key.slug|lower}}(qty) {
-                if (min{{fee_key.slug|lower}}ForValue(qty) > min{{fee_key.slug|lower}}ForWeight(qty)) {
-                    return min{{fee_key.slug|lower}}ForValue(qty)
-                } else {
-                    return min{{fee_key.slug|lower}}ForWeight(qty)
-                }
-            }
-            $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
-
-            {% endif %}
-        {% endif %}
-    {% endif %}
-
-{% endfor %}
-
-function calculateTotalPrice() {
-    var toReturn = 0;
-    toReturn = toReturn + parseFloat($('#id_quantity').val()) * {{ order.price }}
-    {% if order.direction == 'S' %}
-    {% for fee_key, fee_value in fees.items %}
-        toReturn = toReturn + parseFloat($('#id_{{fee_key.slug|lower}}').val());
-    {% endfor %}
-    {% endif %}
-    return toReturn.toFixed(2)
-}
-
-
-$('#id_total_price').html(calculateTotalPrice())
-$('#id_quantity').change(function() {
-    {% for fee_key, fee_value in fees.items %}
-        {% if fee_key.slug == 'royal_mail_special_delivery_pre_1pm' %}
-            calculate{{fee_key.slug|lower}}($('#id_quantity').val())
-        {% else %}
-            {% if fee_value.count == 1 %}
-                {% if fee_value.0.price_style == 'P' %}
-                    $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
-                {% endif %}
-            {% else %}
-                {# doesnt handle multi bands and percentage #}
-                {% if fee_value.0.price_style == 'A' %}
-                $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
-                {% endif %}
-            {% endif %}
-        {% endif %}
-    {% endfor %}
-    $('#id_total_price').html(calculateTotalPrice())
-});
-{# hide quantity if no option other than 1 #}
-if ({{ order.quantity }} == 1) {
-    $('#id_quantity').hide();
-    $("[for='id_quantity']" ).hide();
-}
-
-{% for fee_key, fee_value in fees.items %}
-$('[data-toggle="{{fee_key.slug|lower}}_popover"]').popover({html: true}); 
-{% endfor %}
-
-{# set maximum value to the order quantity #}
-$('#id_quantity').on('input', function () {
-    var value = $(this).val();
-    if ((value !== '') && (value.indexOf('.') === -1)) {
-        $(this).val(Math.max(Math.min(value, {{ order.quantity }}), 1));
+(function() {
+    var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var DOW = ['M','T','W','T','F','S','S'];
+    var blockedDates = new Set({{ blocked_dates_json|safe }});
+    var handoverDates = new Set({{ handover_dates_json|safe }});
+    var bands = {{ price_bands_json|safe }};
+    var basePrice = parseFloat('{{ order.price|floatformat:2 }}');
+    var maxRentalDays = {% if order.max_rental_days %}{{ order.max_rental_days }}{% else %}null{% endif %};
+    var expiryRaw = '{{ order.expiry_date|date:"Y-m-d" }}';
+    var expiryDate = expiryRaw ? new Date(expiryRaw + 'T00:00:00') : new Date();
+    var today = new Date();
+    today.setHours(0,0,0,0);
+    if (!expiryRaw) {
+        expiryDate = new Date(today.getFullYear() + 2, today.getMonth(), today.getDate());
     }
-});
 
-$(".js-form-submit").click(function () {
-    $("#id_order_price").prop("disabled", false);
-    {% for fee_key, fee_value in fees.items %}
-    $("#id_{{fee_key.slug|lower}}").prop("disabled", false);
-    {% endfor %}
-    $("#form-submit").click();
-});
+    var startInput = document.getElementById('id_rental_start_date');
+    var endInput = document.getElementById('id_rental_end_date');
+    var curOffset = 0;
 
-calculateroyal_mail_special_delivery_pre_1pm($('#id_quantity').val())
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function asKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+    function parseInput(v) {
+        if (!v) return null;
+        var p = v.split('/');
+        if (p.length === 3) {
+            var d = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+            return isNaN(d.getTime()) ? null : d;
+        }
+        var d2 = new Date(v + 'T00:00:00');
+        return isNaN(d2.getTime()) ? null : d2;
+    }
+    function fmt(d) { return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(); }
+    function isBlocked(d) { return blockedDates.has(asKey(d)); }
+    function isHandover(d) { return handoverDates.has(asKey(d)); }
+    function isPast(d) { return d < today; }
+    function beyondExpiry(d) { return d > expiryDate; }
 
+    function getRateForDays(days) {
+        if (!days || days < 1) return { rate: basePrice, label: 'Base daily price' };
+        var sorted = bands.slice().sort(function(a, b) { return a.duration_days - b.duration_days; });
+        for (var i = 0; i < sorted.length; i++) {
+            var band = sorted[i];
+            if (days <= parseInt(band.duration_days, 10)) {
+                return { rate: parseFloat(band.price_per_day), label: 'Up to ' + band.duration_days + ' day(s)' };
+            }
+        }
+        return { rate: basePrice, label: 'Base daily price' };
+    }
+
+    function dayCount(startDate, endDate) {
+        if (!startDate || !endDate) return 0;
+        var ms = endDate.getTime() - startDate.getTime();
+        return Math.floor(ms / 86400000) + 1;
+    }
+
+    function selectedRange() {
+        return { start: parseInput(startInput.value), end: parseInput(endInput.value) };
+    }
+
+    function inSelectedRange(d, start, end) {
+        if (!start || !end) return false;
+        return d >= start && d <= end;
+    }
+
+    function updatePricingSummary() {
+        var range = selectedRange();
+        var days = dayCount(range.start, range.end);
+        var pricing = getRateForDays(days);
+        document.getElementById('price-per-day').textContent = pricing.rate.toFixed(2);
+        document.getElementById('price-band-note').textContent = pricing.label;
+        document.getElementById('price-subtotal').textContent = (days > 0 ? (days * pricing.rate) : pricing.rate).toFixed(2);
+    }
+
+    function dateIsSelectableEndpoint(d) {
+        if (isPast(d) || beyondExpiry(d) || isBlocked(d)) return false;
+        if (isHandover(d)) return false;
+        return true;
+    }
+
+    function dateIsWithinRangeAllowed(d) {
+        if (isPast(d) || beyondExpiry(d) || isBlocked(d)) return false;
+        return true;
+    }
+
+    function isRangeAvailable(start, end) {
+        if (!start || !end || end < start) return false;
+        var cur = new Date(start);
+        while (cur <= end) {
+            if (!dateIsWithinRangeAllowed(cur)) return false;
+            cur.setDate(cur.getDate() + 1);
+        }
+        var days = dayCount(start, end);
+        if (maxRentalDays && days > maxRentalDays) return false;
+        if (isHandover(start) || isHandover(end)) return false;
+        return true;
+    }
+
+    function handleDayClick(dateObj) {
+        if (!dateIsSelectableEndpoint(dateObj)) return;
+        var range = selectedRange();
+        if (!range.start || (range.start && range.end)) {
+            startInput.value = fmt(dateObj);
+            endInput.value = '';
+        } else {
+            if (dateObj < range.start) {
+                startInput.value = fmt(dateObj);
+            } else {
+                var endCandidate = dateObj;
+                if (isRangeAvailable(range.start, endCandidate)) {
+                    endInput.value = fmt(endCandidate);
+                } else {
+                    endInput.value = '';
+                }
+            }
+        }
+        updatePricingSummary();
+        render();
+    }
+
+    function buildMonth(year, month) {
+        var range = selectedRange();
+        var grid = document.createElement('div');
+        grid.className = 'enq-grid';
+
+        DOW.forEach(function(lbl) {
+            var h = document.createElement('div');
+            h.className = 'enq-dow';
+            h.textContent = lbl;
+            grid.appendChild(h);
+        });
+
+        var firstJs = new Date(year, month, 1).getDay();
+        var offset = (firstJs + 6) % 7;
+        for (var i = 0; i < offset; i++) {
+            var blank = document.createElement('div');
+            blank.className = 'enq-blank';
+            grid.appendChild(blank);
+        }
+
+        var dim = new Date(year, month + 1, 0).getDate();
+        for (var d = 1; d <= dim; d++) {
+            var dt = new Date(year, month, d);
+            var cls = 'enq-day ';
+            if (isPast(dt)) cls += 'enq-past';
+            else if (beyondExpiry(dt)) cls += 'enq-beyond';
+            else if (isBlocked(dt)) cls += 'enq-blocked';
+            else if (isHandover(dt)) cls += 'enq-handover';
+            else if (inSelectedRange(dt, range.start, range.end)) cls += 'enq-selected';
+            else cls += 'enq-free enq-clickable';
+
+            var cell = document.createElement('div');
+            cell.className = cls;
+            cell.textContent = d;
+            if (dateIsSelectableEndpoint(dt)) {
+                (function(copy) {
+                    cell.addEventListener('click', function() { handleDayClick(copy); });
+                })(new Date(dt));
+            }
+            grid.appendChild(cell);
+        }
+        return grid;
+    }
+
+    function render() {
+        var ref = new Date(today.getFullYear(), today.getMonth() + curOffset, 1);
+        var year = ref.getFullYear();
+        var month = ref.getMonth();
+        document.getElementById('enq-month-label').textContent = MONTH_NAMES[month] + ' ' + year;
+        var container = document.getElementById('enq-calendar');
+        container.innerHTML = '';
+        container.appendChild(buildMonth(year, month));
+        document.getElementById('enq-prev').disabled = (curOffset === 0);
+    }
+
+    document.getElementById('enq-prev').addEventListener('click', function() {
+        if (curOffset > 0) { curOffset--; render(); }
+    });
+    document.getElementById('enq-next').addEventListener('click', function() {
+        curOffset++;
+        render();
+    });
+
+    function jqBeforeShowDay(date) {
+        if (isPast(date)) return [false, ''];
+        if (beyondExpiry(date)) return [false, ''];
+        if (isBlocked(date)) return [false, ''];
+        if (isHandover(date)) return [false, ''];
+        return [true, ''];
+    }
+
+    $('#id_rental_start_date').datepicker({
+        dateFormat: 'dd/mm/yy',
+        minDate: 0,
+        beforeShowDay: jqBeforeShowDay,
+        onSelect: function(v) {
+            var start = parseInput(v);
+            var end = parseInput(endInput.value);
+            if (end && end < start) endInput.value = '';
+            updatePricingSummary();
+            render();
+        }
+    });
+
+    $('#id_rental_end_date').datepicker({
+        dateFormat: 'dd/mm/yy',
+        minDate: 0,
+        beforeShowDay: jqBeforeShowDay,
+        onSelect: function(v) {
+            var start = parseInput(startInput.value);
+            var end = parseInput(v);
+            if (start && end && !isRangeAvailable(start, end)) {
+                endInput.value = '';
+            }
+            updatePricingSummary();
+            render();
+        }
+    });
+
+    startInput.addEventListener('change', function() { updatePricingSummary(); render(); });
+    endInput.addEventListener('change', function() { updatePricingSummary(); render(); });
+
+    updatePricingSummary();
+    render();
+})();
 {% endblock %}
-{% endif %}

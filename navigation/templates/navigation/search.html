@@ -39,6 +39,7 @@
             <div class="col-md-2">
               <select name="distance" class="form-control">
                 <option value="any" {% if max_distance == 'any' %}selected{% endif %}>Any distance</option>
+                <option value="0"   {% if max_distance == 0   %}selected{% endif %}>0 km</option>
                 <option value="5"   {% if max_distance == 5   %}selected{% endif %}>5 km</option>
                 <option value="10"  {% if max_distance == 10  %}selected{% endif %}>10 km</option>
                 <option value="25"  {% if max_distance == 25  %}selected{% endif %}>25 km</option>

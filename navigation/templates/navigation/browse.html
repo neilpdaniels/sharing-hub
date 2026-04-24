@@ -298,6 +298,7 @@
                                         <label class="mr-2 mb-0 text-muted small">Within</label>
                                         <select name="distance_filter" id="distance_filter" class="form-control form-control-sm" style="width:auto;">
                                             <option value="any" {% if distance_filter == 'any' %}selected{% endif %}>Any</option>
+                                            <option value="0"  {% if distance_filter == 0  %}selected{% endif %}>0 km</option>
                                             <option value="2"  {% if distance_filter == 2  %}selected{% endif %}>2 km</option>
                                             <option value="5"  {% if distance_filter == 5  %}selected{% endif %}>5 km</option>
                                             <option value="10" {% if distance_filter == 10 %}selected{% endif %}>10 km</option>

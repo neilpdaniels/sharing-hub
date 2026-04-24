@@ -1,0 +1,635 @@
+{% extends "base.html" %}
+{% load thumbnail %}
+
+{% block headerContent %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/1.6.11/css/lightgallery.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/gijgo@1.9.10/css/gijgo.min.css" rel="stylesheet" type="text/css" />
+{% endblock %}
+{% block title %}Transaction {{ transaction.transaction_reference }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+                
+            {% if transaction %}
+                {% if transaction.user_aggressive == request.user or transaction.user_passive == request.user %}
+                <br />
+                <h3>Transaction Details</h3> 
+                <div class="blog-grid">
+                    <div class="blog-body">
+                        <h4>{{transaction.quantity}} X <a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a></h4>
+                        <div class="container">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div>
+                                        <dl class="dl-horizontal">
+                                            <dt class="font-weight-bold">Additional item details:</dt>
+                                            <dd class="font-weight-light">{{ transaction.order_passive_description }}</dd>
+                                        </dl>
+                                    </div>
+                                    <div>
+                                        <dl class="dl-horizontal">
+                                            <dt class="font-weight-bold">Buyer (click for buyer's address)</dt>
+                                            <dd>{% if transaction.order_passive.direction == 'B' %}{% include "user_profile_modal_address.html" with user=transaction.user_passive %}{% else %}{% include "user_profile_modal_address.html" with user=transaction.user_aggressive %}{% endif %}</dd>
+                                        </dl>
+                                    </div>
+                                    <div>
+                                        <dl class="dl-horizontal">
+                                            <dt class="font-weight-bold">Seller</dt>
+                                            <dd>{% if transaction.order_passive.direction == 'S' %}{% include "user_profile_modal_address.html" with user=transaction.user_passive %}{% else %}{% include "user_profile_modal_address.html" with user=transaction.user_aggressive %}{% endif %}</dd>
+                                        </dl>
+                                    </div>                                
+                                </div>
+                                <div class="col-md-6">
+                                    <div>
+                                        <dl class="dl-horizontal">
+                                            <dt class="font-weight-bold">Price breakdown:</dt>
+                                            <dd class="font-weight-light"><div id="tree"></div></dd>
+                                        </dl>
+                                    </div>
+                                    
+                                </div>
+                            </div>
+                            {% if txnImages %}
+                            <div class="row">
+                                <ul class="lightGallery list-unstyled">
+                                    {% for txnImage in txnImages %}
+                                    {% thumbnail txnImage.image "200x160" crop="center"  as im %}
+                                    <li data-src="{{ txnImage.image.url }}" class="list-inline-item">
+                                        <img src="{{ im.url }}">
+                                    </li>
+                                    {% endthumbnail %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <table  class="table-borderless">
+                    <tr>
+                        <td class="col-md-6">
+                            <h3>Transaction Summary Status</h3> 
+                        </td>
+                        <td class="col-md-6">
+                            <div class="col-lg-12 text-center" id="id_refresh_transpact_status">
+                            <button type="button" class="btn btn-secondary"  id="id_request_respider">
+                                <span class="fas fa-cloud-upload"></span>Refresh from Transpact.com
+                            </button>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-6">
+                            <div class="btn-group" role="group" aria-label="">
+                                <button type="button" class="btn 
+                                {% if transaction.transaction_status == 'NEWTOUT' or transaction.transaction_status == 'DTOUT' or transaction.transaction_status == 'PENDTOUT' or transaction.transaction_status == 'DREQ' %}
+                                btn-danger
+                                {% elif transaction.transaction_status == 'CREF' or transaction.transaction_status == 'CREQ' %}
+                                btn-warning
+                                {% else %}
+                                btn-success
+                                {% endif %} 
+                                disabled" >{{ transaction.get_transaction_status_display}}</button>
+                            </div>
+                        </td>
+                        <td class="col-md-6">
+                            <p>last scraped: {{ transaction.transpact_scraped_datetime }}</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <div class="blog-grid">
+                    <div class="blog-body">
+                        <table class="table-borderless">
+                            <tr>
+                                <td class="col-md-6">
+                                    <h4>Transpact term acceptance</h4> 
+                                    <p>controlled by Transpact feed</p>
+                                </td>
+                                <td class="col-md-6">
+                                    <div class="btn-group" role="group" aria-label="">  
+                                        {% if transaction.transaction_status == "PBOTH" or  transaction.transaction_status == "VOIDED" or  transaction.transaction_status == "NEW" %}
+                                        <button type="button" class="btn btn-secondary disabled">Not accepted by buyer</button>
+                                        <button type="button" class="btn btn-secondary disabled">Not accepted by seller</button>
+                                        {% elif transaction.transaction_status == "PBUY" %}
+                                        <button type="button" class="btn btn-secondary disabled">Not accepted by buyer</button>
+                                        <button type="button" class="btn btn-secondary disabled btn-success">Accepted by seller</button>
+                                        {% elif transaction.transaction_status == "PSELL" %}
+                                        <button type="button" class="btn btn-secondary disabled btn-success">Accepted by buyer</button>
+                                        <button type="button" class="btn btn-secondary disabled">Not accepted by seller</button>
+                                        {% else %}
+                                        <button type="button" class="btn btn-secondary disabled btn-success">Accepted by buyer</button>
+                                        <button type="button" class="btn btn-secondary disabled btn-success">Accepted by seller</button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td class="col-md-6">
+                                    <h4>Transpact Payment Status</h4>
+                                    <p>controlled by Transpact feed</p>
+                                </td>
+                                <td class="col-md-6">
+                                    <div class="btn-group" role="group" aria-label="">
+                                        {% if transaction.payment_status == "ESCROW" %}
+                                        <button type="button" class="btn btn-success disabled">Received and protected in escrow</button>
+                                        <button type="button"  class="btn btn-secondary disabled" >Not released to Seller</button>
+                                        {% elif transaction.payment_status == "FUNDRE" %}
+                                        <button type="button" class="btn btn-success disabled">Received and protected in escrow</button>
+                                        <button type="button"  class="btn btn-success disabled" >Funds released to seller</button>
+                                        {% else %}
+                                        <button type="button"  class="btn btn-secondary disabled" >Payment Not in Escrow</button>
+                                        <button type="button"  class="btn btn-secondary disabled" >Funds Not released to Seller</button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="col-md-6">
+                                    <h4>Delivery Status</h4>
+                                    <p>These are optional updates within SharingHub and are non binding</p>
+                                </td>
+                                <td class="col-md-6">
+                                    <div class="btn-group" role="group" aria-label="">
+                                        {% if transaction.product_status != "PNOTSNT" and transaction.product_status != "PNOTSNTTOUT" %}
+                                        <button type="button" class="btn btn-success disabled">Item Sent</button>
+                                        {% else %}
+                                        <button type="button" class="btn btn-secondary disabled">Item Not Sent</button>
+                                        {% endif %}
+                    
+                                        {% if transaction.product_status == 'PNOTSNT' or transaction.product_status == 'PSENT' or transaction.product_status == 'PNOTREC' or transaction.product_status == 'PNOTSNTTOUT' or transaction.product_status == 'PNOTRECTOUT' %}
+                                        <button type="button" class="btn btn-secondary disabled">Item Not Received</button>
+                                        {% else %}
+                                        <button type="button" class="btn btn-success disabled">Item Received</button>
+                                        {% endif %}
+                    
+                                        {% if transaction.product_status == 'PACK' %}  
+                                        <button type="button" class="btn btn-success disabled">Item Verified</button>
+                                        {% elif transaction.product_status == 'PNACK' %}
+                                        <button type="button" class="btn btn-warning disabled">Item Not OK</button>
+                                        {% else %}
+                                        <button type="button" class="btn btn-secondary disabled">Item Not Verified</button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="col-sm-12">
+                                    <div>
+                                        <table class="table-borderless">
+                                            <tbody>
+                                                <tr>
+                                                    {% if transaction.product_status == "PNOTSNT" and transaction.payment_status == "ESCROW" or transaction.product_status == "PNOTSNT" and transaction.payment_status == "FUNDRE"  %}
+                                                    {% if transaction.user_aggressive == request.user and transaction.order_passive.direction == 'B' or transaction.user_passive == request.user and transaction.order_passive.direction == 'S' %}
+                                                        <td><span type="button" class="btn btn-secondary" href="#" id="product_sent">
+                                                            Mark status as sent
+                                                        </span></td>
+                                                    {% endif %}
+                                                    {% endif %}
+                                                    {% include "transaction/transaction_modal.html" with transaction_=transaction action=transaction.PRODUCT_SENT %}
+                                                </tr>
+                                                <tr>
+                                                    {% if transaction.product_status == "PSENT" %}
+                                                    {% if transaction.user_aggressive == request.user and transaction.order_passive.direction == 'S' or transaction.user_passive == request.user and transaction.order_passive.direction == 'B' %}
+                                                        <td><span type="button" class="btn btn-secondary" href="#" id="product_rec">
+                                                            Item has been Received
+                                                        </span></td>
+                                                    {% endif %}
+                                                    {% endif %}
+                                                    {% include "transaction/transaction_modal.html" with transaction_=transaction action=transaction.PRODUCT_RECEIVED %}
+                                                </tr>
+                                                <tr>
+                                                    {% if transaction.product_status == "PREC" or transaction.product_status == "PACK" or transaction.product_status == "PNACK" %}
+                                                    {% if transaction.user_aggressive == request.user and transaction.order_passive.direction == 'S' or transaction.user_passive == request.user and transaction.order_passive.direction == 'B' %}
+                                                        {% if transaction.product_status != "PACK" %}
+                                                        <td><span type="button" class="btn btn-secondary" href="#" id="product_verified">
+                                                            Verify Item as OK
+                                                        </span></td>
+                                                        {% include "transaction/transaction_modal.html" with transaction_=transaction action=transaction.PRODUCT_VERIFIED_OK %}
+                                                        {% endif %}
+                                                        {% if transaction.product_status != "PNACK" %}
+                                                        <td><span type="button" class="btn btn-secondary" href="#" id="product_not_verified">
+                                                            Mark Item as not OK
+                                                        </span></td>
+                                                        {% include "transaction/transaction_modal.html" with transaction_=transaction action=transaction.PRODUCT_NOT_AS_SHOWN %}
+                                                        {% endif %}
+                                                        <td>Should there be any issues in product verification please discuss and if needed raise via Transpact.com</td>
+                                                    {% endif %}
+                                                    {% endif %}
+                                                    
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+
+                <h3>Messages</h3>
+                <div class="blog-grid">
+                    <div class="blog-body">
+                        <table class="table-borderless">
+                            <tr> 
+                                <td colspan="2">
+                                <div class="col-lg-12 text-center" id="">
+                                    <button type="button" class="btn btn-secondary"  id="id_add_message">
+                                        <span class="fas fa-cloud-upload"></span>Add message
+                                    </button>
+                                    {% include "transaction/transaction_modal.html" with transaction_=transaction action="MSG"  %}
+                                </div> 
+                                </td>
+                            </tr>
+                            <tr>
+
+                                <td colspan="2">
+                                    {% include "my_sharing_hub/messages.html" with messages_=messages_ %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                {% comment %} 
+                {% if transaction.transaction_status != "CACK" and  transaction.transaction_status != "COMP" and  transaction.transaction_status != "DREQ" %}
+                    {% if transaction.payment_status == "PYNOTSNT" or transaction.payment_status == "PAYTOUT" %}
+                        {% if transaction.transaction_status != "CREQ" %}
+                        <span class="col-md-4">
+                        <a type="button"  class="btn btn-warning" href="#" id="cancel_requested">
+                            Request Cancellation
+                        </a>
+                        </span>
+                        {% include "transaction/transaction_modal.html" with transaction_=transaction action=transaction.CANCEL_REQUESTED %}
+                        {% endif %}
+                        {% if transaction.transaction_status == "CREQ" and transaction.transaction_status_raised_by == request.user %}
+                        <span class="col-md-4">
+                        <a type="button"  class="btn btn-success" href="#" id="cancel_cancellation">
+                            reverse cancellation request
+                        </a>
+                        </span>
+                        {% include "transaction/transaction_modal.html" with transaction_=transaction action=transaction.CANCEL_CANCELLED %}
+
+                        {% endif %}
+                    {% endif %}
+                    {% if transaction.transaction_status != "DREQ" %}
+                    <span class="col-md-4">
+                    <a type="button"  class="btn btn-danger" href="{% url "transaction:raise_dispute" transaction.transaction_reference %}">
+                        Raise Dispute Request
+                    </a>
+                    </span>
+                    {% endif %}
+                {% endif %}
+                {% endcomment %}
+                
+                
+            {% else %}
+            <p>Not valid</p>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block pageJavascript %} 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/1.6.11/js/lightgallery-all.min.js"></script>   
+<script src="https://cdn.jsdelivr.net/npm/gijgo@1.9.10/js/gijgo.min.js" type="text/javascript"></script>
+{% endblock %}
+ 
+{% block domready %}
+{% if transaction %}
+
+
+$('#id_refresh_transpact_status').on("click", function() {
+    id_request_respider.disabled = true;
+    document.getElementById('id_request_respider').style.visibility = 'hidden';
+    $.ajax({
+        url : '{% url "transaction:transpact_refresh" %}',
+        type: 'POST',
+        data: { 
+            'csrfmiddlewaretoken': csrftoken,
+            transaction_id: "{{ transaction.id }}"
+        },
+    }).done(handleTranspactData);
+});
+function handleTranspactData(data) {   
+    $('#id_transpact_status').html('<p>Data requested from Transpact; refreshing in <span id="id_countDownRefresh">5</span> seconds.</p>');
+    setTimeout(countDownRefresh, 1000);
+    var url = "{% url 'transaction:view_transaction' transaction.transaction_reference %}";
+    setTimeout(function() { window.location.replace(url); }, 5000)
+}
+function countDownRefresh() {
+    countdown = parseFloat($('#id_countDownRefresh').text());
+    if ( countdown > 1 )  {
+        countdown = countdown -1;
+        $('#id_countDownRefresh').text(countdown);
+        setTimeout(countDownRefresh, 1000);
+    }
+}
+
+clicked = false;
+$("#id_add_message").click(function () {
+    $('#modal_transaction_MSG').modal('show');
+});
+$('#MSG_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:transaction_add_message" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                message : $('#modalForm_MSG_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_MSG').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+clicked = false;
+$("#payment_sent").click(function () {
+    $('#modal_transaction_{{transaction.PAYMENT_SENT}}').modal('show');
+});
+
+$('#{{transaction.PAYMENT_SENT}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_payment_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "PYSNT",
+                message : $('#modalForm_{{transaction.PAYMENT_SENT}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.PAYMENT_SENT}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+$("#payment_ack").click(function () {
+    $('#modal_transaction_{{transaction.PAYMENT_ACKED}}').modal('show');
+});
+
+$('#{{transaction.PAYMENT_ACKED}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_payment_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "PYACK",
+                message : $('#modalForm_{{transaction.PAYMENT_ACKED}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.PAYMENT_ACKED}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+/* price tree */
+$('#tree').tree({
+    dataSource: [ 
+    { text: 'Total Price: £{{ total_px|floatformat:2 }}', 
+    children: [ 
+        { text: 'Item Total: £{{total_items|floatformat:2}}'},
+        { text: 'Fees Total: £{{total_fees|floatformat:2}}',
+            children: [
+            {% for charge in charges %}
+            { text: '{{ charge.transaction_fee.name }}: £{{ charge.price|floatformat:2 }}'},
+            {% endfor %}
+            ]
+        }, 
+        ] 
+    }]
+});
+/* expand by default */
+$('#tree').tree().expandAll()
+
+$("#product_sent").click(function () {
+    $('#modal_transaction_{{transaction.PRODUCT_SENT}}').modal('show');
+});
+
+$('#{{transaction.PRODUCT_SENT}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_product_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "PSENT",
+                message : $('#modalForm_{{transaction.PRODUCT_SENT}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.PRODUCT_SENT}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+$("#product_rec").click(function () {
+    $('#modal_transaction_{{transaction.PRODUCT_RECEIVED}}').modal('show');
+});
+
+$('#{{transaction.PRODUCT_RECEIVED}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_product_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "PREC",
+                message : $('#modalForm_{{transaction.PRODUCT_RECEIVED}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.PRODUCT_RECEIVED}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+$("#product_not_verified").click(function () {
+    $('#modal_transaction_{{transaction.PRODUCT_NOT_AS_SHOWN}}').modal('show');
+});
+
+$('#{{transaction.PRODUCT_NOT_AS_SHOWN}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_product_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "PN  ACK",
+                message : $('#modalForm_{{transaction.PRODUCT_NOT_AS_SHOWN}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.PRODUCT_NOT_AS_SHOWN}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+$("#product_verified").click(function () {
+    $('#modal_transaction_{{transaction.PRODUCT_VERIFIED_OK}}').modal('show');
+});
+
+$('#{{transaction.PRODUCT_VERIFIED_OK}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_product_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "PACK",
+                message : $('#modalForm_{{transaction.PRODUCT_VERIFIED_OK}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.PRODUCT_VERIFIED_OK}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+$("#cancel_requested").click(function () {
+    $('#modal_transaction_{{transaction.CANCEL_REQUESTED}}').modal('show');
+});
+
+$('#{{transaction.CANCEL_REQUESTED}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_transaction_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "CREQ",
+                message : $('#modalForm_{{transaction.CANCEL_REQUESTED}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.CANCEL_REQUESTED}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+
+$("#cancel_cancellation").click(function () {
+    $('#modal_transaction_{{transaction.CANCEL_CANCELLED}}').modal('show');
+});
+
+$('#{{transaction.CANCEL_CANCELLED}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_transaction_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "CCAN",
+                message : $('#modalForm_{{transaction.CANCEL_CANCELLED}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.CANCEL_CANCELLED}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+$("#accept_cancel").click(function () {
+    $('#modal_transaction_{{transaction.CANCEL_ACCEPTED}}').modal('show');
+});
+
+$('#{{transaction.CANCEL_ACCEPTED}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_transaction_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "CACK",
+                message : $('#modalForm_{{transaction.CANCEL_ACCEPTED}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.CANCEL_ACCEPTED}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+$("#reject_cancel").click(function () {
+    $('#modal_transaction_{{transaction.CANCEL_REFUSED}}').modal('show');
+});
+
+$('#{{transaction.CANCEL_REFUSED}}_confirm').click(
+    function(){
+        if (!clicked) {
+        $.ajax({
+            url : '{% url "transaction:set_transaction_state" %}',
+            type: 'GET',
+            data: { transaction_ref: "{{ transaction.transaction_reference }}",
+                newState : "CREF",
+                message : $('#modalForm_{{transaction.CANCEL_REFUSED}}_message').val(),
+            },
+        }).done(handleData);
+        $('#modal_transaction_{{transaction.CANCEL_REFUSED}}').modal('hide');
+        }
+        clicked = true;
+    }
+);
+
+function handleData(data) {   
+    if (data.status == 'OK') {
+        location.reload()
+    }
+}
+
+{% if messages_ %}
+    // common accross all messages_
+    function getData(messageRef) {
+        return $.ajax({
+            url : '{% url "my_sharing_hub:expand_message" %}',
+            type: 'GET',
+            data: { message_id : messageRef},
+        });
+    }
+    // TODO: review code duplication
+    {% for message in messages_ %}
+        $('#expand_message_{{message.id}}').click(
+            function(){
+                if ($('#{{message.id}}_read_by_user').text() == '{{ request.user }}' ) {
+                    $('#{{message.id}}_read_by').text('True');
+                    $('#{{message.id}}_read_by').removeAttr("style");
+                }
+                var messageRef = $(this).attr("id").replace("expand_message_","")
+                getData(messageRef).done(handleData_{{message.id}});
+            }
+        );
+        function handleData_{{message.id}}(data) {        
+          $('#messageModalContent').text(data.body);
+          $('#messageModalLabel').text(data.subject);
+          $('#messageModalFrom').text(data.from);
+          $('#messageModalTo').text(data.to);
+          $('#messageModalDateTime').text(data.created);
+          $('.modal-title').text(data.title);
+            // show modal
+            $('#messageModal').modal('show');
+        }
+    {% endfor %}
+{% endif %}
+
+        
+$('.lightGallery').lightGallery({
+    showThumbByDefault:true,
+    addClass:'showThumbByDefault'
+}); 
+
+{% endif %}
+
+{% endblock %}

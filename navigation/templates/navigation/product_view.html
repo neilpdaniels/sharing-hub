@@ -1,0 +1,41 @@
+{% load thumbnail %}
+{% load static %}
+{% load common_lib %}
+
+<li class="product-card mb-4">
+<a href="{% url 'navigation:productPage' product.slug  %}" class="text-reset" style="text-decoration:none;">
+<div class="media">
+    <div class="">
+    {% if product.image %}
+    {% thumbnail product.image "100" format="PNG" as im %}
+    <img src="{{ im.url }}">
+    {% endthumbnail %}
+    {% else %}
+        <img class="" src="{% static 'assets/images/not-available.jpg' %}" height="150" width="150" alt="">
+    {% endif %}
+    </div>
+    <div class="media-body ">
+    <h5 class="card-title">{{ product.name | title }}</h5>
+    {% if product.description %}
+    <p class="card-text">{{ product.description | safe }}</p>
+    {% endif %}
+    </div>
+</div>
+</a>
+<div class="card-footer text-center">
+    <div class="row align-items-center">
+    <div class="col">
+        {% if best_offers and best_offers|index:forloop.counter0 != '-' %}
+        <span class="product-price">Borrow for £{{ best_offers|index:forloop.counter0  }}/day</span>
+        {% else %}
+        <span class="product-price">Borrow for £-/day</span>
+        {% endif %}
+    </div>
+    <div class="col">
+        <a class="product-price" href="{% url 'transaction:add_order' product.id %}">Let your own</a>
+    </div>
+    </div>
+</div>
+<!-- end div .card-footer -->
+</li>
+<br />

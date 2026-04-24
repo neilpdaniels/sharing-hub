@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% load bootstrap4 %}
+
+{% block content %}
+<div class="container mt-4">
+
+  <div class="row">
+    <div class="col-md-12">
+      <h3>My Friends</h3>
+    </div>
+  </div>
+
+  {# ── Add a friend ─────────────────────────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-header"><strong>Add a friend</strong></div>
+    <div class="card-body">
+      <form method="post" action="{% url 'friends:add_friend' %}">
+        {% csrf_token %}
+        {% if add_form.non_field_errors %}
+        <div class="alert alert-danger py-2">{{ add_form.non_field_errors }}</div>
+        {% endif %}
+        <div class="form-row align-items-end">
+          <div class="col-md-4">
+            <label class="small text-muted mb-1">Email address</label>
+            {{ add_form.email }}
+            {% if add_form.email.errors %}<small class="text-danger">{{ add_form.email.errors|join:", " }}</small>{% endif %}
+          </div>
+          <div class="col-auto d-flex align-items-end pb-1"><span class="text-muted small">or</span></div>
+          <div class="col-md-3">
+            <label class="small text-muted mb-1">Username</label>
+            {{ add_form.username }}
+            {% if add_form.username.errors %}<small class="text-danger">{{ add_form.username.errors|join:", " }}</small>{% endif %}
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Send request</button>
+          </div>
+        </div>
+        <small class="text-muted d-block mt-1">
+          If the email address isn't a member yet, we'll send them an invitation to join.
+        </small>
+      </form>
+    </div>
+  </div>
+
+  {# ── Incoming requests ────────────────────────────────────────────────── #}
+  {% if pending_received %}
+  <div class="card mb-4 border-warning">
+    <div class="card-header bg-warning text-dark">
+      <strong>Friend requests received</strong>
+      <span class="badge badge-dark ml-1">{{ pending_received|length }}</span>
+    </div>
+    <ul class="list-group list-group-flush">
+      {% for f in pending_received %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <span>
+          <strong>{{ f.user_from.get_full_name|default:f.user_from.username }}</strong>
+          <small class="text-muted ml-2">{{ f.user_from.email }}</small>
+          <small class="text-muted ml-2">· requested {{ f.created_at|timesince }} ago</small>
+        </span>
+        <span>
+          <form method="post" action="{% url 'friends:accept_request' f.id %}" class="d-inline">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-success">Accept</button>
+          </form>
+          <form method="post" action="{% url 'friends:reject_request' f.id %}" class="d-inline ml-1">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-secondary">Decline</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# ── Sent / pending outgoing ──────────────────────────────────────────── #}
+  {% if pending_sent %}
+  <div class="card mb-4">
+    <div class="card-header"><strong>Requests sent</strong> <span class="badge badge-secondary ml-1">{{ pending_sent|length }}</span></div>
+    <ul class="list-group list-group-flush">
+      {% for f in pending_sent %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <span>
+          <strong>{{ f.user_to.get_full_name|default:f.user_to.username }}</strong>
+          <small class="text-muted ml-2">{{ f.user_to.email }}</small>
+          <small class="text-muted ml-2">· sent {{ f.created_at|timesince }} ago</small>
+        </span>
+        <form method="post" action="{% url 'friends:cancel_request' f.id %}">
+          {% csrf_token %}
+          <button class="btn btn-sm btn-outline-danger">Cancel</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# ── Active friends ───────────────────────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-header">
+      <strong>Friends</strong>
+      <span class="badge badge-secondary ml-1">{{ accepted|length }}</span>
+    </div>
+    {% if accepted %}
+    <ul class="list-group list-group-flush">
+      {% for f in accepted %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <span>
+          {% if f.user_from == request.user %}
+            <strong>{{ f.user_to.get_full_name|default:f.user_to.username }}</strong>
+            <small class="text-muted ml-2">{{ f.user_to.email }}</small>
+          {% else %}
+            <strong>{{ f.user_from.get_full_name|default:f.user_from.username }}</strong>
+            <small class="text-muted ml-2">{{ f.user_from.email }}</small>
+          {% endif %}
+          <small class="text-muted ml-2">· friends since {{ f.updated_at|date:"d M Y" }}</small>
+        </span>
+        <span>
+          <form method="post" action="{% url 'friends:pause_friendship' f.id %}" class="d-inline">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-secondary" title="Pause — hide each other's listings from friends-only searches without removing the connection">Pause</button>
+          </form>
+          <form method="post" action="{% url 'friends:remove_friend' f.id %}" class="d-inline ml-1"
+                onsubmit="return confirm('Remove this friend?')">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-danger">Remove</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="card-body text-muted">You don't have any friends yet. Add one above!</div>
+    {% endif %}
+  </div>
+
+  {# ── Paused friendships ───────────────────────────────────────────────── #}
+  {% if paused %}
+  <div class="card mb-4">
+    <div class="card-header"><strong>Paused connections</strong> <span class="badge badge-secondary ml-1">{{ paused|length }}</span></div>
+    <ul class="list-group list-group-flush">
+      {% for f in paused %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <span>
+          {% if f.user_from == request.user %}
+            {% with other_user=f.user_to %}
+            <strong>{{ other_user.get_full_name|default:other_user.username }}</strong>
+            <small class="text-muted ml-2">{{ other_user.email }}</small>
+            {% endwith %}
+          {% else %}
+            {% with other_user=f.user_from %}
+            <strong>{{ other_user.get_full_name|default:other_user.username }}</strong>
+            <small class="text-muted ml-2">{{ other_user.email }}</small>
+            {% endwith %}
+          {% endif %}
+        </span>
+        <span>
+          <form method="post" action="{% url 'friends:unpause_friendship' f.id %}" class="d-inline">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-success">Resume</button>
+          </form>
+          <form method="post" action="{% url 'friends:remove_friend' f.id %}" class="d-inline ml-1"
+                onsubmit="return confirm('Remove this friend?')">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-danger">Remove</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

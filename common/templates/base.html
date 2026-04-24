@@ -1,0 +1,425 @@
+{% load static %}
+
+{# Load the tag library #}
+{% load bootstrap4 %}
+{% load cookielaw_tags %} 
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <!-- Site Title-->
+    <title>{% block sitetitle %} {% endblock %}</title>
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <meta name="theme-color" content="#000000">
+    <!-- Mobile Specific Meta Tag-->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="theme-color" content="#00bb5a">
+    <!-- Favicon Icons-->
+    <link rel="shortcut icon" href="{% static 'assets/images/favicon.ico' %}">
+
+    <!-- Poppins Google Font -->
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700,900" rel="stylesheet">
+    <!-- Bootstrap Css -->
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/bootstrap/css/bootstrap.min.css' %}">
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/OwlCarousel2/owl.carousel.min.css' %}">
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/themify-icons/themify-icons.css' %}">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.3.1/css/all.css" integrity="sha384-mzrmE5qonljUremFsqc01SB46JvROS7bZs3IO2EmfFsd15uHvIt+Y8vEf7N7fWAU" crossorigin="anonymous">
+
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/magnific-popup/css/magnific-popup.css' %}">
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/dropzone/dropzone.min.css' %}">
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/select2/css/select2.min.css' %}">
+    <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/select2/css/select2-bootstrap.min.css' %}">
+
+    <!-- Custom Css -->
+    <link rel="stylesheet" media="screen" href="{% static 'assets/css/responsive.css' %}">
+    <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+    <link rel="stylesheet" media="screen" href="{% static 'cookielaw/css/cookielaw.css' %}">
+
+    {% block headerContent %}
+    {% endblock %}
+    <link rel="stylesheet" media="screen" href="{% static 'assets/css/main.css' %}">
+
+  </head>
+  <body>
+    <header id="site-header" class="fixed">
+      <div class="container-fluid">
+        <nav class="navbar navbar-expand-lg" id="main-nav">
+          <a href="/"><img src="{% static 'assets/images/logo-light.png' %}" alt="sharing-hub logo" /></a>
+          <a class="navbar-brand" href="{% url 'navigation:browseCategory' 'metals' %}">
+          </a> 
+          <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#main-header-menu" aria-controls="main-header-menu" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="ti-menu"></span>
+          </button> 
+          {% if request.user.is_authenticated %}
+          <button class="navbar-toggler show-fixed-menu" type="button">
+          <span class="ti-more-alt"></span>
+          </button>
+          {% endif %}
+          <div class="collapse navbar-collapse align-items-center" id="main-header-menu">
+            <ul class="navbar-nav ml-auto order-md-2 align-items-center" id="menu-right">
+              <li class="nav-item ">
+                {% if request.user.is_authenticated %}
+                <a class="btn-sm btn-extra btn-rounded" href="{% url 'logout' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
+                    Logout
+                </a> 
+                {% else %} 
+                <a class="btn-sm btn-extra btn-rounded" href="{% url 'login' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
+                    Login
+                </a>
+                {% endif %}
+                
+              </li>
+
+              {% if request.user.is_authenticated %}
+              <li class="nav-item ">
+                <a class="nav-link show-fixed-menu" href="#"><i class="ti-more"></i></a>
+              </li>
+              {% endif %}
+
+            </ul>
+            <!-- end div #menu-right -->
+            <ul class="navbar-nav ml-auto" id="main-menu">
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'navigation:howItWorks' %}">How it works</a>
+              </li>
+              <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="{% url 'navigation:browseCategory' 'gardening' %}" id="Pages" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                Gold
+                </a> 
+                <div class="dropdown-menu" aria-labelledby="Pages">
+                  <a class="dropdown-item" href="{% url 'navigation:browseCategory' 'gardening' %}">Gold Coins</a>
+                  <a class="dropdown-item" href="{% url 'navigation:browseCategory' 'landscaping' %}">Gold Bars</a>
+                </div>
+                <!-- end div .dropdown-menu -->
+              </li>
+              <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="{% url 'navigation:browseCategory' 'landscaping' %}" id="Pages" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                Silver
+                </a> 
+                <div class="dropdown-menu" aria-labelledby="Pages">
+                  <a class="dropdown-item" href="{% url 'navigation:browseCategory' 'wood-and-metal-work' %}">Silver Coins</a>
+                </div>
+                <!-- end div .dropdown-menu -->
+              </li>
+             <!--
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'navigation:browseCategory' 'watches' %}">Watches</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'navigation:browseCategory' 'militaria' %}">Militaria</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'navigation:browseCategory' 'stamps' %}">Stamps</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'navigation:browseCategory' 'antique-coins' %}">Antique Coins</a>
+              </li>
+              -->
+            </ul>
+          </div>
+        </nav>
+        <!-- end div #main-nav -->
+      </div>
+      <!-- end div .container -->
+      {% block site_search_bar %}
+      <div class="py-1" id="site-search-bar" style="font-size:0.78rem;">
+        <div class="container">
+          <form method="get" action="{% url 'navigation:search' %}" class="form-row align-items-center justify-content-center">
+            <div class="col-auto">
+              <div class="input-group" style="font-size:0.78rem;">
+                <div class="input-group-prepend">
+                  <span class="input-group-text py-0 px-2" style="height:24px;"><i class="fas fa-search" style="font-size:0.7rem;"></i></span>
+                </div>
+                <input type="text" name="q" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px;" placeholder="Search by keyword">
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="input-group" style="font-size:0.78rem;">
+                <div class="input-group-prepend">
+                  <span class="input-group-text py-0 px-2" id="search-locate-btn" title="Use my location" style="height:24px; cursor:pointer;"><i class="fas fa-map-marker-alt" id="search-locate-icon" style="font-size:0.7rem;"></i></span>
+                </div>
+                <input type="text" name="location" id="search-location-input" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px;" placeholder="Town or postcode">
+              </div>
+            </div>
+            <div class="col-auto">
+              <select name="distance" style="font-size:0.78rem; height:24px; padding:0 4px; border:1px solid #ced4da; border-radius:4px; background:white; -webkit-appearance:none; -moz-appearance:none; appearance:none; background-image:none; width:60px; text-align:center; cursor:pointer;">
+                <option value="any">Any</option>
+                <option value="2">2 km</option>
+                <option value="5">5 km</option>
+                <option value="10" selected>10 km</option>
+                <option value="15">15 km</option>
+                <option value="20">20 km</option>
+                <option value="30">30 km</option>
+                <option value="50">50 km</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <select name="category" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px;">
+                <option value="">All categories</option>
+                {% for cat in top_categories %}
+                <option value="{{ cat.slug }}">{{ cat.title|capfirst }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-primary py-0 px-2" style="font-size:0.78rem; height:24px; line-height:24px;"><i class="fas fa-search"></i></button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {% endblock %}
+    </header>
+    <!-- end header #site-header -->
+    <div id="fixed-menu">
+      <div class="author-style--1">
+        <div class="media">
+          <div class="media-body">
+            <h6>Hi {{ user.first_name | title }}!</h6>
+          </div>
+        </div>
+      </div>
+      <h5>My sharing-hub</h5>
+      <ul class="">
+        {#<li><a href="{% url 'my_sharing_hub:dashboard'  %}">Dashboard</a></li>#}
+        <li><a href="{% url 'my_sharing_hub:open_orders'  %}">Open orders</a></li>
+        <li><a href="{% url 'my_sharing_hub:open_transactions'  %}">Open transactions</a></li>
+        <li><a href="{% url 'my_sharing_hub:messages_received'  %}">Messages Received</a></li>
+        <li><a href="{% url 'my_sharing_hub:messages_sent'  %}">Messages Sent</a></li>
+        {#<li><a href="{% url 'my_sharing_hub:pending_actions'  %}">My pending actions</a></li>#}
+        <li><a href="{% url 'my_sharing_hub:closed_orders'  %}">Closed Orders</a></li>
+        <li><a href="{% url 'my_sharing_hub:closed_transactions'  %}">Closed transactions</a></li>
+        <li><a href="{% url 'edit'  %}">Account Profile</a></li>
+        {% if user.is_authenticated %}
+        <li><a href="{% url 'friends:my_friends' %}">Friends</a></li>
+        {% endif %}
+      </ul>
+    </div>
+    <!-- end div #fixed-menu -->
+    <div id="wrapper">
+        <div class="page-header page-header-style--1">
+            <div class="container">
+                {% cookielaw_banner %}
+
+              <h6 class="page-subtitle">{% block subtitle %}{% endblock %}</h6>
+              <h1 class="page-title">{% block title %}{% endblock %}</h1>
+            </div>
+            <!-- end div .container -->
+          </div>
+          <!-- end div .page-header -->
+      
+      <div class="container">
+        {# Display django.contrib.messages as Bootstrap alerts #}
+        {% bootstrap_messages %}
+
+      </div>
+      <div class="container-fluid">
+        <div class="row">       
+          {% block content %}
+          {% endblock %}
+        </div>
+      </div>
+
+      <!-- end div .section -->
+      <footer id="footer">
+        <div class="footer-top">
+          <div class="container">
+            <div class="row align-items-center">
+              <div class="col-sm-6">
+                <div class="footer-logo">
+                  <a href="/"><img src="{% static 'assets/images/logo-orange.png' %}" alt="image" class="img-fluid"></a>
+                </div>
+              </div>
+              <div class="col-sm-6">
+                <div class="footer-social">
+                  <ul>
+                    <li>
+                      <a href="#"><i class="ti-facebook"></i></a>
+                    </li>
+                    <li>
+                      <a href="#"><i class="ti-twitter"></i></a>
+                    </li>
+                    <li>
+                      <a href="#"><i class="ti-linkedin"></i></a>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <!-- end div .row -->
+          </div>
+          <!-- end div .container -->
+        </div>
+        <!-- end div .footer-top -->
+        <div class="footer-middle">
+          <div class="container">
+            <div class="row">
+              <div class="col-lg-4 col-sm-6">
+                <div class="footer-widget">
+                  <h4 class="footer-title">Get to Know Us</h4>
+                  <div class="footer-menu">
+                    <ul>
+                      <li class=""><a href="{% url 'navigation:termsAndConditions' %}">Terms and Conditions</a></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-4 col-sm-6">
+                  <div class="footer-widget">
+                    <h4 class="footer-title">Contact Us</h4>
+                    <div class="footer-menu">
+                      <ul>
+                        <li class="email"><a href="{% url 'navigation:helpAndSupport' %}">Help and Support</a></li>
+                        <li class="email"><a href="{% url 'navigation:developerProgram' %}">SharingHub Developer Program</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              <div class="col-lg-4 col-sm-6">
+                <div class="footer-widget">
+                  <h4 class="footer-title">Market Information</h4>
+                  <div class="footer-menu">
+                    <ul>
+                      <li class=""><a href="{% url 'navigation:howItWorks' %}">How it Works</a></li>
+                      <li class=""><a href="{% url 'navigation:transactionGuide' %}">Transaction Workflow</a></li>
+                      <li class=""><a href="{% url 'navigation:escrowInformation' %}">FCA Regulated Escrow</a></li>                      
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <!-- end div .row -->
+          </div>
+          <!-- end div .container -->
+        </div>
+        <!-- end div .footer-middle -->
+        <div class="footer-copyright bg-white">
+          <a class="go_top" href="javascript:;"><i class="ti-angle-up"></i></a>
+          <!-- end of .go_top -->
+          <div class="container">
+            <p class="copyright-text">© Copyright 2018, SharingHub.</p>
+          </div>
+          <!-- end div .container -->
+        </div>
+        <!-- end div .footer-copyright -->
+      </footer>
+      <!-- end tag footer -->
+    </div>
+    <!-- end div #wrapper -->
+
+
+    {#<script src="{% static 'assets/plugins/jQuery/jquery-3.2.1.min.js' %}"></script>#}
+    {#<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>#}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
+
+    <script src="{% static 'assets/plugins/bootstrap/js/bootstrap.min.js' %}"></script>   
+    <script src="{% static 'assets/plugins/OwlCarousel2/owl.carousel.min.js' %}"></script>  
+    <script src="{% static 'assets/plugins/OwlCarousel2/data-owl-carousel.js' %}"></script>
+    <script src="{% static 'assets/plugins/dropzone/dropzone.js' %}"></script>  
+    <script src="{% static 'assets/plugins/select2/js/select2.min.js' %}"></script>  
+    <script src="{% static 'assets/plugins/magnific-popup/js/jquery.magnific-popup.min.js' %}"></script>  
+    <script src="{% static 'assets/js/main.js' %}"></script>
+    <script src="{% static 'cookielaw/js/cookielaw.js' %}"></script>
+
+    {% block pageJavascript %}
+    {% endblock %}
+
+    <script>
+        var csrftoken = Cookies.get('csrftoken');
+            function csrfSafeMethod(method) {
+                // these methods do not need CSRF protection
+                return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
+            }        
+        $.ajaxSetup({
+            beforeSend: function(xhr, settings) {
+                if (!csrfSafeMethod(settings.type) && !this.crossDomain) {
+                    xhr.setRequestHeader("X-CSRFToken", csrftoken)
+                }
+            }
+        });
+        $(document).ready(function() {
+            {% block domready %}
+            {% endblock %}
+        });
+    </script>
+
+    <script>
+    (function() {
+      var btn = document.getElementById('search-locate-btn');
+      var icon = document.getElementById('search-locate-icon');
+      var input = document.getElementById('search-location-input');
+      if (!btn) return;
+      btn.addEventListener('click', function() {
+        if (!navigator.geolocation) return;
+        icon.className = 'fas fa-spinner fa-spin';
+        btn.style.pointerEvents = 'none';
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            var lat = pos.coords.latitude;
+            var lon = pos.coords.longitude;
+            fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lon + '&format=json', {
+              headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              var a = data.address || {};
+              var place = a.town || a.city || a.village || a.suburb || a.county || '';
+              input.value = place;
+              icon.className = 'fas fa-map-marker-alt';
+              btn.style.pointerEvents = '';
+            })
+            .catch(function() {
+              icon.className = 'fas fa-map-marker-alt';
+              btn.style.pointerEvents = '';
+            });
+          },
+          function() {
+            icon.className = 'fas fa-map-marker-alt';
+            btn.style.pointerEvents = '';
+          }
+        );
+      });
+    })();
+    </script>
+
+    <script>
+    (function() {
+      var form = document.querySelector('#site-search-bar form');
+      var locationInput = document.getElementById('search-location-input');
+      if (!form || !locationInput) return;
+      var geolocating = false;
+      form.addEventListener('submit', function(e) {
+        if (geolocating) return;
+        if (locationInput.value.trim() !== '') return;
+        if (!navigator.geolocation) return;
+        e.preventDefault();
+        geolocating = true;
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            fetch('https://nominatim.openstreetmap.org/reverse?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&format=json', {
+              headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              var a = data.address || {};
+              var place = a.town || a.city || a.village || a.suburb || a.county || '';
+              if (place) { locationInput.value = place; }
+            })
+            .catch(function() {})
+            .finally(function() { form.submit(); });
+          },
+          function() { form.submit(); },
+          { timeout: 5000 }
+        );
+      });
+    })();
+    </script>
+
+  </body>
+</html>

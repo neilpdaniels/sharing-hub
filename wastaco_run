@@ -1,0 +1,12 @@
+#!/usr/bin/bash
+pkill celery
+pkill flower
+source /home/neil/Projects/sharing-hub/.venv/bin/activate
+cd /home/neil/Projects/sharing-hub/
+nohup uv run celery -A sharing_hub worker -l debug -f ./logs/celery_worker.log > ./logs/nohup.out 2>&1 &
+#uv run celery -A sharing_hub worker -l info -f ./logs/celery_worker.log
+nohup uv run celery -A sharing_hub beat -l info -f ./logs/celery_beat.log > ./logs/nohup.out 2>&1 &
+nohup uv run celery -A sharing_hub flower > ./logs/nohup.out 2>&1 &
+
+
+

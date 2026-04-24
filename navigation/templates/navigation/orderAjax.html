@@ -1,0 +1,71 @@
+{% load static %}
+{% load thumbnail %}
+{% if order %}
+<div class="pt-2 pb-1 border-top">
+
+    {% if orderImages %}
+    <ul class="lightGallery list-inline mb-2">
+        {% for orderImage in orderImages %}
+        {% thumbnail orderImage.image "100x80" crop="center" as im %}
+        <li data-src="{{ orderImage.image.url }}" class="list-inline-item">
+            <img src="{{ im.url }}" height="60" width="75" style="object-fit:cover;border-radius:3px;cursor:pointer;">
+        </li>
+        {% endthumbnail %}
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if order.description %}
+    <p class="small mb-1">{{ order.description }}</p>
+    {% endif %}
+
+    <div class="row small text-muted">
+
+        {% if price_bands %}
+        <div class="col-md-6 mb-2">
+            <strong class="text-dark">Price bands</strong>
+            <table class="table table-sm table-borderless mb-0">
+                <thead><tr><th class="py-0">Duration</th><th class="py-0">£/day</th></tr></thead>
+                <tbody>
+                {% for band in price_bands %}
+                <tr>
+                    <td class="py-0">Up to {{ band.duration_days }} day{{ band.duration_days|pluralize }}</td>
+                    <td class="py-0">£{{ band.price_per_day|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <div class="col-md-6 mb-2">
+            {% if order.max_rental_days %}
+            <div><span class="fas fa-calendar-alt mr-1"></span>Max {{ order.max_rental_days }} day{{ order.max_rental_days|pluralize }} per booking</div>
+            {% endif %}
+            {% if order.deposit %}
+            <div><span class="fas fa-shield-alt mr-1"></span>£{{ order.deposit|floatformat:2 }} refundable deposit</div>
+            {% endif %}
+            {% if order.mates_rates %}
+            <div><span class="fas fa-user-friends mr-1"></span>Friends: £{{ order.mates_rates|floatformat:2 }}/day
+                {% if order.mates_deposit %}&nbsp;· £{{ order.mates_deposit|floatformat:2 }} deposit{% endif %}
+            </div>
+            {% endif %}
+            <div><span class="fas fa-truck mr-1"></span>{{ order.get_collection_policy_display }}
+                {% if order.delivery_cost %}&nbsp;· delivery £{{ order.delivery_cost|floatformat:2 }}{% endif %}
+            </div>
+            {% if order.collection_details %}
+            <div class="mt-1">{{ order.collection_details }}</div>
+            {% endif %}
+        </div>
+
+    </div>
+
+    <div class="small">
+        <span class="font-weight-bold">Lender: </span>
+        {% include "user_profile_modal.html" with user=order.user %}
+    </div>
+
+</div>
+{% else %}
+    <p>No order provided.</p>
+{% endif %}

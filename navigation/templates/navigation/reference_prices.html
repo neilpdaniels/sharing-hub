@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% load cache %}
+{% load thumbnail %}
+{% load static %}
+{% load humanize %}
+{% load common_lib %}
+
+{% block title %}SharingHub - Reference prices{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+
+    <div class="section bg-light">
+        <div class="container">
+            <div class="row align-items-center">
+            <div class="col-md-12 order-md-1">
+                <div class="featured-content">
+                <p>SharingHub currently uses the <a href="http://www.lbma.org.uk/">LMBA</a> fixing prices.  Each metal's prices are generated at set times dependant on the precious metal in question.  
+                    See individual metals below for a more information.  Prices will be taken in USD and converted to GBP using the current FX spot price (the current conversion rate).
+                <br /><br />
+                    There will be a short delay from the official publishing until we receive the prices and apply to the relevant orders; this delay is monitored and controlled.  SharingHub holds no responsibilty for any losses incurred due to incorrectly priced orders, though any erroroneously priced errors can be cancelled without consent of the other party, by raising a dispute request on the transaction.
+                <br /><br />
+                    Wastaco does not currently offer a reference price that uses the current bid/offer prices and so any prices should be set allowing for the expected variation in prices between fixing times.
+                <br /><br />
+                    Should you be interested in pricing your SharingHub orders independently via our secure API, else if you require more information on our refernce prices, please <a href="mailto:admin@sharing-hub.com">contact us</a>
+                </p>
+                </div>
+            </div>
+            </div>
+            <!-- end div .row -->
+        </div>
+    <!-- end div .container -->
+    </div>
+
+    <div class="col-lg-6    ">
+        <div class="service text-center">
+            <div class="service-icon">
+            {% if gold.image %}
+            {% thumbnail gold.image "120" format="PNG" as im %}
+            <img src="{{ im.url }}" alt="">
+            {% endthumbnail %}
+            {% endif %}
+            </div>
+            <!-- end div .service-icon -->
+            <h3 class="service-title">Current Gold Prices</h3>
+
+            <p>The LBMA Gold price is set twice daily at 10:30 and 15:00 in an auction independently operated and administered by ICE Benchmark Administration.
+                The price is set in US dollars per fine troy ounce.  The price is set for that current point in time, and will be the base price for many large transactions.  
+
+                This process only runs every <a href="https://www.theice.com/publicdocs/LBMA_Gold_Price_Holiday_Calendar_2019.pdf">business day</a>, with exceptions on Christmas eve and New Year's eve, where it will run only once at 10:30 AM.
+            </p>
+
+            <table class="table table-borderless table-condensed table-nopadding">
+                <tr><td>1kg</td><td>£{{ gold_ref.gbp_price|multiply:"32.151"|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1Oz</td><td>£{{ gold_ref.gbp_price|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1g</td><td>£{{ gold_ref.gbp_price|multiply:"0.032151"|floatformat:2|intcomma }}</td></tr>
+            </table>
+            <!-- end div .service -->
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="service text-center">
+
+            <div class="service-icon">
+            {% if silver.image %}
+            {% thumbnail silver.image "120" format="PNG" as im %}
+            <img src="{{ im.url }}" alt="">
+            {% endthumbnail %}
+            {% endif %}                </div>
+            <!-- end div .service-icon -->
+            <h3 class="service-title">Current Silver Prices</h3>
+            <p>The LBMA Silver price auction is independently operated and administered by ICE Benchmark Administration. 
+                <br />
+                The price is set daily in US dollars per ounce at 12:00 noon London time, on all <a href="https://www.theice.com/publicdocs/LBMA_Silver_Price_Holiday_Calendar_2019.pdf">business days</a></p>
+            
+            <table class="table table-borderless table-condensed table-nopadding">
+                <tr><td>1kg</td><td>£{{ silver_ref.gbp_price|multiply:"32.151"|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1Oz</td><td>£{{ silver_ref.gbp_price|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1g</td><td>£{{ silver_ref.gbp_price|multiply:"0.032151"|floatformat:2|intcomma }}</td></tr>
+            </table>         
+            <!-- end div .service -->
+        </div>
+    </div>
+    <div class="col-lg-6 ">
+        <div class="service text-center">
+            <div class="service-icon">
+            {% if platinum.image %}
+            {% thumbnail platinum.image "120" format="PNG" as im %}
+            <img src="{{ im.url }}" alt="">
+            {% endthumbnail %}
+            {% endif %}                </div>
+            <!-- end div .service-icon -->
+            <h3 class="service-title">Current Platinum Prices</h3>
+            <p>The LBMA Platinum prices are set twice daily (at 09:45 and 14:00) in US dollars per .9995 fine ounces in an auction process independently operated and administered by the London Metal Exchange.
+                <br /><br />
+                Exchange holidays can be downloaded <a href="https://www.lme.com/-/media/Files/Trading/Calendars/2019_2029_LME-Trading-Calendar_A4.pdf?la=en-GB">here</a>.
+            </p>
+
+            <table class="table table-borderless table-condensed table-nopadding">
+                <tr><td>1kg</td><td>£{{ platinum_ref.gbp_price|multiply:"32.151"|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1Oz</td><td>£{{ platinum_ref.gbp_price|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1g</td><td>£{{ platinum_ref.gbp_price|multiply:"0.032151"|floatformat:2|intcomma }}</td></tr>
+            </table>         
+            <!-- end div .service -->
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="service text-center">
+
+            <div class="service-icon">
+            {% if palladium.image %}
+            {% thumbnail palladium.image "120" format="PNG" as im %}
+            <img src="{{ im.url }}" alt="">
+            {% endthumbnail %}
+            {% endif %}                  </div>
+            <!-- end div .service-icon -->
+            <h3 class="service-title">Current Palladium Prices</h3>
+            <p>The LBMA Palladium prices are set twice daily (at 09:45 and 14:00) in US dollars per .9995 fine ounces in an auction process independently operated and administered by the London Metal Exchange
+                <br /><br />
+                Exchange holidays can be downloaded <a href="https://www.lme.com/-/media/Files/Trading/Calendars/2019_2029_LME-Trading-Calendar_A4.pdf?la=en-GB">here</a>.
+            </p>
+
+            <table class="table table-borderless table-condensed table-nopadding">
+                <tr><td>1kg</td><td>£{{ palladium_ref.gbp_price|multiply:"32.151"|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1Oz</td><td>£{{ palladium_ref.gbp_price|floatformat:2|intcomma }}</td></tr>
+                <tr><td>1g</td><td>£{{ palladium_ref.gbp_price|multiply:"0.032151"|floatformat:2|intcomma }}</td></tr>
+            </table>          
+            <!-- end div .service -->
+        </div>
+    </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block domready %}
+{% endblock %}

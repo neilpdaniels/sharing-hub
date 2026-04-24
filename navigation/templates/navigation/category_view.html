@@ -1,0 +1,30 @@
+{% load thumbnail %}
+{% load static %}
+
+<a href="{% url 'navigation:browseCategory' category.slug %}">
+    <div class="col-md-3 mb-3">
+        <div class="card product-card" >
+            <div class="product-thumb">
+                {% if category.image %}
+                {% thumbnail category.image "200" format="PNG" as im %}
+                <img class="card-img-top" src="{{ im.url }}" alt="Card image cap">
+                {% endthumbnail %}
+                {% else %}
+                <img class="card-img-top" src="{% static 'assets/images/not-available.jpg' %}" alt="Card image cap">
+                {% endif %}
+                <!-- end div .product-action -->
+            </div>
+            <!-- end div .product-thumb --> 
+            <a href="{% url 'navigation:browseCategory' category.slug %}">
+            <div class="card-body text-center">
+                <!-- end tag a .product-addto-collection -->
+                <h5 class="card-title">{{ category.title | title}}</h5>
+                {% if category.description %}
+                <p class="card-text">{{ category.description }}</p>
+                {% endif %}
+            </div>
+            </a>
+        </div>
+        <!-- end div .product-card -->
+    </div>
+</a>

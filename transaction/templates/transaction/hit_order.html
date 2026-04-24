@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% load bootstrap4 %}
+
+{% block title %}Hit order{% endblock %}
+{% if order %}
+{% block content %}
+<div class="container">
+        <div class="row">
+          <div class="col-lg-2"></div>
+            <div class="col-lg-8">
+    <p>Please verify the price below (it's possible it will have refreshed from spot) and confirm you wish to {{ hit_direction|lower }} in this order?</p>
+    <form action="." method="post" enctype="multipart/form-data">
+        {# if order quantity > 1 , else just put hidden as 1 #}
+        {% bootstrap_form order_hit_form %}
+        {% csrf_token %}
+
+        <div class="form-group">
+            <label class="control-label" for="order_price">Price per item ({{ order.currency }})</label>
+            <input type="text" name="order_price" id="id_order_price" class="form-control" value="{{ order.price }}" disabled />
+        </div>
+        <div class="form-group">
+            <label class="control-label" for="order_description">Description</label>
+            <textarea name="order_description" class="form-control" disabled rows="7">{{ order.description }}</textarea>
+        </div>
+
+        {% if order.direction == 'S' %}
+            <h5>Transaction Costs</h5><p>Paid by buyer</p>
+            {% for fee_key, fee_value in fees.items %}
+            <div class="form-group">
+                <label class="control-label" for="{{fee_key.slug|lower}}">{% if fee_key.url %}<a href="{{fee_key.url}}">{% endif %}{{fee_key.tooltip}}{% if fee_value.count == 1 %}: {% if fee_value.0.price_style == 'A' %}£{% endif %}{{fee_value.0.price}}{% if fee_value.0.price_style == 'A' %} per transaction{% endif %}{% if fee_value.0.price_style == 'P' %}% of gross total{% endif %}{% endif %}{% if fee_key.url %}</a>{% endif %}</label>
+                <div class="input-group">
+                <input type="text" name="{{fee_key.slug}}" id="id_{{fee_key.slug|lower}}" class="form-control" value="{% if fee_value.count == 1 %}{% if fee_value.0.price_style == 'A' %}{{fee_value.0.price}}{% else %}0{% endif %}{% else %}0{% endif %}" disabled />
+                {% if fee_key.popover %}
+                <div class="input-group-append">
+                    <span class="input-group-text">
+                        <a href="javascript:void(0);" data-toggle="{{fee_key.slug|lower}}_popover" data-placement="left" title="" data-content="{{fee_key.popover}}" data-original-title="Fee info: {{fee_key.name}}"><span class="fa fa-info-circle" id="{{fee_key.slug|lower}}_info"></span>
+                        </a>
+                    </span>
+                </div>
+                {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% endif %}
+        {% if order.direction == 'S' %}
+        <h4>Total to pay: £<span id="id_total_price"></span></h4>
+        {% else %}
+        <h4>Total to be received:  £<span id="id_total_price"></span></h4>
+        {% endif %}
+
+        
+        {% csrf_token %}
+        <input type="hidden" name="order_id" value="{{ order.id }}">
+        <input type="hidden" name="order_required_price" value="{{ order.price }}">
+        <p><input id="form-submit" type="submit" value="Yes"  style="display: none;" ></p>
+    </form>
+    
+    <button type="button" class="btn btn-primary js-form-submit">
+        <span class="fas fa-floppy-save"></span> Confirm 
+        {% if order.direction == 'S' %}
+        Purchase
+        {% else %}
+        Sale
+        {% endif %}
+    </button>
+</div>
+</div>
+</div>
+
+{% endblock %}
+
+{% block domready %}
+{# set default quantity to 1 #}
+$('#id_quantity').val(1);
+
+{% for fee_key, fee_value in fees.items %}
+
+    {% if fee_key.slug == 'royal_mail_special_delivery_pre_1pm' %}
+        function calculate{{fee_key.slug|lower}}(qty) {
+            var csrftoken = $('[name="csrfmiddlewaretoken"]').val();
+            $('#id_{{fee_key.slug|lower}}').val('awaiting reply')
+            $.ajax({
+                url : '{% url "transaction:get_fee" %}',
+                type: 'POST',
+                data: { 
+                    'csrfmiddlewaretoken': csrftoken,
+                    order_id: "{{ order.id }}",
+                    fee_slug : "{{ fee_key.slug }}",
+                    quantity : qty,
+                    order_required_price : {{ order.price }}
+                },
+            }).done(handleData_{{fee_key.slug|lower}});
+        }
+        function handleData_{{fee_key.slug|lower}}(data) {   
+            if (data.status == 'OK') {
+                $('#id_{{fee_key.slug|lower}}').val(data.price_calculated)
+                $('#id_total_price').html(calculateTotalPrice())
+            }
+        }
+    {% else %}
+        {% if fee_value.count == 1 %}
+            {% if fee_value.0.price_style == 'P' %}
+                function calculate{{fee_key.slug|lower}}(qty) {
+                    var toReturn = qty * {{ order.price }} * ({{fee_value.0.price}}/100)
+                    return toReturn.toFixed(2)
+                }
+                $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
+            {% endif %}
+        {% else %}
+            {# doesnt handle multi bands and percentage #}
+            {% if fee_value.0.price_style == 'A' %}
+
+            function min{{fee_key.slug|lower}}ForWeight(qty) {
+                var weight = {{ item_weight }}
+                var total_weight = qty * weight
+                var toReturn = 0
+            {% for row in fee_value %}
+                if ( total_weight <= {{row.max_weight}}) {
+                    toReturn = {{row.price}}
+                }
+            {% endfor %}
+            return toReturn;
+            }
+            function min{{fee_key.slug|lower}}ForValue(qty) {
+                var total_cost = qty * {{ order.price }}
+                var toReturn = 0
+            {% for row in fee_value %}
+                if ( total_cost <= {{row.max_price}}) {
+                    toReturn = {{row.price}}
+                }
+            {% endfor %}
+            return toReturn;
+            } 
+            function calculate{{fee_key.slug|lower}}(qty) {
+                if (min{{fee_key.slug|lower}}ForValue(qty) > min{{fee_key.slug|lower}}ForWeight(qty)) {
+                    return min{{fee_key.slug|lower}}ForValue(qty)
+                } else {
+                    return min{{fee_key.slug|lower}}ForWeight(qty)
+                }
+            }
+            $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
+
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
+{% endfor %}
+
+function calculateTotalPrice() {
+    var toReturn = 0;
+    toReturn = toReturn + parseFloat($('#id_quantity').val()) * {{ order.price }}
+    {% if order.direction == 'S' %}
+    {% for fee_key, fee_value in fees.items %}
+        toReturn = toReturn + parseFloat($('#id_{{fee_key.slug|lower}}').val());
+    {% endfor %}
+    {% endif %}
+    return toReturn.toFixed(2)
+}
+
+
+$('#id_total_price').html(calculateTotalPrice())
+$('#id_quantity').change(function() {
+    {% for fee_key, fee_value in fees.items %}
+        {% if fee_key.slug == 'royal_mail_special_delivery_pre_1pm' %}
+            calculate{{fee_key.slug|lower}}($('#id_quantity').val())
+        {% else %}
+            {% if fee_value.count == 1 %}
+                {% if fee_value.0.price_style == 'P' %}
+                    $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
+                {% endif %}
+            {% else %}
+                {# doesnt handle multi bands and percentage #}
+                {% if fee_value.0.price_style == 'A' %}
+                $('#id_{{fee_key.slug|lower}}').val(calculate{{fee_key.slug|lower}}($('#id_quantity').val()))
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+    $('#id_total_price').html(calculateTotalPrice())
+});
+{# hide quantity if no option other than 1 #}
+if ({{ order.quantity }} == 1) {
+    $('#id_quantity').hide();
+    $("[for='id_quantity']" ).hide();
+}
+
+{% for fee_key, fee_value in fees.items %}
+$('[data-toggle="{{fee_key.slug|lower}}_popover"]').popover({html: true}); 
+{% endfor %}
+
+{# set maximum value to the order quantity #}
+$('#id_quantity').on('input', function () {
+    var value = $(this).val();
+    if ((value !== '') && (value.indexOf('.') === -1)) {
+        $(this).val(Math.max(Math.min(value, {{ order.quantity }}), 1));
+    }
+});
+
+$(".js-form-submit").click(function () {
+    $("#id_order_price").prop("disabled", false);
+    {% for fee_key, fee_value in fees.items %}
+    $("#id_{{fee_key.slug|lower}}").prop("disabled", false);
+    {% endfor %}
+    $("#form-submit").click();
+});
+
+calculateroyal_mail_special_delivery_pre_1pm($('#id_quantity').val())
+
+{% endblock %}
+{% endif %}

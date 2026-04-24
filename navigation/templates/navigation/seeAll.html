@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load thumbnail %}
+
+{% block title %}See All Categories{% endblock %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-2"></div>
+        <div class="col-lg-8">
+{% if allCategories %}
+    <ul>
+    {% for category in allCategories %}
+    <li><a href="{% url 'navigation:browseCategory' category.slug %}">{{ category.title }}</a>
+    {% if category.image %}
+        {% thumbnail category.image "200" format="PNG" as im %}
+        <img src="{{ im.url }}">
+        {% endthumbnail %}
+    {% endif %}
+    </li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>No categories available.</p>
+{% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block domready %}
+{% endblock %}

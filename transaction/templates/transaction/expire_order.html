@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+
+{% block title %}Expire order{% endblock %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-2"></div>
+        <div class="col-lg-8">
+    <h1>Expire your order</h1>
+    <p>Please confirm you wish to expire your order:</p>
+    <form action="." method="post" enctype="multipart/form-data">
+        {% bootstrap_form order_form %}
+        {% csrf_token %}
+        <input type="hidden" name="order_id" value="{{ order.id }}">
+        <p>
+            <input type="submit" class="btn btn-primary" href="{{ back_url|default:'/' }}"
+                   onclick="history.back(); return false;" value="Cancel">
+            <input type="submit" class="btn btn-primary" value="Confirm Expiry">
+        </p>
+
+    </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block domready %}
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% load thumbnail %}
+{% load common_lib %}
+
+{% block subtitle %}My SharingHub{% endblock %}
+{% block title %}{{ type|title }} Orders{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+            {% if orders|length > 0 %}
+            {% include "pagination.html" with page=orders %}
+            <div class="table-striped">
+                <table class="table">
+                    <thead>
+                        <th>Order reference</th>
+                        <th>Item</th>
+                        <th>Direction</th>
+                        <th>Quantity left</th>
+                        <th>Number of Transactions</th>
+                        <th>Expiry Date</th>
+                        <th>Price type</th>
+                        <th>Last Price</th>
+                        <th>Relative %</th>
+                        <th>Relative offset</th>
+            
+                    </thead>
+                    <tbody>
+                    {% if orders|length > 0 %}
+                        {% for order in orders %}
+                        <tr>
+                            <td>{{ order.order_reference }}</td>
+                            <td><a href="{% url 'navigation:productPage' order.product.slug %}">{{ order.product.name }}</a></td>
+                            <td>{{ order.get_direction_display }}</td>
+                            <td>{{ order.quantity }}</td>
+                            {% if orderTransactions|get_item:order.id|length > 0 %}
+                            <td><a href="#" id="show_transactions_{{order.id}}">{{orderTransactions|get_item:order.id|length }}</a></td>
+                            {% else %}
+                            <td>0</td>
+                            {% endif %}
+                            <td>{{ order.expiry_date }}</td>
+                            <td>{{ order.get_price_style_display }}</td>
+                            <td>{{ order.price }}</td>
+                            <td>{{ order.relative_price_pct }}</td>
+                            <td>{{ order.relative_offset }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <br /><h4>You have no {{ type }} orders</h4>  
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+
+{% if orderTransactions %}
+    {% for key, value in orderTransactions.items %}
+<!-- Modal -->
+<div class="modal fade" id="messageModal_{{key}}" tabindex="-1" role="dialog" aria-labelledby="messageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+        <div class="modal-body">
+            <div class="table-striped">
+                <table class="table">
+                    <thead>
+                        <th>Transaction Ref.</th>
+                        <th>Seller</th>
+                        <th>Buyer</th>
+                        <th>Agreed Price per Item</th>
+                        <th>Quantity</th>
+                        <th>Transaction Status</th>
+                    </thead>
+                    <tbody>
+                {% for transaction in value %}
+                <div class="row">
+                    <div class="col-md-12 ml-auto"><p id="messageModalContent">
+                        <tr>
+                            <td><a href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">{{ transaction.transaction_reference }}</a></td>
+                            <td>
+                                {% if transaction.order_passive.direction == 'B' %}
+                                {{ transaction.user_aggressive }}
+                                {% else %}
+                                {{ transaction.user_passive }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if transaction.order_passive.direction == 'S' %}
+                                {{ transaction.user_aggressive }}
+                                {% else %}
+                                {{ transaction.user_passive }}
+                                {% endif %}
+                            </td>
+                            <td>{{ transaction.price }}</td>
+                            <td>{{ transaction.quantity }}</td>
+                            <td>{{ transaction.get_transaction_status_display }}</td>
+                        </tr>
+                    </p></div>
+                </div>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        </div>
+        </div>
+    </div>
+</div> 
+{% endfor %}
+{% endif %}
+
+{% endblock %}
+
+{% block domready %}
+{% if orderTransactions %}
+
+    {% for key, value in orderTransactions.items %}
+
+        $('#show_transactions_{{key}}').click(
+            function(){
+                $('#messageModal_{{key}}').modal('show');
+            }
+        );
+    {% endfor %}
+{% endif %}
+{% endblock %}

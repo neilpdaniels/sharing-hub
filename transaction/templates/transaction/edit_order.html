@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+{% block headerContent %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css">
+{% endblock %}
+{% block title %}Edit order {% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+      <div class="col-lg-2"></div>
+        <div class="col-lg-8">
+
+<h1>Edit your order</h1>
+<p>you can edit with the following:</p>
+<form action="." method="post" enctype="multipart/form-data">
+  {% bootstrap_form_errors order_form %}
+  {# bootstrap_form order_form #}
+  {% bootstrap_field order_form.direction %}
+  <div id="id_charges_confirmation">
+    <p>Please confirm you accept the additional costs, in addition to the product price, when buying. </p>
+    <ul>
+      {% for fee_key, fee_value in fees.items %}
+      <li>{% if fee_key.url %}<a href="{{fee_key.url}}">{% endif %}{{fee_key.tooltip}}{% if fee_value.count == 1 %}: {% if fee_value.0.price_style == 'A' %}£{% endif %}{{fee_value.0.price}}{% if fee_value.0.price_style == 'A' %} per transaction{% endif %}{% if fee_value.0.price_style == 'P' %}% of gross total{% endif %}{% endif %}{% if fee_key.url %}</a>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input" id="confirmed_charges">
+        <label class="form-check-label" for="confirmed_tandcs">I accept</label>
+    </div>
+    <p><input id="form-submit" type="submit" style="display: none;" value="Save"></p>
+  </div>
+  {% bootstrap_field order_form.quantity %}
+  {% bootstrap_field order_form.expiry_date %}
+  {% bootstrap_field order_form.price_style addon_after='<a href="javascript:void(0);" data-toggle="price_popover" data-placement="left" title="Price types:" data-content="There are 2 ways to price an order in SharingHub:<br /><ol><li><b>Absolute:</b> &nbsp;An order with a set price, which doesn\'t change</li><li><b>Relative:</b> &nbsp;A price calculated as a percentage of the spot value +/- any offset amount in £s.  This will be recalculated as our spot price feeds update.</ol>"><span class="fa fa-info-circle" id="price_info"></span></a>' %}
+  
+  {% bootstrap_field order_form.relative_price_pct %}
+  {% bootstrap_field order_form.relative_offset %}
+  {% bootstrap_field order_form.price %}
+  {% bootstrap_field order_form.description %}
+  {% csrf_token %}
+    <input type="hidden" name="order_id" value="{{ order.id }}">
+    <input id="order_image_id" type="hidden" name="order_image_id" value="">
+    <p><input id="form-submit" type="submit" style="display: none;" value="Save"></p>
+</form>
+
+    <!-- {# bootstrap_form order_image_form #} -->
+
+    <div class="form-group">
+    {# 1. BUTTON TO TRIGGER THE ACTION #}
+    <label for="id_add_images">Order Photos (max 5)</label><br />
+    <button type="button" class="btn btn-secondary js-upload-photos"  id="id_add_images">
+        <span class="fas fa-cloud-upload"></span> Add  photos
+    </button>
+    
+    {# 2. FILE INPUT TO BE USED BY THE PLUG-IN #}
+    <input id="fileupload" type="file" name="image"
+           style="display: none;"
+           data-url="{% url 'transaction:order_image_upload' %}"
+           data-form-data='{
+                "csrfmiddlewaretoken": "{{ csrf_token }}",
+                <!-- "user_id" : 12 -->
+            }'>
+
+    <div class="modal fade" id="modal-progress" data-backdrop="static" data-keyboard="false">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h4 class="modal-title">Uploading...</h4>
+          </div>
+          <div class="modal-body">
+            <div class="progress">
+              <div class="progress-bar" role="progressbar" style="width: 0%;">0%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-12">
+
+    {# 3. TABLE TO DISPLAY THE UPLOADED PHOTOS #}
+    <table id="gallery" class="table table-bordered">
+      <tbody>
+        
+        {% for image in orderImages %}
+          <tr id="id_image_{{image.id}}"><td>
+            <img style='object-fit: contain' src='{{image.image.url}}'>
+            <button type="button" class="btn btn-secondary" id="id_remove_image_{{image.id}}" style="position: absolute; margin-top: -60px; margin-left: 12px">
+                <span class="fas fa-trash"></span> remove
+            </button>
+          
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    </div>
+    <button type="button" class="btn btn-primary js-form-submit">
+      <span class="fas fa-floppy-save"></span> Submit
+    </button>
+  </div>
+</div>
+</div>
+
+{% endblock %}
+
+
+{% block pageJavascript %} 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/i18n/jquery-ui-timepicker-addon-i18n.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-sliderAccess.js"></script>   
+    <script src="https://cdn.jsdelivr.net/npm/jquery.ui.widget@1.10.3/jquery.ui.widget.js"></script>   
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.iframe-transport.min.js"></script>   
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>   
+{% endblock %}
+{% block domready %}
+/* page set up javascript block */
+var imagesAlreadySaved=parseInt({% if orderImages %}{{ orderImages|length }}{% else %}0{% endif %});
+{% if orderImages %}
+{% if orderImages|length  > 4 %}
+$('#id_add_images').hide();
+{% endif %}
+{% endif %}
+
+$('[data-toggle="price_popover"]').popover({html: true}); 
+
+/* image remove block */
+{% for image in orderImages %}
+$('#id_remove_image_{{image.id}}').click(
+  function(){
+    $.ajax({
+        url : '{% url "transaction:remove_order_image" %}',
+        type: 'GET',
+        data: { order_id: "{{ order.id }}",
+            image_id : "{{ image.id }}",
+        },
+    }).done(handleData_{{image.id}});
+});
+function handleData_{{image.id}}(data) {   
+  if (data.status == 'OK') {
+    $('#id_image_{{image.id}}').html('');
+    imagesAlreadySaved--;
+    if (imagesAlreadySaved < 5) {
+      $('#id_add_images').show();
+    }
+  }
+}
+{% endfor %}
+
+/* removal of new (not yet associated) images */
+$(document).on("click", '.remove_image', function(event) {
+    var id = this.id;
+    alert(id);
+    /* remove from list ot associate */
+    $('#order_image_id').val($('#order_image_id').val().replace(' '+id+' ',''));
+    /* # remove from local page */
+    var toFind = '#id_image_' + id;
+    $(toFind).html('')
+    var totalImages = imagesAlreadySaved + $('#order_image_id').val().trim().replace(new RegExp('  ', 'g'), ' ').split(" ").length;
+    if (totalImages < 5) {
+      $('#id_add_images').show();
+    }
+  }
+);
+
+/* image upload javascript block */
+$('#id_expiry_date').attr("autocomplete", "off");
+$('#id_expiry_date').datetimepicker({
+    dateFormat: "yy-mm-dd",
+	  timeInput: true,
+    timeFormat: "HH:mm:ss",
+    showSecond: false,
+    secondMin: 59,
+    secondMax: 59,
+    second: 59,
+    minDate: 0,
+    maxDate: 365    ,
+});
+  /* 1. OPEN THE FILE EXPLORER WINDOW */
+  $(".js-upload-photos").click(function () {
+    $("#fileupload").click();
+  });
+
+  /* 2. INITIALIZE THE FILE UPLOAD COMPONENT */
+  $("#fileupload").fileupload({
+      dataType: 'json',
+      sequentialUploads: true,  /* 1. SEND THE FILES ONE BY ONE */
+      disableImageResize: 'false',
+      start: function (e) {  /* 2. WHEN THE UPLOADING PROCESS STARTS, SHOW THE MODAL */
+        $("#modal-progress").modal("show");
+      },
+      stop: function (e) {  /* 3. WHEN THE UPLOADING PROCESS FINALIZE, HIDE THE MODAL */
+        $("#modal-progress").modal("hide");
+      },
+      progressall: function (e, data) {  /* 4. UPDATE THE PROGRESS BAR */
+        var progress = parseInt(data.loaded / data.total * 100, 10);
+        var strProgress = progress + "%";
+        $(".progress-bar").css({"width": strProgress});
+        $(".progress-bar").text(strProgress);
+      },
+      done: function (e, data) { 
+        if (data.result.is_valid) {
+          $("#gallery tbody").prepend(
+            "<tr id='id_image_"+data.result.order_image_id+"'><td><img style='object-fit: contain' src='" + data.result.image_url + "'" + data.result.image_name + "><br /><button type='button' class='btn btn-secondary remove_image' id='"+ data.result.order_image_id +"' style='position: absolute; margin-top: -60px; margin-left: 12px'><span class='fas fa-trash'></span> remove</button></td></tr>"
+          );
+          $('#order_image_id').val($('#order_image_id').val() + ' ' +data.result.order_image_id + ' ');
+          var totalImages = imagesAlreadySaved + $('#order_image_id').val().trim().replace(new RegExp('  ', 'g'), ' ').split(" ").length;
+          if (totalImages > 4) {
+            $('#id_add_images').hide();
+          }
+        }
+      }
+    });
+
+    /* charges javascript block */
+  if ( $("#id_direction").val() == "B" ) {
+    $("#id_charges_confirmation").show();
+  } else {
+    $("#id_charges_confirmation").hide();
+  }
+  $("#id_direction").change(function() {
+    if ( $("#id_direction").val() == "B" ) {
+      $("#id_charges_confirmation").show();
+    } else {
+      $("#id_charges_confirmation").hide();
+    }
+  });
+
+  $(".js-form-submit").click(function () {
+    $("#id_price").prop("disabled", false);
+    var proceed = false
+    if ($("#id_direction").val() == 'B') {
+      if ($('#confirmed_charges').is(':checked')) {
+        proceed = true
+      } else {
+        alert("you must confirm you agree to the additional costs")
+      }
+    } else {
+      proceed = true
+    }
+    if (proceed) {
+      $("#id_price").prop("disabled", false);
+      $("#form-submit").click();
+    }
+  });
+
+{% endblock %}

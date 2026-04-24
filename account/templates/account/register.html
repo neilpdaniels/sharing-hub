@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+{% load static %}
+{% block headerContent %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css">
+{% endblock %}
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-lg-2"></div>
+        <div class="col-lg-8">
+            <h1>Create an account</h1>
+            <p>Please fill in all fields to register:</p>
+            {%  bootstrap_form_errors user_form %}
+            {%  bootstrap_form_errors user_profile_form %}
+            <form action='.' method='post'>
+                <div class="form-group">
+                {% bootstrap_field user_form.username show_label=False addon_before='<span class="fas fa-user text-muted"></span>' %}
+                </div>
+                {% bootstrap_field user_form.first_name show_label=False %}
+                {% bootstrap_field user_form.last_name show_label=False %}
+                <div class="form-group has-feedback">
+                        
+                {% bootstrap_field user_form.email show_label=False addon_before='<span class="fas fa-envelope form-control-feedback text-muted"></span>' %}
+                </div>
+                <div class="form-group has-feedback">
+                        
+                {% bootstrap_field user_form.password show_label=False addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>'%}
+                </div>
+                <div class="form-group has-feedback">
+                
+                {% bootstrap_field user_form.password2 show_label=False  addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>'%}
+                </div>
+                <div class="form-group has-feedback">
+                        
+                {% bootstrap_field user_profile_form.date_of_birth show_label=False addon_before='<span class="fas fa-calendar form-control-feedback text-muted"></span>'%}
+                </div>
+                {% csrf_token %}
+                <p><input class="btn btn-primary" type="submit" value="create account"></p>
+            </form>
+        </div>
+    </div>
+</div>
+    
+{% endblock %}
+
+{% block pageJavascript %} 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/i18n/jquery-ui-timepicker-addon-i18n.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-sliderAccess.js"></script>   
+    <script src="https://cdn.jsdelivr.net/npm/jquery.ui.widget@1.10.3/jquery.ui.widget.js"></script>   
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.iframe-transport.min.js"></script>   
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>   
+{% endblock %}
+{% block domready %}
+$('#id_date_of_birth').attr("autocomplete", "off");
+$('#id_date_of_birth').datepicker({
+    dateFormat: "yy-mm-dd",
+    changeYear: true,
+    changeMonth: true,
+    yearRange: "1900:2100",
+    maxDate: 0,
+});
+
+{% endblock %}

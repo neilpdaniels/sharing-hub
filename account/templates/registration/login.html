@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+
+{% block title %}Log-In{% endblock %}
+
+{% block content %}
+
+<div class="container">
+        {% if form.errors %}
+        <div class="alert alert-danger alert-dismissible">
+        <button type="button" class="close" data-dismiss="alert" aria-hidden="true">×</button>                your username and password didn't match.
+        Please try again
+        </div>
+    {% endif %}
+    <div class="row">
+        <div class="col-lg-2"></div>
+        <div class="col-lg-8">
+            <row>            
+            <p>please use the following to log in</p>
+            <div class="login-form">
+                <form action="{% url 'login' %}" method="post">
+                    {#{{ form.as_p }}#}
+
+                    <div class="form-group has-feedback">
+                    {% bootstrap_field form.username show_label=False addon_before='<i class="fas fa-user form-control-feedback text-muted"></i>' %}
+                    
+                    </div>
+                    <div class="form-group has-feedback">
+                    {% bootstrap_field form.password show_label=False addon_before='<i class="fas fa-lock form-control-feedback text-muted"></i>' %}
+                    </div>
+
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next }}" />
+                    <input class="btn btn-primary"  href="#" type="submit" value="log-in">
+                </form>            
+            </div>
+            </row>
+            <row>
+                <div class="col-lg-12 text-center">
+                    <a class="btn btn-secondary" href="{% url "password_reset" %}">Forgotten your password?</a>
+                    <a class="btn btn-secondary" href="{% url "register" %}">Register</a>
+                </div>
+            </row>
+            <br />
+        </div>
+    </div>
+</div>
+{% endblock %}

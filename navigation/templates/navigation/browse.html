@@ -338,8 +338,57 @@
                         </div>
                     </div>
                     {% endif %}
+
+                    <div class="row mt-2">
+                        <div class="col-md-12 text-center">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-toggle="modal" data-target="#requestProductModal">
+                                Request new product
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </form>
+
+            <div class="modal fade" id="requestProductModal" tabindex="-1" role="dialog" aria-labelledby="requestProductModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="requestProductModalLabel">Request a New Product Listing</h5>
+                            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                        {% if request.user.is_authenticated %}
+                        <form method="post" action=".">
+                            <div class="modal-body">
+                                {% csrf_token %}
+                                <input type="hidden" name="request_new_product_submit" value="1">
+                                <div class="form-group">
+                                    <label for="requested_product_name">What do you want listed?</label>
+                                    <input type="text" class="form-control" id="requested_product_name" name="requested_product_name" maxlength="255" required>
+                                </div>
+                                <div class="form-group mb-0">
+                                    <label for="request_details">Details</label>
+                                    <textarea class="form-control" id="request_details" name="request_details" rows="4" placeholder="Tell us brand, model, condition, or any details that help..." required></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Submit request</button>
+                            </div>
+                        </form>
+                        {% else %}
+                        <div class="modal-body">
+                            <p class="mb-0">You need to be logged in to submit a new product request.</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+                            <a class="btn btn-primary" href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}">Log in to submit</a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
             {% endif %}
         </div>
     </div>

@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django import forms
-from .models import Profile
+from .models import Profile, RegistrationVerification
 
 
 class UserCreationWithEmailForm(UserCreationForm):
@@ -36,4 +36,11 @@ admin.site.register(User, UserAdmin)
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'date_of_birth', 'image']
+    list_display = ['user', 'mobile_number', 'date_of_birth', 'postcode', 'image']
+
+
+@admin.register(RegistrationVerification)
+class RegistrationVerificationAdmin(admin.ModelAdmin):
+    list_display = ['email', 'verification_code', 'is_used', 'expires_at', 'created_at']
+    list_filter = ['is_used', 'created_at']
+    search_fields = ['email', 'verification_code']

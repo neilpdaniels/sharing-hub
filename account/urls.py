@@ -22,6 +22,8 @@ urlpatterns = [
     path('myaccount/', views.myaccount, name='myaccount'),
     path('', include('django.contrib.auth.urls')),
     path('register/', views.register, name='register'),
+    path('register/address-lookup/', views.address_lookup, name='address_lookup'),
+    path('register/address-resolve/', views.address_resolve, name='address_resolve'),
     path('edit/' , views.edit, name='edit'),
     path('user_image_upload/', views.ProfileImageUpload.as_view(), name='user_image_upload'),
     path('account_activation_sent/', views.account_activation_sent, name='account_activation_sent'),

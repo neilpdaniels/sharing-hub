@@ -39,6 +39,7 @@ MEDIA_ROOT=os.path.join(BASE_DIR, 'media/')
 INSTALLED_APPS = [
     'haystack',
     'navigation.apps.NavigationConfig',
+    'admin_tools.apps.AdminToolsConfig',
     'account.apps.AccountConfig',
     'common.apps.CommonConfig',
     'my_sharing_hub.apps.MySharingHubConfig',

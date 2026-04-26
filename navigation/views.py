@@ -1,4 +1,4 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse, Http404
 from django.http import HttpResponseForbidden
 from django.http import JsonResponse
@@ -24,6 +24,9 @@ from django.core.cache import cache
 import urllib.parse
 from django.utils import timezone
 from common.tasks import runStaticMigration, listEmptyCategories
+from django.urls import reverse
+
+from admin_tools.models import ProductListingRequest
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,29 @@ def browseCategory(request, cat_slug=None):
     cat = None
     if cat_slug:
         cat = get_object_or_404(Category, slug=cat_slug)
+
+    if request.method == 'POST' and request.POST.get('request_new_product_submit') == '1':
+        if not request.user.is_authenticated:
+            messages.warning(request, 'Please log in to request a new product listing.')
+            login_url = reverse('login')
+            return redirect(f"{login_url}?next={urllib.parse.quote(request.get_full_path())}")
+
+        product_name = request.POST.get('requested_product_name', '').strip()
+        request_details = request.POST.get('request_details', '').strip()
+
+        if not product_name or not request_details:
+            messages.error(request, 'Please include both a product name and details for your request.')
+        else:
+            ProductListingRequest.objects.create(
+                requested_by=request.user,
+                category_slug=cat.slug if cat else '',
+                category_title=cat.title if cat else '',
+                product_name=product_name,
+                request_details=request_details,
+            )
+            messages.success(request, 'Thanks. Your product request has been submitted.')
+
+        return redirect(request.get_full_path())
 
     categories = None
     categories = cat.category_set.all()

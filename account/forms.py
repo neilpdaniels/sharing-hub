@@ -2,9 +2,7 @@ from django import forms
 from django.contrib.auth.models import User
 from .models import Profile
 from django.contrib.auth.password_validation import validate_password
-from datetime import datetime
 from .validators import calculate_age
-import logging
 
 class LoginForm(forms.Form):
     username = forms.CharField()
@@ -13,37 +11,67 @@ class LoginForm(forms.Form):
         username = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control'}),
                                     label='username')
 
-class UserRegistrationForm(forms.ModelForm):
+class UserRegistrationStartForm(forms.Form):
     required_css_class = 'required'
 
-    password = forms.CharField(label='Password',
-                                widget=forms.PasswordInput)
-    password2 = forms.CharField(label='Repeat Password',
-                                widget=forms.PasswordInput)
+    name = forms.CharField(required=True, max_length=255)
+    email = forms.EmailField(required=True)
+    date_of_birth = forms.DateField(required=True, input_formats=['%d-%m-%Y'])
+    mobile_number = forms.CharField(required=True, max_length=20)
+    house_name_number = forms.CharField(required=False, max_length=255)
+    address_line_1 = forms.CharField(required=True, max_length=255)
+    address_line_2 = forms.CharField(required=False, max_length=255)
+    town = forms.CharField(required=True, max_length=255)
+    county = forms.CharField(required=False, max_length=255)
+    postcode = forms.CharField(required=True, max_length=8)
 
-    first_name = forms.CharField(required=True)
-    last_name = forms.CharField(required=True)
-    
-    class Meta:
-        model = User
-        fields = ('username','first_name', 'last_name', 'email')
-    
+    def clean_name(self):
+        name = self.cleaned_data['name'].strip()
+        if not name:
+            raise forms.ValidationError('Please enter your name.')
+        return name
+
+    def clean_mobile_number(self):
+        number = self.cleaned_data['mobile_number'].strip()
+        # Strip leading + and country code if user typed +44
+        if number.startswith('+44'):
+            number = '0' + number[3:].lstrip()
+        # If no leading 0, prepend one
+        if number and not number.startswith('0'):
+            number = '0' + number
+        # Remove spaces/dashes for storage
+        number = number.replace(' ', '').replace('-', '')
+        return number
+
+    def clean_email(self):
+        email = self.cleaned_data['email'].strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError('This email address is already registered.')
+        return email
+
+    def clean_date_of_birth(self):
+        date_of_birth = self.cleaned_data['date_of_birth']
+        if calculate_age(date_of_birth) < 18:
+            raise forms.ValidationError("You must be at least 18 to register")
+        return date_of_birth
+
+
+class UserRegistrationVerifyForm(forms.Form):
+    required_css_class = 'required'
+
+    verification_code = forms.CharField(required=True, max_length=6, min_length=6)
+    password = forms.CharField(label='Password', widget=forms.PasswordInput)
+    password2 = forms.CharField(label='Repeat Password', widget=forms.PasswordInput)
+
     def clean(self):
-        cleaned_data = super(UserRegistrationForm, self).clean()
+        cleaned_data = super().clean()
         password1 = cleaned_data.get('password')
         password2 = cleaned_data.get('password2')
-        username = cleaned_data.get('username')
-        #validate that the two passwords match each other
         if password1 and password1 != password2:
             raise forms.ValidationError("Passwords don't match")
-        if username in password1:
-            raise forms.ValidationError("Password cannot contain your username")
-
-
-        validate_password(password1)
-    #
-    # def clean_password(self):
-    #     password = self.cleaned_data.get('password')
+        if password1:
+            validate_password(password1)
+        return cleaned_data
 
 
 class UserEditForm(forms.ModelForm):
@@ -58,7 +86,7 @@ class ProfileAddForm(forms.ModelForm):
 
     class Meta:
         model = Profile
-        fields = ('date_of_birth',)
+        fields = ('date_of_birth', 'mobile_number', 'address_line_1', 'address_line_2', 'town', 'county', 'postcode')
 
     def clean_date_of_birth(self):
         date_of_birth = self.cleaned_data['date_of_birth'] 
@@ -76,6 +104,6 @@ class ProfileEditForm(forms.ModelForm):
 
     class Meta:
         model = Profile
-        fields = ('date_of_birth', 'address_line_1', 'address_line_2', 'town', 'county', 'postcode')
+        fields = ('date_of_birth', 'mobile_number', 'address_line_1', 'address_line_2', 'town', 'county', 'postcode')
         # widgets = {'image': forms.HiddenInput()}
 

@@ -8,6 +8,7 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 import sys
 from django.contrib.auth.models import User, models
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.utils import timezone
 
 # make email address unique
 User._meta.get_field('email').__dict__['_unique'] = True
@@ -17,6 +18,7 @@ class Profile(models.Model):
                                 on_delete=models.CASCADE)
     email_confirmed = models.BooleanField(default=False)
     date_of_birth = models.DateField(validators=[MinAgeValidator])
+    mobile_number = models.CharField(max_length=20)
     address_line_1 = models.CharField(max_length=255)
     address_line_2 = models.CharField(max_length=255, blank=True, null=True)
     town = models.CharField('Town/City', max_length=255)
@@ -78,3 +80,36 @@ class Profile(models.Model):
         #change the imagefield value to be the newley modifed image value
         self.image = InMemoryUploadedFile(output,'ImageField', "%s.jpg" %self.image.name.split('.')[0], 'image/jpeg', sys.getsizeof(output), None)
         super(Profile, self).save(*args, **kwargs)
+
+
+class RegistrationVerification(models.Model):
+    email = models.EmailField(db_index=True)
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150)
+    date_of_birth = models.DateField(validators=[MinAgeValidator])
+    mobile_number = models.CharField(max_length=20)
+    house_name_number = models.CharField(max_length=255, blank=True)
+    address_line_1 = models.CharField(max_length=255)
+    address_line_2 = models.CharField(max_length=255, blank=True, null=True)
+    town = models.CharField(max_length=255)
+    county = models.CharField(max_length=255, blank=True, null=True)
+    postcode = models.CharField(max_length=8)
+
+    verification_code = models.CharField(max_length=6, unique=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['email', 'is_used']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"Verification for {self.email}"
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expires_at

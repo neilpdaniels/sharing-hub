@@ -12,34 +12,50 @@
         <div class="col-lg-2"></div>
         <div class="col-lg-8">
             <h1>Create an account</h1>
-            <p>Please fill in all fields to register:</p>
-            {%  bootstrap_form_errors user_form %}
-            {%  bootstrap_form_errors user_profile_form %}
+            {% if register_stage == 'verify' %}
+            <p>Enter the code sent to <strong>{{ verify_email }}</strong> and set your password.</p>
+            {% bootstrap_form_errors verify_form %}
             <form action='.' method='post'>
-                <div class="form-group">
-                {% bootstrap_field user_form.username show_label=False addon_before='<span class="fas fa-user text-muted"></span>' %}
-                </div>
-                {% bootstrap_field user_form.first_name show_label=False %}
-                {% bootstrap_field user_form.last_name show_label=False %}
-                <div class="form-group has-feedback">
-                        
-                {% bootstrap_field user_form.email show_label=False addon_before='<span class="fas fa-envelope form-control-feedback text-muted"></span>' %}
-                </div>
-                <div class="form-group has-feedback">
-                        
-                {% bootstrap_field user_form.password show_label=False addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>'%}
-                </div>
-                <div class="form-group has-feedback">
-                
-                {% bootstrap_field user_form.password2 show_label=False  addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>'%}
-                </div>
-                <div class="form-group has-feedback">
-                        
-                {% bootstrap_field user_profile_form.date_of_birth show_label=False addon_before='<span class="fas fa-calendar form-control-feedback text-muted"></span>'%}
-                </div>
                 {% csrf_token %}
-                <p><input class="btn btn-primary" type="submit" value="create account"></p>
+                <input type="hidden" name="action" value="verify">
+                <div class="form-group has-feedback">
+                    {% bootstrap_field verify_form.verification_code show_label=False addon_before='<span class="fas fa-shield-alt form-control-feedback text-muted"></span>' placeholder='6-digit verification code' %}
+                </div>
+                <div class="form-group has-feedback">
+                    {% bootstrap_field verify_form.password show_label=False addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>' placeholder='Password' %}
+                </div>
+                <div class="form-group has-feedback">
+                    {% bootstrap_field verify_form.password2 show_label=False addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>' placeholder='Repeat password' %}
+                </div>
+                <p><input class="btn btn-primary" type="submit" value="verify and create account"></p>
             </form>
+            {% else %}
+            <p>Please fill in your details. We will email you a 6-digit verification code first.</p>
+            {% bootstrap_form_errors user_form %}
+            <form action='.' method='post'>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="start">
+                {% bootstrap_field user_form.name show_label=False placeholder='Your name' %}
+                <div class="form-group has-feedback">
+                    {% bootstrap_field user_form.email show_label=False addon_before='<span class="fas fa-envelope form-control-feedback text-muted"></span>' placeholder='Email address' %}
+                </div>
+                <div class="form-group has-feedback">
+                    {% bootstrap_field user_form.mobile_number show_label=False addon_before='+44' placeholder='Mobile number e.g. 07700 900000' %}
+                </div>
+                <div class="form-group has-feedback">
+                    {% bootstrap_field user_form.date_of_birth show_label=False addon_before='<span class="fas fa-calendar form-control-feedback text-muted"></span>' placeholder='Date of birth (dd-mm-yyyy)' %}
+                </div>
+                <div class="position-relative">
+                    {% bootstrap_field user_form.address_line_1 show_label=False placeholder='Start typing street / address...' %}
+                    <div id="address-suggestions" class="list-group position-absolute w-100" style="z-index:1060; display:none;"></div>
+                </div>
+                {% bootstrap_field user_form.address_line_2 show_label=False placeholder='Address line 2 (optional)' %}
+                {% bootstrap_field user_form.town show_label=False placeholder='Town / city' %}
+                {% bootstrap_field user_form.county show_label=False placeholder='County (optional)' %}
+                {% bootstrap_field user_form.postcode show_label=False placeholder='Postcode' %}
+                <p><input class="btn btn-primary" type="submit" value="send verification code"></p>
+            </form>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -55,13 +71,94 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>   
 {% endblock %}
 {% block domready %}
-$('#id_date_of_birth').attr("autocomplete", "off");
+$('#id_date_of_birth').attr('autocomplete', 'off');
 $('#id_date_of_birth').datepicker({
-    dateFormat: "yy-mm-dd",
+    dateFormat: "dd-mm-yy",
     changeYear: true,
     changeMonth: true,
     yearRange: "1900:2100",
     maxDate: 0,
 });
+
+(function() {
+    var input = document.getElementById('id_address_line_1');
+    var suggestions = document.getElementById('address-suggestions');
+    if (!input || !suggestions) return;
+
+    var timer = null;
+    function clearSuggestions() {
+        suggestions.style.display = 'none';
+        suggestions.innerHTML = '';
+    }
+
+    input.addEventListener('input', function() {
+        var q = input.value.trim();
+        clearTimeout(timer);
+        if (q.length < 3) {
+            clearSuggestions();
+            return;
+        }
+
+        timer = setTimeout(function() {
+            fetch('{% url "address_lookup" %}?q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    suggestions.innerHTML = '';
+                    var results = data.results || [];
+                    if (!results.length) {
+                        clearSuggestions();
+                        return;
+                    }
+
+                    results.forEach(function(item) {
+                        var option = document.createElement('button');
+                        option.type = 'button';
+                        option.className = 'list-group-item list-group-item-action';
+                        option.textContent = item.display;
+                        option.addEventListener('click', function() {
+                            var applyResolvedAddress = function(resolved) {
+                                document.getElementById('id_address_line_1').value = resolved.address_line_1 || resolved.street_name || '';
+                                document.getElementById('id_address_line_2').value = resolved.address_line_2 || '';
+                                document.getElementById('id_town').value = resolved.town || '';
+                                document.getElementById('id_county').value = resolved.county || '';
+                                document.getElementById('id_postcode').value = resolved.postcode || '';
+                                clearSuggestions();
+                            };
+
+                            if (item.provider === 'getaddress' && item.id) {
+                                fetch('{% url "address_resolve" %}?id=' + encodeURIComponent(item.id))
+                                    .then(function(r) { return r.json(); })
+                                    .then(function(data) {
+                                        if (data.result) {
+                                            applyResolvedAddress(data.result);
+                                        } else {
+                                            clearSuggestions();
+                                        }
+                                    })
+                                    .catch(function() {
+                                        clearSuggestions();
+                                    });
+                                return;
+                            }
+
+                            applyResolvedAddress(item);
+                        });
+                        suggestions.appendChild(option);
+                    });
+
+                    suggestions.style.display = 'block';
+                })
+                .catch(function() {
+                    clearSuggestions();
+                });
+        }, 250);
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!suggestions.contains(e.target) && e.target !== input) {
+            clearSuggestions();
+        }
+    });
+})();
 
 {% endblock %}

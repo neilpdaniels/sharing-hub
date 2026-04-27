@@ -10,6 +10,37 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
     <style>
       .badge-gold { background-color: #b8860b; color: #fff; }
+      .pp-meta-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .pp-breadcrumb {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.92rem;
+      }
+      .pp-breadcrumb a {
+        color: #1d7d97;
+        font-weight: 600;
+      }
+      .pp-breadcrumb .current {
+        color: #2f3b46;
+        font-weight: 700;
+      }
+      .pp-breadcrumb .sep {
+        color: #7e8f99;
+        font-size: 0.78rem;
+        margin: 0 2px;
+      }
       #pp-map-view {
         position: relative;
         z-index: 1;
@@ -28,6 +59,116 @@
       #pp-map .leaflet-control {
         z-index: 1 !important;
       }
+      .pp-order-card {
+        border: 1px solid #dde4e8;
+        border-radius: 18px;
+        box-shadow: 0 14px 28px rgba(20, 51, 64, 0.06);
+      }
+      .pp-order-focus {
+        border-color: #1d7d97;
+        box-shadow: 0 0 0 3px rgba(29, 125, 151, 0.18), 0 14px 28px rgba(20, 51, 64, 0.08);
+        transition: box-shadow 0.25s ease, border-color 0.25s ease;
+      }
+      .pp-summary-thumb,
+      .pp-summary-thumb-placeholder {
+        width: 68px;
+        height: 52px;
+        border-radius: 10px;
+        flex-shrink: 0;
+      }
+      .pp-summary-thumb {
+        object-fit: cover;
+        display: block;
+      }
+      .pp-summary-thumb-placeholder {
+        background: #eef3f5;
+        color: #98a8b2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .pp-summary-main {
+        min-width: 0;
+      }
+      .pp-summary-meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .pp-summary-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-left: 0.75rem;
+      }
+      .pp-view-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .pp-view-toggle-btn {
+        min-width: 86px;
+        height: 34px;
+        padding: 0 14px;
+        border: 1px solid #bfd2d9;
+        border-radius: 12px;
+        background: #ffffff;
+        color: #1d7d97;
+        font-size: 0.88rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        box-shadow: 0 8px 18px rgba(29, 125, 151, 0.08);
+        transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+      .pp-view-toggle-btn:hover,
+      .pp-view-toggle-btn:focus {
+        color: #14586b;
+        border-color: #96bcc8;
+        background: #f8fcfd;
+        box-shadow: 0 10px 22px rgba(29, 125, 151, 0.12);
+      }
+      .pp-view-toggle-btn.active {
+        background: #1d7d97;
+        border-color: #1d7d97;
+        color: #fff;
+        box-shadow: 0 12px 24px rgba(29, 125, 151, 0.22);
+      }
+      .admin-quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .admin-quick-actions a {
+        font-size: 0.76rem;
+        line-height: 1;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid #bfd2d9;
+        background: #f7fbfc;
+        color: #1d7d97;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .admin-quick-actions a:hover {
+        background: #e9f1f3;
+        color: #14586b;
+      }
+      @media (max-width: 767.98px) {
+        .pp-summary-row {
+          align-items: flex-start !important;
+        }
+        .pp-summary-actions {
+          margin-left: 0.5rem;
+        }
+        .pp-view-toggle {
+          gap: 12px;
+        }
+      }
     </style>
 {% endblock %}
 {% block title %}{{ product.name | title }}{% endblock %}
@@ -38,22 +179,35 @@
 <div class="container">
     <div class="row">
         <div class="col-lg-12">
-            <div class="row">
     {% if category %}
         {% if biscuit %}
-        <p>You are here: 
-        <a href="{% url 'homepage' %}">Home</a>
-        {% for item in biscuit %}
-        <span class="fas fa-chevron-right fa-xs"></span><a href="{% url 'navigation:browseCategory' item.slug %}"> {{ item.title | title }}</a>
-        {% endfor %}
-        <span class="fas fa-chevron-right fa-xs"></span><a href="{% url 'navigation:productPage' product.slug %}"> {{ product.name | title }}</a>
-        </p>
+        <div class="pp-meta-bar">
+          <nav aria-label="Breadcrumb">
+            <ul class="pp-breadcrumb">
+              <li><a href="{% url 'homepage' %}">Home</a></li>
+              {% for item in biscuit %}
+              <li class="sep"><i class="fas fa-chevron-right"></i></li>
+              <li><a href="{% url 'navigation:browseCategory' item.slug %}">{{ item.title|title }}</a></li>
+              {% endfor %}
+              <li class="sep"><i class="fas fa-chevron-right"></i></li>
+              <li><span class="current">{{ product.name|title }}</span></li>
+            </ul>
+          </nav>
+        </div>
         {% endif %}
     {% else %}
         <p>no category</p>
     {% endif %}
     {% if product %}
-            </div>
+      {% if request.user.is_staff %}
+      <div class="admin-quick-actions">
+        <a href="{% url 'admin:common_product_change' product.id %}">Edit product and tags</a>
+        <a href="{% url 'admin:common_category_change' category.id %}">Edit category and tags</a>
+        <a href="{% url 'admin:common_product_add' %}?category_id={{ category.id }}">Add product in this category</a>
+        <a href="{% url 'admin:common_category_add' %}?parent_category={{ category.id }}">Add child category</a>
+        <a href="{% url 'admin:common_categorytag_add' %}">Add new tag</a>
+      </div>
+      {% endif %}
         <div class="row">
             <div class="col-lg-3">
                 {% if product.image %}
@@ -85,7 +239,7 @@
                         <td class="text-center yellow-strip">
                         {% if sell_orders %}
                         Rent from:
-                        <span class="orderPrice">£{{ sell_orders.0.price|floatformat:2 }}</span>
+                        <span class="orderPrice">£{{ sell_orders.0.price|floatformat:"-2" }}</span>
                          /day{% endif %}
                         </td>
                     </tr>
@@ -98,6 +252,7 @@
             {# ── location / distance / friends filter ── #}
             <div class="col-lg-12 mb-2">
               <form id="pp-filter-form" method="get" action="." class="d-flex align-items-center justify-content-between flex-wrap flex-lg-nowrap" style="font-size:0.78rem; gap:0.5rem; width:100%;">
+                <input type="hidden" name="view_mode" id="pp-view-mode" value="{{ view_mode|default:'list' }}">
                 <div class="d-flex align-items-center flex-wrap flex-lg-nowrap" style="gap:0.5rem;">
                   <div class="input-group" style="font-size:0.78rem;">
                     <div class="input-group-prepend">
@@ -146,7 +301,7 @@
                       </div>
                       <button type="submit" class="btn btn-sm btn-primary btn-block">Apply</button>
                       {% if needed_date or needed_days %}
-                      <a href="?{% if location %}location={{ location }}&{% endif %}distance_filter={{ distance_filter }}{% if friends_only %}&friends_only=True{% endif %}"
+                       <a href="?{% if location %}location={{ location }}&{% endif %}distance_filter={{ distance_filter }}{% if friends_only %}&friends_only=True{% endif %}&view_mode={{ view_mode|default:'list' }}"
                          class="btn btn-sm btn-link btn-block text-muted mt-1" style="font-size:0.75rem;">Clear dates</a>
                       {% endif %}
                     </div>
@@ -178,11 +333,11 @@
             {# ── View toggle ── #}
             {% if sell_orders %}
             <div class="mb-2 d-flex align-items-center" style="gap:0.5rem;">
-              <div class="btn-group btn-group-sm" role="group">
-                <button type="button" class="btn btn-outline-secondary active" id="pp-view-list">
+              <div class="pp-view-toggle" role="group" aria-label="Listing view toggle">
+                <button type="button" class="pp-view-toggle-btn active" id="pp-view-list">
                   <span class="fas fa-list"></span> List
                 </button>
-                <button type="button" class="btn btn-outline-secondary" id="pp-view-map">
+                <button type="button" class="pp-view-toggle-btn" id="pp-view-map">
                   <span class="fas fa-map-marked-alt"></span> Map
                 </button>
               </div>
@@ -193,29 +348,30 @@
             <div id="pp-list-view">
             {% if sell_orders %}
                 {% for order in sell_orders %}
-                <div class="card mb-2" id="card_order_{{ order.id }}">
+                <div class="card mb-2 pp-order-card" id="card_order_{{ order.id }}">
                     <div class="card-body py-2">
-                        <div class="d-flex align-items-center">
-                          <div id="summary_toggle_{{ order.id }}" class="d-flex align-items-center flex-grow-1" style="cursor:pointer;">
+                        <div class="d-flex align-items-center pp-summary-row">
+                          <div id="summary_toggle_{{ order.id }}" class="d-flex align-items-center flex-grow-1" style="cursor:pointer; min-width:0;">
                           <!-- Main image thumbnail -->
                           <div class="mr-3" style="flex-shrink:0;">
                             {% if order.main_image %}
-                            {% thumbnail order.main_image.image "80x60" crop="center" as im %}
-                            <img src="{{ im.url }}" width="80" height="60" style="object-fit:cover;border-radius:4px;" alt="">
+                            {% thumbnail order.main_image.image "68x52" crop="center" as im %}
+                            <img src="{{ im.url }}" width="68" height="52" class="pp-summary-thumb" alt="">
                             {% endthumbnail %}
                             {% else %}
-                            <div style="width:80px;height:60px;background:#e9ecef;border-radius:4px;display:flex;align-items:center;justify-content:center;">
+                            <div class="pp-summary-thumb-placeholder">
                               <span class="fas fa-image text-muted"></span>
                             </div>
                             {% endif %}
                           </div>
                           <!-- Price / distance / deposit -->
-                          <div class="flex-grow-1">
+                          <div class="flex-grow-1 pp-summary-main">
+                            <div class="pp-summary-meta">
                                 <span class="font-weight-bold orderPrice">
                                     {% if needed_days_int and order.total_price %}
-                                        £{{ order.total_price|floatformat:2 }}<small class="text-muted"> for {{ needed_days_int }} day{{ needed_days_int|pluralize }}</small>
+                                        £{{ order.total_price|floatformat:"-2" }}<small class="text-muted"> for {{ needed_days_int }} day{{ needed_days_int|pluralize }}</small>
                                     {% else %}
-                                    £{{ order.display_price|floatformat:2 }}<small class="text-muted">/day</small>
+                                    £{{ order.display_price|floatformat:"-2" }}<small class="text-muted">/day</small>
                                     {% endif %}
                                 </span>
                                 {% if order.is_mates_rate_applied %}
@@ -229,10 +385,12 @@
                                     {% endif %}
                                 {% endif %}
                                 {% if order.distance_km is not None %}
-                                <span class="ml-2 text-muted small"><span class="fas fa-map-marker-alt"></span> {{ order.distance_km|floatformat:1 }} km</span>
+                                <span class="ml-2 text-muted small"><span class="fas fa-map-marker-alt"></span> {% if order.display_location %}{{ order.display_location }} • {% endif %}{{ order.distance_km|floatformat:1 }} km</span>
+                                {% elif order.display_location %}
+                                <span class="ml-2 text-muted small"><span class="fas fa-map-marker-alt"></span> {{ order.display_location }}</span>
                                 {% endif %}
                                 {% if order.display_deposit %}
-                                <span class="ml-2 badge badge-light border">£{{ order.display_deposit|floatformat:2 }} deposit</span>
+                                <span class="ml-2 badge badge-light border">£{{ order.display_deposit|floatformat:"-2" }} deposit</span>
                                 {% else %}
                                 <span class="ml-2 badge badge-light border text-muted">no deposit required</span>
                                 {% endif %}
@@ -241,10 +399,11 @@
                                 {% elif order.mates_rates %}
                                 <span class="ml-1 badge badge-gold">Mates rates available</span>
                                 {% endif %}
+                              </div>
                             </div>
                               </div>
                             <!-- Expand + actions -->
-                            <div class="d-flex align-items-center ml-2" style="gap:0.5rem;">
+                              <div class="pp-summary-actions">
                                 <a class="expand btn btn-sm btn-outline-secondary" id="expand_order_{{ order.id }}" href="javascript:void(0)" title="More details">
                                     <span class="fas fa-plus"></span>
                                 </a>
@@ -290,17 +449,18 @@
               "id": {{ order.id }},
               "lat": {{ order.latitude }},
               "lng": {{ order.longitude }},
-              "price": "£{{ order.display_price|floatformat:2 }}",
+              "price": "£{{ order.display_price|floatformat:"-2" }}",
               "userId": {{ order.user_id }},
               "isFriend": {% if order.user_id in friend_user_ids %}true{% else %}false{% endif %},
-              "deposit": {% if order.display_deposit %}"£{{ order.display_deposit|floatformat:2 }}"{% else %}null{% endif %},
+              "deposit": {% if order.display_deposit %}"£{{ order.display_deposit|floatformat:"-2" }}"{% else %}null{% endif %},
               "matesApplied": {% if order.is_mates_rate_applied %}true{% else %}false{% endif %},
               "matesRates": {% if order.mates_rates is not None %}true{% else %}false{% endif %},
               "freeForFriends": {% if order.mates_rates == 0 %}true{% else %}false{% endif %},
               "available": {% if needed_date %}{% if order.available_on_needed_date %}true{% else %}false{% endif %}{% else %}null{% endif %},
               "distanceKm": {% if order.distance_km is not None %}"{{ order.distance_km|floatformat:1 }} km"{% else %}null{% endif %},
+              "locationLabel": {% if order.display_location %}"{{ order.display_location|escapejs }}"{% else %}null{% endif %},
               "isOwner": {% if request.user == order.user %}true{% else %}false{% endif %},
-              "imgUrl": {% if order.main_image %}{% thumbnail order.main_image.image "80x60" crop="center" as im %}"{{ im.url }}"{% endthumbnail %}{% else %}null{% endif %},
+              "imgUrl": {% if order.main_image %}{% thumbnail order.main_image.image "68x52" crop="center" as im %}"{{ im.url }}"{% endthumbnail %}{% else %}null{% endif %},
               "editUrl": "{% if request.user == order.user %}{% url 'transaction:edit_order' order.id %}{% endif %}",
               "deleteUrl": "{% if request.user == order.user %}{% url 'transaction:expire_order' order.id %}{% endif %}",
               "rentUrl": "{% if request.user.is_authenticated and request.user != order.user %}{% url 'transaction:hit_order' order.id %}{% endif %}",
@@ -361,13 +521,58 @@
   var btnMap  = document.getElementById('pp-view-map');
   var listView = document.getElementById('pp-list-view');
   var mapView  = document.getElementById('pp-map-view');
+  var viewModeInput = document.getElementById('pp-view-mode');
   var mapInitialised = false;
+  var mapTileLayer = null;
+  var mapTileLoaded = false;
+
+  function attachTileLayer(layerUrl, layerOptions) {
+    if (!ppMap) return;
+    if (mapTileLayer) {
+      ppMap.removeLayer(mapTileLayer);
+    }
+
+    mapTileLoaded = false;
+    mapTileLayer = L.tileLayer(layerUrl, layerOptions).addTo(ppMap);
+    mapTileLayer.on('load', function() {
+      mapTileLoaded = true;
+    });
+  }
+
+  function ensureTileFallback() {
+    setTimeout(function() {
+      if (!ppMap || mapTileLoaded) return;
+      attachTileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+      });
+      refreshMapLayout();
+    }, 1800);
+  }
+
+  function refreshMapLayout() {
+    if (!ppMap) return;
+    var redraw = function() {
+      ppMap.invalidateSize();
+      if (mapTileLayer && typeof mapTileLayer.redraw === 'function') {
+        mapTileLayer.redraw();
+      }
+    };
+
+    redraw();
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(redraw);
+    }
+    setTimeout(redraw, 120);
+    setTimeout(redraw, 320);
+  }
 
   function showList() {
     listView.style.display = '';
     mapView.style.display  = 'none';
     btnList.classList.add('active');
     btnMap.classList.remove('active');
+    if (viewModeInput) viewModeInput.value = 'list';
   }
 
   function showMap() {
@@ -375,12 +580,29 @@
     mapView.style.display  = '';
     btnList.classList.remove('active');
     btnMap.classList.add('active');
-    if (!mapInitialised) { initMap(); mapInitialised = true; }
-    else { setTimeout(function() { ppMap.invalidateSize(); }, 50); }
+    if (viewModeInput) viewModeInput.value = 'map';
+    if (!mapInitialised) {
+      mapInitialised = true;
+      // Delay first init slightly so Leaflet measures a settled, visible container.
+      setTimeout(function() {
+        initMap();
+        refreshMapLayout();
+      }, 60);
+      return;
+    }
+    refreshMapLayout();
   }
 
   if (btnList) btnList.addEventListener('click', showList);
   if (btnMap)  btnMap.addEventListener('click', showMap);
+
+  // Restore selected view from query params
+  if ('{{ view_mode|default:"list" }}' === 'map') {
+    showMap();
+    window.addEventListener('load', refreshMapLayout, { once: true });
+  } else {
+    showList();
+  }
 
   // ── Map ──
   var ppMap;
@@ -419,8 +641,8 @@
 
   function renderSelectedListing(o) {
     var img = o.imgUrl
-      ? '<img src="' + o.imgUrl + '" width="80" height="60" style="object-fit:cover;border-radius:4px;margin-right:10px;flex-shrink:0;" />'
-      : '<div style="width:80px;height:60px;background:#e9ecef;border-radius:4px;display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;"><i class="fas fa-image" style="color:#adb5bd;"></i></div>';
+      ? '<img src="' + o.imgUrl + '" width="68" height="52" style="object-fit:cover;border-radius:10px;margin-right:10px;flex-shrink:0;display:block;" />'
+      : '<div style="width:68px;height:52px;background:#eef3f5;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;"><i class="fas fa-image" style="color:#98a8b2;"></i></div>';
 
     var availability = '';
     if (o.available === true) {
@@ -439,6 +661,15 @@
       actions = '<a href="' + o.loginRentUrl + '" class="btn btn-success js-enquire-link" data-unavailable="' + (o.available === false ? 'true' : 'false') + '" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>';
     }
 
+    var locationLine = '';
+    if (o.locationLabel || o.distanceKm) {
+      locationLine = '<div class="text-muted small mt-1"><span class="fas fa-map-marker-alt"></span> ';
+      if (o.locationLabel) locationLine += o.locationLabel;
+      if (o.locationLabel && o.distanceKm) locationLine += ' • ';
+      if (o.distanceKm) locationLine += o.distanceKm;
+      locationLine += '</div>';
+    }
+
     selectedSummary.innerHTML = ''
       + '<div class="d-flex align-items-center">'
       +   img
@@ -448,13 +679,17 @@
       +     availability
       +     (o.deposit ? ' <span class="ml-2 badge badge-light border">' + o.deposit + ' deposit</span>' : ' <span class="ml-2 badge badge-light border text-muted">no deposit required</span>')
       +     (o.matesRates ? (o.freeForFriends ? ' <span class="ml-1 badge badge-gold"><span class="fas fa-star mr-1"></span>Free for friends!</span>' : ' <span class="ml-1 badge badge-gold">Mates rates available</span>') : '')
+      +     locationLine
       +   '</div>'
       +   (actions ? '<div class="ml-2">' + actions + '</div>' : '')
       + '</div>';
 
     selectedDetails.innerHTML = '<div class="text-muted small py-1">Loading full listing details...</div>';
     if (selectedDistance) {
-      selectedDistance.textContent = o.distanceKm ? ('Distance: ' + o.distanceKm) : '';
+      var locationParts = [];
+      if (o.locationLabel) locationParts.push(o.locationLabel);
+      if (o.distanceKm) locationParts.push(o.distanceKm);
+      selectedDistance.textContent = locationParts.join(' • ');
     }
     selectedPanel.style.display = '';
 
@@ -471,10 +706,11 @@
     if (!orderData.length) return;
 
     ppMap = L.map('pp-map');
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attachTileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
       maxZoom: 19
-    }).addTo(ppMap);
+    });
+    ensureTileFallback();
 
     var goldIcon = L.divIcon({
       className: '',
@@ -543,7 +779,13 @@
         : '<div style="width:80px;height:60px;background:#e9ecef;border-radius:4px;display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;"><i class="fas fa-image" style="color:#adb5bd;"></i></div>';
 
       var badges = '<strong>' + o.price + '</strong><small style="color:#6c757d;">/day</small>';
-      if (o.distanceKm) badges += ' <span style="color:#6c757d;font-size:0.8em;"><i class="fas fa-map-marker-alt"></i> ' + o.distanceKm + '</span>';
+      if (o.locationLabel || o.distanceKm) {
+        badges += ' <span style="color:#6c757d;font-size:0.8em;"><i class="fas fa-map-marker-alt"></i> ';
+        if (o.locationLabel) badges += o.locationLabel;
+        if (o.locationLabel && o.distanceKm) badges += ' • ';
+        if (o.distanceKm) badges += o.distanceKm;
+        badges += '</span>';
+      }
       if (o.deposit)    badges += ' <span style="background:#f8f9fa;color:#343a40;border:1px solid #dee2e6;border-radius:3px;padding:1px 5px;font-size:0.78em;">' + o.deposit + ' deposit</span>';
       if (o.matesApplied) badges += o.freeForFriends
         ? ' <span style="background:#b8860b;color:#fff;border-radius:3px;padding:1px 5px;font-size:0.78em;"><i class="fas fa-star" style="margin-right:3px;"></i>Free for friends!</span>'
@@ -581,8 +823,10 @@
     }
 
     ppMap.fitBounds(bounds, { maxZoom: 13 });
-    setTimeout(function() { ppMap.invalidateSize(); }, 200);
+    refreshMapLayout();
   }
+
+  window.addEventListener('resize', refreshMapLayout);
 
   document.addEventListener('click', function(e) {
     var enquireLink = e.target.closest('.js-enquire-link');
@@ -748,6 +992,46 @@ $('#showBidsAndOffers').on("click",
             $('#expand_order_{{order.id}}').trigger('click');
           });
     {% endfor %}
+
+        // Deep-link support from search: focus a listing card and expand its details.
+        (function() {
+          var focusOrderRaw = '{{ request.GET.focus_order|default_if_none:""|escapejs }}';
+          if (!focusOrderRaw) return;
+          var focusOrderId = (focusOrderRaw.match(/^\d+$/) || [null])[0];
+          if (!focusOrderId) return;
+
+          var $card = $('#card_order_' + focusOrderId);
+          var $expandBtn = $('#expand_order_' + focusOrderId);
+          if (!$card.length || !$expandBtn.length) return;
+
+          // Ensure the list view is visible before scrolling to the listing.
+          $('#pp-view-list').trigger('click');
+
+          if (!$expandBtn.hasClass('expanded')) {
+            $expandBtn.trigger('click');
+          }
+
+          setTimeout(function() {
+            var viewportTop = $(window).scrollTop();
+            var viewportBottom = viewportTop + $(window).height();
+            var cardTop = $card.offset().top;
+            var cardBottom = cardTop + $card.outerHeight();
+            var cardVisible = (cardBottom > viewportTop + 80) && (cardTop < viewportBottom - 80);
+
+            // Scroll only when needed, and keep the card around mid-viewport
+            // so the page title/banner area remains visible.
+            if (!cardVisible) {
+              var viewportHeight = $(window).height();
+              var top = Math.max(cardTop - Math.round(viewportHeight * 0.35), 0);
+              $('html, body').animate({ scrollTop: top }, 350);
+            }
+
+            $card.addClass('pp-order-focus');
+            setTimeout(function() {
+              $card.removeClass('pp-order-focus');
+            }, 2200);
+          }, 120);
+        })();
         
     $('.lightGallery').lightGallery({
         showThumbByDefault:true,

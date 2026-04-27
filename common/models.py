@@ -23,6 +23,21 @@ def unique_order_ref_generator():
         return unique_order_ref_generator()
     return new_order_ref
 
+
+class CategoryTag(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=120, blank=True)
+
+    class Meta:
+        ordering = ('name',)
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(self.name)
+        super(CategoryTag, self).save(*args, **kwargs)
+
 class Category(models.Model):
     title = models.CharField(max_length=200)
     slug = models.SlugField(max_length=250, blank=True )
@@ -30,7 +45,8 @@ class Category(models.Model):
     create_date = models.DateTimeField('date created', auto_now_add=True)
     # parent_category_id = models.PositiveIntegerField() # perhaps need to be foreign key - what about root category though?
     parent_category = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True)
-    description = models.CharField(max_length=1000, null=True, blank=True)
+    tags = models.ManyToManyField(CategoryTag, blank=True, related_name='categories')
+    description = models.TextField(null=True, blank=True)
     virtual_depth = models.BooleanField(default=False)
 
     # secondary table may have been nicer if not using mongodb
@@ -80,8 +96,9 @@ class Category(models.Model):
 
 class Product(models.Model):
     category_id = models.ForeignKey(Category, on_delete=models.CASCADE)
+    tags = models.ManyToManyField(CategoryTag, blank=True, related_name='products')
     image = models.ImageField(upload_to=RandomFileName('images/products/'), blank=True, null=True)
-    description = models.CharField(max_length=1000, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
     name = models.CharField(max_length=400)
     short_name = models.CharField(max_length=200, null=True, blank=True)
 

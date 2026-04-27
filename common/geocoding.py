@@ -137,7 +137,7 @@ class PostcodeGeocoder:
         normalized_postcode = postcode.strip().upper().replace(' ', '')
         
         # Try cache first
-        cache_key = f'postcode_coords_{normalized_postcode}'
+        cache_key = f'postcode_coords_v2_{normalized_postcode}'
         cached = cache.get(cache_key)
         if cached:
             logger.debug(f"Postcode {postcode} found in cache")
@@ -184,6 +184,14 @@ class PostcodeGeocoder:
                     return {
                         'latitude': Decimal(str(result['latitude'])),
                         'longitude': Decimal(str(result['longitude'])),
+                        'display_name': (
+                            result.get('parish')
+                            or result.get('admin_ward')
+                            or result.get('bua')
+                            or result.get('admin_district')
+                            or result.get('region')
+                            or postcode
+                        ),
                     }
             elif response.status_code == 404:
                 logger.warning(f"Postcode {postcode} not found in postcodes.io")

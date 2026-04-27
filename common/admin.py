@@ -1,13 +1,21 @@
 from django.contrib import admin
-from .models import Order, Category, Product, OrderImage, System
+from .models import Order, Category, CategoryTag, Product, OrderImage, System
 from .models import BestPricedForCategory, BestPricedForProduct
 from .models import TransactionFee, TransactionFeeBand
 from simple_history.admin import SimpleHistoryAdmin
-from django import forms
+from django_summernote.admin import SummernoteModelAdmin
 
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
+class CategoryAdmin(SummernoteModelAdmin):
     list_display = ('title','slug', 'create_date','parent_category_id')
+    filter_horizontal = ('tags',)
+    summernote_fields = ('description',)
+
+
+@admin.register(CategoryTag)
+class CategoryTagAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug')
+    search_fields = ('name',)
 
 @admin.register(System)
 class SystemAdmin(admin.ModelAdmin):
@@ -21,16 +29,11 @@ class BestPricedForCategory(admin.ModelAdmin):
 class BestPricedForProduct(admin.ModelAdmin):
     list_display = ('product', 'numberActiveOrders', 'bestPricedBid', 'bestPricedBid2','bestPricedBid3','bestPricedBid4','bestPricedBid5', 'bestPricedOffer', 'bestPricedOffer2', 'bestPricedOffer3', 'bestPricedOffer4', 'bestPricedOffer5', 'created_date', 'modified_date')
 
-class ProductModelForm( forms.ModelForm ):
-    description = forms.CharField( widget=forms.Textarea )
-    class Meta:
-        model = Product
-        exclude = ()
-
 @admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
-    form = ProductModelForm
+class ProductAdmin(SummernoteModelAdmin):
     list_display = ('name','slug', 'create_date','category_id')
+    filter_horizontal = ('tags',)
+    summernote_fields = ('description',)
 
 @admin.register(Order)
 class OrderAdmin(SimpleHistoryAdmin):

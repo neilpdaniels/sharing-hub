@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+
+{% block title %}Suggest New Category{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="mb-3">Suggest new category</h3>
+                    <p class="text-muted mb-3">
+                        Share an item type you want added to the catalogue. Admins will review your suggestion.
+                    </p>
+
+                    {% if current_category %}
+                    <div class="alert alert-light border">
+                        Suggesting from category: <strong>{{ current_category.title|title }}</strong>
+                    </div>
+                    {% endif %}
+
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <input type="hidden" name="category_id" value="{% if current_category %}{{ current_category.id }}{% endif %}">
+                        <input type="hidden" name="next" value="{{ next }}">
+
+                        {% bootstrap_field form.name label="Name" %}
+                        {% bootstrap_field form.description label="Brief description" %}
+                        {% bootstrap_field form.photo label="Photo (optional)" %}
+
+                        <div class="d-flex align-items-center" style="gap:8px;">
+                            <button type="submit" class="btn btn-primary">Submit suggestion</button>
+                            {% if next %}
+                            <a href="{{ next }}" class="btn btn-outline-secondary">Cancel</a>
+                            {% else %}
+                            <a href="{% url 'navigation:seeAll' %}" class="btn btn-outline-secondary">Cancel</a>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

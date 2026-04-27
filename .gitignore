@@ -8,6 +8,7 @@ wheels/
 uv.lock
 celerybeat-schedule.db
 logs/
+db.sqlite3
 
 # Virtual environments
 .venv

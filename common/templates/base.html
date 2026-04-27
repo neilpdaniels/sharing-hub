@@ -41,6 +41,7 @@
     {% block headerContent %}
     {% endblock %}
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/main.css' %}">
+    <link rel="stylesheet" media="screen" href="{% static 'assets/css/fun.css' %}">
 
   </head>
   <body>
@@ -131,17 +132,17 @@
             <div class="col-auto">
               <div class="input-group" style="font-size:0.78rem;">
                 <div class="input-group-prepend">
-                  <span class="input-group-text py-0 px-2" style="height:24px;"><i class="fas fa-search" style="font-size:0.7rem;"></i></span>
+                  <span class="input-group-text py-0 px-2" style="height:24px; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-search" style="font-size:0.7rem;"></i></span>
                 </div>
-                <input type="text" name="q" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px;" placeholder="Search by keyword">
+                <input type="text" name="q" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0;" placeholder="Search by keyword">
               </div>
             </div>
             <div class="col-auto">
               <div class="input-group" style="font-size:0.78rem;">
                 <div class="input-group-prepend">
-                  <span class="input-group-text py-0 px-2" id="search-locate-btn" title="Use my location" style="height:24px; cursor:pointer;"><i class="fas fa-map-marker-alt" id="search-locate-icon" style="font-size:0.7rem;"></i></span>
+                  <span class="input-group-text py-0 px-2" id="search-locate-btn" title="Use my location" style="height:24px; cursor:pointer; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-map-marker-alt" id="search-locate-icon" style="font-size:0.7rem;"></i></span>
                 </div>
-                <input type="text" name="location" id="search-location-input" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px;" placeholder="Town or postcode">
+                <input type="text" name="location" id="search-location-input" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0;" placeholder="Town or postcode">
               </div>
             </div>
             <div class="col-auto">
@@ -274,7 +275,7 @@
                     <div class="footer-menu">
                       <ul>
                         <li class="email"><a href="{% url 'navigation:helpAndSupport' %}">Help and Support</a></li>
-                        <li class="email"><a href="{% url 'navigation:developerProgram' %}">SharingHub Developer Program</a></li>
+                        <li class="email"><a href="{% url 'navigation:aboutUs' %}">SharingHub Developer Program</a></li>
                       </ul>
                     </div>
                   </div>
@@ -286,7 +287,7 @@
                     <ul>
                       <li class=""><a href="{% url 'navigation:howItWorks' %}">How it Works</a></li>
                       <li class=""><a href="{% url 'navigation:transactionGuide' %}">Transaction Workflow</a></li>
-                      <li class=""><a href="{% url 'navigation:escrowInformation' %}">FCA Regulated Escrow</a></li>                      
+                      <li class=""><a href="{% url 'navigation:transactionGuide' %}">FCA Regulated Escrow</a></li>
                     </ul>
                   </div>
                 </div>

@@ -20,7 +20,7 @@
                 <!-- end tag a .product-addto-collection -->
                 <h5 class="card-title">{{ category.title | title}}</h5>
                 {% if category.description %}
-                <p class="card-text">{{ category.description }}</p>
+                <p class="card-text">{{ category.description|safe }}</p>
                 {% endif %}
             </div>
             </a>

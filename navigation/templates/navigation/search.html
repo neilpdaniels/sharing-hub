@@ -5,6 +5,62 @@
 
 {% block content %}
 
+<style>
+  .search-meta-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .search-results-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #47515a;
+    background: #e9f1f3;
+    border: 1px solid #c7d7dc;
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+
+  .search-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.92rem;
+  }
+
+  .search-breadcrumb a {
+    color: #1d7d97;
+    font-weight: 600;
+  }
+
+  .search-breadcrumb .current {
+    color: #2f3b46;
+    font-weight: 700;
+  }
+
+  .search-breadcrumb .sep {
+    color: #7e8f99;
+    font-size: 0.78rem;
+    margin: 0 2px;
+  }
+
+  .search-subline {
+    margin: 0 0 12px;
+    color: #6b7a84;
+    font-size: 0.92rem;
+  }
+</style>
+
 <div class="py-3 bg-dark col-md-12">
   <div class="container">
     <div class="row justify-content-center">
@@ -74,27 +130,41 @@
 
 <div class="container mt-4">
 
+  <div class="search-meta-bar">
+    <nav aria-label="Breadcrumb">
+      <ul class="search-breadcrumb">
+        <li><a href="{% url 'homepage' %}">Home</a></li>
+        <li class="sep"><i class="fas fa-chevron-right"></i></li>
+        <li><span class="current">Search</span></li>
+        {% if selected_category %}
+        <li class="sep"><i class="fas fa-chevron-right"></i></li>
+        <li><span class="current">{{ selected_category.title|capfirst }}</span></li>
+        {% endif %}
+      </ul>
+    </nav>
+
+    {% if search_performed %}
+    <div class="search-results-meta">
+      <span>Results</span>
+      <strong>{{ total_results }}</strong>
+    </div>
+    {% endif %}
+  </div>
+
   {% if search_performed %}
 
     {# Summary bar #}
-    <div class="row mb-3">
-      <div class="col-md-12">
-        <p class="text-muted">
-          {% if total_results %}
-            <strong>{{ total_results }}</strong> listing{{ total_results|pluralize }}
-            {% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}
-            {% if selected_category %} in <strong>{{ selected_category.title|capfirst }}</strong>{% endif %}
-            {% if location_active %}{% if max_distance == 'any' %} near <strong>{{ display_location }}</strong>{% else %} within <strong>{{ max_distance }} km</strong>
-              of <strong>{{ display_location }}</strong>{% endif %}{% endif %}
-          {% else %}
-            No listings found
-            {% if q %} for &ldquo;{{ q }}&rdquo;{% endif %}
-            {% if selected_category %} in {{ selected_category.title|capfirst }}{% endif %}
-            {% if location_active %}{% if max_distance == 'any' %} near {{ display_location }}{% else %} within {{ max_distance }} km of {{ display_location }}{% endif %}{% endif %}.
-          {% endif %}
-        </p>
-      </div>
-    </div>
+    <p class="search-subline">
+      {% if q %}Keyword: <strong>&ldquo;{{ q }}&rdquo;</strong>{% else %}All keywords{% endif %}
+      {% if location_active %}
+        {% if max_distance == 'any' %}
+          • Near <strong>{{ display_location }}</strong>
+        {% else %}
+          • Within <strong>{{ max_distance }} km</strong> of <strong>{{ display_location }}</strong>
+        {% endif %}
+      {% endif %}
+      {% if sort_by %}• Sorted by <strong>{{ sort_by|capfirst }}</strong>{% endif %}
+    </p>
 
     {# Results #}
     {% if orders.object_list %}
@@ -121,7 +191,7 @@
             {% endif %}
           </div>
           <div class="card-footer">
-            <a href="{% url 'navigation:productPage' order.product.slug %}"
+            <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list{% if location %}&location={{ location|urlencode }}{% endif %}{% if max_distance != None %}&distance_filter={{ max_distance }}{% endif %}{% if sort_by == 'distance' %}&sort_by=nearest{% elif sort_by == 'price' %}&sort_by=cheapest{% else %}&sort_by=newest{% endif %}"
                class="btn btn-sm btn-outline-primary">View</a>
           </div>
         </div>

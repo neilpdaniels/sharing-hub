@@ -4,20 +4,8 @@
 {% if order %}
 <div class="pt-2 pb-1 border-top">
 
-    {% if orderImages %}
-    <ul class="lightGallery list-inline mb-2">
-        {% for orderImage in orderImages %}
-        {% thumbnail orderImage.image "100x80" crop="center" as im %}
-        <li data-src="{{ orderImage.image.url }}" class="list-inline-item">
-            <img src="{{ im.url }}" height="60" width="75" style="object-fit:cover;border-radius:3px;cursor:pointer;">
-        </li>
-        {% endthumbnail %}
-        {% endfor %}
-    </ul>
-    {% endif %}
-
-    <div class="row small text-muted mt-1">
-        <div class="col-md-6 mb-2">
+    <div class="row small text-muted mt-1 align-items-start">
+        <div class="col-lg-7 mb-3 mb-lg-2 order-2 order-lg-1">
             <div class="mb-2">
                 <strong class="text-dark d-block">Description</strong>
                 {% if order.description %}
@@ -46,10 +34,30 @@
             </div>
         </div>
 
-        <div class="col-md-6 mb-2">
-            <div class="mb-1">
+        <div class="col-lg-5 mb-2 order-1 order-lg-2">
+            {% if orderImages %}
+            <ul class="lightGallery list-unstyled d-flex flex-wrap mb-3" style="gap:8px;">
+                {% for orderImage in orderImages %}
+                {% if forloop.first %}
+                {% thumbnail orderImage.image "420x280" crop="center" as hero %}
+                <li data-src="{{ orderImage.image.url }}" class="w-100 mb-0" style="margin:0; cursor:pointer;">
+                    <img src="{{ hero.url }}" alt="Listing photo" style="display:block;width:100%;height:220px;object-fit:cover;border-radius:14px;background:#eef3f5;box-shadow:0 12px 24px rgba(20, 51, 64, 0.12);">
+                </li>
+                {% endthumbnail %}
+                {% else %}
+                {% thumbnail orderImage.image "84x64" crop="center" as im %}
+                <li data-src="{{ orderImage.image.url }}" class="mb-0" style="margin:0; cursor:pointer;">
+                    <img src="{{ im.url }}" height="64" width="84" style="object-fit:cover;border-radius:10px;cursor:pointer;display:block;box-shadow:0 8px 18px rgba(20, 51, 64, 0.12);">
+                </li>
+                {% endthumbnail %}
+                {% endif %}
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <div class="mb-1" style="font-size:1.1rem;">
                 <span class="fas fa-tag mr-1"></span>
-                <strong class="text-dark">£{{ display_price|floatformat:2 }}/day</strong>
+                <strong class="text-dark">£{{ display_price|floatformat:"-2" }}/day</strong>
                 {% if is_friend_of_lender and order.mates_rates %}
                 <span class="ml-1 badge badge-gold">Mates rate applied</span>
                 {% endif %}
@@ -64,7 +72,7 @@
                     {% for band in price_bands %}
                     <tr>
                         <td class="py-0">Up to {{ band.duration_days }} day{{ band.duration_days|pluralize }}</td>
-                        <td class="py-0">£{{ band.price_per_day|floatformat:2 }}</td>
+                        <td class="py-0">£{{ band.price_per_day|floatformat:"-2" }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -77,10 +85,10 @@
             {% endif %}
             <div>
                 <span class="fas fa-truck mr-1"></span>{{ order.get_collection_policy_display }}
-                {% if order.delivery_cost %}&nbsp;· delivery £{{ order.delivery_cost|floatformat:2 }}{% endif %}
+                {% if order.delivery_cost %}&nbsp;· delivery £{{ order.delivery_cost|floatformat:"-2" }}{% endif %}
             </div>
             {% if display_deposit %}
-            <div><span class="fas fa-shield-alt mr-1"></span>£{{ display_deposit|floatformat:2 }} refundable deposit</div>
+            <div><span class="fas fa-shield-alt mr-1"></span>£{{ display_deposit|floatformat:"-2" }} refundable deposit</div>
             {% else %}
             <div><span class="fas fa-shield-alt mr-1"></span>No deposit required</div>
             {% endif %}

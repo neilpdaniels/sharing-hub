@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse, Http404
 from django.http import HttpResponseForbidden
 from django.http import JsonResponse
-from common.models import Category, Product, Order, System
+from common.models import Category, CategoryTag, Product, Order, System
 from common.models import BestPricedForCategory, BestPricedForProduct
 import common.helpers
 from transaction.models import Transaction
@@ -25,11 +25,21 @@ import urllib.parse
 from django.utils import timezone
 from common.tasks import runStaticMigration, listEmptyCategories
 from django.urls import reverse
+from django.contrib.auth.decorators import login_required
 
-from admin_tools.models import ProductListingRequest
+from .forms import CategorySuggestionForm
 
 
 logger = logging.getLogger(__name__)
+
+
+def _build_biscuit(cat):
+    biscuit = [cat]
+    biscuit_cat = cat
+    while biscuit_cat.parent_category is not None:
+        biscuit.append(biscuit_cat.parent_category)
+        biscuit_cat = biscuit_cat.parent_category
+    return [item for item in biscuit[::-1] if item.slug != 'top']
 
 # @cache_page(60 * 30)
 def browseCategory(request, cat_slug=None):
@@ -41,28 +51,6 @@ def browseCategory(request, cat_slug=None):
     if cat_slug:
         cat = get_object_or_404(Category, slug=cat_slug)
 
-    if request.method == 'POST' and request.POST.get('request_new_product_submit') == '1':
-        if not request.user.is_authenticated:
-            messages.warning(request, 'Please log in to request a new product listing.')
-            login_url = reverse('login')
-            return redirect(f"{login_url}?next={urllib.parse.quote(request.get_full_path())}")
-
-        product_name = request.POST.get('requested_product_name', '').strip()
-        request_details = request.POST.get('request_details', '').strip()
-
-        if not product_name or not request_details:
-            messages.error(request, 'Please include both a product name and details for your request.')
-        else:
-            ProductListingRequest.objects.create(
-                requested_by=request.user,
-                category_slug=cat.slug if cat else '',
-                category_title=cat.title if cat else '',
-                product_name=product_name,
-                request_details=request_details,
-            )
-            messages.success(request, 'Thanks. Your product request has been submitted.')
-
-        return redirect(request.get_full_path())
 
     categories = None
     categories = cat.category_set.all()
@@ -120,13 +108,28 @@ def browseCategory(request, cat_slug=None):
         products = cat.product_set.all().order_by('-create_date')
     # products = cat.product_set.all().order_by('-best_prices__bestPricedBid')
 
+    available_tags = CategoryTag.objects.filter(
+        Q(categories=cat) |
+        Q(categories__parent_category=cat) |
+        Q(products__category_id=cat) |
+        Q(products__category_id__parent_category=cat)
+    ).distinct().order_by('name')
+    if not available_tags.exists():
+        available_tags = CategoryTag.objects.all().order_by('name')
+
+    selected_tag = request.GET.get('tag', '').strip()
+    if selected_tag:
+        categories = categories.filter(
+            Q(tags__slug=selected_tag) | Q(product__tags__slug=selected_tag)
+        ).distinct()
+        products = products.filter(
+            Q(category_id__tags__slug=selected_tag) | Q(tags__slug=selected_tag)
+        ).distinct()
+        chosen_attributes['tag'] = selected_tag
+
     # make ajax call skip unnecessary info
     if not request.is_ajax():
-        biscuit = [cat]
-        biscuit_cat = cat
-        while biscuit_cat.parent_category is not None:
-            biscuit.append(biscuit_cat.parent_category)
-            biscuit_cat = biscuit_cat.parent_category
+        biscuit = _build_biscuit(cat)
        
         # if any category attributes are filterable, collect them all
         if filterable_attributes_count > 0:
@@ -322,7 +325,9 @@ def browseCategory(request, cat_slug=None):
         context['browse_lon'] = browse_lon
         context['virtual_offers'] = virtual_offers
         context['virtual_bids'] = virtual_bids
-        context['biscuit'] = biscuit[::-1]
+        context['biscuit'] = biscuit
+        context['available_tags'] = available_tags
+        context['selected_tag'] = selected_tag
         context['totalProductsCount'] = totalProductsCount
         context['best_bids'] = best_bids
         context['best_offers'] = best_offers
@@ -503,11 +508,16 @@ def productPage(request, product_slug):
     except Category.DoesNotExist:
         raise Http404("Category does not exist")
     sell_orders = product.order_set.filter(status='A', direction='L').prefetch_related('blocked_dates').order_by('price')
+    postcode_display_cache = {}
 
     sort_by = request.GET.get('sort_by', 'nearest')
     VALID_SORTS = {'nearest', 'cheapest', 'newest', 'deposit'}
     if sort_by not in VALID_SORTS:
         sort_by = 'nearest'
+
+    view_mode = request.GET.get('view_mode', 'list')
+    if view_mode not in {'list', 'map'}:
+        view_mode = 'list'
 
     needed_date_raw = request.GET.get('needed_date', '').strip()
     needed_date = None
@@ -626,6 +636,14 @@ def productPage(request, product_slug):
             continue
 
         o.main_image = o.images.filter(is_main=True).first()
+        o.display_location = ''
+        if o.postcode:
+            normalized_postcode = o.postcode.strip().upper()
+            if normalized_postcode not in postcode_display_cache:
+                from common.geocoding import PostcodeGeocoder
+                coords = PostcodeGeocoder.get_coordinates(normalized_postcode)
+                postcode_display_cache[normalized_postcode] = (coords or {}).get('display_name', normalized_postcode)
+            o.display_location = postcode_display_cache[normalized_postcode]
         o.available_on_needed_date = None
         if needed_date:
             if needed_date > o.expiry_date.date():
@@ -656,15 +674,11 @@ def productPage(request, product_slug):
     elif sort_by == 'cheapest':
         sell_orders.sort(key=lambda o: o.total_price if o.total_price is not None else float(o.price))
     elif sort_by == 'newest':
-        sell_orders.sort(key=lambda o: o.created, reverse=True)
+        sell_orders.sort(key=lambda o: o.create_date, reverse=True)
     elif sort_by == 'deposit':
         sell_orders.sort(key=lambda o: float(o.deposit) if o.deposit is not None else 0)
     
-    biscuit = [cat]
-    biscuit_cat = cat
-    while biscuit_cat.parent_category is not None:
-        biscuit.append(biscuit_cat.parent_category)
-        biscuit_cat = biscuit_cat.parent_category
+    biscuit = _build_biscuit(cat)
 
     all_time_stats = {
         'high_price' : None,
@@ -766,7 +780,7 @@ def productPage(request, product_slug):
         'category' : cat,
         'product'  : product,
         'sell_orders'  : sell_orders,
-        'biscuit' : biscuit[::-1], 
+        'biscuit' : biscuit, 
         'spot_price_value' : spot_price_value,
         'all_time_stats' : all_time_stats,
         'last_transactions' : last_transactions,
@@ -782,6 +796,7 @@ def productPage(request, product_slug):
         'needed_days': needed_days_raw if needed_days_raw else '',
         'needed_days_int': needed_days,
         'sort_by': sort_by,
+        'view_mode': view_mode,
     }
     return HttpResponse(template.render(context, request))
 
@@ -933,16 +948,6 @@ def expandOrder(request):
     }
     return HttpResponse(template.render(content, request))
 
-
-def developerProgram(request):
-    template = loader.get_template('navigation/developer_program.html')
-    context = {}
-    return HttpResponse(template.render(context, request))
-
-def escrowInformation(request):
-    template = loader.get_template('navigation/escrow_information.html')
-    context = {}
-    return HttpResponse(template.render(context, request))
 
 def feesAndCharges(request):
     template = loader.get_template('navigation/fees_and_charges.html')
@@ -1123,3 +1128,37 @@ def search_by_postcode(request):
     
     template = loader.get_template('navigation/search_by_postcode.html')
     return HttpResponse(template.render(context, request))
+
+
+@login_required
+def suggestCategory(request):
+    current_category = None
+    category_id = request.GET.get('category_id') or request.POST.get('category_id')
+    if category_id:
+        try:
+            current_category = Category.objects.get(pk=category_id)
+        except Category.DoesNotExist:
+            current_category = None
+
+    if request.method == 'POST':
+        form = CategorySuggestionForm(request.POST, request.FILES)
+        if form.is_valid():
+            suggestion = form.save(commit=False)
+            suggestion.user = request.user
+            suggestion.category = current_category
+            suggestion.save()
+            messages.success(request, 'Thanks. Your category suggestion has been submitted for admin review.')
+
+            next_url = request.POST.get('next')
+            if next_url:
+                return redirect(next_url)
+            return redirect('navigation:seeAll')
+    else:
+        form = CategorySuggestionForm()
+
+    context = {
+        'form': form,
+        'current_category': current_category,
+        'next': request.GET.get('next', ''),
+    }
+    return render(request, 'navigation/suggest_category.html', context)

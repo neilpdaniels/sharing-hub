@@ -14,7 +14,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from django_otp.admin import OTPAdminSite
@@ -32,6 +32,7 @@ urlpatterns = [
     path('navigation/', include('navigation.urls', namespace='navigation')),
     path('my_sharing_hub/', include('my_sharing_hub.urls', namespace='my_sharing_hub')),
     path('', navigation.views.index, name='homepage'),
+    re_path(r'^summernote/', include('django_summernote.urls')),
 ]
 
 if settings.DEBUG:

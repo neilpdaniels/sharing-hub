@@ -4,71 +4,127 @@
 {% block headerContent %}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css">
 {% endblock %}
-{% block title %}Register{% endblock %}
+{% block title %}Join us — Register{% endblock %}
+{% block page_header %}{% endblock %}
+{% block site_search_bar %}{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="row">
-        <div class="col-lg-2"></div>
-        <div class="col-lg-8">
-            <h1>Create an account</h1>
-            {% if register_stage == 'verify' %}
-            <p>Enter the code sent to <strong>{{ verify_email }}</strong> and set your password.</p>
+<div class="sh-auth-wrap">
+    <div class="sh-auth-card">
+
+        {% if register_stage == 'verify' %}
+        <div class="sh-auth-header">
+            <h1>Check your inbox!</h1>
+            <p>We sent a 6-digit code to <strong>{{ verify_email }}</strong></p>
+        </div>
+
+        <div class="sh-steps">
+            <div class="sh-step done">
+                <div class="sh-step-dot">✓</div>
+                <span class="sh-step-label">Your details</span>
+            </div>
+            <div class="sh-step-line"></div>
+            <div class="sh-step active">
+                <div class="sh-step-dot">2</div>
+                <span class="sh-step-label">Verify &amp; set password</span>
+            </div>
+        </div>
+
+        <div class="sh-auth-body">
             {% bootstrap_form_errors verify_form %}
-            <form action='.' method='post'>
+            <form action='.' method='post' novalidate>
                 {% csrf_token %}
                 <input type="hidden" name="action" value="verify">
-                <div class="form-group has-feedback">
-                    {% bootstrap_field verify_form.verification_code show_label=False addon_before='<span class="fas fa-shield-alt form-control-feedback text-muted"></span>' placeholder='6-digit verification code' %}
+                <div class="sh-field-label">Verification code</div>
+                <div class="form-group">
+                    {% bootstrap_field verify_form.verification_code show_label=False placeholder='6-digit code from your email' %}
                 </div>
-                <div class="form-group has-feedback">
-                    {% bootstrap_field verify_form.password show_label=False addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>' placeholder='Password' %}
+                <div class="sh-field-label">Set your password</div>
+                <div class="form-group">
+                    {% bootstrap_field verify_form.password show_label=False placeholder='Choose a password' %}
                 </div>
-                <div class="form-group has-feedback">
-                    {% bootstrap_field verify_form.password2 show_label=False addon_before='<span class="fas fa-lock form-control-feedback text-muted"></span>' placeholder='Repeat password' %}
+                <div class="form-group">
+                    {% bootstrap_field verify_form.password2 show_label=False placeholder='Repeat your password' %}
                 </div>
-                <p><input class="btn btn-primary" type="submit" value="verify and create account"></p>
+                <button type="submit" class="sh-btn-cta">🎉 Create my account</button>
             </form>
-            {% else %}
-            <p>Please fill in your details. We will email you a 6-digit verification code first.</p>
+        </div>
+
+        {% else %}
+        <div class="sh-auth-header">
+            <h1>Welcome — let's get started!</h1>
+            <p>Just a few details and you're in.</p>
+        </div>
+
+        <div class="sh-steps">
+            <div class="sh-step active">
+                <div class="sh-step-dot">1</div>
+                <span class="sh-step-label">Your details</span>
+            </div>
+            <div class="sh-step-line"></div>
+            <div class="sh-step waiting">
+                <div class="sh-step-dot">2</div>
+                <span class="sh-step-label">Verify &amp; set password</span>
+            </div>
+        </div>
+
+        <div class="sh-auth-body">
             {% bootstrap_form_errors user_form %}
-            <form action='.' method='post'>
+            <form action='.' method='post' novalidate>
                 {% csrf_token %}
                 <input type="hidden" name="action" value="start">
-                {% bootstrap_field user_form.name show_label=False placeholder='Your name' %}
-                <div class="form-group has-feedback">
-                    {% bootstrap_field user_form.email show_label=False addon_before='<span class="fas fa-envelope form-control-feedback text-muted"></span>' placeholder='Email address' %}
+
+                <div class="sh-field-label">About you</div>
+                <div class="form-group">
+                    {% bootstrap_field user_form.name show_label=False placeholder='Your name' %}
                 </div>
-                <div class="form-group has-feedback">
+                <div class="form-group">
+                    {% bootstrap_field user_form.email show_label=False placeholder='Email address' %}
+                </div>
+                <div class="form-group">
                     {% bootstrap_field user_form.mobile_number show_label=False addon_before='+44' placeholder='Mobile number e.g. 07700 900000' %}
                 </div>
-                <div class="form-group has-feedback">
-                    {% bootstrap_field user_form.date_of_birth show_label=False addon_before='<span class="fas fa-calendar form-control-feedback text-muted"></span>' placeholder='Date of birth (dd-mm-yyyy)' %}
+                <div class="form-group">
+                    {% bootstrap_field user_form.date_of_birth show_label=False placeholder='Date of birth (dd-mm-yyyy)' %}
                 </div>
-                <div class="position-relative">
-                    {% bootstrap_field user_form.address_line_1 show_label=False placeholder='Start typing street / address...' %}
+
+                <div class="sh-field-label">Your address</div>
+                <div class="form-group sh-address-wrap">
+                    {% bootstrap_field user_form.address_line_1 show_label=False placeholder='Start typing your street or postcode…' %}
                     <div id="address-suggestions" class="list-group position-absolute w-100" style="z-index:1060; display:none;"></div>
                 </div>
-                {% bootstrap_field user_form.address_line_2 show_label=False placeholder='Address line 2 (optional)' %}
-                {% bootstrap_field user_form.town show_label=False placeholder='Town / city' %}
-                {% bootstrap_field user_form.county show_label=False placeholder='County (optional)' %}
-                {% bootstrap_field user_form.postcode show_label=False placeholder='Postcode' %}
-                <p><input class="btn btn-primary" type="submit" value="send verification code"></p>
+                <div class="form-group">
+                    {% bootstrap_field user_form.address_line_2 show_label=False placeholder='Address line 2 (optional)' %}
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-8">
+                        {% bootstrap_field user_form.town show_label=False placeholder='Town / city' %}
+                    </div>
+                    <div class="form-group col-4">
+                        {% bootstrap_field user_form.postcode show_label=False placeholder='Postcode' %}
+                    </div>
+                </div>
+                <div class="form-group">
+                    {% bootstrap_field user_form.county show_label=False placeholder='County (optional)' %}
+                </div>
+
+                <button type="submit" class="sh-btn-cta">✉️ Send my verification code</button>
             </form>
-            {% endif %}
+            <p class="sh-auth-hint">Already have an account? <a href="{% url 'login' %}">Log in here</a></p>
         </div>
+        {% endif %}
+
     </div>
 </div>
-    
 {% endblock %}
 
-{% block pageJavascript %} 
+{% block pageJavascript %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/i18n/jquery-ui-timepicker-addon-i18n.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-sliderAccess.js"></script>   
-    <script src="https://cdn.jsdelivr.net/npm/jquery.ui.widget@1.10.3/jquery.ui.widget.js"></script>   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.iframe-transport.min.js"></script>   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>   
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-sliderAccess.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.ui.widget@1.10.3/jquery.ui.widget.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.iframe-transport.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>
 {% endblock %}
 {% block domready %}
 $('#id_date_of_birth').attr('autocomplete', 'off');
@@ -94,10 +150,7 @@ $('#id_date_of_birth').datepicker({
     input.addEventListener('input', function() {
         var q = input.value.trim();
         clearTimeout(timer);
-        if (q.length < 3) {
-            clearSuggestions();
-            return;
-        }
+        if (q.length < 3) { clearSuggestions(); return; }
 
         timer = setTimeout(function() {
             fetch('{% url "address_lookup" %}?q=' + encodeURIComponent(q))
@@ -105,10 +158,7 @@ $('#id_date_of_birth').datepicker({
                 .then(function(data) {
                     suggestions.innerHTML = '';
                     var results = data.results || [];
-                    if (!results.length) {
-                        clearSuggestions();
-                        return;
-                    }
+                    if (!results.length) { clearSuggestions(); return; }
 
                     results.forEach(function(item) {
                         var option = document.createElement('button');
@@ -129,28 +179,19 @@ $('#id_date_of_birth').datepicker({
                                 fetch('{% url "address_resolve" %}?id=' + encodeURIComponent(item.id))
                                     .then(function(r) { return r.json(); })
                                     .then(function(data) {
-                                        if (data.result) {
-                                            applyResolvedAddress(data.result);
-                                        } else {
-                                            clearSuggestions();
-                                        }
+                                        if (data.result) { applyResolvedAddress(data.result); }
+                                        else { clearSuggestions(); }
                                     })
-                                    .catch(function() {
-                                        clearSuggestions();
-                                    });
+                                    .catch(function() { clearSuggestions(); });
                                 return;
                             }
-
                             applyResolvedAddress(item);
                         });
                         suggestions.appendChild(option);
                     });
-
                     suggestions.style.display = 'block';
                 })
-                .catch(function() {
-                    clearSuggestions();
-                });
+                .catch(function() { clearSuggestions(); });
         }, 250);
     });
 
@@ -160,5 +201,4 @@ $('#id_date_of_birth').datepicker({
         }
     });
 })();
-
 {% endblock %}

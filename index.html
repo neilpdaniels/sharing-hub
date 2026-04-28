@@ -1,1 +1,300 @@
-<p>holding for sharing-hub.com</p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sharing Hub - Coming Soon</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            text-align: center;
+            z-index: 10;
+            max-width: 600px;
+            padding: 40px 20px;
+        }
+
+        .floating-shapes {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .shape {
+            position: absolute;
+            opacity: 0.1;
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .shape:nth-child(1) {
+            width: 100px;
+            height: 100px;
+            background: #fff;
+            border-radius: 50%;
+            top: 10%;
+            left: 10%;
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .shape:nth-child(2) {
+            width: 150px;
+            height: 150px;
+            background: #fff;
+            border-radius: 50%;
+            top: 60%;
+            right: 10%;
+            animation: float 25s infinite ease-in-out reverse;
+        }
+
+        .shape:nth-child(3) {
+            width: 80px;
+            height: 80px;
+            background: #fff;
+            clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+            bottom: 15%;
+            left: 15%;
+            animation: float 30s infinite ease-in-out;
+        }
+
+        .shape:nth-child(4) {
+            width: 120px;
+            height: 120px;
+            background: #fff;
+            bottom: 20%;
+            right: 15%;
+            animation: float 28s infinite ease-in-out reverse;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(30px); }
+        }
+
+        .content {
+            position: relative;
+            z-index: 20;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 60px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideInUp 0.8s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .emoji {
+            font-size: 80px;
+            margin-bottom: 20px;
+            display: inline-block;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        h1 {
+            font-size: 3em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 20px;
+            font-weight: 700;
+            letter-spacing: -1px;
+        }
+
+        .tagline {
+            font-size: 1.3em;
+            color: #666;
+            margin-bottom: 30px;
+            font-weight: 300;
+        }
+
+        .description {
+            font-size: 1.1em;
+            color: #777;
+            line-height: 1.8;
+            margin-bottom: 40px;
+        }
+
+        .cta-button {
+            display: inline-block;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            margin: 10px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+        }
+
+        .cta-button.secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .cta-button.secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .buttons-container {
+            margin-top: 40px;
+        }
+
+        .social-links {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #eee;
+        }
+
+        .social-icon {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            margin: 0 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            transition: transform 0.3s ease;
+            text-decoration: none;
+        }
+
+        .social-icon:hover {
+            transform: scale(1.1) rotate(10deg);
+        }
+
+        .countdown {
+            margin-top: 40px;
+            font-size: 0.95em;
+            color: #999;
+        }
+
+        .pulse {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #f093fb;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="floating-shapes">
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
+    </div>
+
+    <div class="container">
+        <div class="content">
+            <div class="emoji">🎉</div>
+            <h1>Sharing Hub</h1>
+            <p class="tagline">Something amazing is coming soon</p>
+            
+            <p class="description">
+                We're building the ultimate platform for sharing, connecting, and collaborating. 
+                Get ready to experience something extraordinary.
+            </p>
+
+            <div class="buttons-container">
+                <button class="cta-button">Notify Me</button>
+                <button class="cta-button secondary">Learn More</button>
+            </div>
+
+            <div class="social-links">
+                <a href="#" class="social-icon" title="Twitter">𝕏</a>
+                <a href="#" class="social-icon" title="Instagram">📸</a>
+                <a href="#" class="social-icon" title="LinkedIn">💼</a>
+            </div>
+
+            <div class="countdown">
+                <span class="pulse"></span>
+                <strong>Coming Soon</strong> | sharing-hub.com
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity to buttons
+        document.querySelectorAll('.cta-button').forEach(button => {
+            button.addEventListener('click', function(e) {
+                if (this.textContent.includes('Notify')) {
+                    alert('📧 Thanks! We\'ll notify you soon!');
+                } else {
+                    alert('🚀 Excited to show you what we\'re building!');
+                }
+            });
+        });
+
+        // Randomize social icon emojis
+        const icons = ['𝕏', '📸', '💼', '🎨', '🎭'];
+        document.querySelectorAll('.social-icon').forEach(icon => {
+            icon.addEventListener('mouseenter', function() {
+                this.textContent = icons[Math.floor(Math.random() * icons.length)];
+            });
+        });
+    </script>
+</body>
+</html>

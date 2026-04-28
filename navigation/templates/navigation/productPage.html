@@ -158,6 +158,9 @@
         background: #e9f1f3;
         color: #14586b;
       }
+      .pp-friends-filter {
+        white-space: nowrap;
+      }
       @media (max-width: 767.98px) {
         .pp-summary-row {
           align-items: flex-start !important;
@@ -283,16 +286,16 @@
                       <span class="fas fa-calendar-alt"></span>
                       {% if needed_date or needed_days_int %}
                         <span class="text-muted small">
-                          {% if needed_date %}{{ needed_date }}{% endif %}{% if needed_date and needed_days_int %} · {% endif %}{% if needed_days_int %}{{ needed_days_int }}d{% endif %}
+                          {% if needed_date_display %}{{ needed_date_display }}{% endif %}{% if needed_date and needed_days_int %} · {% endif %}{% if needed_days_int %}{{ needed_days_int }}d{% endif %}
                         </span>
                       {% endif %}
                     </button>
                     <div class="dropdown-menu p-3" aria-labelledby="pp-date-filter-btn" style="min-width:260px;">
                       <div class="form-group mb-2">
-                        <label for="pp-needed-date" style="font-size:0.78rem; font-weight:600; margin-bottom:2px;">Start date</label>
-                        <input type="date" name="needed_date" id="pp-needed-date" value="{{ needed_date }}"
-                               class="form-control form-control-sm" title="When do you need the item?"
-                             lang="en-GB">
+                        <label for="pp-needed-date" style="font-size:0.78rem; font-weight:600; margin-bottom:2px;">Start date (DD/MM/YYYY)</label>
+                        <input type="text" name="needed_date" id="pp-needed-date" value="{{ needed_date_input }}"
+                               class="form-control form-control-sm" title="When do you need the item? Use DD/MM/YYYY"
+                               placeholder="DD/MM/YYYY" autocomplete="off" inputmode="numeric">
                       </div>
                       <div class="form-group mb-2">
                         <label for="pp-needed-days" style="font-size:0.78rem; font-weight:600; margin-bottom:2px;">Days</label>
@@ -307,13 +310,11 @@
                     </div>
                   </div>
                 {% if request.user.is_authenticated %}
-                <div style="display:flex;align-items:center;">
-                  <div class="custom-control custom-checkbox">
-                    <input type="checkbox" class="custom-control-input" name="friends_only" id="pp_friends_only"
-                           value="True" {% if friends_only %}checked{% endif %}>
-                    <label class="custom-control-label" for="pp_friends_only" style="font-size:0.78rem;">friends only</label>
-                  </div>
-                </div>
+                <label for="pp_friends_only" class="mb-0 ml-1 text-muted d-inline-flex align-items-center pp-friends-filter" style="font-size:0.78rem; line-height:1;">
+                  <input type="checkbox" name="friends_only" id="pp_friends_only"
+                         value="True" {% if friends_only %}checked{% endif %} style="margin:0 6px 0 0;">
+                  <span>my friends</span>
+                </label>
                 {% endif %}
                 </div>
                 <div class="d-flex align-items-center" style="gap:0.35rem; margin-left:auto;">
@@ -846,6 +847,15 @@
 (function() {
   var form = document.getElementById('pp-filter-form');
   if (!form) return;
+  if ($.fn.datepicker) {
+    $('#pp-needed-date').datepicker({
+      dateFormat: 'dd/mm/yy',
+      changeMonth: true,
+      changeYear: true,
+      showOtherMonths: true,
+      selectOtherMonths: true
+    });
+  }
   // Select and checkbox: submit immediately on change
     $('#pp-distance-select, #pp_friends_only, #pp-sort-select').on('change', function() { form.submit(); });
   // Text input: submit on Enter key or when leaving the field with a new value

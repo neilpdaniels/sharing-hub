@@ -98,6 +98,39 @@
         flex-wrap: wrap;
     }
 
+    .browse-controls-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .browse-control-left,
+    .browse-control-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .browse-friends-filter {
+        white-space: nowrap;
+    }
+
+    @media (max-width: 767.98px) {
+        .browse-controls-wrap {
+            align-items: flex-start;
+        }
+    }
+
+    @media (min-width: 1400px) {
+        .browse-main-container {
+            padding: 0 2rem;
+        }
+    }
+
     .browse-control-row .form-control {
         font-size: 0.78rem;
         height: 24px;
@@ -185,9 +218,54 @@
         background: #e9f1f3;
         color: #14586b;
     }
+
+    .product-list-style {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.5rem;
+        width: 100%;
+    }
+
+    @media (max-width: 767.98px) {
+        .product-list-style {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (min-width: 1200px) {
+        .product-list-style {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    .product-list-style .product-card {
+        height: 100%;
+    }
+
+    .browse-main-container {
+        width: 100%;
+        padding: 0 1rem;
+    }
+
+    .browse-scroll-loading {
+        display: none;
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        z-index: 1050;
+        background: rgba(36, 48, 60, 0.92);
+        color: #f3f7fa;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 999px;
+        padding: 8px 14px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+        pointer-events: none;
+    }
 </style>
 
-<div class="container">
+<div class="container-fluid px-3 px-xl-4">
         {% if category.image %}
             {% thumbnail category.image "200" format="PNG" as im %}
             <img src="{{ im.url }}">
@@ -293,11 +371,10 @@
     {% endif %}
     {% if True %}
     <hr>
-    <div class="row">
-        <div class="col-lg-12">
-            {% if True %}
-            <form action="." method="get" id="browse-filter-form">
-                <div class="container-fluid">
+    <div class="w-100">
+        {% if True %}
+        <form action="." method="get" id="browse-filter-form">
+            <div class="container-fluid browse-main-container">
                     <div class="browse-meta-bar">
                         {% if biscuit %}
                         <nav aria-label="Breadcrumb">
@@ -351,23 +428,9 @@
                     </div>
                     {% endif %}
 
-                    {% if request.user.is_authenticated %}
-                    <div class="mb-2">
-                        <a class="btn btn-sm btn-outline-primary" href="{% url 'navigation:suggestCategory' %}?category_id={{ category.id }}&next={{ request.get_full_path|urlencode }}">
-                            Suggest new category
-                        </a>
-                    </div>
-                    {% endif %}
-
                     <div class="row align-items-center mb-2 browse-top-controls">
-                        <div class="col-md-4 mb-2 mb-md-0">
-                            {% if products|length > 0 or filterable_attributes_count > 0 %}
-                            {% include "pagination.html" with page=products urlencode=urlencode_string %}
-                            {% endif %}
-                        </div>
-
-                        <div class="col-md-8">
-                            <div class="d-flex align-items-center justify-content-md-end browse-control-row">
+                        <div class="col-12">
+                            <div class="browse-controls-wrap browse-control-row">
                                 {% if distance_filter != 'any' %}
                                 <span class="text-muted small mr-1">within {{ distance_filter }}k</span>
                                 {% endif %}
@@ -385,12 +448,12 @@
                                     <option value="30" {% if distance_filter == 30 %}selected{% endif %}>30 km</option>
                                     <option value="50" {% if distance_filter == 50 %}selected{% endif %}>50 km</option>
                                 </select>
-                                <label for="sort_by" class="mb-0 text-muted" style="font-size:0.78rem;">Sort:</label>
-                                <select name="sort_by" id="sort_by" class="form-control">
-                                    <option value="newest"  {% if sort_by == 'newest'  %}selected{% endif %}>Newest</option>
-                                    <option value="nearest" {% if sort_by == 'nearest' %}selected{% endif %}>Nearest first</option>
-                                    <option value="cheapest"{% if sort_by == 'cheapest'%}selected{% endif %}>Cheapest first</option>
-                                </select>
+                                {% if request.user.is_authenticated %}
+                                <label for="friends_only" class="mb-0 ml-1 text-muted d-inline-flex align-items-center" style="font-size:0.78rem; line-height:1;">
+                                    <input type="checkbox" name="friends_only" id="friends_only" value="True" {% if chosen_attributes.friends_only %}checked{% endif %} style="margin:0 6px 0 0;">
+                                    <span class="browse-friends-filter">my friends</span>
+                                </label>
+                                {% endif %}
                                 {% if available_tags %}
                                 <label for="tag_filter" class="mb-0 text-muted" style="font-size:0.78rem;">Tag:</label>
                                 <select name="tag" id="tag_filter" class="form-control">
@@ -400,6 +463,14 @@
                                     {% endfor %}
                                 </select>
                                 {% endif %}
+                                <div class="browse-control-right">
+                                <label for="sort_by" class="mb-0 text-muted" style="font-size:0.78rem;">Sort:</label>
+                                <select name="sort_by" id="sort_by" class="form-control">
+                                    <option value="newest"  {% if sort_by == 'newest'  %}selected{% endif %}>Newest</option>
+                                    <option value="nearest" {% if sort_by == 'nearest' %}selected{% endif %}>Nearest first</option>
+                                    <option value="cheapest"{% if sort_by == 'cheapest'%}selected{% endif %}>Cheapest first</option>
+                                </select>
+                                </div>
                             </div>
 
                             <div id="browse-filter-popup" class="browse-filter-popup" role="dialog" aria-label="Browse filters" aria-hidden="false">
@@ -480,20 +551,12 @@
                                         {% endif %}
                                     {% endif %}
 
-                                {% if request.user.is_authenticated %}
-                                <div class="form-group mb-0">
-                                    <div class="custom-control custom-checkbox">
-                                        <input type="checkbox" class="custom-control-input" name="friends_only" id="friends_only" value="True" {% if chosen_attributes.friends_only %}checked{% endif %}>
-                                        <label class="custom-control-label" for="friends_only" style="font-size:0.78rem;">friends only</label>
-                                    </div>
-                                </div>
-                                {% endif %}
                             </div>
                         </div>
                     </div>
 
-                    <div class="row align-items-center gutters-5 col-lg-12">
-                        <ul class="list-unstyled product-list-style col-lg-12" id="product-list">
+                    <div class="align-items-center gutters-5">
+                        <ul class="list-unstyled product-list-style" id="product-list">
                         {% for product in products %}
                             {% include "navigation/product_view.html" with product=product %}
                         {% endfor %}
@@ -505,18 +568,19 @@
                         </ul>
                     </div>
 
-                    {% if products|length > 0 %}
-                    <div class="row">
-                        <div class="col-md-12">
-                            {% include "pagination.html" with page=products urlencode=urlencode_string %}
-                        </div>
+                    <div id="browse-scroll-loading" class="browse-scroll-loading">Loading more items...</div>
+
+                    {% if request.user.is_authenticated %}
+                    <div class="mb-2 text-center">
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'navigation:suggestCategory' %}?category_id={{ category.id }}&next={{ request.get_full_path|urlencode }}">
+                            Suggest new category
+                        </a>
                     </div>
                     {% endif %}
 
                 </div>
             </form>
             {% endif %}
-        </div>
     </div>
     
     {% endif %}
@@ -531,6 +595,7 @@
 
 {% block domready %}
     var page = 1;
+    var nextPage = {% if products.has_next %}2{% else %}null{% endif %};
     var empty_page = false;
     var block_request = false;
     var browseFilterForm = document.getElementById('browse-filter-form');
@@ -549,34 +614,46 @@
         var viewportBottom = viewportTop + $(window).height();
         return elementBottom > viewportTop && elementTop < viewportBottom;
 }
-/*
-    $(window).scroll(function(){
-        var $footer = $('#footer')
-        if (isScrolledIntoView($footer)) {
-            
-            page += 1;
-            if (!block_request) {
-                block_request = true;
-                var attr1 = ($('#attribute_one').children("option:selected").val())
-                var attr2 = ($('#attribute_two').children("option:selected").val())
-                var attr3 = ''
-                if ($('#active_only').prop('checked')) {
-                    attr3 = '&active_only=True'
-                }
-                alert('?page='+page+'&attribute_one='+attr1+'&attribute_two='+attr2+attr3)
-                var details = encodeURI('?page='+page+'&attribute_one='+attr1+'&attribute_two='+attr2+attr3)
-                $.get(details, function(data){
-                    if (data=='') {
-                        empty_page = true;
-                    } else {
-                        $('#product-list').append(data);
-                        block_request = false;
-                    }
-                });
-            }
+    function buildNextPageUrl(pageNumber) {
+        var params = new URLSearchParams(window.location.search);
+        params.set('page', pageNumber);
+        return window.location.pathname + '?' + params.toString();
+    }
+
+    function loadMoreProductsIfNeeded() {
+        if (block_request || empty_page || !nextPage) {
+            return;
         }
-    });
-*/
+
+        var nearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 300;
+        if (!nearBottom) {
+            return;
+        }
+
+        block_request = true;
+        $('#browse-scroll-loading').show();
+
+        $.get(buildNextPageUrl(nextPage), function(data) {
+            var html = (data || '').trim();
+
+            if (!html) {
+                empty_page = true;
+                nextPage = null;
+                return;
+            }
+
+            $('#product-list').append(html);
+            page = nextPage;
+            nextPage += 1;
+            block_request = false;
+        }).fail(function() {
+            block_request = false;
+        }).always(function() {
+            $('#browse-scroll-loading').hide();
+        });
+    }
+
+    $(window).on('scroll', loadMoreProductsIfNeeded);
     $('#attribute_one, #attribute_two, #attribute_three, #attribute_four, #attribute_five, #friends_only, #tag_filter').change(function() {
         submitBrowseFilters();
     });
@@ -629,6 +706,8 @@
             $('#browse-locate-btn').prop('disabled', false);
         });
     });
+
+    loadMoreProductsIfNeeded();
 
     // Auto-geolocate on page load if no location already set
     {% if not location and not browse_lat %}

@@ -5,11 +5,9 @@
 
 {% if category %}
     {% if products %}
-        <ul>
         {% for product in products %}
             {% include "navigation/product_view.html" with product=product %}
         {% endfor %}
-        </ul>
     {% endif %}
 {% else %}
     <p>No category provided.</p>

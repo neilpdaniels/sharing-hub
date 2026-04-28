@@ -521,12 +521,22 @@ def productPage(request, product_slug):
 
     needed_date_raw = request.GET.get('needed_date', '').strip()
     needed_date = None
+    needed_date_input = ''
+    needed_date_display = ''
     if needed_date_raw:
-        try:
-            needed_date = datetime.strptime(needed_date_raw, '%Y-%m-%d').date()
-        except ValueError:
-            messages.warning(request, 'Please choose a valid needed date.')
-            needed_date_raw = ''
+        parsed = None
+        for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
+            try:
+                parsed = datetime.strptime(needed_date_raw, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed is None:
+            messages.warning(request, 'Please choose a valid needed date in DD/MM/YYYY format.')
+        else:
+            needed_date = parsed
+            needed_date_input = needed_date.strftime('%d/%m/%Y')
+            needed_date_display = needed_date_input
 
     needed_days_raw = request.GET.get('needed_days', '').strip()
     needed_days = None
@@ -792,7 +802,9 @@ def productPage(request, product_slug):
         'page_lon': page_lon,
         'friends_only': friends_only,
         'friend_user_ids': friend_user_ids,
-        'needed_date': needed_date_raw,
+        'needed_date': needed_date,
+        'needed_date_input': needed_date_input,
+        'needed_date_display': needed_date_display,
         'needed_days': needed_days_raw if needed_days_raw else '',
         'needed_days_int': needed_days,
         'sort_by': sort_by,

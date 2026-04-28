@@ -7,13 +7,76 @@ from django.db.models import Q
 
 from .models import Friendship, BlockedUser
 from .forms import AddFriendForm
+from account.models import Profile
+from common.geocoding import PostcodeGeocoder
 
 
-@login_required
-def my_friends(request):
-    """Main friends hub: list of friends, pending/sent requests, and add form."""
-    user = request.user
+def _get_nearby_friend_suggestions(user, max_distance_km=3, limit=100):
+    """Return nearby user suggestions for the add-friend panel."""
+    try:
+        my_profile = user.profile
+    except Exception:
+        return {
+            'suggestions': [],
+            'has_location': False,
+            'radius_km': max_distance_km,
+        }
 
+    if not my_profile.latitude or not my_profile.longitude:
+        return {
+            'suggestions': [],
+            'has_location': False,
+            'radius_km': max_distance_km,
+        }
+
+    blocked_ids = set(BlockedUser.objects.filter(blocked_by=user).values_list('blocked_user_id', flat=True))
+    blocked_by_ids = set(BlockedUser.objects.filter(blocked_user=user).values_list('blocked_by_id', flat=True))
+
+    relationship_ids = set()
+    for user_from_id, user_to_id in Friendship.objects.filter(
+        Q(user_from=user) | Q(user_to=user)
+    ).values_list('user_from_id', 'user_to_id'):
+        if user_from_id != user.id:
+            relationship_ids.add(user_from_id)
+        if user_to_id != user.id:
+            relationship_ids.add(user_to_id)
+
+    excluded_ids = blocked_ids | blocked_by_ids | relationship_ids | {user.id}
+
+    nearby = []
+    candidate_profiles = Profile.objects.select_related('user').exclude(
+        user_id__in=excluded_ids
+    ).exclude(
+        latitude__isnull=True
+    ).exclude(
+        longitude__isnull=True
+    )
+
+    for profile in candidate_profiles:
+        distance_km = PostcodeGeocoder.calculate_distance(
+            my_profile.latitude,
+            my_profile.longitude,
+            profile.latitude,
+            profile.longitude,
+        )
+        if distance_km <= max_distance_km:
+            nearby.append({
+                'user': profile.user,
+                'distance_km': distance_km,
+                'town': profile.town,
+                'postcode': profile.postcode,
+            })
+
+    nearby.sort(key=lambda item: item['distance_km'])
+
+    return {
+        'suggestions': nearby[:limit],
+        'has_location': True,
+        'radius_km': max_distance_km,
+    }
+
+
+def _build_my_friends_context(user, add_form):
     accepted = Friendship.objects.filter(
         status=Friendship.ACCEPTED,
     ).filter(Q(user_from=user) | Q(user_to=user)).select_related('user_from', 'user_to')
@@ -30,15 +93,26 @@ def my_friends(request):
         user_from=user, status=Friendship.PENDING
     ).select_related('user_to')
 
-    add_form = AddFriendForm()
+    nearby_data = _get_nearby_friend_suggestions(user)
 
-    context = {
+    return {
         'accepted': accepted,
         'paused': paused,
         'pending_received': pending_received,
         'pending_sent': pending_sent,
         'add_form': add_form,
+        'nearby_friend_suggestions': nearby_data['suggestions'],
+        'nearby_has_location': nearby_data['has_location'],
+        'nearby_radius_km': nearby_data['radius_km'],
     }
+
+
+@login_required
+def my_friends(request):
+    """Main friends hub: list of friends, pending/sent requests, and add form."""
+    user = request.user
+    add_form = AddFriendForm()
+    context = _build_my_friends_context(user, add_form)
     return render(request, 'friends/my_friends.html', context)
 
 
@@ -50,26 +124,8 @@ def add_friend(request):
 
     form = AddFriendForm(request.POST)
     if not form.is_valid():
-        user = request.user
-        accepted = Friendship.objects.filter(
-            status=Friendship.ACCEPTED,
-        ).filter(Q(user_from=user) | Q(user_to=user)).select_related('user_from', 'user_to')
-        paused = Friendship.objects.filter(
-            status=Friendship.PAUSED,
-        ).filter(Q(user_from=user) | Q(user_to=user)).select_related('user_from', 'user_to')
-        pending_received = Friendship.objects.filter(
-            user_to=user, status=Friendship.PENDING
-        ).select_related('user_from')
-        pending_sent = Friendship.objects.filter(
-            user_from=user, status=Friendship.PENDING
-        ).select_related('user_to')
-        return render(request, 'friends/my_friends.html', {
-            'accepted': accepted,
-            'paused': paused,
-            'pending_received': pending_received,
-            'pending_sent': pending_sent,
-            'add_form': form,
-        })
+        context = _build_my_friends_context(request.user, form)
+        return render(request, 'friends/my_friends.html', context)
 
     email = form.cleaned_data['email']
     username = form.cleaned_data['username']

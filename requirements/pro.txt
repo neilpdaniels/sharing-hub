@@ -1,3 +1,0 @@
--r base.txt
-
-django-celery-email==2.0.1

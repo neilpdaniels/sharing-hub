@@ -1,4 +1,0 @@
-AuthName "admin only"
-AuthUserFile "/home/bosbodev/.htpasswds/public_html/admin_tools/passwd"
-AuthType Basic
-require valid-user

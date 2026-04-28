@@ -1,3 +1,0 @@
-/*!
-* data-owl-carousel - wrapper for owlCarousel with data-attributes support
-*/!function(a,b,c){"use strict";a.fn.siCarousel=function(){return"undefined"==typeof a.fn.owlCarousel?this:this.each(function(){var b=a(this),c=a.extend(!0,{},a.fn.siCarousel.defaults,b.data("owl-carousel"));b.owlCarousel(c)})},a.fn.siCarousel.defaults={items:1,loop:!1,nav:!1,navText:[],dots:!0,slideBy:1,lazyLoad:!1,autoplay:!1,autoplayTimeout:4e3,responsive:{},animateOut:!1,animateIn:!1,smartSpeed:450,navSpeed:450},a(function(){a("[data-owl-carousel]").siCarousel()})}(jQuery,window,document);

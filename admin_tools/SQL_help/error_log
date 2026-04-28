@@ -1,1 +1,0 @@
-[19-Mar-2017 12:05:58] PHP Fatal error:  Call to undefined method Spider_data::get_all_links_for_user() in /home/bosbodev/public_html/admin_tools/SQL_help/change_spider_info_for_user.php on line 33

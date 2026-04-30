@@ -6,6 +6,27 @@ from common.models import Category
 # Create your models here.
 
 
+class SearchHistory(models.Model):
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name='search_history',
+	)
+	search_term = models.CharField(max_length=255, blank=True, default='')
+	location = models.CharField(max_length=255, blank=True, default='')
+	ip_address = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+	searched_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+	class Meta:
+		ordering = ['-searched_at']
+
+	def __str__(self):
+		parts = [self.search_term or '(no term)', self.location or '(no location)']
+		return f'{" | ".join(parts)} @ {self.searched_at:%Y-%m-%d %H:%M}'
+
+
 class CategorySuggestion(models.Model):
 	STATUS_NEW = 'NEW'
 	STATUS_REVIEWED = 'REVIEWED'

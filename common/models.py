@@ -133,7 +133,7 @@ class Order(models.Model):
     TO_LET = 'L'
     DIRECTION_CHOICES = (
         (WANTED, 'Wanted'),
-        (TO_LET, 'To Let')
+        (TO_LET, 'To Lend')
     )
     direction = models.CharField(
         db_index=True,

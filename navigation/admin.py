@@ -1,8 +1,16 @@
 from django.contrib import admin
 
-from .models import CategorySuggestion
+from .models import CategorySuggestion, SearchHistory
 
 # Register your models here.
+
+
+@admin.register(SearchHistory)
+class SearchHistoryAdmin(admin.ModelAdmin):
+	list_display = ('search_term', 'location', 'user', 'searched_at')
+	list_filter = ('searched_at',)
+	search_fields = ('search_term', 'location', 'user__username')
+	readonly_fields = ('searched_at',)
 
 
 @admin.register(CategorySuggestion)

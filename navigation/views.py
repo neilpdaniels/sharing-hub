@@ -28,6 +28,7 @@ from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 
 from .forms import CategorySuggestionForm
+from .models import SearchHistory
 
 
 logger = logging.getLogger(__name__)
@@ -400,6 +401,29 @@ def search(request):
             messages.error(request, f'"{location}" could not be found. Please try a postcode or UK town name.')
 
     # Start with all active orders
+    # Log the search if a term or location was supplied, deduplicating by IP+term+day
+    if q or (location and not location_not_found):
+        ip = (
+            request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+            or request.META.get('REMOTE_ADDR', '')
+        ) or None
+        today = timezone.now().date()
+        already_logged = (
+            ip and q and
+            SearchHistory.objects.filter(
+                ip_address=ip,
+                search_term__iexact=q,
+                searched_at__date=today,
+            ).exists()
+        )
+        if not already_logged:
+            SearchHistory.objects.create(
+                user=request.user if request.user.is_authenticated else None,
+                search_term=q,
+                location=display_location or location,
+                ip_address=ip,
+            )
+
     orders = Order.objects.select_related('product', 'user', 'product__category_id').filter(status=Order.ACTIVE)
 
     # Filter by category (and its descendants)
@@ -1009,7 +1033,7 @@ def termsAndConditions(request):
 
 def search_by_postcode(request):
     """
-    Search for transactions (wanted/to let) by postcode or town and distance.
+    Search for transactions (wanted/to lend) by postcode or town and distance.
     
     Allows both logged-in users (uses their postcode) and guests (enter postcode/town).
     Supports filtering by distance and sorting by distance.
@@ -1074,7 +1098,7 @@ def search_by_postcode(request):
     if latitude and longitude:
         context['display_location'] = display_location
 
-        # Get all active transactions (WANTED/TO LET)
+        # Get all active transactions (WANTED/TO LEND)
         transactions = Transaction.objects.select_related(
             'order_passive', 'order_passive__product', 
             'user_aggressive', 'user_passive'
@@ -1174,3 +1198,176 @@ def suggestCategory(request):
         'next': request.GET.get('next', ''),
     }
     return render(request, 'navigation/suggest_category.html', context)
+
+
+@login_required
+def whats_popular(request):
+    """
+    Show the top searched-for terms with weekly/monthly/yearly counts,
+    a smoothed sparkline, and matching active order counts at fixed distances.
+
+    The distance slider filters which searches are included (by proximity of
+    the user who made the search). Open order counts are always shown at fixed
+    buckets of 5 km, 10 km and 20 km from the logged-in user's location.
+
+    Supports infinite scroll: append ?format=json&page=N for JSON responses.
+    """
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate
+    from common.geocoding import PostcodeGeocoder
+
+    PAGE_SIZE = 10
+    ORDER_DISTANCES = [5, 10, 20]
+
+    now = timezone.now()
+    week_ago = now - timezone.timedelta(days=7)
+    month_ago = now - timezone.timedelta(days=30)
+    prev_month_start = now - timezone.timedelta(days=60)
+    year_ago = now - timezone.timedelta(days=365)
+
+    # Slider: filters search history by distance of the searcher from this user
+    # Values 0–49 km are exact; 50 (slider max) means "any distance"
+    distance_raw = request.GET.get('distance', '')
+    try:
+        _d = int(distance_raw) if distance_raw.strip() else None
+        max_distance_km = None if (_d is None or _d >= 50) else _d
+    except (ValueError, TypeError, AttributeError):
+        max_distance_km = None  # None == any distance
+
+    try:
+        page = max(1, int(request.GET.get('page', 1) or 1))
+    except (ValueError, TypeError):
+        page = 1
+    is_ajax = request.GET.get('format') == 'json'
+
+    # User's cached GPS location from profile
+    user_lat = user_lon = user_postcode = None
+    try:
+        profile = request.user.profile
+        if profile.latitude and profile.longitude:
+            user_lat = float(profile.latitude)
+            user_lon = float(profile.longitude)
+        user_postcode = (profile.postcode or '').upper().replace(' ', '')
+    except Exception:
+        pass
+
+    has_location = bool(user_lat and user_lon)
+
+    # Base SearchHistory queryset, scoped to the past year, non-empty terms
+    sh_base = SearchHistory.objects.filter(searched_at__gte=year_ago, search_term__gt='')
+
+    # If the user has a location and a distance is set, restrict to searches
+    # made by users who are within that radius.
+    if has_location and max_distance_km is not None:
+        from django.contrib.auth import get_user_model
+        _User = get_user_model()
+        nearby_user_ids = set()
+        for u in _User.objects.filter(
+            profile__latitude__isnull=False,
+            profile__longitude__isnull=False,
+        ).select_related('profile'):
+            try:
+                dist = PostcodeGeocoder.calculate_distance(
+                    user_lat, user_lon,
+                    float(u.profile.latitude),
+                    float(u.profile.longitude),
+                )
+                if max_distance_km == 0:
+                    # Postcode-area only: match outward code prefix
+                    if (u.profile.postcode or '').upper().replace(' ', '')[:3] == user_postcode[:3]:
+                        nearby_user_ids.add(u.id)
+                elif dist <= max_distance_km:
+                    nearby_user_ids.add(u.id)
+            except Exception:
+                pass
+        sh_base = sh_base.filter(user__in=nearby_user_ids)
+
+    # Aggregate top terms and paginate
+    top_terms_qs = (
+        sh_base
+        .values('search_term')
+        .annotate(total=Count('id'))
+        .order_by('-total')
+    )
+    total_terms = top_terms_qs.count()
+    offset = (page - 1) * PAGE_SIZE
+    page_terms = list(top_terms_qs[offset:offset + PAGE_SIZE])
+    has_next = (offset + PAGE_SIZE) < total_terms
+
+    results = []
+    for idx, row in enumerate(page_terms):
+        term = row['search_term']
+        rank = offset + idx + 1
+
+        week_count = sh_base.filter(searched_at__gte=week_ago, search_term__iexact=term).count()
+        month_count = sh_base.filter(searched_at__gte=month_ago, search_term__iexact=term).count()
+        prev_month_count = sh_base.filter(
+            searched_at__gte=prev_month_start,
+            searched_at__lt=month_ago,
+            search_term__iexact=term,
+        ).count()
+
+        # 30-point daily sparkline for the past 30 days
+        daily = (
+            sh_base
+            .filter(searched_at__gte=month_ago, search_term__iexact=term)
+            .annotate(day=TruncDate('searched_at'))
+            .values('day')
+            .annotate(n=Count('id'))
+            .order_by('day')
+        )
+        day_map = {entry['day'].isoformat(): entry['n'] for entry in daily}
+        sparkline = [
+            day_map.get((now - timezone.timedelta(days=i)).date().isoformat(), 0)
+            for i in range(29, -1, -1)
+        ]
+
+        # Open orders at fixed distances (5 km, 10 km, 20 km)
+        matching_orders = list(
+            Order.objects.filter(status=Order.ACTIVE, product__name__icontains=term)
+            .only('latitude', 'longitude', 'postcode')
+        )
+
+        if has_location:
+            counts = {d: 0 for d in ORDER_DISTANCES}
+            for o in matching_orders:
+                if o.latitude and o.longitude:
+                    dist = PostcodeGeocoder.calculate_distance(
+                        user_lat, user_lon, float(o.latitude), float(o.longitude)
+                    )
+                    for d in ORDER_DISTANCES:
+                        if dist <= d:
+                            counts[d] += 1
+            orders_5 = counts[5]
+            orders_10 = counts[10]
+            orders_20 = counts[20]
+        else:
+            # No location on profile — show total counts for all distances
+            n = len(matching_orders)
+            orders_5 = orders_10 = orders_20 = n
+
+        results.append({
+            'rank': rank,
+            'term': term,
+            'week': week_count,
+            'month': month_count,
+            'prev_month': prev_month_count,
+            'year': row['total'],
+            'sparkline': sparkline,
+            'orders_5': orders_5,
+            'orders_10': orders_10,
+            'orders_20': orders_20,
+        })
+
+    if is_ajax:
+        return JsonResponse({'results': results, 'has_next': has_next, 'next_page': page + 1})
+
+    context = {
+        'results': results,
+        'distance': distance_raw,
+        'max_distance_km': max_distance_km,
+        'has_location': has_location,
+        'has_next': has_next,
+        'page': page,
+    }
+    return render(request, 'navigation/whats_popular.html', context)

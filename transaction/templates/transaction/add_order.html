@@ -3,14 +3,14 @@
 {% load thumbnail %}
 
 {% block headerContent %}{% endblock %}
-{% block title %}{% if edit_mode %}Edit listing{% else %}Let your item{% endif %}{% endblock %}
+{% block title %}{% if edit_mode %}Edit listing{% else %}Lend your item{% endif %}{% endblock %}
 
 {% block content %}
 <div class="container">
   <div class="row justify-content-center">
     <div class="col-lg-8">
 
-      <h2 class="mt-4 mb-4">{% if edit_mode %}Edit listing{% else %}Let your item{% endif %}: {{ product.name }}</h2>
+      <h2 class="mt-4 mb-4">{% if edit_mode %}Edit listing{% else %}Lend your item{% endif %}: {{ product.name }}</h2>
 
       <div class="alert mb-3" role="alert" style="font-size:0.92rem; background:#fff3df; border:1px solid #e3c89a; color:#5b3a1f;">
         <strong>Listing disclaimer (draft)</strong>

@@ -34,7 +34,7 @@ body {
 
 /* Make title banner less tall/deep */
 .page-header-style--1 {
-    padding: 92px 0 12px;
+    padding: 0 0 12px;
 }
 
 .page-subtitle:empty {

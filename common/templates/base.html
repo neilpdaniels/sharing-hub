@@ -119,6 +119,11 @@
                 <a class="nav-link" href="{% url 'navigation:browseCategory' 'antique-coins' %}">Antique Coins</a>
               </li>
               -->
+              {% if request.user.is_authenticated %}
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'navigation:whats_popular' %}"><i class="fas fa-fire mr-1"></i>What's Popular</a>
+              </li>
+              {% endif %}
             </ul>
           </div>
         </nav>
@@ -347,6 +352,14 @@
             }
         });
         $(document).ready(function() {
+            // Dynamically offset #wrapper content below the fixed header
+            function adjustHeaderOffset() {
+                var headerHeight = $('#site-header').outerHeight(true);
+                $('.page-header-style--1').css('padding-top', headerHeight + 'px');
+            }
+            adjustHeaderOffset();
+            $(window).on('resize', adjustHeaderOffset);
+
             {% block domready %}
             {% endblock %}
         });

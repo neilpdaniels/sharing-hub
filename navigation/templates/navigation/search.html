@@ -180,7 +180,7 @@
             <h6 class="card-title">{{ order.product.name }}</h6>
             <p class="card-text mb-1">
               <span class="badge badge-{% if order.direction == 'W' %}info{% else %}success{% endif %}">
-                {% if order.direction == 'W' %}Wanted{% else %}To Let{% endif %}
+                {% if order.direction == 'W' %}Wanted{% else %}To Lend{% endif %}
               </span>
               <strong class="ml-2">£{{ order.price }}</strong>
             </p>

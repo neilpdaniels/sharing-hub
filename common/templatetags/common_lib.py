@@ -43,3 +43,22 @@ def is_product(obj):
 @register.filter
 def get_item(dictionary, key):
     return dictionary.get(key)
+
+@register.filter
+def format_price(value):
+    """
+    Format price to show either 0 decimal places (if whole number) or 2 decimal places.
+    Examples:
+    - 10.0 -> "10"
+    - 10.5 -> "10.50"
+    - 10.25 -> "10.25"
+    """
+    try:
+        price = float(value)
+        # Check if the price is a whole number
+        if price == int(price):
+            return str(int(price))
+        else:
+            return "{:.2f}".format(price)
+    except (ValueError, TypeError):
+        return value

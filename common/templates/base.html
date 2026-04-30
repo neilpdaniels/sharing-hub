@@ -42,13 +42,25 @@
     {% endblock %}
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/main.css' %}">
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/fun.css' %}">
+    <style>
+      .page-title {
+        display: none;
+      }
+      .page-subtitle {
+        display: none;
+      }
+      .page-header-style--1 .container {
+        height: 8px;
+        padding: 0;
+      }
+    </style>
 
   </head>
   <body>
     <header id="site-header" class="fixed">
       <div class="container-fluid">
         <nav class="navbar navbar-expand-lg" id="main-nav">
-          <a href="/"><img src="{% static 'assets/images/logo-light.png' %}" alt="sharing-hub logo" /></a>
+          <a href="/"><img src="{% static 'assets/images/logo-sharing-hub-dark.svg' %}" alt="sharing-hub logo" style="height:32px;" /></a>
           <a class="navbar-brand" href="{% url 'navigation:browseCategory' 'metals' %}">
           </a> 
           <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#main-header-menu" aria-controls="main-header-menu" aria-expanded="false" aria-label="Toggle navigation">
@@ -221,6 +233,36 @@
       <div class="container">
         {# Display django.contrib.messages as Bootstrap alerts #}
         {% bootstrap_messages %}
+        <style>
+          .alert {
+            animation: slideDown 0.3s ease-out;
+          }
+          @keyframes slideDown {
+            from {
+              opacity: 0;
+              transform: translateY(-10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        </style>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            // Auto-fade alerts after 5 seconds
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+              setTimeout(function() {
+                alert.style.transition = 'opacity 0.5s ease-out';
+                alert.style.opacity = '0';
+                setTimeout(function() {
+                  alert.style.display = 'none';
+                }, 500);
+              }, 5000); // 5 seconds before fade starts
+            });
+          });
+        </script>
 
       </div>
       <div class="container-fluid">

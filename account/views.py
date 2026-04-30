@@ -84,41 +84,58 @@ def register(request):
         if action == 'start':
             user_form = UserRegistrationStartForm(request.POST)
             if user_form.is_valid():
-                email = user_form.cleaned_data['email']
-                code = generate_unique_verification_code()
+                # Verify Cloudflare Turnstile token
+                import urllib.request
+                import urllib.parse
+                import json as _json
+                from django.conf import settings as _settings
+                _token = request.POST.get('cf-turnstile-response', '')
+                _secret = _settings.CLOUDFLARE_TURNSTILE_SECRET_KEY
+                _data = urllib.parse.urlencode({'secret': _secret, 'response': _token, 'remoteip': request.META.get('REMOTE_ADDR', '')}).encode()
+                try:
+                    _req = urllib.request.Request('https://challenges.cloudflare.com/turnstile/v0/siteverify', data=_data)
+                    _resp = _json.loads(urllib.request.urlopen(_req, timeout=5).read())
+                    _turnstile_ok = _resp.get('success', False)
+                except Exception:
+                    _turnstile_ok = False
+                if not _turnstile_ok:
+                    messages.error(request, 'Human verification failed. Please try again.')
+                else:
+                    email = user_form.cleaned_data['email']
+                    code = generate_unique_verification_code()
 
-                RegistrationVerification.objects.filter(email__iexact=email, is_used=False).delete()
-                RegistrationVerification.objects.create(
-                    email=email,
-                    first_name=user_form.cleaned_data['name'],
-                    last_name='',
-                    date_of_birth=user_form.cleaned_data['date_of_birth'],
-                    mobile_number=user_form.cleaned_data['mobile_number'],
-                    house_name_number=user_form.cleaned_data.get('house_name_number', ''),
-                    address_line_1=user_form.cleaned_data['address_line_1'],
-                    address_line_2=user_form.cleaned_data.get('address_line_2', ''),
-                    town=user_form.cleaned_data['town'],
-                    county=user_form.cleaned_data.get('county', ''),
-                    postcode=user_form.cleaned_data['postcode'],
-                    verification_code=code,
-                    expires_at=timezone.now() + timedelta(minutes=15),
-                )
+                    RegistrationVerification.objects.filter(email__iexact=email, is_used=False).delete()
+                    RegistrationVerification.objects.create(
+                        email=email,
+                        first_name=user_form.cleaned_data['name'],
+                        last_name='',
+                        date_of_birth=user_form.cleaned_data['date_of_birth'],
+                        mobile_number=user_form.cleaned_data['mobile_number'],
+                        house_name_number=user_form.cleaned_data.get('house_name_number', ''),
+                        address_line_1=user_form.cleaned_data['address_line_1'],
+                        address_line_2=user_form.cleaned_data.get('address_line_2', ''),
+                        town=user_form.cleaned_data['town'],
+                        county=user_form.cleaned_data.get('county', ''),
+                        postcode=user_form.cleaned_data['postcode'],
+                        verification_code=code,
+                        expires_at=timezone.now() + timedelta(minutes=15),
+                    )
 
-                send_mail(
-                    subject='Your SharingHub verification code',
-                    message=(
-                        'Your SharingHub registration code is: ' + code + '\n\n'
-                        'This code expires in 15 minutes.'
-                    ),
-                    from_email=None,
-                    recipient_list=[email],
-                    fail_silently=False,
-                )
+                    send_mail(
+                        subject='Your SharingHub verification code',
+                        message=(
+                            'Your SharingHub registration code is: ' + code + '\n\n'
+                            'This code expires in 15 minutes.'
+                        ),
+                        from_email=None,
+                        recipient_list=[email],
+                        fail_silently=False,
+                    )
 
-                request.session['pending_registration_email'] = email
-                verify_email = email
-                stage = 'verify'
-                messages.success(request, 'We sent a 6-digit code to your email. Enter it and then set your password.')
+                    request.session['pending_registration_email'] = email
+                    verify_email = email
+                    stage = 'verify'
+                    messages.success(request, 'We sent a 6-digit code to your email. Enter it and then set your password.')
 
         elif action == 'verify':
             verify_form = UserRegistrationVerifyForm(request.POST)

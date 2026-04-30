@@ -7,29 +7,54 @@
 /* ─── Global warmth ─────────────────────────────────────────── */
 
 body {
-    background-color: #e9f1f3;
+    background-color: #edf4f4;
+    background-image:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(26,163,163,0.22) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(13,116,116,0.13) 0%, transparent 60%);
+    background-attachment: fixed;
 }
 
-/* Keep header/search bars stable and matched */
+/* ─── Frosted glass header ──────────────────────────────────── */
 #site-header.fixed {
-    background-color: #1d7d97;
+    background: rgba(30, 90, 90, 0.60);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.12);
 }
 
 #site-header #site-search-bar {
-    background-color: #1d7d97;
+    background: transparent;
 }
 
 #site-header.sticky {
-    background-color: #3c4556;
+    background: rgba(18, 60, 60, 0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 24px rgba(0, 0, 0, 0.18);
 }
 
 #site-header.sticky #site-search-bar {
-    background-color: #3c4556;
+    background: transparent;
+}
+
+/* Nav link legibility over glass */
+#main-nav .navbar-nav .nav-link {
+    color: rgba(255,255,255,0.92) !important;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    font-weight: 800;
+}
+
+#main-nav .navbar-nav .nav-link:hover,
+#main-nav .navbar-nav .active > .nav-link {
+    color: #fff !important;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.35);
 }
 
 /* Match main banner with non-sticky header tone */
 .page-header {
-    background-color: #1d7d97;
+    background-color: #2d6b6b;
 }
 
 /* Make title banner less tall/deep */
@@ -80,27 +105,27 @@ h1,
 }
 
 .btn-primary {
-    background: #1d7d97;
-    border-color: #1d7d97;
-    box-shadow: 0 3px 10px rgba(29,125,151,.28);
+    background: #1aa3a3;
+    border-color: #1aa3a3;
+    box-shadow: 0 3px 10px rgba(26,163,163,.28);
 }
 
 .btn-primary:hover,
 .btn-primary:focus {
-    background: #3c4556;
-    border-color: #3c4556;
-    box-shadow: 0 5px 18px rgba(60,69,86,.35);
+    background: #0d7474;
+    border-color: #0d7474;
+    box-shadow: 0 5px 18px rgba(13,116,116,.35);
 }
 
 .btn-secondary {
-    background: #e9f1f3;
-    border-color: #c7d7dc;
+    background: #edf4f4;
+    border-color: #b8d4d4;
     color: #47515a;
 }
 
 .btn-secondary:hover {
-    background: #d9e8ec;
-    border-color: #9fb8c0;
+    background: #d0e8e8;
+    border-color: #96bfbf;
     color: #212529;
 }
 
@@ -108,23 +133,23 @@ h1,
 
 .form-control {
     border-radius: 10px !important;
-    border: 1.5px solid #c7d7dc;
+    border: 1.5px solid #b8d4d4;
     background: #fafbff;
     transition: border-color .2s, box-shadow .2s;
 }
 
 .form-control:focus {
-    border-color: #1d7d97;
-    box-shadow: 0 0 0 3px rgba(29,125,151,.14);
+    border-color: #1aa3a3;
+    box-shadow: 0 0 0 3px rgba(26,163,163,.14);
     background: #fff;
 }
 
 .input-group-text {
     border-radius: 10px 0 0 10px !important;
-    border: 1.5px solid #c7d7dc;
+    border: 1.5px solid #b8d4d4;
     border-right: none;
-    background: #e9f1f3;
-    color: #5f7681;
+    background: #edf4f4;
+    color: #4d7272;
     font-weight: 700;
 }
 
@@ -145,7 +170,7 @@ h1,
     background: #fff;
     font-family: 'Nunito', sans-serif;
     font-weight: 800;
-    border-bottom: 1.5px solid #dce6ea;
+    border-bottom: 1.5px solid #cfe6e6;
 }
 
 /* ─── Centred auth-page card ─────────────────────────────────── */
@@ -169,14 +194,14 @@ h1,
 .sh-auth-card {
     background: #fff;
     border-radius: 24px;
-    box-shadow: 0 8px 36px rgba(29,125,151,.14);
+    box-shadow: 0 8px 36px rgba(26,163,163,.14);
     overflow: hidden;
     max-width: 480px;
     width: 100%;
 }
 
 .sh-auth-header {
-    background: #1d7d97;
+    background: #1aa3a3;
     padding: 2rem 2rem 1.6rem;
     text-align: center;
     color: #fff;
@@ -209,22 +234,22 @@ h1,
 
 .sh-auth-body .form-control {
     border-radius: 10px !important;
-    border: 1.5px solid #c7d7dc;
+    border: 1.5px solid #b8d4d4;
     background: #fafbff;
 }
 
 .sh-auth-body .form-control:focus {
-    border-color: #1d7d97;
-    box-shadow: 0 0 0 3px rgba(29,125,151,.14);
+    border-color: #1aa3a3;
+    box-shadow: 0 0 0 3px rgba(26,163,163,.14);
     background: #fff;
 }
 
 .sh-auth-body .input-group-text {
     border-radius: 10px 0 0 10px !important;
-    border: 1.5px solid #c7d7dc;
+    border: 1.5px solid #b8d4d4;
     border-right: none;
-    background: #e9f1f3;
-    color: #5f7681;
+    background: #edf4f4;
+    color: #4d7272;
     font-weight: 700;
 }
 
@@ -239,7 +264,7 @@ h1,
     padding: .85rem;
     border: none;
     border-radius: 12px;
-    background: #1d7d97;
+    background: #1aa3a3;
     color: #fff;
     font-family: 'Nunito', sans-serif;
     font-size: 1.05rem;
@@ -248,14 +273,14 @@ h1,
     cursor: pointer;
     margin-top: 1.4rem;
     transition: background .2s, transform .15s, box-shadow .15s;
-    box-shadow: 0 4px 14px rgba(29,125,151,.30);
+    box-shadow: 0 4px 14px rgba(26,163,163,.30);
     text-align: center;
 }
 
 .sh-btn-cta:hover {
-    background: #3c4556;
+    background: #0d7474;
     transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(60,69,86,.36);
+    box-shadow: 0 6px 20px rgba(13,116,116,.36);
     color: #fff;
     text-decoration: none;
 }
@@ -270,7 +295,7 @@ h1,
     font-weight: 700;
     letter-spacing: .08em;
     text-transform: uppercase;
-    color: #6f8791;
+    color: #507575;
     margin: 1.1rem 0 .4rem;
 }
 
@@ -303,24 +328,24 @@ h1,
     transition: all .3s;
 }
 
-.sh-step.active .sh-step-dot { background: #1d7d97; color: #fff; box-shadow: 0 3px 12px rgba(29,125,151,.34); }
+.sh-step.active .sh-step-dot { background: #1aa3a3; color: #fff; box-shadow: 0 3px 12px rgba(26,163,163,.34); }
 .sh-step.done .sh-step-dot   { background: #e3f6e8; color: #2e9650; }
-.sh-step.waiting .sh-step-dot{ background: #dce6ea; color: #8aa0a8; }
+.sh-step.waiting .sh-step-dot{ background: #cfe6e6; color: #7a9e9e; }
 
 .sh-step-label {
     font-size: .68rem;
     font-weight: 700;
     letter-spacing: .04em;
     text-transform: uppercase;
-    color: #8aa0a8;
+    color: #7a9e9e;
 }
-.sh-step.active .sh-step-label  { color: #1d7d97; }
+.sh-step.active .sh-step-label  { color: #1aa3a3; }
 .sh-step.done .sh-step-label    { color: #2e9650; }
 
 .sh-step-line {
     flex: 1;
     height: 2px;
-    background: #dce6ea;
+    background: #cfe6e6;
     margin-top: -15px;
     max-width: 56px;
 }
@@ -329,17 +354,17 @@ h1,
 .sh-auth-hint {
     text-align: center;
     font-size: .87rem;
-    color: #6f8791;
+    color: #507575;
     margin-top: 1.1rem;
 }
-.sh-auth-hint a { color: #1d7d97; font-weight: 700; }
+.sh-auth-hint a { color: #1aa3a3; font-weight: 700; }
 
 /* Address autocomplete */
 .sh-address-wrap { position: relative; }
 
 #address-suggestions {
     border-radius: 10px;
-    border: 1.5px solid #c7d7dc;
+    border: 1.5px solid #b8d4d4;
     box-shadow: 0 6px 20px rgba(0,0,0,.09);
     overflow: hidden;
 }
@@ -353,8 +378,8 @@ h1,
 }
 
 #address-suggestions .list-group-item:hover {
-    background: #e9f1f3;
-    color: #1d7d97;
+    background: #edf4f4;
+    color: #1aa3a3;
 }
 
 /* Alert overrides */
@@ -373,7 +398,7 @@ h1,
 .product-item:hover,
 .listing-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,83,180,.14);
+    box-shadow: 0 8px 24px rgba(26,163,163,.14);
 }
 
 /* ─── Badges ─────────────────────────────────────────────────── */
@@ -389,14 +414,14 @@ h1,
 .page-item .page-link {
     border-radius: 8px !important;
     margin: 0 2px;
-    border: 1.5px solid #c7d7dc;
-    color: #1d7d97;
+    border: 1.5px solid #b8d4d4;
+    color: #1aa3a3;
     font-weight: 700;
 }
 
 .page-item.active .page-link {
-    background: #1d7d97;
-    border-color: #1d7d97;
+    background: #1aa3a3;
+    border-color: #1aa3a3;
 }
 
 /* ─── Alerts ─────────────────────────────────────────────────── */
@@ -417,8 +442,8 @@ h1,
 
 .modal-header {
     border-radius: 18px 18px 0 0 !important;
-    border-bottom: 1.5px solid #dce6ea;
-    background: #1d7d97;
+    border-bottom: 1.5px solid #cfe6e6;
+    background: #1aa3a3;
     color: #fff;
 }
 
@@ -434,7 +459,7 @@ h1,
 /* ─── Tables ─────────────────────────────────────────────────── */
 
 .table thead th {
-    background: #e9f1f3;
+    background: #edf4f4;
     color: #47515a;
     font-family: 'Nunito', sans-serif;
     font-weight: 800;
@@ -448,18 +473,280 @@ h1,
 
 .dropdown-menu {
     border-radius: 14px !important;
-    border: 1.5px solid #dce6ea;
+    border: 1.5px solid #cfe6e6;
     box-shadow: 0 8px 28px rgba(0,0,0,.1);
     padding: .5rem;
 }
 
 .dropdown-item {
     border-radius: 8px !important;
-    font-weight: 600;
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
     padding: .45rem .85rem;
 }
 
 .dropdown-item:hover {
-    background: #e9f1f3;
-    color: #1d7d97;
+    background: #edf4f4;
+    color: #1aa3a3;
+}
+
+/*
+ * ═══════════════════════════════════════════════════════════════
+ *  BRAND PALETTE — Sharing Hub
+ *  Primary:      #1aa3a3  Petrol Teal
+ *  Primary dark: #0d7474  Deep Teal
+ *  Primary light:#1cc5c5  Light Teal  (links, accents)
+ *  CTA accent:   #f05c2a  Warm Coral  (action buttons)
+ *  CTA dark:     #c43d15  Coral hover
+ *  Ink:          #2a3a3a  Dark text with teal undertone
+ *  Mist:         #edf4f4  Page background
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+/* ─── Links ──────────────────────────────────────────────────── */
+a {
+    color: #1cc5c5;
+}
+a:hover, a:focus {
+    color: #1aa3a3;
+}
+
+/* ─── Override main.css #0083ff blue throughout ──────────────── */
+
+/* bg-primary, border-primary utility classes */
+.bg-primary    { background-color: #1aa3a3 !important; }
+.border-primary{ border-color: #1aa3a3 !important; }
+.text-primary  { color: #1aa3a3 !important; }
+
+/* Badges */
+.badge.badge-primary       { background-color: #1aa3a3; }
+.badge-primary             { background-color: #1aa3a3; color: #fff; }
+
+/* Alerts */
+.alert-primary             { color: #1aa3a3; border-left: 4px solid #1aa3a3; background: #edf4f4; }
+.alert-primary .alert-close{ color: #1aa3a3; }
+.alert-primary::before     { background: #1aa3a3; }
+
+/* Nav tabs / pills active */
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-item.show .nav-link {
+    color: #1aa3a3;
+    border-bottom-color: #1aa3a3;
+}
+.nav-tabs .nav-item.show .nav-link > i,
+.nav-tabs .nav-link.active > i {
+    color: #1aa3a3;
+}
+.nav-pills .nav-item.show .nav-link,
+.nav-pills .nav-link.active {
+    background-color: #1aa3a3 !important;
+    color: #fff;
+}
+
+/* Accordion */
+.accordion-style--1 .card,
+.accordion-style--1 .card-header {
+    border-color: #1aa3a3 !important;
+}
+.accordion-style--1 .card-header {
+    background-color: #1aa3a3;
+}
+
+/* Outline & link button variants */
+.btn-outline-primary {
+    border-color: #1aa3a3;
+    color: #1aa3a3;
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:not(:disabled):not(.disabled).active,
+.btn-outline-primary:not(:disabled):not(.disabled):active,
+.show > .btn-outline-primary.dropdown-toggle {
+    background-color: #1aa3a3;
+    border-color: #1aa3a3;
+    color: #fff;
+}
+.btn-link-primary       { color: #1aa3a3; }
+.btn-link-primary:hover { color: #0d7474; }
+.btn-link-primary > i   { color: #1aa3a3; }
+
+/* Form focus rings */
+.form-control:focus {
+    border-color: #1aa3a3;
+    box-shadow: 0 0 0 3px rgba(26,163,163,.18);
+}
+
+/* Progress bars */
+.progress-bar { background-color: #1aa3a3; }
+
+/* Range / custom checkbox / radio checked */
+.custom-control-input:checked ~ .custom-control-label::before {
+    background-color: #1aa3a3;
+    border-color: #1aa3a3;
+}
+.custom-range::-webkit-slider-thumb { background: #1aa3a3; }
+.custom-range::-moz-range-thumb     { background: #1aa3a3; }
+
+/* Upload / dropzone dashed border */
+.dropzone, [class*="dropzone"] {
+    border-color: #1aa3a3 !important;
+}
+
+/* Pagination (reinforce — already partially set above) */
+.page-item .page-link        { color: #1aa3a3; }
+.page-item.active .page-link { background: #1aa3a3; border-color: #1aa3a3; }
+
+/* Select2 focus */
+.select2-container--bootstrap .select2-selection--single:focus,
+.select2-container--bootstrap.select2-container--focus .select2-selection {
+    border-color: #1aa3a3;
+    box-shadow: 0 0 0 3px rgba(26,163,163,.18);
+}
+
+/* Sticky nav hover (main.css targets #0083ff here) */
+#site-header.sticky #main-nav .navbar-nav .active > .nav-link,
+#site-header.sticky #main-nav .navbar-nav .nav-link:hover {
+    color: #1cc5c5 !important;
+}
+
+/* ─── CTA / Coral accent buttons ─────────────────────────────── */
+/*  Use .btn-accent on "Borrow" / primary action buttons         */
+.btn-accent {
+    background: #f05c2a;
+    border-color: #f05c2a;
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(240,92,42,.28);
+}
+.btn-accent:hover,
+.btn-accent:focus {
+    background: #c43d15;
+    border-color: #c43d15;
+    color: #fff;
+    box-shadow: 0 5px 18px rgba(196,61,21,.35);
+}
+
+/* ─── Headings — ink with teal undertone ─────────────────────── */
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+    color: #2a3a3a;
+}
+
+/*
+ * ═══════════════════════════════════════════════════════════════
+ *  BOOTSTRAP BLUE OVERRIDE LAYER
+ *  Bootstrap's bootstrap.min.css uses #007bff with !important.
+ *  These rules sit after bootstrap and win by source order.
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+/* Utility classes — bootstrap uses !important so we must too */
+.bg-primary     { background-color: #1aa3a3 !important; }
+.text-primary   { color: #1aa3a3 !important; }
+.border-primary { border-color: #1aa3a3 !important; }
+
+a.text-primary:hover, a.text-primary:focus { color: #0d7474 !important; }
+a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !important; }
+
+/* Pagination — bootstrap's page-link is #007bff */
+.page-link            { color: #1aa3a3 !important; }
+.page-link:hover      { color: #0d7474 !important; background-color: #edf4f4; border-color: #b8d4d4; }
+.page-link:focus      { box-shadow: 0 0 0 .2rem rgba(26,163,163,.25); }
+.page-item.active .page-link { background-color: #1aa3a3 !important; border-color: #1aa3a3 !important; color: #fff !important; }
+
+/* List group active state */
+.list-group-item.active {
+    background-color: #1aa3a3 !important;
+    border-color: #1aa3a3 !important;
+}
+.list-group-item-primary {
+    color: #0d7474;
+    background-color: #b8d4d4;
+}
+
+/* Badges */
+.badge-primary { background-color: #1aa3a3 !important; color: #fff; }
+
+/* Progress bar */
+.progress-bar { background-color: #1aa3a3 !important; }
+
+/* Custom controls (checkbox, radio) */
+.custom-control-input:checked ~ .custom-control-label::before {
+    background-color: #1aa3a3 !important;
+    border-color: #1aa3a3 !important;
+}
+.custom-control-input:focus ~ .custom-control-label::before {
+    box-shadow: 0 0 0 .2rem rgba(26,163,163,.25) !important;
+}
+.custom-range::-webkit-slider-thumb { background: #1aa3a3 !important; }
+.custom-range::-moz-range-thumb     { background: #1aa3a3 !important; }
+.custom-range::-ms-thumb            { background: #1aa3a3 !important; }
+
+/* Custom file/select focus */
+.custom-select:focus     { border-color: #1aa3a3; box-shadow: 0 0 0 .2rem rgba(26,163,163,.25); }
+.custom-file-input:focus ~ .custom-file-label { border-color: #1aa3a3; }
+
+/* Bootstrap btn-primary (bootstrap.min.css version) */
+.btn-primary {
+    background-color: #1aa3a3 !important;
+    border-color: #1aa3a3 !important;
+}
+.btn-primary:hover, .btn-primary:focus,
+.btn-primary:not(:disabled):not(.disabled).active,
+.btn-primary:not(:disabled):not(.disabled):active,
+.show > .btn-primary.dropdown-toggle {
+    background-color: #0d7474 !important;
+    border-color: #0d7474 !important;
+}
+.btn-primary:focus, .btn-primary.focus {
+    box-shadow: 0 0 0 .2rem rgba(26,163,163,.5) !important;
+}
+
+/* btn-info — used on "Lend your item" button (currently light blue) */
+.btn-info, .btn-pill.btn-info {
+    background-color: #1cc5c5 !important;
+    border-color: #1cc5c5 !important;
+    color: #fff !important;
+}
+.btn-info:hover, .btn-info:focus,
+.btn-info:active {
+    background-color: #1aa3a3 !important;
+    border-color: #1aa3a3 !important;
+    color: #fff !important;
+}
+
+/* Product price pills (rgba(6,116,236,.1) blue tint in main.css) */
+.product-card .product-price {
+    background: rgba(26,163,163,.1) !important;
+    color: #0d7474 !important;
+}
+
+.product-card .product-price.product-price-muted {
+    background: #edf1f2 !important;
+    color: #8b98a0 !important;
+}
+
+.product-card .product-price.product-price-cta {
+    background: rgba(26,163,163,.1) !important;
+    color: #0d7474 !important;
+    border: 1px solid #b8d4d4;
+    box-shadow: none;
+}
+
+.product-card .product-price.product-price-cta:hover,
+.product-card .product-price.product-price-cta:focus {
+    background: rgba(26,163,163,.15) !important;
+    color: #0d7474 !important;
+    text-decoration: none;
+}
+
+/* btn-extra (Logout / Login in navbar) */
+.btn-extra {
+    background: #f05c2a !important;
+    border-color: #f05c2a !important;
+    color: #fff !important;
+}
+.btn-extra:hover {
+    background: #c43d15 !important;
+    border-color: #c43d15 !important;
+    color: #fff !important;
 }

@@ -3,6 +3,7 @@
 {% load static %}
 {% block headerContent %}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 {% endblock %}
 {% block title %}Join us — Register{% endblock %}
 {% block page_header %}{% endblock %}
@@ -108,6 +109,9 @@
                     {% bootstrap_field user_form.county show_label=False placeholder='County (optional)' %}
                 </div>
 
+                <div class="d-flex justify-content-center mb-3">
+                    <div class="cf-turnstile" data-sitekey="0x4AAAAAADGXnnXv3ggedOSG" data-theme="light"></div>
+                </div>
                 <button type="submit" class="sh-btn-cta">✉️ Send my verification code</button>
             </form>
             <p class="sh-auth-hint">Already have an account? <a href="{% url 'login' %}">Log in here</a></p>

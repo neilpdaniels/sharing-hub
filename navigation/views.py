@@ -13,7 +13,7 @@ from datetime import datetime
 from common.decorators import ajax_required
 import logging
 from django.contrib import messages
-from django.db.models import Avg, Max, Sum, Q
+from django.db.models import Avg, Max, Sum, Count, Q
 from haystack.generic_views import SearchView
 from haystack.query import SearchQuerySet
 from haystack.forms import SearchForm
@@ -64,10 +64,13 @@ def browseCategory(request, cat_slug=None):
     sortable_attributes_count = sortable_attributes.count(True)
 
 
-    sort_by = request.GET.get('sort_by', 'newest')
+    sort_by = request.GET.get('sort_by', 'active')
+    VALID_SORTS = {'active', 'az', 'za'}
+    if sort_by not in VALID_SORTS:
+        sort_by = 'active'
     location = request.GET.get('location', '').strip()
-    distance_filter_raw = request.GET.get('distance_filter', '10')
-    if distance_filter_raw == 'any':
+    distance_filter_raw = request.GET.get('distance_filter', 'any')
+    if distance_filter_raw in ('any', '-'):
         distance_filter = 'any'
     else:
         try:
@@ -100,14 +103,20 @@ def browseCategory(request, cat_slug=None):
         except Exception:
             pass
 
-    # Initial queryset ordering (nearest is finalised in Python after geocoding)
-    if sort_by == 'cheapest':
-        products = cat.product_set.all().order_by('best_prices__bestPricedOffer__price')
-    elif sort_by == 'nearest':
-        products = cat.product_set.all().order_by('name')
-    else:  # newest
-        products = cat.product_set.all().order_by('-create_date')
-    # products = cat.product_set.all().order_by('-best_prices__bestPricedBid')
+    # Initial queryset ordering for browse cards.
+    products = cat.product_set.all().annotate(
+        active_lend_orders=Count(
+            'order',
+            filter=Q(order__status=Order.ACTIVE, order__direction='L'),
+            distinct=True,
+        )
+    )
+    if sort_by == 'az':
+        products = products.order_by('name')
+    elif sort_by == 'za':
+        products = products.order_by('-name')
+    else:
+        products = products.order_by('-active_lend_orders', 'name')
 
     available_tags = CategoryTag.objects.filter(
         Q(categories=cat) |
@@ -213,7 +222,7 @@ def browseCategory(request, cat_slug=None):
         chosen_attributes['attribute_five'] = attribute_five_filter
 
     active_only = request.GET.get('active_only', None)
-    if active_only != None:
+    if active_only in ('True', '1', 'on'):
         products = products.filter(best_prices__numberActiveOrders__gt=0)
         chosen_attributes['active_only'] = "True"
 
@@ -255,8 +264,6 @@ def browseCategory(request, cat_slug=None):
             # include if within distance_filter, or has no geocoded orders (distance unknown), or 'any'
             if distance_filter == 'any' or nearest is None or nearest <= distance_filter:
                 products_list.append(product)
-        if sort_by == 'nearest':
-            products_list.sort(key=lambda p: (p._browse_distance is None, p._browse_distance or 0))
         totalProductsCount = len(products_list)
         paginagor = Paginator(products_list, 20)
     else:
@@ -426,17 +433,18 @@ def search(request):
 
     orders = Order.objects.select_related('product', 'user', 'product__category_id').filter(status=Order.ACTIVE)
 
+    def get_descendant_ids(cat):
+        ids = [cat.id]
+        for child in Category.objects.filter(parent_category=cat):
+            ids.extend(get_descendant_ids(child))
+        return ids
+
     # Filter by category (and its descendants)
     selected_category = None
+    category_ids = None
     if category_slug:
         try:
             selected_category = Category.objects.get(slug=category_slug)
-            # Include the selected category and all its descendants
-            def get_descendant_ids(cat):
-                ids = [cat.id]
-                for child in Category.objects.filter(parent_category=cat):
-                    ids.extend(get_descendant_ids(child))
-                return ids
             category_ids = get_descendant_ids(selected_category)
             orders = orders.filter(product__category_id__in=category_ids)
         except Category.DoesNotExist:
@@ -501,6 +509,28 @@ def search(request):
     except EmptyPage:
         orders_page = paginator.page(paginator.num_pages)
 
+    related_products = Product.objects.none()
+    if q or selected_category:
+        related_products = Product.objects.select_related('category_id')
+
+        if category_ids:
+            related_products = related_products.filter(category_id__in=category_ids)
+
+        if q:
+            related_products = related_products.filter(
+                Q(name__icontains=q)
+                | Q(description__icontains=q)
+                | Q(category_id__title__icontains=q)
+            )
+
+        related_products = (
+            related_products
+            .annotate(active_order_count=Count('order', filter=Q(order__status=Order.ACTIVE), distinct=True))
+            .filter(active_order_count=0)
+            .order_by('name')
+            .distinct()[:12]
+        )
+
     context = {
         'q': q,
         'location': location,
@@ -511,6 +541,7 @@ def search(request):
         'top_categories': top_categories,
         'selected_category': selected_category,
         'orders': orders_page,
+        'related_products': related_products,
         'total_results': len(nearby_orders),
         'search_performed': bool(q or category_slug or (location and not location_not_found)),
         'location_not_found': location_not_found,

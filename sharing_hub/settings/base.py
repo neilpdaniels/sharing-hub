@@ -25,6 +25,10 @@ SECRET_KEY = os.environ.get('SHARING_HUB_SECRET_KEY','')
 
 ALLOWED_HOSTS = []
 
+# Cloudflare Turnstile
+CLOUDFLARE_TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '0x4AAAAAADGXnnXv3ggedOSG')
+CLOUDFLARE_TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY', '0x4AAAAAADGXnnsdYIr_oI2kWC--FSUZOGs')
+
 # NPD - added
 LOGIN_REDIRECT_URL = "my_sharing_hub:dashboard"
 LOGIN_URL = 'login'

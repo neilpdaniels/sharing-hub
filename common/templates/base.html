@@ -58,9 +58,74 @@
   </head>
   <body>
     <header id="site-header" class="fixed">
+      {% block site_search_bar %}
+      <div class="py-1" id="site-search-bar" style="font-size:0.78rem; border-bottom: 1px solid #e9ecef;">
+        <div class="container-fluid">
+          <div class="form-row align-items-center" style="margin: 0 auto;">
+            <div class="col-auto" style="flex: 0 0 auto;">
+              <a href="/"><img src="{% static 'assets/images/logo-sharing-hub-dark.svg' %}" alt="sharing-hub logo" style="height:32px;" /></a>
+            </div>
+            <div style="flex: 1 1 auto; display: flex; justify-content: center;">
+              <form method="get" action="{% url 'navigation:search' %}" class="form-row align-items-center" style="flex-wrap: nowrap; gap: 0.25rem;">
+                <div style="flex: 0 1 auto;">
+                  <div class="input-group" style="font-size:0.78rem;">
+                    <div class="input-group-prepend">
+                      <span class="input-group-text py-0 px-2" style="height:24px; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-search" style="font-size:0.7rem;"></i></span>
+                    </div>
+                    <input type="text" name="q" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0; width: 150px;" placeholder="Search by keyword">
+                  </div>
+                </div>
+                <div style="flex: 0 1 auto;">
+                  <div class="input-group" style="font-size:0.78rem;">
+                    <div class="input-group-prepend">
+                      <span class="input-group-text py-0 px-2" id="search-locate-btn" title="Use my location" style="height:24px; cursor:pointer; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-map-marker-alt" id="search-locate-icon" style="font-size:0.7rem;"></i></span>
+                    </div>
+                    <input type="text" name="location" id="search-location-input" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0; width: 150px;" placeholder="Town or postcode">
+                  </div>
+                </div>
+                <div style="flex: 0 1 auto;">
+                  <select name="distance" style="font-size:0.78rem; height:24px; padding:0 4px; border:1px solid #ced4da; border-radius:4px; background:white; -webkit-appearance:none; -moz-appearance:none; appearance:none; background-image:none; width:60px; text-align:center; cursor:pointer;">
+                    <option value="any">Any</option>
+                    <option value="0">0 km</option>
+                    <option value="2">2 km</option>
+                    <option value="5">5 km</option>
+                    <option value="10" selected>10 km</option>
+                    <option value="15">15 km</option>
+                    <option value="20">20 km</option>
+                    <option value="30">30 km</option>
+                    <option value="50">50 km</option>
+                  </select>
+                </div>
+                <div style="flex: 0 1 auto;">
+                  <select name="category" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; width: auto; min-width: 120px;">
+                    <option value="">All categories</option>
+                    {% for cat in top_categories %}
+                    <option value="{{ cat.slug }}">{{ cat.title|capfirst }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div style="flex: 0 1 auto;">
+                  <button type="submit" class="btn btn-primary py-0 px-2" style="font-size:0.78rem; height:24px; line-height:24px;"><i class="fas fa-search"></i></button>
+                </div>
+              </form>
+            </div>
+            <div style="flex: 0 0 auto;">
+              {% if request.user.is_authenticated %}
+              <a class="btn-sm btn-extra btn-rounded" href="{% url 'logout' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
+                  Logout
+              </a> 
+              {% else %} 
+              <a class="btn-sm btn-extra btn-rounded" href="{% url 'login' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
+                  Login
+              </a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endblock %}
       <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg" id="main-nav">
-          <a href="/"><img src="{% static 'assets/images/logo-sharing-hub-dark.svg' %}" alt="sharing-hub logo" style="height:32px;" /></a>
+        <nav class="navbar navbar-expand-lg" id="main-nav" style="padding: 0.5rem 0;">
           <a class="navbar-brand" href="{% url 'navigation:browseCategory' 'metals' %}">
           </a> 
           <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#main-header-menu" aria-controls="main-header-menu" aria-expanded="false" aria-label="Toggle navigation">
@@ -73,19 +138,6 @@
           {% endif %}
           <div class="collapse navbar-collapse align-items-center" id="main-header-menu">
             <ul class="navbar-nav ml-auto order-md-2 align-items-center" id="menu-right">
-              <li class="nav-item ">
-                {% if request.user.is_authenticated %}
-                <a class="btn-sm btn-extra btn-rounded" href="{% url 'logout' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
-                    Logout
-                </a> 
-                {% else %} 
-                <a class="btn-sm btn-extra btn-rounded" href="{% url 'login' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
-                    Login
-                </a>
-                {% endif %}
-                
-              </li>
-
               {% if request.user.is_authenticated %}
               <li class="nav-item ">
                 <a class="nav-link show-fixed-menu" href="#"><i class="ti-more"></i></a>
@@ -135,6 +187,9 @@
               <li class="nav-item">
                 <a class="nav-link" href="{% url 'navigation:whats_popular' %}"><i class="fas fa-fire mr-1"></i>What's Popular</a>
               </li>
+              <li class="nav-item">
+                <a class="nav-link show-fixed-menu" href="#">My Sharing Hub</a>
+              </li>
               {% endif %}
             </ul>
           </div>
@@ -142,54 +197,6 @@
         <!-- end div #main-nav -->
       </div>
       <!-- end div .container -->
-      {% block site_search_bar %}
-      <div class="py-1" id="site-search-bar" style="font-size:0.78rem;">
-        <div class="container">
-          <form method="get" action="{% url 'navigation:search' %}" class="form-row align-items-center justify-content-center">
-            <div class="col-auto">
-              <div class="input-group" style="font-size:0.78rem;">
-                <div class="input-group-prepend">
-                  <span class="input-group-text py-0 px-2" style="height:24px; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-search" style="font-size:0.7rem;"></i></span>
-                </div>
-                <input type="text" name="q" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0;" placeholder="Search by keyword">
-              </div>
-            </div>
-            <div class="col-auto">
-              <div class="input-group" style="font-size:0.78rem;">
-                <div class="input-group-prepend">
-                  <span class="input-group-text py-0 px-2" id="search-locate-btn" title="Use my location" style="height:24px; cursor:pointer; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-map-marker-alt" id="search-locate-icon" style="font-size:0.7rem;"></i></span>
-                </div>
-                <input type="text" name="location" id="search-location-input" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0;" placeholder="Town or postcode">
-              </div>
-            </div>
-            <div class="col-auto">
-              <select name="distance" style="font-size:0.78rem; height:24px; padding:0 4px; border:1px solid #ced4da; border-radius:4px; background:white; -webkit-appearance:none; -moz-appearance:none; appearance:none; background-image:none; width:60px; text-align:center; cursor:pointer;">
-                <option value="any">Any</option>
-                <option value="0">0 km</option>
-                <option value="2">2 km</option>
-                <option value="5">5 km</option>
-                <option value="10" selected>10 km</option>
-                <option value="15">15 km</option>
-                <option value="20">20 km</option>
-                <option value="30">30 km</option>
-                <option value="50">50 km</option>
-              </select>
-            </div>
-            <div class="col-auto">
-              <select name="category" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px;">
-                <option value="">All categories</option>
-                {% for cat in top_categories %}
-                <option value="{{ cat.slug }}">{{ cat.title|capfirst }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-auto">
-              <button type="submit" class="btn btn-primary py-0 px-2" style="font-size:0.78rem; height:24px; line-height:24px;"><i class="fas fa-search"></i></button>
-            </div>
-          </form>
-        </div>
-      </div>
-      {% endblock %}
     </header>
     <!-- end header #site-header -->
     <div id="fixed-menu">

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% load common_lib %}
+
+{% block subtitle %}My Sharing Hub{% endblock %}
+{% block title %}{{ type|title }} Orders{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <h4 class="mb-2 mb-md-0">
+      {% if type == 'open' %}Open listings{% else %}Closed listings{% endif %}
+    </h4>
+    <div>
+      {% if type == 'open' %}
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'my_sharing_hub:closed_orders' %}">View closed listings</a>
+      {% else %}
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'my_sharing_hub:open_orders' %}">View open listings</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if orders.object_list %}
+  {% include "pagination.html" with page=orders %}
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover">
+      <thead>
+        <tr>
+          <th>Ref</th>
+          <th>Item</th>
+          <th>Price/day</th>
+          <th>Deposit</th>
+          <th>Status</th>
+          <th>Transactions</th>
+          <th>Amended</th>
+          <th>Expires</th>
+          <th class="text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr>
+          <td>{{ order.order_reference }}</td>
+          <td>
+            <a href="{% url 'navigation:productPage' order.product.slug %}">{{ order.product.name }}</a>
+          </td>
+          <td>
+            {% if order.price %}£{{ order.price|floatformat:"-2" }}{% else %}-{% endif %}
+          </td>
+          <td>
+            {% if order.deposit is not None %}£{{ order.deposit|floatformat:"-2" }}{% else %}-{% endif %}
+          </td>
+          <td>{{ order.get_status_display }}</td>
+          <td>
+            {{ orderTransactions|get_item:order.id|length|default:0 }}
+          </td>
+          <td>{{ order.amended|date:"Y-m-d H:i" }}</td>
+          <td>{{ order.expiry_date|date:"Y-m-d H:i" }}</td>
+          <td class="text-right">
+            {% if type == 'open' %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'transaction:edit_order' order.id %}">Amend</a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'transaction:expire_order' order.id %}">Cancel</a>
+            {% else %}
+            <a class="btn btn-sm btn-primary" href="{% url 'my_sharing_hub:copy_order_as_new' order.id %}">Copy as new</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-light border">
+    {% if type == 'open' %}
+    You currently have no open listings.
+    {% else %}
+    You currently have no closed listings.
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

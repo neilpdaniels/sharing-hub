@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+
+{% block title %}Verify Mobile Number{% endblock %}
+
+{% block content %}
+<div class="sh-auth-wrap">
+    <div class="sh-auth-card">
+        <div class="sh-auth-header">
+            <h1>Verify your mobile</h1>
+            <p>We will send a one-time SMS code to {{ mobile_masked }}.</p>
+        </div>
+
+        <div class="sh-auth-body">
+            <form action="." method="post" class="mb-3" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ next_url }}">
+                <input type="hidden" name="action" value="send">
+                <button type="submit" class="sh-btn-cta">Send code</button>
+            </form>
+
+            <form action="." method="post" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ next_url }}">
+                <input type="hidden" name="action" value="check">
+                <div class="form-group">
+                    <label for="id_code">Enter SMS code</label>
+                    <input
+                        id="id_code"
+                        type="text"
+                        name="code"
+                        class="form-control"
+                        maxlength="10"
+                        autocomplete="one-time-code"
+                        placeholder="6-digit code"
+                        required
+                    >
+                </div>
+                <button type="submit" class="sh-btn-cta">Verify number</button>
+            </form>
+
+            {% if mobile_e164 %}
+            <p class="sh-auth-hint mt-3">Code destination: {{ mobile_e164 }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

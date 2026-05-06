@@ -26,6 +26,7 @@ from django.utils import timezone
 from common.tasks import runStaticMigration, listEmptyCategories
 from django.urls import reverse
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 
 from .forms import CategorySuggestionForm
 from .models import SearchHistory
@@ -1234,8 +1235,160 @@ def suggestCategory(request):
 @login_required
 def whats_popular(request):
     """
-    Show the top searched-for terms with weekly/monthly/yearly counts,
-    a smoothed sparkline, and matching active order counts at fixed distances.
+    Public popular searches — only shows terms that match a known category or
+    product, so users see what's trending for items we actually stock/list.
+    """
+    from django.db.models import Count
+    from common.geocoding import PostcodeGeocoder
+
+    FETCH_LIMIT = 500    # top N terms to consider before filtering
+    DISPLAY_LIMIT = 50   # max matched results to show
+    ORDER_DISTANCES = [5, 10, 20]
+
+    now = timezone.now()
+    week_ago  = now - timezone.timedelta(days=7)
+    month_ago = now - timezone.timedelta(days=30)
+    year_ago  = now - timezone.timedelta(days=365)
+
+    distance_raw = request.GET.get('distance', '')
+    try:
+        _d = int(distance_raw) if distance_raw.strip() else None
+        max_distance_km = None if (_d is None or _d >= 50) else _d
+    except (ValueError, TypeError, AttributeError):
+        max_distance_km = None
+
+    user_lat = user_lon = user_postcode = None
+    try:
+        profile = request.user.profile
+        if profile.latitude and profile.longitude:
+            user_lat = float(profile.latitude)
+            user_lon = float(profile.longitude)
+        user_postcode = (profile.postcode or '').upper().replace(' ', '')
+    except Exception:
+        pass
+    has_location = bool(user_lat and user_lon)
+
+    sh_base = SearchHistory.objects.filter(searched_at__gte=year_ago, search_term__gt='')
+
+    if has_location and max_distance_km is not None:
+        from django.contrib.auth import get_user_model
+        _User = get_user_model()
+        nearby_user_ids = set()
+        for u in _User.objects.filter(
+            profile__latitude__isnull=False,
+            profile__longitude__isnull=False,
+        ).select_related('profile'):
+            try:
+                dist = PostcodeGeocoder.calculate_distance(
+                    user_lat, user_lon,
+                    float(u.profile.latitude),
+                    float(u.profile.longitude),
+                )
+                if max_distance_km == 0:
+                    if (u.profile.postcode or '').upper().replace(' ', '')[:3] == user_postcode[:3]:
+                        nearby_user_ids.add(u.id)
+                elif dist <= max_distance_km:
+                    nearby_user_ids.add(u.id)
+            except Exception:
+                pass
+        sh_base = sh_base.filter(user__in=nearby_user_ids)
+
+    # Fetch top terms (by popularity over the past year)
+    all_top_terms = list(
+        sh_base
+        .values('search_term')
+        .annotate(total=Count('id'))
+        .order_by('-total')[:FETCH_LIMIT]
+    )
+
+    # Preload all products and categories in memory to avoid N+1 per term
+    all_products = list(Product.objects.values('name', 'slug'))
+    all_categories = list(
+        Category.objects.exclude(slug='top').values('title', 'slug')
+    )
+
+    def find_matches(term):
+        """Return up to 5 matched products/categories for this search term."""
+        term_lower = term.lower()
+        matched = []
+        seen_slugs = set()
+        for p in all_products:
+            if term_lower in p['name'].lower() and p['slug'] not in seen_slugs:
+                seen_slugs.add(p['slug'])
+                matched.append({'type': 'product', 'name': p['name'], 'slug': p['slug']})
+                if len(matched) >= 5:
+                    break
+        for c in all_categories:
+            if term_lower in c['title'].lower() and c['slug'] not in seen_slugs:
+                seen_slugs.add(c['slug'])
+                matched.append({'type': 'category', 'name': c['title'], 'slug': c['slug']})
+                if len(matched) >= 5:
+                    break
+        return matched
+
+    # Collect matched terms up to DISPLAY_LIMIT
+    matched_rows = []
+    for row in all_top_terms:
+        if len(matched_rows) >= DISPLAY_LIMIT:
+            break
+        matches = find_matches(row['search_term'])
+        if matches:
+            matched_rows.append((row, matches))
+
+    results = []
+    for rank, (row, matches) in enumerate(matched_rows, 1):
+        term = row['search_term']
+
+        week_count  = sh_base.filter(searched_at__gte=week_ago,  search_term__iexact=term).count()
+        month_count = sh_base.filter(searched_at__gte=month_ago, search_term__iexact=term).count()
+
+        matching_orders = list(
+            Order.objects.filter(status=Order.ACTIVE, product__name__icontains=term)
+            .only('latitude', 'longitude')
+        )
+        if has_location:
+            counts = {d: 0 for d in ORDER_DISTANCES}
+            for o in matching_orders:
+                if o.latitude and o.longitude:
+                    dist = PostcodeGeocoder.calculate_distance(
+                        user_lat, user_lon, float(o.latitude), float(o.longitude)
+                    )
+                    for d in ORDER_DISTANCES:
+                        if dist <= d:
+                            counts[d] += 1
+            orders_5  = counts[5]
+            orders_10 = counts[10]
+            orders_20 = counts[20]
+        else:
+            n = len(matching_orders)
+            orders_5 = orders_10 = orders_20 = n
+
+        results.append({
+            'rank':     rank,
+            'term':     term,
+            'week':     week_count,
+            'month':    month_count,
+            'year':     row['total'],
+            'matches':  matches,
+            'orders_5':  orders_5,
+            'orders_10': orders_10,
+            'orders_20': orders_20,
+        })
+
+    context = {
+        'results':         results,
+        'distance':        distance_raw,
+        'max_distance_km': max_distance_km,
+        'has_location':    has_location,
+    }
+    return render(request, 'navigation/whats_popular.html', context)
+
+
+@staff_member_required
+def whats_popular_admin(request):
+    """
+    Admin-only: show ALL top searched-for terms including those with no
+    matching products (useful for spotting demand gaps).
 
     The distance slider filters which searches are included (by proximity of
     the user who made the search). Open order counts are always shown at fixed
@@ -1401,4 +1554,4 @@ def whats_popular(request):
         'has_next': has_next,
         'page': page,
     }
-    return render(request, 'navigation/whats_popular.html', context)
+    return render(request, 'navigation/whats_popular_admin.html', context)

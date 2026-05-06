@@ -1,7 +1,10 @@
-todo:
+todo: 
 
-1) product page doesnt work
-2) how do we add friends - can we use like facebook lists?
-- shouldnt need maintenance.  if i add then it works.  if they add me it shows me but i need to ack it.
+change any reference of "let" or "to let" to "lend"
 
-3) does adding an order to a product allow me to add a mates rate?
+
+1) work on transaction flow
+2) login via email address not usernane
+
+sharing-hub.com
+borrow and lend stuff, locally

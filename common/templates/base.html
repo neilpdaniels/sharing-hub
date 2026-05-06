@@ -63,7 +63,7 @@
         <div class="container-fluid">
           <div class="form-row align-items-center" style="margin: 0 auto;">
             <div class="col-auto" style="flex: 0 0 auto;">
-              <a href="/"><img src="{% static 'assets/images/logo-sharing-hub-dark.svg' %}" alt="sharing-hub logo" style="height:32px;" /></a>
+              <a href="/"><img src="{% static 'assets/images/logo-sharing-hub.png' %}" alt="sharing-hub logo" style="height:32px;" /></a>
             </div>
             <div style="flex: 1 1 auto; display: flex; justify-content: center;">
               <form method="get" action="{% url 'navigation:search' %}" class="form-row align-items-center" style="flex-wrap: nowrap; gap: 0.25rem;">
@@ -221,6 +221,9 @@
         {% if user.is_authenticated %}
         <li><a href="{% url 'friends:my_friends' %}">Friends</a></li>
         <li><a href="{% url 'friends:blocked_users' %}">Blocked Users</a></li>
+          {% if user.is_staff %}
+          <li><a href="{% url 'navigation:whats_popular_admin' %}"><i class="fas fa-fire mr-1"></i>What's Popular (Admin)</a></li>
+          {% endif %}
         {% endif %}
       </ul>
     </div>
@@ -286,7 +289,7 @@
             <div class="row align-items-center">
               <div class="col-sm-6">
                 <div class="footer-logo">
-                  <a href="/"><img src="{% static 'assets/images/logo-orange.png' %}" alt="image" class="img-fluid"></a>
+                  <a href="/"><img src="{% static 'assets/images/logo-sharing-hub-dark.png' %}" alt="image" class="img-fluid"></a>
                 </div>
               </div>
               <div class="col-sm-6">

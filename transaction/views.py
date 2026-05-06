@@ -22,10 +22,32 @@ from .helpers import returnFeeValue, getTransactionStepAndAction
 import os
 import json
 from django.core.files import File
+from account.models import Profile
+from urllib.parse import quote
+
+
+def _require_mobile_verification(request):
+    if not getattr(settings, 'MOBILE_VERIFICATION_ENABLED', True):
+        return None
+    try:
+        profile = request.user.profile
+    except Profile.DoesNotExist:
+        messages.error(request, 'Please complete your profile before continuing.')
+        return redirect(reverse('edit'))
+    if profile.mobile_verified:
+        return None
+    verify_url = reverse('mobile_verify')
+    next_url = request.get_full_path()
+    messages.warning(request, 'Please verify your mobile number before placing a listing or sending an enquiry.')
+    return redirect(f'{verify_url}?next={quote(next_url)}')
 
 
 @login_required
 def add_order(request, product_id=None):
+    verify_redirect = _require_mobile_verification(request)
+    if verify_redirect is not None:
+        return verify_redirect
+
     product = None
     order = Order()
     order_image_form = None
@@ -365,6 +387,10 @@ def get_fee(request):
 
 @login_required
 def hit_order(request, order_id=None):
+    verify_redirect = _require_mobile_verification(request)
+    if verify_redirect is not None:
+        return verify_redirect
+
     order = get_object_or_404(Order, id=order_id)
     blocked_dates = set(
         order.blocked_dates.filter(reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.BOOKED]).values_list('date', flat=True)

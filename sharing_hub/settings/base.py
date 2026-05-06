@@ -29,10 +29,19 @@ ALLOWED_HOSTS = []
 CLOUDFLARE_TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '0x4AAAAAADGXnnXv3ggedOSG')
 CLOUDFLARE_TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY', '0x4AAAAAADGXnnsdYIr_oI2kWC--FSUZOGs')
 
+MOBILE_VERIFICATION_ENABLED = os.environ.get('MOBILE_VERIFICATION_ENABLED', '1') == '1'
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
+TWILIO_VERIFY_SERVICE_SID = os.environ.get('TWILIO_VERIFY_SERVICE_SID', '')
+
 # NPD - added
 LOGIN_REDIRECT_URL = "my_sharing_hub:dashboard"
 LOGIN_URL = 'login'
 LOGOUT_URL = 'logout'
+
+AUTHENTICATION_BACKENDS = [
+    'account.backends.EmailAuthBackend',
+]
 
 MEDIA_URL='/media/'
 MEDIA_ROOT=os.path.join(BASE_DIR, 'media/')

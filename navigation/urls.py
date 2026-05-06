@@ -21,5 +21,6 @@ urlpatterns = [
     path('terms_and_conditions/', views.termsAndConditions, name='termsAndConditions'),
     path('search_by_postcode/', views.search_by_postcode, name='search_by_postcode'),
     path('whats_popular/', views.whats_popular, name='whats_popular'),
+    path('whats_popular_admin/', views.whats_popular_admin, name='whats_popular_admin'),
     re_path(r'$', views.seeAll, name='seeAll'),
 ]

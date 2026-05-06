@@ -13,7 +13,15 @@
     <div class="col-lg-8">
       <h1>Edit your account</h1>
       <p>you can edit with the following:</p>
-      <form action="." method="post" enctype="multipart/form-data">
+        <form action="." method="post" enctype="multipart/form-data" id="account-edit-form"
+          data-mobile-verified="{{ request.user.profile.mobile_verified|yesno:'1,0' }}"
+          data-address-verified="{{ request.user.profile.address_verified|yesno:'1,0' }}">
+          <input type="hidden" id="initial_mobile_number" value="{{ request.user.profile.mobile_number|default:'' }}">
+          <input type="hidden" id="initial_address_line_1" value="{{ request.user.profile.address_line_1|default:'' }}">
+          <input type="hidden" id="initial_address_line_2" value="{{ request.user.profile.address_line_2|default:'' }}">
+          <input type="hidden" id="initial_town" value="{{ request.user.profile.town|default:'' }}">
+          <input type="hidden" id="initial_county" value="{{ request.user.profile.county|default:'' }}">
+          <input type="hidden" id="initial_postcode" value="{{ request.user.profile.postcode|default:'' }}">
           {% bootstrap_form user_form %}
           {% bootstrap_form profile_form %}
           {% csrf_token %}
@@ -22,6 +30,29 @@
       <button type="button" class="btn btn-primary js-form-submit">
         <span class="fas fa-floppy-o"></span> Submit
       </button>
+
+      <div class="modal fade" id="verification-reset-modal" tabindex="-1" role="dialog" aria-labelledby="verificationResetModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="verificationResetModalLabel">Verification Status Warning</h5>
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-warning mb-3" role="alert">
+                Changing verified details will reset verification status.
+              </div>
+              <ul id="verification-reset-warning-list" class="mb-0"></ul>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-warning" id="verification-reset-proceed">Proceed and Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
     </div>
   </div>
@@ -47,7 +78,60 @@ $('#id_date_of_birth').datepicker({
 });
 
 $(".js-form-submit").click(function () {
-    $("#form-submit").click();
+  var form = document.getElementById('account-edit-form');
+  var warningList = document.getElementById('verification-reset-warning-list');
+  var normalizePhone = function(value) {
+    value = (value || '').trim();
+    if (value.indexOf('+44') === 0) {
+      value = '0' + value.slice(3).trim();
+    }
+    if (value && value[0] !== '0') {
+      value = '0' + value;
+    }
+    return value.replace(/[\s-]/g, '');
+  };
+  var normalizeText = function(value) {
+    return (value || '').trim();
+  };
+
+  var mobileVerified = form.dataset.mobileVerified === '1';
+  var addressVerified = form.dataset.addressVerified === '1';
+
+  var mobileChanged = normalizePhone(document.getElementById('id_mobile_number').value) !==
+    normalizePhone(document.getElementById('initial_mobile_number').value);
+
+  var addressChanged =
+    normalizeText(document.getElementById('id_address_line_1').value) !== normalizeText(document.getElementById('initial_address_line_1').value) ||
+    normalizeText(document.getElementById('id_address_line_2').value) !== normalizeText(document.getElementById('initial_address_line_2').value) ||
+    normalizeText(document.getElementById('id_town').value) !== normalizeText(document.getElementById('initial_town').value) ||
+    normalizeText(document.getElementById('id_county').value) !== normalizeText(document.getElementById('initial_county').value) ||
+    normalizeText(document.getElementById('id_postcode').value).toUpperCase() !== normalizeText(document.getElementById('initial_postcode').value).toUpperCase();
+
+  var warnings = [];
+  if (mobileVerified && mobileChanged) {
+    warnings.push('Your mobile verification will be reset.');
+  }
+  if (addressVerified && addressChanged) {
+    warnings.push('Your address verification will be reset.');
+  }
+
+  if (warnings.length) {
+    warningList.innerHTML = '';
+    warnings.forEach(function(text) {
+      var li = document.createElement('li');
+      li.textContent = text;
+      warningList.appendChild(li);
+    });
+    $('#verification-reset-modal').modal('show');
+    return;
+  }
+
+  $("#form-submit").click();
+});
+
+$('#verification-reset-proceed').click(function () {
+  $('#verification-reset-modal').modal('hide');
+  $("#form-submit").click();
 });
 
 {% endblock %}

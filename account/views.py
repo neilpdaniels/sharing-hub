@@ -8,9 +8,11 @@ from .models import Profile, RegistrationVerification
 from django.contrib import messages
 from django.views import View
 import logging
+import importlib
 from django.http import JsonResponse
 from .tasks import send_random_mail
 from django.core.mail import send_mail
+from django.core import signing
 from django.utils import timezone
 from datetime import timedelta
 from random import randint
@@ -26,9 +28,49 @@ from .tokens import account_activation_token
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.conf import settings
+from urllib.parse import urlparse, quote
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_safe_relative_path(path):
+    if not path:
+        return False
+    if not path.startswith('/'):
+        return False
+    parsed = urlparse(path)
+    return not parsed.scheme and not parsed.netloc
+
+
+def _to_twilio_e164_uk(raw_number):
+    cleaned = ''.join(ch for ch in (raw_number or '') if ch.isdigit() or ch == '+')
+    if not cleaned:
+        return None
+    if cleaned.startswith('+'):
+        return cleaned
+    if cleaned.startswith('00'):
+        return '+' + cleaned[2:]
+    digits = ''.join(ch for ch in cleaned if ch.isdigit())
+    if digits.startswith('44'):
+        return '+' + digits
+    if digits.startswith('0'):
+        return '+44' + digits[1:]
+    return '+44' + digits
+
+
+def _mask_mobile(raw_number):
+    digits = ''.join(ch for ch in (raw_number or '') if ch.isdigit())
+    if len(digits) < 4:
+        return 'your mobile number'
+    return '******' + digits[-4:]
+
+
+def _build_twilio_client():
+    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN or not settings.TWILIO_VERIFY_SERVICE_SID:
+        raise ValueError('Twilio Verify settings are not configured.')
+    twilio_rest = importlib.import_module('twilio.rest')
+    return twilio_rest.Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 
 
 # def user_login(request):
@@ -65,18 +107,131 @@ def myaccount(request):
                 'account/dashboard.html',
                 context)
 
+
+@login_required
+def mobile_verify(request):
+    next_url = request.GET.get('next') or request.POST.get('next') or reverse('my_sharing_hub:dashboard')
+    if not _is_safe_relative_path(next_url):
+        next_url = reverse('my_sharing_hub:dashboard')
+
+    profile = get_object_or_404(Profile, user=request.user)
+
+    if not getattr(settings, 'MOBILE_VERIFICATION_ENABLED', True):
+        if not profile.mobile_verified:
+            profile.mobile_verified = True
+            profile.save(update_fields=['mobile_verified'])
+        messages.info(request, 'Mobile verification is disabled in this environment.')
+        return redirect(next_url)
+
+    if profile.mobile_verified:
+        return redirect(next_url)
+
+    e164_number = _to_twilio_e164_uk(profile.mobile_number)
+
+    if request.method == 'POST':
+        action = request.POST.get('action', 'send')
+        if not e164_number:
+            messages.error(request, 'Please add a valid mobile number in your profile before verifying.')
+            return redirect(reverse('edit'))
+
+        if action == 'send':
+            try:
+                client = _build_twilio_client()
+                client.verify.v2.services(settings.TWILIO_VERIFY_SERVICE_SID).verifications.create(
+                    to=e164_number,
+                    channel='sms',
+                )
+                messages.success(request, 'Verification code sent by SMS.')
+            except Exception as exc:
+                logger.warning('Twilio SMS send failed for user %s: %s', request.user.id, exc)
+                messages.error(request, 'Could not send verification SMS right now. Please try again.')
+        elif action == 'check':
+            code = (request.POST.get('code') or '').strip()
+            if not code:
+                messages.error(request, 'Enter the SMS code.')
+            else:
+                try:
+                    client = _build_twilio_client()
+                    check = client.verify.v2.services(settings.TWILIO_VERIFY_SERVICE_SID).verification_checks.create(
+                        to=e164_number,
+                        code=code,
+                    )
+                    if check.status == 'approved':
+                        profile.mobile_verified = True
+                        profile.save(update_fields=['mobile_verified'])
+                        messages.success(request, 'Mobile number verified.')
+                        return redirect(next_url)
+                    messages.error(request, 'That code is invalid or expired. Please try again.')
+                except Exception as exc:
+                    logger.warning('Twilio SMS verify failed for user %s: %s', request.user.id, exc)
+                    messages.error(request, 'Could not verify code right now. Please try again.')
+
+    context = {
+        'next_url': next_url,
+        'mobile_masked': _mask_mobile(profile.mobile_number),
+        'mobile_e164': e164_number or '',
+    }
+    return render(request, 'account/mobile_verify.html', context)
+
 def register(request):
     def generate_unique_verification_code():
         for _ in range(20):
             code = f"{randint(0, 999999):06d}"
-            if not RegistrationVerification.objects.filter(verification_code=code, is_used=False).exists():
+            if not RegistrationVerification.objects.filter(verification_code=code).exists():
                 return code
         raise ValueError('Could not generate a unique verification code.')
+
+    def build_resume_link(email):
+        token = signing.dumps({'email': email}, salt='registration-resume')
+        return request.build_absolute_uri(f"{reverse('register')}?resume={quote(token)}")
+
+    def send_registration_code_email(email, code):
+        resume_link = build_resume_link(email)
+        send_mail(
+            subject='Your SharingHub verification code',
+            message=(
+                'Your SharingHub registration code is: ' + code + '\n\n'
+                'This code expires in 15 minutes.\n\n'
+                'Resume verification: ' + resume_link
+            ),
+            from_email=None,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+
+    def get_pending_verification(email):
+        return RegistrationVerification.objects.filter(
+            email__iexact=email,
+            is_used=False,
+        ).order_by('-created_at').first()
 
     stage = 'start'
     user_form = UserRegistrationStartForm()
     verify_form = UserRegistrationVerifyForm()
     verify_email = request.session.get('pending_registration_email', '')
+
+    if request.method == 'GET':
+        resume_token = (request.GET.get('resume') or '').strip()
+        if resume_token:
+            try:
+                payload = signing.loads(resume_token, salt='registration-resume', max_age=15 * 60)
+                token_email = (payload.get('email') or '').strip().lower()
+            except signing.SignatureExpired:
+                messages.error(request, 'This verification link has expired. Please register again to get a new code.')
+            except signing.BadSignature:
+                messages.error(request, 'This verification link is invalid.')
+            else:
+                verification = get_pending_verification(token_email)
+                if verification is None:
+                    messages.error(request, 'No pending verification found. Please register again.')
+                elif verification.is_expired:
+                    verification.delete()
+                    messages.error(request, 'Verification code expired. Please register again to request a new code.')
+                else:
+                    request.session['pending_registration_email'] = token_email
+                    verify_email = token_email
+                    stage = 'verify'
+                    messages.info(request, 'Welcome back. Enter your code to complete registration.')
 
     if request.method == 'POST':
         action = request.POST.get('action', 'start')
@@ -107,8 +262,9 @@ def register(request):
                     RegistrationVerification.objects.filter(email__iexact=email, is_used=False).delete()
                     RegistrationVerification.objects.create(
                         email=email,
-                        first_name=user_form.cleaned_data['name'],
-                        last_name='',
+                        username=user_form.cleaned_data['username'],
+                        first_name=user_form.cleaned_data['first_name'],
+                        last_name=user_form.cleaned_data['last_name'],
                         date_of_birth=user_form.cleaned_data['date_of_birth'],
                         mobile_number=user_form.cleaned_data['mobile_number'],
                         house_name_number=user_form.cleaned_data.get('house_name_number', ''),
@@ -121,21 +277,47 @@ def register(request):
                         expires_at=timezone.now() + timedelta(minutes=15),
                     )
 
-                    send_mail(
-                        subject='Your SharingHub verification code',
-                        message=(
-                            'Your SharingHub registration code is: ' + code + '\n\n'
-                            'This code expires in 15 minutes.'
-                        ),
-                        from_email=None,
-                        recipient_list=[email],
-                        fail_silently=False,
-                    )
+                    send_registration_code_email(email, code)
 
                     request.session['pending_registration_email'] = email
                     verify_email = email
                     stage = 'verify'
                     messages.success(request, 'We sent a 6-digit code to your email. Enter it and then set your password.')
+
+        elif action == 'resend':
+            stage = 'verify'
+            verify_email = request.session.get('pending_registration_email', '')
+            if not verify_email:
+                messages.error(request, 'Verification session expired. Please start registration again.')
+                stage = 'start'
+                user_form = UserRegistrationStartForm()
+            else:
+                verification = get_pending_verification(verify_email)
+                if verification is None:
+                    messages.error(request, 'No pending verification found. Please start registration again.')
+                    stage = 'start'
+                    user_form = UserRegistrationStartForm()
+                else:
+                    code = generate_unique_verification_code()
+                    RegistrationVerification.objects.filter(email__iexact=verify_email, is_used=False).delete()
+                    RegistrationVerification.objects.create(
+                        email=verification.email,
+                        username=verification.username,
+                        first_name=verification.first_name,
+                        last_name=verification.last_name,
+                        date_of_birth=verification.date_of_birth,
+                        mobile_number=verification.mobile_number,
+                        house_name_number=verification.house_name_number,
+                        address_line_1=verification.address_line_1,
+                        address_line_2=verification.address_line_2,
+                        town=verification.town,
+                        county=verification.county,
+                        postcode=verification.postcode,
+                        verification_code=code,
+                        expires_at=timezone.now() + timedelta(minutes=15),
+                    )
+                    send_registration_code_email(verify_email, code)
+                    messages.success(request, 'We sent you a new verification code.')
 
         elif action == 'verify':
             verify_form = UserRegistrationVerifyForm(request.POST)
@@ -147,10 +329,7 @@ def register(request):
                 stage = 'start'
                 user_form = UserRegistrationStartForm()
             elif verify_form.is_valid():
-                verification = RegistrationVerification.objects.filter(
-                    email__iexact=verify_email,
-                    is_used=False,
-                ).order_by('-created_at').first()
+                verification = get_pending_verification(verify_email)
 
                 if verification is None:
                     messages.error(request, 'No pending verification found. Please start again.')
@@ -169,10 +348,10 @@ def register(request):
                     user_form = UserRegistrationStartForm()
                 else:
                     new_user = User.objects.create(
-                        username=verify_email,
+                        username=verification.username,
                         email=verify_email,
                         first_name=verification.first_name,
-                        last_name='',  # full name stored in first_name
+                        last_name=verification.last_name,
                         is_active=True,
                     )
                     new_user.set_password(verify_form.cleaned_data['password'])
@@ -209,15 +388,41 @@ def register(request):
 @login_required
 def edit(request):
     if request.method=='POST':
+        profile = request.user.profile
+        old_mobile = profile.mobile_number or ''
+        old_address = {
+            'address_line_1': profile.address_line_1 or '',
+            'address_line_2': profile.address_line_2 or '',
+            'town': profile.town or '',
+            'county': profile.county or '',
+            'postcode': profile.postcode or '',
+        }
+
         user_form = UserEditForm(instance=request.user, 
                                 data=request.POST)
-        profile_form = ProfileEditForm(instance=request.user.profile,
+        profile_form = ProfileEditForm(instance=profile,
                                         data=request.POST,
                                         files=request.FILES)
         if user_form.is_valid() and profile_form.is_valid():
             messages.success(request, 'Profile updates saved')
             user_form.save()
-            profile_form.save()
+
+            updated_profile = profile_form.save(commit=False)
+            mobile_changed = (updated_profile.mobile_number or '') != old_mobile
+            address_changed = any(
+                (getattr(updated_profile, field_name) or '') != old_address[field_name]
+                for field_name in old_address
+            )
+
+            if mobile_changed and profile.mobile_verified:
+                updated_profile.mobile_verified = False
+                messages.warning(request, 'Mobile verification has been reset because your phone number changed.')
+
+            if address_changed and profile.address_verified:
+                updated_profile.address_verified = False
+                messages.warning(request, 'Address verification has been reset because your address changed.')
+
+            updated_profile.save()
         else:
             messages.error(request, 'Profile updates not saved')
 
@@ -368,6 +573,24 @@ def _nominatim_lookup(query):
         })
 
     return results
+
+
+def check_username(request):
+    import re
+    username = (request.GET.get('username') or '').strip()
+    if not username:
+        return JsonResponse({'available': False, 'error': 'Enter a username.'})
+    if len(username) < 3:
+        return JsonResponse({'available': False, 'error': 'Must be at least 3 characters.'})
+    if len(username) > 30:
+        return JsonResponse({'available': False, 'error': 'Must be 30 characters or fewer.'})
+    if not re.match(r'^[a-zA-Z0-9_-]+$', username):
+        return JsonResponse({'available': False, 'error': 'Letters, numbers, hyphens and underscores only.'})
+    from django.contrib.auth.models import User
+    taken = User.objects.filter(username__iexact=username).exists()
+    if taken:
+        return JsonResponse({'available': False, 'error': 'That username is already taken.'})
+    return JsonResponse({'available': True})
 
 
 def address_lookup(request):

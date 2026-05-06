@@ -6,6 +6,7 @@ urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
     path('open_orders/', views.open_orders, name='open_orders'),
     path('closed_orders/' , views.closed_orders, name='closed_orders'),
+    path('copy_order_as_new/<int:order_id>/', views.copy_order_as_new, name='copy_order_as_new'),
     path('open_transactions/' , views.open_transactions, name='open_transactions'),
     path('closed_transactions/' , views.closed_transactions, name='closed_transactions'),
     path('pending_actions/' , views.pending_actions, name='pending_actions'),

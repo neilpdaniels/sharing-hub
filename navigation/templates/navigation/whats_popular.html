@@ -1,15 +1,14 @@
 {% extends "base.html" %}
 {% load static %}
-{% url 'navigation:search' as search_url %}
 
 {% block title %}<i class="fas fa-fire mr-2"></i>What's Popular{% endblock %}
 {% block subtitle %}{% endblock %}
 
 {% block content %}
+{# Public version: only shows search terms that match a listed category or product #}
 <style>
   .distance-bar {
     background: #f4f8fa;
-    border: 1px solid #d0e4ea;
     border-radius: 10px;
     padding: 14px 20px;
     margin-bottom: 22px;
@@ -40,8 +39,6 @@
   .popular-table thead tr:first-child th { background: #155f74; padding: 4px 14px; font-size: 0.78rem; }
   .popular-table thead tr:first-child th:first-child { border-radius: 8px 0 0 0; }
   .popular-table thead tr:first-child th:last-child  { border-radius: 0 8px 0 0; }
-  .popular-table thead tr:last-child  th:first-child { border-radius: 0; }
-  .popular-table thead tr:last-child  th:last-child  { border-radius: 0; }
 
   .popular-table tbody tr {
     background: #fff;
@@ -91,11 +88,20 @@
   .count-pill.has-orders { background: #d4f0da; color: #1a6330; }
   .count-pill.no-orders  { background: #fce8e8; color: #a33; }
 
-  .trend-up   { color: #1a8c3a; font-size: 0.75rem; }
-  .trend-down { color: #c0392b; font-size: 0.75rem; }
-  .trend-flat { color: #888;    font-size: 0.75rem; }
+  .match-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    margin: 2px 2px 2px 0;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .match-tag.product  { background: #e8f4fb; color: #1a5c77; border: 1px solid #b8ddef; }
+  .match-tag.category { background: #f0ebe8; color: #7a4a25; border: 1px solid #d9c5b5; }
+  .match-tag:hover { opacity: 0.8; text-decoration: none; }
 
-  canvas.sparkline { display: block; }
   .search-link { font-size: 0.8rem; color: #1d7d97; }
 
   .no-location-note {
@@ -107,19 +113,11 @@
     color: #7a5e00;
     margin-bottom: 16px;
   }
-
-  #loading-indicator {
-    text-align: center;
-    padding: 18px;
-    color: #1d7d97;
-    font-size: 0.9rem;
-    display: none;
-  }
 </style>
 
 <div class="container">
 
-  <p style="color:#1d7d97;" class="mb-3">The most-searched items across the platform over the past year.</p>
+  <p style="color:#1d7d97;" class="mb-3">The most-searched items across the platform over the past year, for categories and products we list.</p>
 
   {% if not has_location %}
   <div class="no-location-note">
@@ -141,12 +139,12 @@
     {% endif %}
   </div>
 
-  {% if results or page == 1 %}
+  {% if results %}
   <div class="popular-table-wrap">
     <table class="popular-table">
       <thead>
         <tr>
-          <th colspan="7"></th>
+          <th colspan="4"></th>
           <th colspan="3" style="text-align:center;">
             Open orders within…{% if not has_location %} (totals — add postcode for distance){% endif %}
           </th>
@@ -154,38 +152,34 @@
         </tr>
         <tr>
           <th>#</th>
-          <th>Search term</th>
+          <th>Matched items</th>
           <th>7 days</th>
-          <th>30 days</th>
-          <th>Prior 30d</th>
           <th>Year</th>
-          <th>Trend (30d)</th>
           <th style="text-align:center;">≤ 5 km</th>
           <th style="text-align:center;">≤ 10 km</th>
           <th style="text-align:center;">≤ 20 km</th>
           <th></th>
         </tr>
       </thead>
-      <tbody id="popular-tbody">
+      <tbody>
         {% for item in results %}
         <tr>
           <td><span class="rank-badge {% if item.rank <= 3 %}top3{% endif %}">{{ item.rank }}</span></td>
-          <td class="term-cell">{{ item.term }}</td>
-          <td><span class="count-pill">{{ item.week }}</span></td>
-          <td><span class="count-pill">{{ item.month }}</span></td>
-          <td><span class="count-pill">{{ item.prev_month }}</span></td>
-          <td><span class="count-pill">{{ item.year }}</span></td>
           <td>
-            <canvas class="sparkline" width="80" height="28"
-                    data-values="{{ item.sparkline|join:',' }}" data-drawn="0"></canvas>
-            {% if item.month > item.prev_month %}
-              <span class="trend-up">&#9650; up</span>
-            {% elif item.month < item.prev_month %}
-              <span class="trend-down">&#9660; down</span>
-            {% else %}
-              <span class="trend-flat">&#8212; flat</span>
-            {% endif %}
+            {% for m in item.matches %}
+              {% if m.type == 'product' %}
+                <a class="match-tag product" href="{% url 'navigation:productPage' m.slug %}">
+                  <i class="fas fa-box fa-xs mr-1"></i>{{ m.name }}
+                </a>
+              {% else %}
+                <a class="match-tag category" href="{% url 'navigation:browseCategory' m.slug %}">
+                  <i class="fas fa-folder fa-xs mr-1"></i>{{ m.name }}
+                </a>
+              {% endif %}
+            {% endfor %}
           </td>
+          <td><span class="count-pill">{{ item.week }}</span></td>
+          <td><span class="count-pill">{{ item.year }}</span></td>
           <td style="text-align:center;">
             <span class="count-pill {% if item.orders_5 > 0 %}has-orders{% else %}no-orders{% endif %}">{{ item.orders_5 }}</span>
           </td>
@@ -196,7 +190,7 @@
             <span class="count-pill {% if item.orders_20 > 0 %}has-orders{% else %}no-orders{% endif %}">{{ item.orders_20 }}</span>
           </td>
           <td>
-            <a class="search-link" href="{{ search_url }}?q={{ item.term|urlencode }}">
+            <a class="search-link" href="{% url 'navigation:search' %}?q={{ item.term|urlencode }}">
               <i class="fas fa-search"></i> Search
             </a>
           </td>
@@ -206,11 +200,8 @@
     </table>
   </div>
 
-  <div id="loading-indicator"><i class="fas fa-spinner fa-spin mr-1"></i> Loading more…</div>
-  <div id="scroll-sentinel" style="height:1px;"></div>
-
   {% else %}
-  <p class="text-muted mt-4">No search history yet — results will appear once searches have been made.</p>
+  <p class="text-muted mt-4">No matching search history yet — results will appear once users have searched for listed items.</p>
   {% endif %}
 
 </div>
@@ -221,12 +212,6 @@
 <script>
 (function () {
   'use strict';
-
-  /* ---- config from Django ---- */
-  var SEARCH_URL = '{{ search_url }}';
-  var hasNext    = {{ has_next|lower }};
-  var nextPage   = {{ page }} + 1;
-  var isLoading  = false;
 
   /* ---- distance slider ---- */
   var slider  = document.getElementById('distance-slider');
@@ -242,7 +227,6 @@
     display.textContent = labelFor(val);
     if (!navigate) return;
     var url = new URL(window.location.href);
-    url.searchParams.delete('page');
     if (val >= 50) {
       url.searchParams.delete('distance');
     } else {
@@ -257,129 +241,6 @@
     applySlider(initVal, false);
     slider.addEventListener('input',  function () { applySlider(parseInt(this.value, 10), false); });
     slider.addEventListener('change', function () { applySlider(parseInt(this.value, 10), true);  });
-  }
-
-  /* ---- sparklines ---- */
-  function smoothed(data, win) {
-    var half = Math.floor(win / 2);
-    return data.map(function (_, i) {
-      var sl = data.slice(Math.max(0, i - half), Math.min(data.length, i + half + 1));
-      return sl.reduce(function (a, b) { return a + b; }, 0) / sl.length;
-    });
-  }
-
-  function drawSparkline(canvas) {
-    if (canvas.dataset.drawn === '1') return;
-    canvas.dataset.drawn = '1';
-    var raw  = (canvas.dataset.values || '').split(',').map(Number);
-    if (!raw.length) return;
-    var data = smoothed(raw, 5);
-    var ctx  = canvas.getContext('2d');
-    var W = canvas.width, H = canvas.height;
-    var max  = Math.max.apply(null, data) || 1;
-    var step = W / ((data.length - 1) || 1);
-    ctx.clearRect(0, 0, W, H);
-    var grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, 'rgba(29,125,151,0.35)');
-    grad.addColorStop(1, 'rgba(29,125,151,0.02)');
-    ctx.beginPath();
-    data.forEach(function (v, i) {
-      var x = i * step, y = H - (v / max) * (H - 4) - 2;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.lineTo((data.length - 1) * step, H);
-    ctx.lineTo(0, H);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.beginPath();
-    data.forEach(function (v, i) {
-      var x = i * step, y = H - (v / max) * (H - 4) - 2;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = '#1d7d97';
-    ctx.lineWidth = 1.5;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-  }
-
-  function drawAllSparklines() {
-    document.querySelectorAll('canvas.sparkline[data-drawn="0"]').forEach(drawSparkline);
-  }
-  drawAllSparklines();
-
-  /* ---- security helper ---- */
-  function escHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  /* ---- build a <tr> from JSON ---- */
-  function pill(n) {
-    var cls = n > 0 ? 'has-orders' : 'no-orders';
-    return '<span class="count-pill ' + cls + '">' + n + '</span>';
-  }
-
-  function buildRow(item) {
-    var tr     = document.createElement('tr');
-    var isTop3 = item.rank <= 3;
-    var trendHtml = item.month > item.prev_month
-      ? '<span class="trend-up">&#9650; up</span>'
-      : item.month < item.prev_month
-        ? '<span class="trend-down">&#9660; down</span>'
-        : '<span class="trend-flat">&#8212; flat</span>';
-    tr.innerHTML =
-      '<td><span class="rank-badge ' + (isTop3 ? 'top3' : '') + '">' + item.rank + '</span></td>' +
-      '<td class="term-cell">' + escHtml(item.term) + '</td>' +
-      '<td><span class="count-pill">' + item.week + '</span></td>' +
-      '<td><span class="count-pill">' + item.month + '</span></td>' +
-      '<td><span class="count-pill">' + item.prev_month + '</span></td>' +
-      '<td><span class="count-pill">' + item.year + '</span></td>' +
-      '<td><canvas class="sparkline" width="80" height="28" data-values="' +
-        item.sparkline.join(',') + '" data-drawn="0"></canvas>' + trendHtml + '</td>' +
-      '<td style="text-align:center;">' + pill(item.orders_5)  + '</td>' +
-      '<td style="text-align:center;">' + pill(item.orders_10) + '</td>' +
-      '<td style="text-align:center;">' + pill(item.orders_20) + '</td>' +
-      '<td><a class="search-link" href="' + SEARCH_URL + '?q=' + encodeURIComponent(item.term) +
-        '"><i class="fas fa-search"></i> Search</a></td>';
-    return tr;
-  }
-
-  /* ---- infinite scroll ---- */
-  var sentinel  = document.getElementById('scroll-sentinel');
-  var loadingEl = document.getElementById('loading-indicator');
-
-  function loadMore() {
-    if (isLoading || !hasNext) return;
-    isLoading = true;
-    if (loadingEl) loadingEl.style.display = 'block';
-    var url = new URL(window.location.href);
-    url.searchParams.set('page', nextPage);
-    url.searchParams.set('format', 'json');
-    fetch(url.toString(), { credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var tbody = document.getElementById('popular-tbody');
-        data.results.forEach(function (item) { tbody.appendChild(buildRow(item)); });
-        drawAllSparklines();
-        hasNext  = data.has_next;
-        nextPage = data.next_page;
-        isLoading = false;
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (!hasNext && sentinel) sentinel.style.display = 'none';
-      })
-      .catch(function () {
-        isLoading = false;
-        if (loadingEl) loadingEl.style.display = 'none';
-      });
-  }
-
-  if (sentinel && hasNext) {
-    var observer = new IntersectionObserver(function (entries) {
-      if (entries[0].isIntersecting) loadMore();
-    }, { rootMargin: '300px' });
-    observer.observe(sentinel);
   }
 })();
 </script>

@@ -17,6 +17,8 @@ class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL,
                                 on_delete=models.CASCADE)
     email_confirmed = models.BooleanField(default=False)
+    mobile_verified = models.BooleanField(default=False)
+    address_verified = models.BooleanField(default=False)
     date_of_birth = models.DateField(validators=[MinAgeValidator])
     mobile_number = models.CharField(max_length=20)
     address_line_1 = models.CharField(max_length=255)
@@ -84,6 +86,7 @@ class Profile(models.Model):
 
 class RegistrationVerification(models.Model):
     email = models.EmailField(db_index=True)
+    username = models.CharField(max_length=150, blank=True)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     date_of_birth = models.DateField(validators=[MinAgeValidator])

@@ -29,6 +29,7 @@ dependencies = [
     "python-memcached>=1.62",
     "redis>=7.1.0",
     "sorl-thumbnail>=13.0.0",
+    "twilio>=9.0.0",
     "zeep>=4.3.2",
 ]
 

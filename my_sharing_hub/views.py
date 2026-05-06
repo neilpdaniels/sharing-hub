@@ -15,6 +15,9 @@ from operator import attrgetter
 from common.decorators import ajax_required
 from django.db.models import Q
 from transaction.tasks import getUserTransactions
+from common.models import Order, OrderImage, OrderBlockedDate, LetPriceBand
+from django.utils import timezone
+from datetime import timedelta
 
 
 @login_required
@@ -87,17 +90,11 @@ def pending_actions(request):
 @login_required
 def open_orders(request):
     user = request.user
-    object_list = user.order_set.filter(status='A')
+    object_list = user.order_set.filter(status='A').order_by('-amended')
     paginator = Paginator(object_list, 10) # per page
     page = request.GET.get('page')
     orderTransactions = {}
-
-    try:
-        orders = paginator.page(page)
-    except PageNotAnInteger:
-        orders = paginator.page(1)
-    except EmptyPage:
-        orders = paginator.page(paginator.num_pages)
+    orders = paginator.get_page(page)
 
     for order in orders:
         orderTransactions[order.id] = order.rel_order_passive.all()
@@ -113,16 +110,11 @@ def open_orders(request):
 @login_required
 def closed_orders(request):
     user = request.user
-    object_list = user.order_set.filter(status='X')
+    object_list = user.order_set.filter(status='X').order_by('-amended')
     paginator = Paginator(object_list, 10) # per page
     page = request.GET.get('page')
     orderTransactions = {}
-    try:
-        orders = paginator.page(page)
-    except PageNotAnInteger:
-        orders = paginator.page(1)
-    except EmptyPage:
-        orders = paginator.page(paginator.num_pages)
+    orders = paginator.get_page(page)
     
     for order in orders:
         orderTransactions[order.id] = order.rel_order_passive.all()
@@ -135,6 +127,70 @@ def closed_orders(request):
     }
     # return redirect('/navigation/seeAll/')
     return render(request, 'my_sharing_hub/x_orders.html', context)
+
+
+@login_required
+def copy_order_as_new(request, order_id):
+    source_order = get_object_or_404(Order, id=order_id, user=request.user)
+
+    copied_order = Order.objects.create(
+        product=source_order.product,
+        user=request.user,
+        direction=source_order.direction,
+        expiry_date=timezone.now() + timedelta(days=30),
+        quantity=source_order.quantity,
+        productIsNew=source_order.productIsNew,
+        price_type=source_order.price_type,
+        status=Order.ACTIVE,
+        price=source_order.price,
+        currency=source_order.currency,
+        latitude=source_order.latitude,
+        longitude=source_order.longitude,
+        postcode=source_order.postcode,
+        radius_km=source_order.radius_km,
+        guaranteed=source_order.guaranteed,
+        description=source_order.description,
+        additional_comments=source_order.additional_comments,
+        let_visibility=source_order.let_visibility,
+        deposit=source_order.deposit,
+        mates_rates=source_order.mates_rates,
+        mates_deposit=source_order.mates_deposit,
+        collection_policy=source_order.collection_policy,
+        delivery_cost=source_order.delivery_cost,
+        collection_details=source_order.collection_details,
+        max_rental_days=source_order.max_rental_days,
+    )
+
+    source_images = source_order.images.filter(active=True)
+    for image in source_images:
+        OrderImage.objects.create(
+            order=copied_order,
+            image=image.image,
+            user=request.user,
+            active=True,
+            first_image=image.first_image,
+            is_main=image.is_main,
+        )
+
+    for band in source_order.price_bands.all():
+        LetPriceBand.objects.create(
+            order=copied_order,
+            duration_days=band.duration_days,
+            price_per_day=band.price_per_day,
+        )
+
+    source_blocked_dates = source_order.blocked_dates.filter(
+        reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.HANDOVER_UNAVAILABLE]
+    )
+    for blocked_date in source_blocked_dates:
+        OrderBlockedDate.objects.create(
+            order=copied_order,
+            date=blocked_date.date,
+            reason=blocked_date.reason,
+        )
+
+    messages.success(request, 'Closed listing copied as a new open listing. You can amend it below.')
+    return redirect('transaction:edit_order', order_id=copied_order.id)
 
 @login_required
 def open_transactions(request):

@@ -261,6 +261,50 @@ class PostcodeGeocoder:
                 logger.warning(f"Could not geocode postcode {postcode}")
 
 
+    @staticmethod
+    def get_nearby_user_ids(user_lat, user_lon, max_distance_km, user_postcode=None):
+        """
+        Return the set of User IDs whose stored profile location is within
+        *max_distance_km* km of (user_lat, user_lon).
+
+        When max_distance_km == 0 the comparison is postcode-area only:
+        users whose outward code (first 3 chars of stripped postcode) matches
+        user_postcode are included.
+
+        Args:
+            user_lat: Latitude of the reference point (float).
+            user_lon: Longitude of the reference point (float).
+            max_distance_km: Radius in km.  0 means postcode-area match only.
+            user_postcode: Normalised postcode of reference user (str or None).
+                           Required when max_distance_km == 0.
+
+        Returns:
+            set of int — user IDs within the radius.
+        """
+        from django.contrib.auth import get_user_model
+        _User = get_user_model()
+        nearby = set()
+        for u in _User.objects.filter(
+            profile__latitude__isnull=False,
+            profile__longitude__isnull=False,
+        ).select_related('profile'):
+            try:
+                dist = PostcodeGeocoder.calculate_distance(
+                    user_lat, user_lon,
+                    float(u.profile.latitude),
+                    float(u.profile.longitude),
+                )
+                if max_distance_km == 0:
+                    ref = (user_postcode or '').upper().replace(' ', '')[:3]
+                    if (u.profile.postcode or '').upper().replace(' ', '')[:3] == ref:
+                        nearby.add(u.id)
+                elif dist <= max_distance_km:
+                    nearby.add(u.id)
+            except Exception:
+                pass
+        return nearby
+
+
 class DistanceFilter:
     """Utilities for filtering objects by distance."""
     

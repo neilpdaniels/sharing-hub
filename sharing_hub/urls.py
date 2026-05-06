@@ -30,6 +30,7 @@ urlpatterns = [
     path('friends/', include('friends.urls', namespace='friends')),
     path('transaction/', include('transaction.urls', namespace='transaction')),
     path('navigation/', include('navigation.urls', namespace='navigation')),
+    path('pages/', include('pages.urls', namespace='pages')),
     path('my_sharing_hub/', include('my_sharing_hub.urls', namespace='my_sharing_hub')),
     path('', navigation.views.index, name='homepage'),
     re_path(r'^summernote/', include('django_summernote.urls')),

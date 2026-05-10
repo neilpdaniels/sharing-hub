@@ -25,28 +25,34 @@ def transaction_notifications(request):
             'unseen_txn_items': [],
         }
 
-    from transaction.models import Transaction, TransactionMessage
+    from transaction.models import Transaction
 
     user = request.user
 
-    # Pending enquiries that require lender attention.
-    pending_enquiry_ids = set(
-        Transaction.objects.filter(
-            user_passive=user,
-            transaction_status=Transaction.RENTAL_ENQUIRY,
-        ).values_list('id', flat=True)
+    # Only include transactions that are currently pending action for this user.
+    lender_pending = Q(user_passive=user) & (
+        Q(transaction_status=Transaction.RENTAL_ENQUIRY) |
+        Q(transaction_status=Transaction.RENTAL_AGREED, lender_agreement_pending_at__isnull=False, lender_agreed_at__isnull=True) |
+        Q(transaction_status=Transaction.RENTAL_AGREED, lender_agreed_at__isnull=False, renter_agreed_at__isnull=False) |
+        Q(transaction_status=Transaction.RENTAL_RETURNED)
     )
 
-    # Any transaction with unread messages for this user.
-    unread_message_txn_ids = set(
-        TransactionMessage.objects.filter(
-            user_to=user,
-            read_by_user_to=False,
-            transaction__isnull=False,
-        ).values_list('transaction_id', flat=True)
+    renter_pending = Q(user_aggressive=user) & (
+        Q(transaction_status=Transaction.RENTAL_AGREED, renter_agreed_at__isnull=True) |
+        Q(
+            transaction_status=Transaction.RENTAL_AGREED,
+            lender_agreed_at__isnull=False,
+            renter_agreed_at__isnull=False,
+            deposit__gt=0,
+        ) & ~Q(deposit_card_setup_status=Transaction.CARD_READY) |
+        Q(transaction_status=Transaction.RENTAL_INITIATED)
     )
 
-    unseen_ids = pending_enquiry_ids | unread_message_txn_ids
+    pending_qs = Transaction.objects.filter(lender_pending | renter_pending).filter(
+        Q(user_passive=user) | Q(user_aggressive=user)
+    )
+
+    unseen_ids = set(pending_qs.values_list('id', flat=True))
     unseen_items = []
     unseen_count = len(unseen_ids)
 

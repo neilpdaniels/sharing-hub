@@ -631,11 +631,15 @@ Transaction Ref: {txn.transaction_reference}"""
             messages.success(request, 'Contract confirmed. Renter has been sent a confirmation request.')
 
         elif action == 'reinitiate_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
-            # Extend the deadline by resetting lender_agreed_at to now
-            txn.lender_agreed_at = timezone.now()
-            txn.save()
-            # Send a fresh confirmation request to renter
-            contract_msg = f"""Lender has re-sent the rental confirmation request.
+            contract_deadline = _get_contract_deadline(txn)
+            if contract_deadline and timezone.now() <= contract_deadline:
+                messages.info(request, 'Borrower still has time to confirm. You can re-send once the window expires.')
+            else:
+                # Extend the deadline by resetting lender_agreed_at to now
+                txn.lender_agreed_at = timezone.now()
+                txn.save()
+                # Send a fresh confirmation request to renter
+                contract_msg = f"""Lender has re-sent the rental confirmation request.
 
 Rental Terms:
 - Product: {txn.order_passive.product.name}
@@ -646,16 +650,16 @@ Rental Terms:
 Please confirm to proceed with this rental. You have 24 hours to confirm, or until the rental start date, whichever is sooner.
 
 Transaction Ref: {txn.transaction_reference}"""
-            TransactionMessage.objects.create(
-                user_from=txn.user_passive,
-                user_to=txn.user_aggressive,
-                transaction=txn,
-                subject=f'Rental Agreement - Re-sent (Please Confirm) {txn.transaction_reference}',
-                description=contract_msg,
-            )
-            messages.success(request, 'Confirmation request re-sent to renter. 24-hour window restarted.')
+                TransactionMessage.objects.create(
+                    user_from=txn.user_passive,
+                    user_to=txn.user_aggressive,
+                    transaction=txn,
+                    subject=f'Rental Agreement - Re-sent (Please Confirm) {txn.transaction_reference}',
+                    description=contract_msg,
+                )
+                messages.success(request, 'Confirmation request re-sent to renter. 24-hour window restarted.')
 
-        elif action == 'confirm_renter_contract' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
+        elif action == 'confirm_renter_contract' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and not txn.renter_agreed_at:
             contract_deadline = _get_contract_deadline(txn)
             if contract_deadline and timezone.now() > contract_deadline:
                 messages.error(
@@ -885,10 +889,12 @@ Transaction Ref: {txn.transaction_reference}"""
     total_fees = sum(charge.price for charge in charges)
     total_px = total_items + total_fees
     step, next_action = getTransactionStepAndAction(txn, request)
+    now_ts = timezone.now()
+    today = now_ts.date()
     contract_deadline = _get_contract_deadline(txn)
     contract_seconds_remaining = None
     if contract_deadline:
-        contract_seconds_remaining = int((contract_deadline - timezone.now()).total_seconds())
+        contract_seconds_remaining = int((contract_deadline - now_ts).total_seconds())
 
     can_collect_deposit = _can_collect_deposit(txn)
 
@@ -920,6 +926,9 @@ Transaction Ref: {txn.transaction_reference}"""
         'next_action': next_action,
         'is_lender': is_lender,
         'is_renter': is_renter,
+        'today': today,
+        'now_ts': now_ts,
+        'contract_deadline': contract_deadline,
         'contract_deadline_iso': contract_deadline.isoformat() if contract_deadline else '',
         'contract_seconds_remaining': contract_seconds_remaining,
         'can_collect_deposit': can_collect_deposit,

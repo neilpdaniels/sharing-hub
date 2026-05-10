@@ -112,15 +112,17 @@ def getTransactionStepAndAction(txn, request):
         step = 1
         next_action = is_lender
     elif txn.transaction_status == txn.RENTAL_AGREED:
-        # Check contract confirmation stage
-        if txn.lender_agreement_pending_at and not txn.lender_agreed_at:
-            # Awaiting lender confirmation
+        lender_done = bool(txn.lender_agreed_at)
+        renter_done = bool(txn.renter_agreed_at)
+
+        if not lender_done and not renter_done:
+            # Both parties can confirm in parallel
             step = 2
-            next_action = is_lender
-        elif txn.lender_agreed_at and not txn.renter_agreed_at:
-            # Awaiting renter confirmation
+            next_action = (is_lender or is_renter)
+        elif lender_done ^ renter_done:
+            # One side confirmed; waiting on the other
             step = 3
-            next_action = is_renter
+            next_action = (is_lender and not lender_done) or (is_renter and not renter_done)
         else:
             # Both confirmed, ready for initiation
             step = 4

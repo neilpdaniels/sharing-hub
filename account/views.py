@@ -375,7 +375,7 @@ def register(request):
 
                     login(request, new_user)
                     messages.success(request, 'Registration complete and email verified.')
-                    return redirect(reverse('navigation:browseCategory', args=('metals', )))
+                    return redirect('/')
 
     context = {
         'user_form': user_form,
@@ -473,8 +473,7 @@ def activate_account(request, uidb64, token):
         user.save()
         user.profile.save()
         login(request, user)
-        product_url = request.build_absolute_uri(reverse('navigation:browseCategory', args=('metals', )))
-        return redirect(product_url)
+        return redirect('/')
     else:
         return render(request, 'account_activation_invalid.html')
 
@@ -645,5 +644,36 @@ def address_resolve(request):
             logger.warning('getAddress resolve failed with status %s', response.status_code)
         except Exception as exc:
             logger.warning('getAddress resolve failed: %s', exc)
+
+
+@login_required
+def kyc_verify(request):
+    """
+    Initiate KYC verification via Stripe Identity.
+    For now, this is a placeholder. Integration with Stripe Verify will:
+    1. Create a VerificationSession via Stripe API
+    2. Redirect to Stripe Verify
+    3. Handle callback with verification result
+    4. Set stripe_identity_verified and stripe_identity_verified_at on Profile
+    """
+    profile = Profile.objects.get(user=request.user)
+    
+    if request.method == 'POST':
+        # TODO: Integrate with Stripe Identity API
+        # For now, show a message that integration is pending
+        messages.info(
+            request,
+            'KYC verification integration with Stripe is being configured. '
+            'Your account will need to be verified before renting high-risk items. '
+            'Please contact support for assistance.'
+        )
+        return redirect('account:myaccount')
+    
+    context = {
+        'profile': profile,
+        'is_verified': profile.stripe_identity_verified,
+        'verified_at': profile.stripe_identity_verified_at,
+    }
+    return render(request, 'account/kyc_verify.html', context)
 
     return JsonResponse({'result': None})

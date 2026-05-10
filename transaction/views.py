@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from common.models import Order, Product, OrderImage, TransactionFee, OrderBlockedDate
 from .models import Transaction, TransactionMessage, TransactionMessageImage, TransactionCharge, TransactionImage
 from django.contrib import messages
-from datetime import datetime
+from datetime import datetime, timedelta, time as dt_time
 from django.urls import reverse
 from django.http import JsonResponse
 from django.views import View
@@ -24,6 +24,11 @@ import json
 from django.core.files import File
 from account.models import Profile
 from urllib.parse import quote
+from django.views.decorators.csrf import csrf_exempt
+
+from account.models import PaymentMethod
+
+from .stripe_connect import stripe_connect_service
 
 
 def _require_mobile_verification(request):
@@ -146,6 +151,7 @@ def add_order(request, product_id=None):
         'order_image_form': order_image_form,
         'product': product,
         'blocked_dates_json': '[]',
+        'booked_dates_json': '[]',
         'blocked_handover_dates_json': '[]',
     }
     return render(request, 'transaction/add_order.html', context)
@@ -266,9 +272,13 @@ def edit_order(request, order_id=None):
     main_image = next((img for img in order_images if img.is_main), None)
     if not main_image and order_images:
         main_image = order_images[0]
-    blocked_dates = [
+    manual_blocked_dates = [
         bd.date.isoformat()
-        for bd in order.blocked_dates.filter(reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.BOOKED])
+        for bd in order.blocked_dates.filter(reason=OrderBlockedDate.MANUAL)
+    ]
+    booked_dates = [
+        bd.date.isoformat()
+        for bd in order.blocked_dates.filter(reason=OrderBlockedDate.BOOKED)
     ]
     blocked_handover_dates = [
         bd.date.isoformat()
@@ -285,7 +295,8 @@ def edit_order(request, order_id=None):
         'existing_order_images': order_images,
         'order_image_ids_str': order_image_ids_str,
         'main_image_id': str(main_image.id) if main_image else '',
-        'blocked_dates_json': json.dumps(blocked_dates),
+        'blocked_dates_json': json.dumps(manual_blocked_dates),
+        'booked_dates_json': json.dumps(booked_dates),
         'blocked_handover_dates_json': json.dumps(blocked_handover_dates),
     }
     return render(request, 'transaction/add_order.html', context)
@@ -392,9 +403,13 @@ def hit_order(request, order_id=None):
         return verify_redirect
 
     order = get_object_or_404(Order, id=order_id)
-    blocked_dates = set(
-        order.blocked_dates.filter(reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.BOOKED]).values_list('date', flat=True)
+    manual_blocked_dates = set(
+        order.blocked_dates.filter(reason=OrderBlockedDate.MANUAL).values_list('date', flat=True)
     )
+    booked_dates = set(
+        order.blocked_dates.filter(reason=OrderBlockedDate.BOOKED).values_list('date', flat=True)
+    )
+    blocked_dates = set(manual_blocked_dates) | set(booked_dates)
     handover_dates = set(
         order.blocked_dates.filter(reason=OrderBlockedDate.HANDOVER_UNAVAILABLE).values_list('date', flat=True)
     )
@@ -428,6 +443,19 @@ def hit_order(request, order_id=None):
             rental_days = (end_date - start_date).days + 1
             price_per_day = _price_per_day_for_days(rental_days)
 
+            # Validate rental length for high deposits
+            product = order.product
+            deposit = getattr(order, 'deposit', 0) or 0  # Get deposit from price band if available
+            
+            if deposit > 100 and rental_days > 5:
+                messages.error(
+                    request, 
+                    f'Rentals with deposits over £100 are limited to 5 days maximum. '
+                    f'Your requested rental is {rental_days} days. Please adjust your dates. '
+                    f'(Deposit will be taken and returned at the end for longer rentals.)'
+                )
+                return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
+
             txn = Transaction.objects.create(
                 price=price_per_day,
                 quantity=1,
@@ -447,6 +475,34 @@ def hit_order(request, order_id=None):
                 rental_end_date=end_date,
                 enquiry_message=order_hit_form.cleaned_data.get('enquiry_message', ''),
             )
+            
+            # Calculate deposit handling based on rental length and amount
+            txn.deposit_handling = txn.calculate_deposit_handling()
+            
+            # Check if high-risk product and set KYC requirements
+            if product.is_high_risk():
+                from account.models import Profile
+                renter_profile = Profile.objects.get(user=request.user)
+                lender_profile = Profile.objects.get(user=order.user)
+                
+                requires_kyc = False
+                kyc_message = f'This is a high-risk product (risk rating: {product.get_effective_risk_rating()}/100). '
+                
+                # Check if renter needs KYC
+                if not renter_profile.stripe_identity_verified:
+                    requires_kyc = True
+                    kyc_message += 'As the renter, you must complete KYC verification. '
+                
+                # Check if lender needs KYC
+                if not lender_profile.stripe_identity_verified:
+                    requires_kyc = True
+                    kyc_message += 'The lender must also complete KYC verification before this rental can proceed. '
+                
+                if requires_kyc:
+                    txn.requires_kyc = True
+                    txn.requires_kyc_message = kyc_message
+            
+            txn.save()
 
             for ord_image in order.images.filter(active=True):
                 txn_image = TransactionImage()
@@ -465,7 +521,8 @@ def hit_order(request, order_id=None):
         )
 
     price_bands = list(order.price_bands.all().order_by('duration_days').values('duration_days', 'price_per_day'))
-    blocked_dates_json = json.dumps(sorted([d.isoformat() for d in blocked_dates]))
+    blocked_dates_json = json.dumps(sorted([d.isoformat() for d in manual_blocked_dates]))
+    booked_dates_json = json.dumps(sorted([d.isoformat() for d in booked_dates]))
     handover_dates_json = json.dumps(sorted([d.isoformat() for d in handover_dates]))
     price_bands_json = json.dumps(price_bands)
 
@@ -473,6 +530,7 @@ def hit_order(request, order_id=None):
         'order': order,
         'order_hit_form': order_hit_form,
         'blocked_dates_json': blocked_dates_json,
+        'booked_dates_json': booked_dates_json,
         'handover_dates_json': handover_dates_json,
         'price_bands_json': price_bands_json,
     }
@@ -488,14 +546,279 @@ def view_transaction(request, transaction_reference=None):
     is_lender = (request.user == txn.user_passive)
     is_renter = (request.user == txn.user_aggressive)
 
+    def _get_contract_deadline(transaction):
+        """Deadline is min(lender confirmation + 24h, rental start datetime)."""
+        if not transaction.lender_agreed_at:
+            return None
+
+        deadline_24h = transaction.lender_agreed_at + timedelta(hours=24)
+        candidates = [deadline_24h]
+
+        if transaction.rental_start_date:
+            start_naive = datetime.combine(transaction.rental_start_date, dt_time.min)
+            if timezone.is_naive(start_naive):
+                start_dt = timezone.make_aware(start_naive, timezone.get_current_timezone())
+            else:
+                start_dt = start_naive
+            candidates.append(start_dt)
+
+        return min(candidates)
+
+    def _can_collect_deposit(transaction):
+        if transaction.deposit <= 0:
+            return False
+        if transaction.deposit_collected_placeholder:
+            return False
+        if transaction.deposit_card_setup_status != transaction.CARD_READY:
+            return False
+        if transaction.deposit_test_hold_status != transaction.TEST_HOLD_SUCCESS:
+            return False
+        if not transaction.rental_start_date:
+            return False
+        return timezone.now().date() >= transaction.rental_start_date
+
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
 
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_AGREED
+            txn.lender_agreement_pending_at = timezone.now()
             txn.save()
-            messages.success(request, 'Rental agreed.')
+
+            # Block this booked range on the underlying listing as soon as rental is agreed.
+            if txn.order_passive and txn.rental_start_date and txn.rental_end_date:
+                current_date = txn.rental_start_date
+                while current_date <= txn.rental_end_date:
+                    OrderBlockedDate.objects.get_or_create(
+                        order=txn.order_passive,
+                        date=current_date,
+                        defaults={'reason': OrderBlockedDate.BOOKED},
+                    )
+                    current_date += timedelta(days=1)
+
+            messages.success(request, 'Rental agreement generated. Please confirm the contract terms.')
+
+        elif action == 'reject_enquiry' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.CANCEL_ACCEPTED
+            txn.transaction_status_raised_by = request.user
+            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+            messages.info(request, 'Rental enquiry rejected.')
+
+        elif action == 'confirm_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreement_pending_at:
+            txn.lender_agreed_at = timezone.now()
+            txn.save()
+            # Send contract confirmation request to renter
+            contract_msg = f"""Lender has agreed to the rental.
+
+Rental Terms:
+- Product: {txn.order_passive.product.name}
+- Dates: {txn.rental_start_date} to {txn.rental_end_date}
+- Price: £{txn.price}/day
+- Deposit: £{txn.deposit}
+
+Please confirm to proceed with this rental. You have 24 hours to confirm, or until the rental start date, whichever is sooner.
+
+Transaction Ref: {txn.transaction_reference}"""
+            TransactionMessage.objects.create(
+                user_from=txn.user_passive,
+                user_to=txn.user_aggressive,
+                transaction=txn,
+                subject=f'Rental Agreement - Please Confirm {txn.transaction_reference}',
+                description=contract_msg,
+            )
+            messages.success(request, 'Contract confirmed. Renter has been sent a confirmation request.')
+
+        elif action == 'reinitiate_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
+            # Extend the deadline by resetting lender_agreed_at to now
+            txn.lender_agreed_at = timezone.now()
+            txn.save()
+            # Send a fresh confirmation request to renter
+            contract_msg = f"""Lender has re-sent the rental confirmation request.
+
+Rental Terms:
+- Product: {txn.order_passive.product.name}
+- Dates: {txn.rental_start_date} to {txn.rental_end_date}
+- Price: £{txn.price}/day
+- Deposit: £{txn.deposit}
+
+Please confirm to proceed with this rental. You have 24 hours to confirm, or until the rental start date, whichever is sooner.
+
+Transaction Ref: {txn.transaction_reference}"""
+            TransactionMessage.objects.create(
+                user_from=txn.user_passive,
+                user_to=txn.user_aggressive,
+                transaction=txn,
+                subject=f'Rental Agreement - Re-sent (Please Confirm) {txn.transaction_reference}',
+                description=contract_msg,
+            )
+            messages.success(request, 'Confirmation request re-sent to renter. 24-hour window restarted.')
+
+        elif action == 'confirm_renter_contract' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
+            contract_deadline = _get_contract_deadline(txn)
+            if contract_deadline and timezone.now() > contract_deadline:
+                messages.error(
+                    request,
+                    'Contract confirmation window has expired. This rental can no longer be confirmed.'
+                )
+            else:
+                txn.renter_agreed_at = timezone.now()
+                txn.save()
+                messages.success(request, 'Rental confirmed! Proceeding to next stage.')
+
+        elif action == 'add_deposit_card' and is_renter and txn.transaction_status == txn.RENTAL_AGREED:
+            cardholder_name = (request.POST.get('deposit_cardholder_name') or '').strip()
+            card_brand = (request.POST.get('deposit_card_brand') or '').strip()
+            card_last4 = (request.POST.get('deposit_card_last4') or '').strip()
+
+            if txn.deposit <= 0:
+                messages.info(request, 'No deposit is required for this transaction.')
+            elif not cardholder_name:
+                messages.error(request, 'Please enter the cardholder name.')
+            elif len(card_last4) != 4 or not card_last4.isdigit():
+                messages.error(request, 'Please enter a valid last 4 digits for the card.')
+            else:
+                setup_result = stripe_connect_service.setup_deposit_card_and_test_hold(
+                    transaction=txn,
+                    cardholder_name=cardholder_name,
+                    card_brand=card_brand,
+                    card_last4=card_last4,
+                )
+                if not setup_result.get('ok'):
+                    txn.deposit_card_setup_status = txn.CARD_FAILED
+                    txn.deposit_test_hold_status = txn.TEST_HOLD_FAILED
+                    txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
+                    messages.error(request, setup_result.get('error', 'Card setup failed.'))
+                else:
+                    txn.deposit_card_setup_status = setup_result.get('card_setup_status', txn.CARD_READY)
+                    txn.deposit_cardholder_name = setup_result.get('cardholder_name', cardholder_name)
+                    txn.deposit_card_brand = setup_result.get('card_brand', card_brand.upper()[:20])
+                    txn.deposit_card_last4 = setup_result.get('card_last4', card_last4)
+                    txn.deposit_test_hold_status = setup_result.get('test_hold_status', txn.TEST_HOLD_SUCCESS)
+                    txn.deposit_test_hold_amount = setup_result.get('test_hold_amount', 0.01)
+                    txn.deposit_test_hold_at = setup_result.get('test_hold_at')
+                    txn.deposit_test_hold_reference = setup_result.get('test_hold_reference', '')
+                    txn.save()
+                    provider_label = setup_result.get('provider', 'service')
+                    messages.success(
+                        request,
+                        f'Deposit card saved. A £0.01 test hold succeeded via {provider_label}.'
+                    )
+
+        elif action == 'use_existing_card' and is_renter and txn.transaction_status == txn.RENTAL_AGREED:
+            payment_method_id = (request.POST.get('payment_method_id') or '').strip()
+
+            if txn.deposit <= 0:
+                messages.info(request, 'No deposit is required for this transaction.')
+            elif not payment_method_id:
+                messages.error(request, 'Please select a payment method.')
+            else:
+                try:
+                    pm = request.user.payment_methods.get(id=payment_method_id)
+                    txn.deposit_card_setup_status = txn.CARD_READY
+                    txn.deposit_cardholder_name = 'Stripe'
+                    txn.deposit_card_brand = pm.card_brand
+                    txn.deposit_card_last4 = pm.card_last4
+                    txn.deposit_test_hold_status = txn.TEST_HOLD_SUCCESS
+                    txn.deposit_test_hold_amount = 0.01
+                    txn.deposit_test_hold_at = timezone.now()
+                    txn.stripe_setup_intent_id = pm.stripe_setup_intent_id
+                    txn.stripe_payment_method_id = pm.stripe_payment_method_id
+                    txn.save()
+                    messages.success(request, f'Using {pm.card_brand} ending {pm.card_last4} for deposit.')
+                except PaymentMethod.DoesNotExist:
+                    messages.error(request, 'Payment method not found.')
+
+        elif action == 'confirm_stripe_card' and is_renter and txn.transaction_status == txn.RENTAL_AGREED:
+            payment_method_id = (request.POST.get('payment_method_id') or '').strip()
+            setup_intent_id = (request.POST.get('setup_intent_id') or '').strip()
+
+            if txn.deposit <= 0:
+                messages.info(request, 'No deposit is required for this transaction.')
+            elif not payment_method_id:
+                messages.error(request, 'Card details were not submitted successfully. Please try again.')
+            else:
+                confirm_result = stripe_connect_service.confirm_card_setup(
+                    transaction=txn,
+                    setup_intent_id=setup_intent_id,
+                    payment_method_id=payment_method_id,
+                )
+                if not confirm_result.get('ok'):
+                    txn.deposit_card_setup_status = txn.CARD_FAILED
+                    txn.deposit_test_hold_status = txn.TEST_HOLD_FAILED
+                    txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
+                    messages.error(request, confirm_result.get('error', 'Card setup failed.'))
+                else:
+                    txn.deposit_card_setup_status = confirm_result.get('card_setup_status', txn.CARD_READY)
+                    txn.deposit_cardholder_name = confirm_result.get('cardholder_name', 'Stripe')
+                    txn.deposit_card_brand = confirm_result.get('card_brand', 'Card')
+                    txn.deposit_card_last4 = confirm_result.get('card_last4', 'xxxx')
+                    txn.deposit_test_hold_status = confirm_result.get('test_hold_status', txn.TEST_HOLD_SUCCESS)
+                    txn.deposit_test_hold_amount = confirm_result.get('test_hold_amount', 0.01)
+                    txn.deposit_test_hold_at = confirm_result.get('test_hold_at')
+                    txn.deposit_test_hold_reference = confirm_result.get('test_hold_reference', '')
+                    txn.stripe_setup_intent_id = setup_intent_id
+                    txn.stripe_payment_method_id = payment_method_id
+                    txn.save()
+
+                    provider_label = confirm_result.get('provider', 'service')
+                    messages.success(
+                        request,
+                        f'Deposit card saved securely. A £0.01 test hold succeeded via {provider_label}.'
+                    )
+
+                    try:
+                        PaymentMethod.objects.update_or_create(
+                            stripe_payment_method_id=payment_method_id,
+                            defaults={
+                                'user': request.user,
+                                'stripe_setup_intent_id': setup_intent_id,
+                                'card_brand': confirm_result.get('card_brand', 'Card'),
+                                'card_last4': confirm_result.get('card_last4', 'xxxx'),
+                            },
+                        )
+                    except Exception as exc:
+                        logging.exception('Failed to save payment method: %s', exc)
+
+        elif action == 'collect_deposit' and is_lender and txn.transaction_status in (txn.RENTAL_AGREED, txn.RENTAL_INITIATED):
+            if not _can_collect_deposit(txn):
+                messages.error(
+                    request,
+                    'Deposit cannot be collected yet. Ensure card setup/test hold is complete and rental start date has been reached.'
+                )
+            else:
+                collect_result = stripe_connect_service.collect_deposit_hold(transaction=txn)
+                if not collect_result.get('ok'):
+                    txn.deposit_collection_status = txn.COLLECT_FAILED
+                    txn.save(update_fields=['deposit_collection_status', 'amended'])
+                    messages.error(request, collect_result.get('error', 'Deposit collection failed.'))
+                else:
+                    txn.deposit_collected_placeholder = True
+                    txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER
+                    txn.deposit_collection_status = collect_result.get('collection_status', txn.COLLECT_SUCCESS)
+                    txn.deposit_collection_requested_at = collect_result.get('collection_requested_at')
+                    txn.deposit_collection_reference = collect_result.get('collection_reference', '')
+                    txn.save()
+                    provider_label = collect_result.get('provider', 'service')
+                    messages.success(
+                        request,
+                        f'Deposit collected via {provider_label}: full authorization hold/retrieval recorded.'
+                    )
+
+        elif action == 'send_message' and (is_lender or is_renter):
+            body = (request.POST.get('message_body') or '').strip()
+            if not body:
+                messages.error(request, 'Please enter a message before sending.')
+            else:
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=(txn.user_aggressive if is_lender else txn.user_passive),
+                    transaction=txn,
+                    subject=f'Transaction {txn.transaction_reference}',
+                    description=body,
+                )
+                messages.success(request, 'Message sent.')
 
         elif action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
             checkout_video = request.POST.get('checkout_video_url', '').strip()
@@ -506,13 +829,10 @@ def view_transaction(request, transaction_reference=None):
                 txn.product_status = txn.CHECKOUT_VIDEO_ADDED
 
             payment_collected = bool(request.POST.get('payment_collected_placeholder'))
-            deposit_collected = bool(request.POST.get('deposit_collected_placeholder'))
             txn.payment_collected_placeholder = payment_collected
-            txn.deposit_collected_placeholder = deposit_collected
             txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER if payment_collected else txn.PAYMENT_PENDING
-            txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if deposit_collected else txn.DEPOSIT_PENDING
+            txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if txn.deposit_collected_placeholder else txn.DEPOSIT_PENDING
             txn.payment_placeholder_notes = request.POST.get('payment_placeholder_notes', '').strip()
-            txn.deposit_placeholder_notes = request.POST.get('deposit_placeholder_notes', '').strip()
             txn.save()
             messages.success(request, 'Rental initiated. Checkout evidence and placeholders saved.')
 
@@ -565,6 +885,28 @@ def view_transaction(request, transaction_reference=None):
     total_fees = sum(charge.price for charge in charges)
     total_px = total_items + total_fees
     step, next_action = getTransactionStepAndAction(txn, request)
+    contract_deadline = _get_contract_deadline(txn)
+    contract_seconds_remaining = None
+    if contract_deadline:
+        contract_seconds_remaining = int((contract_deadline - timezone.now()).total_seconds())
+
+    can_collect_deposit = _can_collect_deposit(txn)
+
+    # Generate Stripe SetupIntent for card collection if needed
+    setup_intent_client_secret = None
+    setup_intent_id = None
+    if (is_renter and txn.transaction_status == txn.RENTAL_AGREED and 
+        txn.lender_agreed_at and txn.deposit > 0 and 
+        not txn.deposit_card_setup_status == txn.CARD_READY):
+        setup_result = stripe_connect_service.create_setup_intent(transaction=txn)
+        if setup_result.get('ok'):
+            setup_intent_client_secret = setup_result.get('client_secret')
+            setup_intent_id = setup_result.get('setup_intent_id')
+
+    # Get user's saved payment methods
+    user_payment_methods = []
+    if is_renter:
+        user_payment_methods = request.user.payment_methods.all()
 
     context = {
         'transaction': txn,
@@ -578,6 +920,13 @@ def view_transaction(request, transaction_reference=None):
         'next_action': next_action,
         'is_lender': is_lender,
         'is_renter': is_renter,
+        'contract_deadline_iso': contract_deadline.isoformat() if contract_deadline else '',
+        'contract_seconds_remaining': contract_seconds_remaining,
+        'can_collect_deposit': can_collect_deposit,
+        'setup_intent_client_secret': setup_intent_client_secret,
+        'setup_intent_id': setup_intent_id,
+        'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),
+        'user_payment_methods': user_payment_methods,
     }
     return render(request, 'transaction/view_transaction.html', context)
 
@@ -707,6 +1056,24 @@ def transpact_refresh(request):
         'message': 'Transpact refresh is disabled in the new rental workflow.',
     }
     return JsonResponse(content)
+
+
+@csrf_exempt
+def stripe_connect_webhook(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'NOK', 'message': 'POST required.'}, status=405)
+
+    payload = request.body
+    signature = request.META.get('HTTP_STRIPE_SIGNATURE', '')
+    result = stripe_connect_service.process_webhook(payload=payload, signature=signature)
+    if not result.get('ok'):
+        return JsonResponse({'status': 'NOK', 'message': result.get('error', 'Invalid webhook.')}, status=400)
+
+    return JsonResponse({
+        'status': 'OK',
+        'event_type': result.get('event_type', 'unknown'),
+        'provider': result.get('provider', 'unknown'),
+    })
 
 class TransactionMessageImageUpload(View):
     def post(self, request):

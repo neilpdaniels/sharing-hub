@@ -13,5 +13,6 @@ urlpatterns = [
     path('messages_received/' , views.messages_received, name='messages_received'),
     path('messages_sent/' , views.messages_sent, name='messages_sent'),
     path('expand_message/' , views.expand_message, name='expand_message'),
-    
+    path('payment_methods/', views.payment_methods, name='payment_methods'),
+
 ]

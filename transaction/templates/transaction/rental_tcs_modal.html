@@ -1,0 +1,122 @@
+<!-- Rental Terms & Conditions Modal -->
+<div class="modal fade" id="rentalTcsModal" tabindex="-1" role="dialog" aria-labelledby="rentalTcsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rentalTcsModalLabel">Rental Contract Terms & Conditions</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title mb-3">Parties to This Agreement</h6>
+                        <div class="row">
+                            <div class="col-6">
+                                <p class="mb-1"><strong>Lender (Owner):</strong></p>
+                                <p class="mb-1">{{ transaction.user_passive.get_full_name|default:transaction.user_passive.username }}</p>
+                                {% if transaction.user_passive.profile.mobile_number %}
+                                <p class="mb-1"><small class="text-muted">{{ transaction.user_passive.profile.mobile_number }}</small></p>
+                                {% endif %}
+                                {% if transaction.user_passive.profile.address_line_1 %}
+                                <p class="mb-0"><small class="text-muted">
+                                    {{ transaction.user_passive.profile.address_line_1 }}<br>
+                                    {% if transaction.user_passive.profile.address_line_2 %}{{ transaction.user_passive.profile.address_line_2 }}<br>{% endif %}
+                                    {{ transaction.user_passive.profile.town }}, {{ transaction.user_passive.profile.postcode }}
+                                </small></p>
+                                {% endif %}
+                            </div>
+                            <div class="col-6">
+                                <p class="mb-1"><strong>Renter (Borrower):</strong></p>
+                                <p class="mb-1">{{ transaction.user_aggressive.get_full_name|default:transaction.user_aggressive.username }}</p>
+                                {% if transaction.user_aggressive.profile.mobile_number %}
+                                <p class="mb-1"><small class="text-muted">{{ transaction.user_aggressive.profile.mobile_number }}</small></p>
+                                {% endif %}
+                                {% if transaction.user_aggressive.profile.address_line_1 %}
+                                <p class="mb-0"><small class="text-muted">
+                                    {{ transaction.user_aggressive.profile.address_line_1 }}<br>
+                                    {% if transaction.user_aggressive.profile.address_line_2 %}{{ transaction.user_aggressive.profile.address_line_2 }}<br>{% endif %}
+                                    {{ transaction.user_aggressive.profile.town }}, {{ transaction.user_aggressive.profile.postcode }}
+                                </small></p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title mb-3">Item Details</h6>
+                        <p class="mb-1"><strong>Product:</strong> {{ transaction.order_passive.product.name }}</p>
+                        <p class="mb-1"><strong>Rental Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
+                        <p class="mb-1"><strong>Rental Duration:</strong> {{ transaction.get_rental_length_days }} days</p>
+                        <p class="mb-0"><strong>Daily Rate:</strong> £{{ transaction.price }}/day</p>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title mb-3">Rental Terms</h6>
+                        <ul class="mb-0">
+                            <li><strong>Condition on Collection:</strong> You agree that you have inspected and accepted the item in its current condition. Any existing damage, wear, or faults are noted at collection.</li>
+                            <li class="mt-2"><strong>Use and Care:</strong> You agree to use the item only for its intended purpose and to exercise reasonable care and diligence to preserve it.</li>
+                            <li class="mt-2"><strong>Normal Wear and Tear:</strong> Normal wear and tear is accepted. This includes minor surface scratches, dust marks, fading from use, and other minor cosmetic changes resulting from ordinary use.</li>
+                            <li class="mt-2"><strong>Damage Beyond Wear and Tear:</strong> You agree to be responsible for any damage beyond normal wear and tear, including but not limited to: broken parts, cracks, dents, stains, burns, or mechanical/electrical failure caused by misuse, neglect, or accident.</li>
+                            <li class="mt-2"><strong>Return Condition:</strong> You agree to return the item in the same condition as received, allowing for normal wear and tear.</li>
+                            <li class="mt-2"><strong>Return Date and Time:</strong> The item must be returned on or before {{ transaction.rental_end_date }}. Late returns are not permitted and may incur additional charges.</li>
+                            <li class="mt-2"><strong>Return Location:</strong> You agree to return the item to the location specified by the lender.</li>
+                            <li class="mt-2"><strong>Deposit:</strong> A deposit of £{{ transaction.deposit|floatformat:"-2" }} will be held during this rental as security against damage beyond normal wear and tear.</li>
+                            <li class="mt-2"><strong>Deposit Return:</strong> The deposit will be returned within 7 business days of the item being returned in acceptable condition. If damage beyond normal wear and tear is identified, the deposit may be partially or fully retained to cover repair costs.</li>
+                            <li class="mt-2"><strong>Loss or Theft:</strong> You agree to be fully responsible for any loss or theft of the item during the rental period.</li>
+                            <li class="mt-2"><strong>Insurance:</strong> It is recommended that you arrange appropriate insurance coverage during the rental period.</li>
+                            <li class="mt-2"><strong>Disputes:</strong> Any disputes regarding item condition or damage will be resolved in good faith between the parties. If unresolved, the matter may be escalated to platform mediation.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card mb-3 border-warning">
+                    <div class="card-body">
+                        <h6 class="card-title mb-2">⚠️ Important</h6>
+                        <p class="mb-0 small">
+                            By confirming this rental, you are entering into a binding agreement. You agree to abide by all terms and conditions listed above. 
+                            Failure to return the item on time or in acceptable condition may result in charges or loss of deposit.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="form-check mr-auto">
+                    <input class="form-check-input" type="checkbox" id="acceptTcsCheckbox" required>
+                    <label class="form-check-label" for="acceptTcsCheckbox">
+                        I agree to the terms and conditions above
+                    </label>
+                </div>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmTcsButton" disabled>Confirm Rental</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const acceptCheckbox = document.getElementById('acceptTcsCheckbox');
+    const confirmButton = document.getElementById('confirmTcsButton');
+
+    // Enable/disable confirm button based on checkbox
+    if (acceptCheckbox && confirmButton) {
+        acceptCheckbox.addEventListener('change', function() {
+            confirmButton.disabled = !this.checked;
+        });
+
+        // Handle confirm button click
+        confirmButton.addEventListener('click', function() {
+            const form = document.getElementById('confirmRentalForm');
+            if (form) {
+                form.submit();
+            }
+        });
+    }
+});
+</script>

@@ -31,6 +31,10 @@ body{
   line-height: 1.5;
   color: #212529;
 }
+
+html {
+  font-size: 85%;
+}
 img{
   max-width: 100%;
 }

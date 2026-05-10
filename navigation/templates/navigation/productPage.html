@@ -233,24 +233,7 @@
         </div>
         <div class="row">&nbsp;
         </div>
-        <div class="row">
-            <div class="col-lg-12">
-            <div class="table">
-            <table class="table">
-                <tbody>
-                    <tr>
-                        <td class="text-center yellow-strip">
-                        {% if sell_orders %}
-                        Rent from:
-                        <span class="orderPrice">£{{ sell_orders.0.price|floatformat:"-2" }}</span>
-                         /day{% endif %}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            </div>
-            </div>
-        </div>
+
         <div class="row">
             {# ── location / distance / friends filter ── #}
             <div class="col-lg-12 mb-2">

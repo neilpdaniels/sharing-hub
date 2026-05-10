@@ -1,0 +1,144 @@
+<!-- Card Setup Form Include -->
+{% load static %}
+
+{% if is_renter and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.deposit > 0 and not transaction.deposit_collected_placeholder %}
+<div class="card mb-3">
+    <div class="card-body">
+        <h5 class="card-title">Deposit Card Setup</h5>
+        {% if transaction.deposit_card_setup_status == transaction.CARD_READY and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS %}
+        <div class="border rounded p-3 mb-3" style="background:#f0fff4; border-color:#9ae6b4; color:#22543d;">
+            <strong>Card ready:</strong> {{ transaction.deposit_card_brand|default:"Card" }} ending {{ transaction.deposit_card_last4 }}
+            <div class="mt-1">£0.01 test hold completed successfully{% if transaction.deposit_test_hold_at %} at {{ transaction.deposit_test_hold_at }}{% endif %}.</div>
+        </div>
+        {% else %}
+        <div class="border rounded p-3 mb-3" style="background:#eff6ff; border-color:#93c5fd; color:#1e3a8a;">
+            Choose a payment method to secure your deposit. We will run an initial £0.01 test hold to verify your card.
+        </div>
+        
+        {% if user_payment_methods %}
+        <!-- Tabs for existing vs new card -->
+        <ul class="nav nav-tabs mb-3" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link active" id="existing-tab" data-toggle="tab" href="#existing-cards" role="tab">Use Existing Card</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="new-tab" data-toggle="tab" href="#new-card" role="tab">Add New Card</a>
+            </li>
+        </ul>
+        
+        <div class="tab-content">
+            <!-- Existing Cards Tab -->
+            <div class="tab-pane fade show active" id="existing-cards" role="tabpanel">
+                <form method="post" class="mb-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="use_existing_card">
+                    <div class="form-group">
+                        <label for="existing_payment_method">Select Card:</label>
+                        <select class="form-control" id="existing_payment_method" name="payment_method_id" required>
+                            <option value="">-- Choose a card --</option>
+                            {% for pm in user_payment_methods %}
+                            <option value="{{ pm.id }}" {% if pm.is_default %}selected{% endif %}>
+                                {{ pm.card_brand }} ending {{ pm.card_last4 }}
+                                {% if pm.is_default %}(Default){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <small class="form-text text-muted mb-3">Manage your cards in <a href="{% url 'my_sharing_hub:payment_methods' %}">My Payment Methods</a>.</small>
+                    <button type="submit" class="btn btn-primary btn-block">Use Selected Card & Run Test Hold</button>
+                </form>
+            </div>
+            
+            <!-- New Card Tab -->
+            <div class="tab-pane fade" id="new-card" role="tabpanel">
+        {% endif %}
+        
+        <!-- New Card Form (shown in tab if existing cards exist, or standalone if not) -->
+        {% if setup_intent_client_secret and stripe_publishable_key %}
+        <form id="card-form" method="post" class="mb-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="confirm_stripe_card">
+            <input type="hidden" id="payment_method_id" name="payment_method_id" value="">
+            <input type="hidden" id="setup_intent_id" name="setup_intent_id" value="{{ setup_intent_id|default:'' }}">
+            
+            <div class="form-group mb-3">
+                <label for="card-element">Card Details</label>
+                <div id="card-element" class="form-control" style="height: 40px; padding-top: 10px;"></div>
+                <div id="card-errors" class="text-danger mt-2" style="display:none;"></div>
+            </div>
+            <small class="form-text text-muted mb-3">Your card will be saved for future transactions. Manage your cards in <a href="{% url 'my_sharing_hub:payment_methods' %}">My Payment Methods</a>.</small>
+            <button id="submit-btn" class="btn btn-primary btn-block" type="submit">Save Card & Run £0.01 Test Hold</button>
+        </form>
+        
+        <script src="https://js.stripe.com/v3/"></script>
+        <script>
+        (function() {
+            const stripe = Stripe('{{ stripe_publishable_key }}');
+            const elements = stripe.elements();
+            const cardElement = elements.create('card');
+            cardElement.mount('#card-element');
+            
+            cardElement.addEventListener('change', function(event) {
+                const displayError = document.getElementById('card-errors');
+                if (event.error) {
+                    displayError.textContent = event.error.message;
+                    displayError.style.display = 'block';
+                } else {
+                    displayError.style.display = 'none';
+                }
+            });
+            
+            const form = document.getElementById('card-form');
+            form.addEventListener('submit', async function(event) {
+                event.preventDefault();
+                
+                const submitBtn = document.getElementById('submit-btn');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+                
+                const clientSecret = '{{ setup_intent_client_secret }}';
+                
+                try {
+                    const { setupIntent, error } = await stripe.confirmCardSetup(
+                        clientSecret,
+                        {
+                            payment_method: {
+                                card: cardElement,
+                                billing_details: {}
+                            }
+                        }
+                    );
+                    
+                    if (error) {
+                        document.getElementById('card-errors').textContent = error.message;
+                        document.getElementById('card-errors').style.display = 'block';
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save Card & Run £0.01 Test Hold';
+                    } else {
+                        document.getElementById('payment_method_id').value = setupIntent.payment_method;
+                        form.submit();
+                    }
+                } catch (err) {
+                    document.getElementById('card-errors').textContent = 'An error occurred: ' + err.message;
+                    document.getElementById('card-errors').style.display = 'block';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Save Card & Run £0.01 Test Hold';
+                }
+            });
+        })();
+        </script>
+        {% else %}
+        <div class="alert alert-warning">
+            Stripe is not properly configured. Please contact support.
+        </div>
+        {% endif %}
+        
+        {% if user_payment_methods %}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% endif %}
+    </div>
+</div>
+{% endif %}

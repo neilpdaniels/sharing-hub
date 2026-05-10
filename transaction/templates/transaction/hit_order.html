@@ -16,12 +16,28 @@
             <div class="card">
                 <div class="card-body">
                     <h5 class="card-title mb-3">{{ order.product.name }}</h5>
-                                        <p class="mb-1"><strong>Base daily price:</strong> £{{ order.price }}</p>
+                    <p class="mb-1"><strong>Base daily price:</strong> £{{ order.price }}</p>
                     <p class="mb-3"><strong>Deposit:</strong> £{{ order.deposit }}</p>
 
-                                        {% if order_hit_form.non_field_errors %}
-                                        <div class="alert alert-danger">{{ order_hit_form.non_field_errors }}</div>
-                                        {% endif %}
+                    {% if order.product.is_high_risk %}
+                    <div class="alert alert-warning mb-3">
+                        <strong>⚠️ High-Risk Product</strong><br/>
+                        Risk Rating: <strong>{{ order.product.get_effective_risk_rating }}/100</strong><br/>
+                        KYC identity verification is required for both lender and renter to proceed with this rental.
+                    </div>
+                    {% endif %}
+
+                    {% if order.deposit > 100 %}
+                    <div class="alert alert-info mb-3">
+                        <strong>ℹ️ Rental Length Limit</strong><br/>
+                        For deposits over £100, the maximum rental length is <strong>5 days</strong>.<br/>
+                        <small>For longer rentals with high deposits, the deposit will be taken and returned at the end.</small>
+                    </div>
+                    {% endif %}
+
+                    {% if order_hit_form.non_field_errors %}
+                    <div class="alert alert-danger">{{ order_hit_form.non_field_errors }}</div>
+                    {% endif %}
 
                     <form action="." method="post" novalidate>
                         {% csrf_token %}
@@ -30,6 +46,7 @@
                                                     #enq-legend { display:flex; gap:14px; margin-bottom:10px; font-size:0.82rem; align-items:center; flex-wrap:wrap; }
                                                     .leg-free { display:inline-block; width:14px; height:14px; background:#d4edda; border-radius:3px; }
                                                     .leg-blocked { display:inline-block; width:14px; height:14px; background:#f8d7da; border-radius:3px; }
+                                                    .leg-rented { display:inline-block; width:14px; height:14px; background:#7a0018; border-radius:3px; }
                                                     .leg-selected { display:inline-block; width:14px; height:14px; background:#cce5ff; border-radius:3px; }
                                                     .leg-handover { display:inline-block; width:14px; height:14px; background:#ffe8cc; border-radius:3px; }
                                                     .leg-past { display:inline-block; width:14px; height:14px; background:#e9ecef; border-radius:3px; }
@@ -44,6 +61,7 @@
                                                     .enq-clickable:hover { opacity:0.75; }
                                                     .enq-free { background:#d4edda; color:#155724; }
                                                     .enq-blocked { background:#f8d7da; color:#721c24; }
+                                                    .enq-rented { background:#7a0018; color:#fff; }
                                                     .enq-handover { background:#ffe8cc; color:#9a6700; }
                                                     .enq-selected { background:#cce5ff; color:#004085; }
                                                     .enq-past { background:#e9ecef; color:#adb5bd; }
@@ -72,6 +90,7 @@
                                                     <div id="enq-legend">
                                                         <span class="leg-free"></span> Available
                                                         <span class="leg-blocked"></span> Unavailable
+                                                        <span class="leg-rented"></span> Rented / Booked
                                                         <span class="leg-handover"></span> No collection/drop-off
                                                         <span class="leg-selected"></span> Selected range
                                                         <span class="leg-past"></span> Past
@@ -109,6 +128,7 @@
     var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var DOW = ['M','T','W','T','F','S','S'];
     var blockedDates = new Set({{ blocked_dates_json|safe }});
+    var bookedDates = new Set({{ booked_dates_json|safe }});
     var handoverDates = new Set({{ handover_dates_json|safe }});
     var bands = {{ price_bands_json|safe }};
     var basePrice = parseFloat('{{ order.price|floatformat:2 }}');
@@ -139,6 +159,7 @@
     }
     function fmt(d) { return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(); }
     function isBlocked(d) { return blockedDates.has(asKey(d)); }
+    function isBooked(d) { return bookedDates.has(asKey(d)); }
     function isHandover(d) { return handoverDates.has(asKey(d)); }
     function isPast(d) { return d < today; }
     function beyondExpiry(d) { return d > expiryDate; }
@@ -180,13 +201,13 @@
     }
 
     function dateIsSelectableEndpoint(d) {
-        if (isPast(d) || beyondExpiry(d) || isBlocked(d)) return false;
+        if (isPast(d) || beyondExpiry(d) || isBlocked(d) || isBooked(d)) return false;
         if (isHandover(d)) return false;
         return true;
     }
 
     function dateIsWithinRangeAllowed(d) {
-        if (isPast(d) || beyondExpiry(d) || isBlocked(d)) return false;
+        if (isPast(d) || beyondExpiry(d) || isBlocked(d) || isBooked(d)) return false;
         return true;
     }
 
@@ -251,6 +272,7 @@
             var cls = 'enq-day ';
             if (isPast(dt)) cls += 'enq-past';
             else if (beyondExpiry(dt)) cls += 'enq-beyond';
+            else if (isBooked(dt)) cls += 'enq-rented';
             else if (isBlocked(dt)) cls += 'enq-blocked';
             else if (isHandover(dt)) cls += 'enq-handover';
             else if (inSelectedRange(dt, range.start, range.end)) cls += 'enq-selected';
@@ -291,6 +313,7 @@
     function jqBeforeShowDay(date) {
         if (isPast(date)) return [false, ''];
         if (beyondExpiry(date)) return [false, ''];
+        if (isBooked(date)) return [false, ''];
         if (isBlocked(date)) return [false, ''];
         if (isHandover(date)) return [false, ''];
         return [true, ''];

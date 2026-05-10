@@ -18,5 +18,6 @@ urlpatterns = [
     path('transaction_add_message/', views.transaction_add_message, name='transaction_add_message'),
     path('transaction_message_image_upload/', views.TransactionMessageImageUpload.as_view(), name='transaction_message_image_upload'),
     path('transpact_refresh/', views.transpact_refresh, name='transpact_refresh'),
+    path('stripe/connect/webhook/', views.stripe_connect_webhook, name='stripe_connect_webhook'),
 
 ]   

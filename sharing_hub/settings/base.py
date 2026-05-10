@@ -34,6 +34,12 @@ TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
 TWILIO_VERIFY_SERVICE_SID = os.environ.get('TWILIO_VERIFY_SERVICE_SID', '')
 
+# Stripe Connect (deposit flow scaffold)
+STRIPE_CONNECT_PLACEHOLDER_MODE = os.environ.get('STRIPE_CONNECT_PLACEHOLDER_MODE', '1') == '1'
+STRIPE_CONNECT_SECRET_KEY = os.environ.get('STRIPE_CONNECT_SECRET_KEY', '')
+STRIPE_CONNECT_WEBHOOK_SECRET = os.environ.get('STRIPE_CONNECT_WEBHOOK_SECRET', '')
+STRIPE_CONNECT_PLATFORM_ACCOUNT = os.environ.get('STRIPE_CONNECT_PLATFORM_ACCOUNT', '')
+
 # NPD - added
 LOGIN_REDIRECT_URL = "my_sharing_hub:dashboard"
 LOGIN_URL = 'login'
@@ -110,6 +116,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'sharing_hub.context_processors.from_settings',
                 'sharing_hub.context_processors.top_categories',
+                'sharing_hub.context_processors.transaction_notifications',
             ],
         },
     },

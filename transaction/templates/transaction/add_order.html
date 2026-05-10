@@ -159,6 +159,7 @@
               #avail-legend { display:flex; gap:16px; margin-bottom:10px; font-size:0.82rem; align-items:center; flex-wrap:wrap; }
               .leg-free   { display:inline-block; width:14px; height:14px; background:#d4edda; border-radius:3px; }
               .leg-block  { display:inline-block; width:14px; height:14px; background:#f8d7da; border-radius:3px; }
+              .leg-rented { display:inline-block; width:14px; height:14px; background:#7a0018; border-radius:3px; }
               .leg-handover { display:inline-block; width:14px; height:14px; background:#ffe8cc; border-radius:3px; }
               .leg-past   { display:inline-block; width:14px; height:14px; background:#e9ecef; border-radius:3px; }
               .leg-beyond { display:inline-block; width:14px; height:14px; background:#fff3cd; border-radius:3px; }
@@ -181,10 +182,11 @@
               .avail-day:hover:not(.avail-past):not(.avail-beyond) { opacity:0.75; }
               .avail-free    { background:#d4edda; color:#155724; }
               .avail-blocked { background:#f8d7da; color:#721c24; }
+              .avail-rented  { background:#7a0018; color:#fff; }
               .avail-handover { background:#ffe8cc; color:#9a6700; }
               .avail-past    { background:#e9ecef; color:#adb5bd; cursor:default; }
               .avail-beyond  { background:#fff3cd; color:#856404; cursor:default; }
-              .avail-blank   { }
+              .avail-blank   { background: transparent; }
             </style>
 
             <div id="avail-expiry-note">
@@ -195,6 +197,7 @@
             <div id="avail-legend">
               <span class="leg-free"></span> Available &nbsp;
               <span class="leg-block"></span> Blocked &nbsp;
+              <span class="leg-rented"></span> Rented / Booked &nbsp;
               <span class="leg-handover"></span> Unavailable for collection/drop-off &nbsp;
               <span class="leg-past"></span> Past &nbsp;
               <span class="leg-beyond"></span> After listing expiry
@@ -387,8 +390,10 @@ $('#add-order-form').on('submit', function(e) {
   var COL_TO_JSDAY = [1,2,3,4,5,6,0];
 
   var preloaded = {{ blocked_dates_json|safe }};
+  var preloadedBooked = {{ booked_dates_json|safe }};
   var preloadedHandover = {{ blocked_handover_dates_json|safe }};
   var blockedDates = new Set(preloaded);
+  var bookedDates = new Set(preloadedBooked);
   var handoverDates = new Set(preloadedHandover);
   var blockedWeekdays = new Set();
   var handoverWeekdays = new Set();
@@ -459,12 +464,14 @@ $('#add-order-form').on('submit', function(e) {
     var isBeyond = !isPast && expiryDate && thisDate > expiryDate;
     if (isPast) return 'avail-past';
     if (isBeyond) return 'avail-beyond';
+    if (bookedDates.has(ds)) return 'avail-rented';
     if (blockedDates.has(ds)) return 'avail-blocked';
     if (handoverDates.has(ds)) return 'avail-handover';
     return 'avail-free';
   }
 
   function getDateState(ds) {
+    if (bookedDates.has(ds)) return 'booked';
     if (blockedDates.has(ds)) return 'blocked';
     if (handoverDates.has(ds)) return 'handover';
     return 'available';
@@ -489,17 +496,21 @@ $('#add-order-form').on('submit', function(e) {
       var dates = getActiveWeekdayDates(jsDay);
       var availableCount = 0;
       var blockedCount = 0;
+      var bookedCount = 0;
       var handoverCount = 0;
       dates.forEach(function(ds) {
         var state = getDateState(ds);
         if (state === 'available') availableCount++;
         else if (state === 'blocked') blockedCount++;
+        else if (state === 'booked') bookedCount++;
         else handoverCount++;
       });
       if (dates.length === 0) {
         btn.style.background = '#f0f0f0'; btn.style.color = '#495057';
       } else if (availableCount === dates.length) {
         btn.style.background = '#d4edda'; btn.style.color = '#155724';
+      } else if (bookedCount === dates.length) {
+        btn.style.background = '#7a0018'; btn.style.color = '#fff';
       } else if (blockedCount === dates.length) {
         btn.style.background = '#f8d7da'; btn.style.color = '#721c24';
       } else if (handoverCount === dates.length) {
@@ -514,6 +525,7 @@ $('#add-order-form').on('submit', function(e) {
   function toggleDate(ds, cell) {
     var d = new Date(ds + 'T00:00:00');
     var state = getDateState(ds);
+    if (state === 'booked') return;
     var target = nextState(state);
     applyState(ds, target);
 
@@ -548,7 +560,7 @@ $('#add-order-form').on('submit', function(e) {
       var jsDay = COL_TO_JSDAY[col];
       btn.dataset.jsday = jsDay;
       btn.addEventListener('click', (function(jsDay) { return function() {
-        var allDates = getActiveWeekdayDates(jsDay);
+        var allDates = getActiveWeekdayDates(jsDay).filter(function(ds) { return !bookedDates.has(ds); });
         if (!allDates.length) return;
 
         var allAvailable = allDates.every(function(ds){ return getDateState(ds) === 'available'; });

@@ -21,6 +21,7 @@ urlpatterns = [
     #     name='password_reset_complete'),
     path('myaccount/', views.myaccount, name='myaccount'),
     path('mobile-verify/', views.mobile_verify, name='mobile_verify'),
+    path('kyc-verify/', views.kyc_verify, name='kyc_verify'),
     path('', include('django.contrib.auth.urls')),
     path('register/', views.register, name='register'),
     path('register/address-lookup/', views.address_lookup, name='address_lookup'),

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}KYC Verification{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="row">
+        <div class="col-lg-8">
+            <h3 class="mb-3">Know Your Customer (KYC) Verification</h3>
+
+            {% if is_verified %}
+            <div class="alert alert-success">
+                <strong>✓ Verified</strong>
+                <p>Your identity has been verified on {{ verified_at|date:"d M Y" }}.</p>
+                <p>You can now rent high-risk items on our platform.</p>
+            </div>
+            {% else %}
+            <div class="alert alert-warning">
+                <strong>⚠️ Verification Pending</strong>
+                <p>KYC verification via Stripe is currently being configured for our platform.</p>
+                <p>Once enabled, you'll be able to verify your identity to rent high-risk items like electronics, jewelry, and other valuable goods.</p>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Why We Require KYC for High-Risk Items</h5>
+                    <ul>
+                        <li>High-risk products (electronics, jewelry, etc.) require additional security measures</li>
+                        <li>KYC verification helps prevent fraud and theft</li>
+                        <li>Protects both lenders and renters</li>
+                        <li>Required by financial regulations</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">What You'll Need</h5>
+                    <ul>
+                        <li>Valid government-issued ID (passport, driver's license, etc.)</li>
+                        <li>Your date of birth</li>
+                        <li>A clear photo of your face</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">How It Works</h5>
+                    <ol>
+                        <li>Click the button below to start verification</li>
+                        <li>Follow the Stripe Identity verification process</li>
+                        <li>Your information will be securely verified</li>
+                        <li>Once verified, you can immediately start renting high-risk items</li>
+                    </ol>
+                </div>
+            </div>
+
+            <a href="https://support.stripe.com/questions/about-stripe-identity" target="_blank" class="btn btn-primary btn-lg">
+                Start Verification (Coming Soon)
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

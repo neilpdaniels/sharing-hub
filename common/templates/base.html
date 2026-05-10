@@ -212,6 +212,7 @@
         {#<li><a href="{% url 'my_sharing_hub:dashboard'  %}">Dashboard</a></li>#}
         <li><a href="{% url 'my_sharing_hub:open_orders'  %}">Open orders</a></li>
         <li><a href="{% url 'my_sharing_hub:open_transactions'  %}">Open transactions</a></li>
+        <li><a href="{% url 'my_sharing_hub:payment_methods'  %}">My payment methods</a></li>
         <li><a href="{% url 'my_sharing_hub:messages_received'  %}">Messages Received</a></li>
         <li><a href="{% url 'my_sharing_hub:messages_sent'  %}">Messages Sent</a></li>
         {#<li><a href="{% url 'my_sharing_hub:pending_actions'  %}">My pending actions</a></li>#}
@@ -231,7 +232,7 @@
     <div id="wrapper">
         <div class="page-header page-header-style--1">
             <div class="container">
-                {% cookielaw_banner %}
+                {# cookielaw_banner removed #}
 
               <h6 class="page-subtitle">{% block subtitle %}{% endblock %}</h6>
               <h1 class="page-title">{% block title %}{% endblock %}</h1>
@@ -241,6 +242,24 @@
           <!-- end div .page-header -->
       
       <div class="container">
+        {% if request.user.is_authenticated and unseen_txn_count > 0 %}
+        <div class="alert alert-warning alert-dismissible fade show mt-2" role="alert">
+          <strong>Transaction update:</strong>
+          You have {{ unseen_txn_count }} transaction{{ unseen_txn_count|pluralize }} needing attention.
+          <a href="{% url 'my_sharing_hub:open_transactions' %}" class="ml-1">Open transactions</a>
+          {% if unseen_txn_items %}
+          <div class="mt-1 small">
+            {% for txn in unseen_txn_items %}
+            <a class="mr-2" href="{% url 'transaction:view_transaction' txn.transaction_reference %}">#{{ txn.transaction_reference }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        {% endif %}
+
         {# Display django.contrib.messages as Bootstrap alerts #}
         {% bootstrap_messages %}
         <style>
@@ -258,21 +277,6 @@
             }
           }
         </style>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            // Auto-fade alerts after 5 seconds
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(alert => {
-              setTimeout(function() {
-                alert.style.transition = 'opacity 0.5s ease-out';
-                alert.style.opacity = '0';
-                setTimeout(function() {
-                  alert.style.display = 'none';
-                }, 500);
-              }, 5000); // 5 seconds before fade starts
-            });
-          });
-        </script>
 
       </div>
       <div class="container-fluid">

@@ -116,3 +116,52 @@ class RegistrationVerification(models.Model):
     @property
     def is_expired(self):
         return timezone.now() > self.expires_at
+
+
+class PaymentMethod(models.Model):
+    """
+    Stored payment methods for users (e.g., Stripe cards).
+    Sensitive data is not stored here - only references to Stripe PaymentMethod IDs.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='payment_methods'
+    )
+    
+    # Stripe references (no sensitive card data stored)
+    stripe_payment_method_id = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text='Stripe PaymentMethod ID'
+    )
+    stripe_setup_intent_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='Stripe SetupIntent ID used to create this payment method'
+    )
+    
+    # Card display info (last 4 digits only, brand)
+    card_brand = models.CharField(
+        max_length=20,
+        default='Card',
+        help_text='Card brand (Visa, Mastercard, etc.)'
+    )
+    card_last4 = models.CharField(
+        max_length=4,
+        help_text='Last 4 digits of card'
+    )
+    
+    # Metadata
+    is_default = models.BooleanField(
+        default=False,
+        help_text='Use this card by default for deposits'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+    
+    def __str__(self):
+        return f'{self.card_brand} ****{self.card_last4} for {self.user.username}'

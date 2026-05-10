@@ -1,10 +1,36 @@
 todo: 
 
-change any reference of "let" or "to let" to "lend"
+
+    casual loan
+        -> simple contract
+        -> no deposit held
+        -> no fees
+        -> sharing-hub have no involvement in the loan or return of the item
+
+    casual loan plus
+        - as above, but with deposit held
+        - verification needed before and after
+        - maximum duration 5 days
+        - maximum deposit size 300
+        - transparent pricing / small fees
+    
+    public loan
+        - deposit is a hold on card
+        - maximum deposit size 2000
+        - maximum duration 5 days
+        - verification before and after
+
+    if duration > 5 days need to do address verification
+    and take full deposit amount (maximum deposit size £300?)
 
 
-1) work on transaction flow
-2) login via email address not usernane
+    sharing-hub fees
 
-sharing-hub.com
-borrow and lend stuff, locally
+    
+    
+2) load up categories
+3) get pictures
+4) add text and images
+5) add some samples to the front page - slider?
+6) add ability to send instructions videos on transactions / orders
+7) have  a look if can extend to 30 day hold for visa and mastercard (https://docs.stripe.com/payments/extended-authorization?locale=en-GB)

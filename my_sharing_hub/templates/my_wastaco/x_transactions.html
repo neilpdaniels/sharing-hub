@@ -10,51 +10,63 @@
     <div class="row">
         <div class="col-lg-12">
         {% if transactions|length > 0 %}
-        {% include "pagination.html" with page=closed_orders %}        
-        <div class="table-striped">
-            <table class="table">
+        {% include "pagination.html" with page=transactions %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body p-0">
+            <table class="table table-hover mb-0">
                 <thead>
-                    <th>Transaction Ref.</th>
-                    <th>Order Ref.</th>
-                    <th>Seller</th>
-                    <th>Buyer</th>
-                    <th>Product</th>
-                    <th>Agreed Price per Item</th>
-                    <th>Quantity</th>
-                    <th>Transacted datetime</th>
-                    <th>Last scraped datetime</th>
-                    <th>Transaction Status</th>
+                    <th>Transaction</th>
+                    <th>Parties</th>
+                    <th>Item</th>
+                    <th>Terms</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th class="text-right">Actions</th>
                 </thead>
                 <tbody>
                 {% for transaction in transactions %}
                 <tr>
-                <td><a href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">{{ transaction.transaction_reference }}</a></td>
-                <td>{{ transaction.order_passive.order_reference }}</td>
                 <td>
-                    {% if transaction.order_passive.direction == 'B' %}
-                    {% include "user_profile_modal.html" with user=transaction.user_aggressive %}
-                    {% else %}
-                    {% include "user_profile_modal.html" with user=transaction.user_passive %}
-                    {% endif %}
+                    <a class="font-weight-bold" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">#{{ transaction.transaction_reference }}</a>
+                    <div class="small text-muted">Created {{ transaction.created|date:"M d, Y" }}</div>
                 </td>
                 <td>
-                    {% if transaction.order_passive.direction == 'S' %}
-                    {% include "user_profile_modal.html" with user=transaction.user_aggressive %}
-                    {% else %}
-                    {% include "user_profile_modal.html" with user=transaction.user_passive %}
-                    {% endif %}
+                    <div class="small text-muted mb-1">Lender</div>
+                    <div class="mb-2">{% include "user_profile_modal.html" with user=transaction.user_passive %}</div>
+                    <div class="small text-muted mb-1">Borrower</div>
+                    <div>{% include "user_profile_modal.html" with user=transaction.user_aggressive %}</div>
                 </td>
-
-                <td><a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a></td>
-                <td>{{ transaction.price }}</td>
-                <td>{{ transaction.quantity }}</td>
-                <td>{{ transaction.created }}</td>
-                <td>{{ transaction.amended }}</td>
-                <td>{{ transaction.get_transaction_status_display }}</td>
+                <td>
+                    <a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a>
+                    <div class="small text-muted">Order {{ transaction.order_passive.order_reference }}</div>
+                </td>
+                <td>
+                    <div>£{{ transaction.price }} each</div>
+                    <div class="small text-muted">Qty {{ transaction.quantity }}</div>
+                </td>
+                <td><span class="badge badge-light border">{{ transaction.get_transaction_status_display }}</span></td>
+                <td>{{ transaction.amended|date:"M d, Y" }}</td>
+                <td class="text-right">
+                    <a class="btn btn-sm btn-outline-secondary mb-1" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">Open</a>
+                    {% if request.user == transaction.user_passive and transaction.transaction_status == transaction.RENTAL_ENQUIRY %}
+                    <form method="post" action="{% url 'transaction:view_transaction' transaction.transaction_reference %}" class="d-inline-block mb-1">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="agree_rental">
+                        <button type="submit" class="btn btn-sm btn-success">Agree</button>
+                    </form>
+                    <form method="post" action="{% url 'transaction:view_transaction' transaction.transaction_reference %}" class="d-inline-block mb-1">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="reject_enquiry">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
+                    </form>
+                    {% endif %}
+                    <a class="btn btn-sm btn-outline-primary mb-1" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}#message-compose">Message</a>
+                </td>
                 </tr>
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
         </div>
         {% else %}
         <br /><h4>You have no {{ type }} transactions</h4>   

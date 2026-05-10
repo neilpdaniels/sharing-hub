@@ -106,21 +106,33 @@ def getTransactionStepAndAction(txn, request):
     step = 1
     next_action = False
     is_lender = (txn.user_passive == request.user)
+    is_renter = (txn.user_aggressive == request.user)
 
     if txn.transaction_status == txn.RENTAL_ENQUIRY:
         step = 1
         next_action = is_lender
     elif txn.transaction_status == txn.RENTAL_AGREED:
-        step = 2
-        next_action = is_lender
+        # Check contract confirmation stage
+        if txn.lender_agreement_pending_at and not txn.lender_agreed_at:
+            # Awaiting lender confirmation
+            step = 2
+            next_action = is_lender
+        elif txn.lender_agreed_at and not txn.renter_agreed_at:
+            # Awaiting renter confirmation
+            step = 3
+            next_action = is_renter
+        else:
+            # Both confirmed, ready for initiation
+            step = 4
+            next_action = is_lender
     elif txn.transaction_status == txn.RENTAL_INITIATED:
-        step = 3
+        step = 5
         next_action = True
     elif txn.transaction_status == txn.RENTAL_RETURNED:
-        step = 4
+        step = 6
         next_action = is_lender
     elif txn.transaction_status in (txn.DEPOSIT_RETURNED, txn.DEPOSIT_REDUCED, txn.MEDIATION_REQUIRED):
-        step = 5
+        step = 7
         next_action = False
 
     return step, next_action

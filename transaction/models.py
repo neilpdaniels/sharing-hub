@@ -152,6 +152,69 @@ class Transaction(models.Model):
     payment_placeholder_notes = models.TextField(blank=True, max_length=1000)
     deposit_placeholder_notes = models.TextField(blank=True, max_length=1000)
     deposit_resolution_notes = models.TextField(blank=True, max_length=1000)
+
+    # Placeholder Stripe Connect deposit setup/collection states
+    CARD_NONE = 'NONE'
+    CARD_READY = 'READY'
+    CARD_SETUP_CHOICES = (
+        (CARD_NONE, 'No deposit card on file'),
+        (CARD_READY, 'Deposit card ready'),
+    )
+    deposit_card_setup_status = models.CharField(
+        max_length=10,
+        choices=CARD_SETUP_CHOICES,
+        default=CARD_NONE,
+        help_text='Placeholder status for renter deposit card setup via Stripe Connect'
+    )
+    deposit_cardholder_name = models.CharField(max_length=120, blank=True)
+    deposit_card_brand = models.CharField(max_length=20, blank=True)
+    deposit_card_last4 = models.CharField(max_length=4, blank=True)
+
+    TEST_HOLD_NOT_RUN = 'NOT_RUN'
+    TEST_HOLD_SUCCESS = 'SUCCESS'
+    TEST_HOLD_FAILED = 'FAILED'
+    TEST_HOLD_STATUS_CHOICES = (
+        (TEST_HOLD_NOT_RUN, 'Not run'),
+        (TEST_HOLD_SUCCESS, 'Successful'),
+        (TEST_HOLD_FAILED, 'Failed'),
+    )
+    deposit_test_hold_status = models.CharField(
+        max_length=10,
+        choices=TEST_HOLD_STATUS_CHOICES,
+        default=TEST_HOLD_NOT_RUN,
+    )
+    deposit_test_hold_amount = models.FloatField(default=0)
+    deposit_test_hold_reference = models.CharField(max_length=120, blank=True)
+    deposit_test_hold_at = models.DateTimeField(blank=True, null=True)
+
+    COLLECT_NOT_RUN = 'NOT_RUN'
+    COLLECT_SUCCESS = 'SUCCESS'
+    COLLECT_FAILED = 'FAILED'
+    COLLECT_STATUS_CHOICES = (
+        (COLLECT_NOT_RUN, 'Not run'),
+        (COLLECT_SUCCESS, 'Successful'),
+        (COLLECT_FAILED, 'Failed'),
+    )
+    deposit_collection_status = models.CharField(
+        max_length=10,
+        choices=COLLECT_STATUS_CHOICES,
+        default=COLLECT_NOT_RUN,
+    )
+    deposit_collection_requested_at = models.DateTimeField(blank=True, null=True)
+    deposit_collection_reference = models.CharField(max_length=120, blank=True)
+    
+    # Stripe Connect fields for secure card handling
+    stripe_setup_intent_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='Stripe SetupIntent ID for card tokenization'
+    )
+    stripe_payment_method_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='Stripe PaymentMethod ID for stored card'
+    )
+    
     # naming is wrong, but this is in case the orders are matched systematically rather than manually
     order_aggressive = models.ForeignKey(Order, on_delete=models.CASCADE,
                                         related_name='rel_order_aggressive',
@@ -199,9 +262,101 @@ class Transaction(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     price_as_pct_spot_value = models.FloatField(validators=[MinValueValidator(0), MaxValueValidator(999999)])
 
+    # Contract confirmation tracking
+    lender_agreement_pending_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text='When lender initiated agreement; awaiting their confirmation'
+    )
+    lender_agreed_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text='When lender confirmed the contract'
+    )
+    renter_agreed_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text='When renter confirmed the contract'
+    )
+    
+    # Deposit handling type
+    DEPOSIT_HELD = 'HELD'
+    DEPOSIT_HELD_AND_RETURNED = 'HELD_RTRN'
+    DEPOSIT_TAKEN_AND_HELD = 'TAKEN_HELD'
+    DEPOSIT_TAKEN_AND_RETURNED = 'TAKEN_RTRN'
+    
+    DEPOSIT_HANDLING_CHOICES = (
+        (DEPOSIT_HELD, 'Held (no collection)'),
+        (DEPOSIT_HELD_AND_RETURNED, 'Held (to be collected)'),
+        (DEPOSIT_TAKEN_AND_HELD, 'Taken and held'),
+        (DEPOSIT_TAKEN_AND_RETURNED, 'Taken and returned at end'),
+    )
+    
+    deposit_handling = models.CharField(
+        max_length=20,
+        choices=DEPOSIT_HANDLING_CHOICES,
+        default=DEPOSIT_HELD,
+        help_text='How deposit is collected and managed'
+    )
+    
+    # KYC verification tracking
+    requires_kyc = models.BooleanField(
+        default=False,
+        help_text='Whether KYC verification is required for this high-risk rental'
+    )
+    requires_kyc_message = models.TextField(
+        blank=True,
+        max_length=500,
+        help_text='Message about why KYC is required'
+    )
+    lender_kyc_verified = models.BooleanField(
+        default=False,
+        help_text='Whether lender has completed required KYC verification'
+    )
+    renter_kyc_verified = models.BooleanField(
+        default=False,
+        help_text='Whether renter has completed required KYC verification'
+    )
+
     created = models.DateField(auto_now_add=True)
     amended = models.DateField(auto_now=True)
     history = HistoricalRecords()
+    
+    def get_rental_length_days(self):
+        """Calculate rental length in days"""
+        if self.rental_start_date and self.rental_end_date:
+            delta = self.rental_end_date - self.rental_start_date
+            return delta.days + 1  # inclusive
+        return 0
+    
+    def calculate_deposit_handling(self):
+        """Determine deposit handling based on rental length and amount"""
+        rental_days = self.get_rental_length_days()
+        
+        # If deposit > £100 and rental > 5 days, must take and return
+        if self.deposit > 100 and rental_days > 5:
+            return self.DEPOSIT_TAKEN_AND_RETURNED
+        # If deposit > £100 and rental <= 5 days, take and hold
+        elif self.deposit > 100 and rental_days <= 5:
+            return self.DEPOSIT_TAKEN_AND_HELD
+        # Otherwise, hold only
+        else:
+            return self.DEPOSIT_HELD
+    
+    def validate_rental_length(self):
+        """Validate rental length constraints"""
+        rental_days = self.get_rental_length_days()
+        errors = []
+        
+        # Max 5 days rental for deposits over £100
+        if self.deposit > 100 and rental_days > 5:
+            errors.append(
+                f'Maximum rental length for deposits over £100 is 5 days. '
+                f'Your rental is {rental_days} days. '
+                f'For longer rentals, deposit will be taken and returned at the end.'
+            )
+        
+        return errors
 
     def __str__(self):
         return self.transaction_reference
@@ -276,3 +431,19 @@ class TransactionMessageImage(models.Model):
         #change the imagefield value to be the newley modifed image value
         self.image = InMemoryUploadedFile(output,'ImageField', "%s.jpg" %self.image.name.split('.')[0], 'image/jpeg', sys.getsizeof(output), None)
         super(TransactionMessageImage, self).save(*args, **kwargs)
+
+
+class TransactionFeedback(models.Model):
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='feedbacks')
+    left_by = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='feedbacks_left')
+    left_for = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='feedbacks_received')
+    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comment = models.TextField(max_length=1000, blank=True)
+    is_negative = models.BooleanField(
+        default=False,
+        help_text='True if feedback is negative (for non-site payments)',
+    )
+    created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Feedback {self.rating} for {self.left_for} by {self.left_by} (txn {self.transaction_id})"

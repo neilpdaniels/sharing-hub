@@ -79,6 +79,14 @@ class Category(models.Model):
     
     default_sorted_attribute = models.PositiveIntegerField(validators=[MinValueValidator(0), MaxValueValidator(5)], default=1)
     default_sorted_direction_ascending = models.BooleanField(default=True)
+    
+    # Risk rating for products in this category (0-100)
+    # 0-25: Low risk, 26-50: Medium risk, 51-75: High risk, 76-100: Very high risk
+    risk_rating = models.PositiveIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text='Risk rating: 0-25 Low, 26-50 Medium, 51-75 High, 76-100 Very High. Products >75 require KYC verification'
+    )
 
     class Meta:
         verbose_name_plural = "categories"
@@ -111,9 +119,28 @@ class Product(models.Model):
     attribute_three_value = models.CharField(max_length=200, null=True, blank=True)
     attribute_four_value = models.CharField(max_length=200, null=True, blank=True)
     attribute_five_value = models.CharField(max_length=200, null=True, blank=True)
+    
+    # Risk rating for this product (0-100, inherited from category but can be overridden)
+    risk_rating = models.PositiveIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        null=True,
+        blank=True,
+        help_text='Override category risk rating for this product. Leave blank to inherit from category.'
+    )
 
     def __str__(self):
         return self.name
+    
+    def get_effective_risk_rating(self):
+        """Return the effective risk rating (product override or category default)"""
+        if self.risk_rating is not None:
+            return self.risk_rating
+        return self.category_id.risk_rating if self.category_id else 0
+    
+    def is_high_risk(self):
+        """Check if product is high risk (>75)"""
+        return self.get_effective_risk_rating() > 75
 
     def get_absolute_url(self):
         return reverse('navigation:productPage',

@@ -19,6 +19,8 @@ from common.models import Order, OrderImage, OrderBlockedDate, LetPriceBand
 from django.utils import timezone
 from datetime import timedelta
 
+from account.models import PaymentMethod
+
 
 @login_required
 def dashboard(request):    
@@ -52,6 +54,45 @@ def messages_received(request):
         'type' : 'received',
     }
     return render(request, 'my_sharing_hub/x_messages.html', context)
+
+
+@login_required
+def payment_methods(request):
+    """List all payment methods for the logged-in user."""
+    user = request.user
+    user_payment_methods = user.payment_methods.all()
+    
+    # Handle POST for setting default payment method
+    if request.method == 'POST':
+        action = request.POST.get('action', '').strip()
+        payment_method_id = request.POST.get('payment_method_id', '').strip()
+        
+        if action == 'set_default' and payment_method_id:
+            try:
+                # Set all to non-default first
+                user.payment_methods.update(is_default=False)
+                # Set this one as default
+                pm = user.payment_methods.get(id=payment_method_id)
+                pm.is_default = True
+                pm.save()
+                messages.success(request, f'Default payment method set to {pm.card_brand} ending {pm.card_last4}.')
+            except PaymentMethod.DoesNotExist:
+                messages.error(request, 'Payment method not found.')
+        elif action == 'delete' and payment_method_id:
+            try:
+                pm = user.payment_methods.get(id=payment_method_id)
+                card_display = f'{pm.card_brand} ending {pm.card_last4}'
+                pm.delete()
+                messages.success(request, f'{card_display} has been deleted.')
+            except PaymentMethod.DoesNotExist:
+                messages.error(request, 'Payment method not found.')
+        
+        return redirect('my_sharing_hub:payment_methods')
+    
+    context = {
+        'payment_methods': user_payment_methods,
+    }
+    return render(request, 'my_sharing_hub/payment_methods.html', context)
 
 
 @login_required
@@ -195,8 +236,14 @@ def copy_order_as_new(request, order_id):
 @login_required
 def open_transactions(request):
     user = request.user
-    object_pass_list = user.rel_from_set.exclude(transaction_status='COMP').exclude(transaction_status='VOID')
-    object_agg_list = user.rel_to_set.exclude(transaction_status='COMP').exclude(transaction_status='VOID')
+    closed_statuses = [
+        Transaction.CANCEL_ACCEPTED,
+        Transaction.DEPOSIT_RETURNED,
+        Transaction.DEPOSIT_REDUCED,
+        Transaction.MEDIATION_REQUIRED,
+    ]
+    object_pass_list = user.rel_from_set.exclude(transaction_status__in=closed_statuses)
+    object_agg_list = user.rel_to_set.exclude(transaction_status__in=closed_statuses)
     # object_list =  user.rel_to_set.filter()
     object_list =  sorted(
     (chain(object_pass_list, object_agg_list)),
@@ -222,8 +269,14 @@ def open_transactions(request):
 @login_required
 def closed_transactions(request):
     user = request.user
-    object_pass_list = user.rel_from_set.filter(Q(transaction_status='COMP') | Q(transaction_status='VOID'))
-    object_agg_list = user.rel_to_set.filter(Q(transaction_status='COMP') | Q(transaction_status='VOID'))
+    closed_statuses = [
+        Transaction.CANCEL_ACCEPTED,
+        Transaction.DEPOSIT_RETURNED,
+        Transaction.DEPOSIT_REDUCED,
+        Transaction.MEDIATION_REQUIRED,
+    ]
+    object_pass_list = user.rel_from_set.filter(transaction_status__in=closed_statuses)
+    object_agg_list = user.rel_to_set.filter(transaction_status__in=closed_statuses)
     # object_list =  user.rel_to_set.filter()
     object_list =  sorted(
     (chain(object_pass_list, object_agg_list)),

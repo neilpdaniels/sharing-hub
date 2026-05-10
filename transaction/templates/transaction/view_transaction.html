@@ -25,16 +25,112 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Workflow</h5>
-                    <ol class="mb-2">
-                        <li class="{% if step >= 1 %}font-weight-bold{% endif %}">Enquiry for rental</li>
-                        <li class="{% if step >= 2 %}font-weight-bold{% endif %}">Rental agreed</li>
-                        <li class="{% if step >= 3 %}font-weight-bold{% endif %}">Rental initiated (checkout video + payment/deposit placeholder)</li>
-                        <li class="{% if step >= 4 %}font-weight-bold{% endif %}">Rental returned (return video)</li>
-                        <li class="{% if step >= 5 %}font-weight-bold{% endif %}">Deposit outcome (full return, reduced return, or mediation)</li>
-                    </ol>
-                    {% if transaction.enquiry_message %}
-                    <p class="mb-0"><strong>Initial enquiry:</strong> {{ transaction.enquiry_message }}</p>
-                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_ENQUIRY and is_lender %}table-danger{% elif step >= 1 %}table-success{% endif %}">
+                                    <td>Enquiry for rental</td>
+                                    <td>Borrower</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_ENQUIRY and is_lender %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif step >= 1 %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreement_pending_at and not transaction.lender_agreed_at and is_lender %}table-danger{% elif transaction.lender_agreed_at %}table-success{% endif %}">
+                                    <td>Contract confirmed - Lender</td>
+                                    <td>Lender</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreement_pending_at and not transaction.lender_agreed_at and is_lender %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.lender_agreed_at %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at and is_renter %}table-danger{% elif transaction.renter_agreed_at %}table-success{% endif %}">
+                                    <td>Contract confirmed - Borrower</td>
+                                    <td>Borrower</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at and is_renter %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.renter_agreed_at %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% if transaction.deposit > 0 %}
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and transaction.deposit_card_setup_status != transaction.CARD_READY and is_renter %}table-danger{% elif transaction.deposit_card_setup_status == transaction.CARD_READY %}table-success{% endif %}">
+                                    <td>Add card details / use existing card</td>
+                                    <td>Borrower</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and transaction.deposit_card_setup_status != transaction.CARD_READY and is_renter %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.deposit_card_setup_status == transaction.CARD_READY %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_INITIATED or transaction.transaction_status == transaction.RENTAL_RETURNED or transaction.transaction_status == transaction.DEPOSIT_RETURNED or transaction.transaction_status == transaction.DEPOSIT_REDUCED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}table-success{% endif %}">
+                                    <td>Rental initiated</td>
+                                    <td>Lender</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.transaction_status == transaction.RENTAL_INITIATED or transaction.transaction_status == transaction.RENTAL_RETURNED or transaction.transaction_status == transaction.DEPOSIT_RETURNED or transaction.transaction_status == transaction.DEPOSIT_REDUCED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_INITIATED and is_renter %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_RETURNED or transaction.transaction_status == transaction.DEPOSIT_RETURNED or transaction.transaction_status == transaction.DEPOSIT_REDUCED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}table-success{% endif %}">
+                                    <td>Rental returned</td>
+                                    <td>Borrower</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_INITIATED and is_renter %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURNED or transaction.transaction_status == transaction.DEPOSIT_RETURNED or transaction.transaction_status == transaction.DEPOSIT_REDUCED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_RETURNED and is_lender %}table-danger{% elif transaction.transaction_status == transaction.DEPOSIT_RETURNED or transaction.transaction_status == transaction.DEPOSIT_REDUCED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}table-success{% endif %}">
+                                    <td>Deposit outcome finalised</td>
+                                    <td>Lender</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.RENTAL_RETURNED and is_lender %}
+                                            <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.transaction_status == transaction.DEPOSIT_RETURNED or transaction.transaction_status == transaction.DEPOSIT_REDUCED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -107,6 +203,22 @@
                 </div>
             </div>
             {% endif %}
+
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Confirm Rental</h5>
+                    <p class="mb-2">Please confirm the lender's agreement to proceed.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm_renter_contract">
+                        <button class="btn btn-success btn-block" type="submit">Confirm Rental Agreement</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% include "transaction/card_setup_form.html" %}
 
             {% if is_lender and transaction.transaction_status == transaction.RENTAL_AGREED %}
             <div class="card mb-3">

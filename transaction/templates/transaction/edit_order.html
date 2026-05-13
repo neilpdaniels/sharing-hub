@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load bootstrap4 %}
+{% load common_lib %}
 {% block headerContent %}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css">
 {% endblock %}
@@ -21,7 +22,7 @@
     <p>Please confirm you accept the additional costs, in addition to the product price, when buying. </p>
     <ul>
       {% for fee_key, fee_value in fees.items %}
-      <li>{% if fee_key.url %}<a href="{{fee_key.url}}">{% endif %}{{fee_key.tooltip}}{% if fee_value.count == 1 %}: {% if fee_value.0.price_style == 'A' %}£{% endif %}{{fee_value.0.price}}{% if fee_value.0.price_style == 'A' %} per transaction{% endif %}{% if fee_value.0.price_style == 'P' %}% of gross total{% endif %}{% endif %}{% if fee_key.url %}</a>{% endif %}</li>
+      <li>{% if fee_key.url %}<a href="{{fee_key.url}}">{% endif %}{{fee_key.tooltip}}{% if fee_value.count == 1 %}: {% if fee_value.0.price_style == 'A' %}£{% endif %}{{fee_value.0.price|format_price}}{% if fee_value.0.price_style == 'A' %} per transaction{% endif %}{% if fee_value.0.price_style == 'P' %}% of gross total{% endif %}{% endif %}{% if fee_key.url %}</a>{% endif %}</li>
       {% endfor %}
     </ul>
     <div class="form-check">

@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='historicaltransaction',
             name='renter_agreed_at',
-            field=models.DateTimeField(blank=True, help_text='When renter confirmed the contract', null=True),
+            field=models.DateTimeField(blank=True, help_text='When borrower confirmed the contract', null=True),
         ),
         migrations.AddField(
             model_name='transaction',
@@ -42,7 +42,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='transaction',
             name='renter_agreed_at',
-            field=models.DateTimeField(blank=True, help_text='When renter confirmed the contract', null=True),
+            field=models.DateTimeField(blank=True, help_text='When borrower confirmed the contract', null=True),
         ),
         migrations.CreateModel(
             name='TransactionFeedback',

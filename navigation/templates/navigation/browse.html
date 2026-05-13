@@ -329,7 +329,7 @@
                                     <td class="text-center yellow-strip">
                                     {% if virtual_bids %}
                                     Sell now for: 
-                                    <span class="orderPrice">£{{ virtual_bids.0.price|floatformat:"-2" }}</span>
+                                    <span class="orderPrice">£{{ virtual_bids.0.price|format_price }}</span>
                                     {% else %}
                                     No immediate sale available
                                     {% endif %}
@@ -337,7 +337,7 @@
                                     <td class="text-center yellow-strip">
                                     {% if virtual_offers %}
                                     Buy now for:
-                                    <span class="orderPrice">£{{ virtual_offers.0.price|floatformat:"-2" }}</span>
+                                    <span class="orderPrice">£{{ virtual_offers.0.price|format_price }}</span>
                                     {% else %}
                                     No immediate buy available
                                     {% endif %} 
@@ -360,7 +360,7 @@
                                     {% for o in virtual_bids %}
                                     <tr>
                                         <td class="best_orders"><a class="best_orders" href="{% url 'navigation:productPage' o.product.slug  %}">{{ o.product.name }}</a></td>
-                                        <td class="best_orders">{{ o.price|floatformat:"-2" }}</td>
+                                        <td class="best_orders">{{ o.price|format_price }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -378,7 +378,7 @@
                                     {% for o in virtual_offers %}
                                     <tr>
                                         <td class="best_orders"><a class="best_orders" href="{% url 'navigation:productPage' o.product.slug  %}">{{ o.product.name }}</a></td>
-                                        <td class="best_orders">{{ o.price|floatformat:"-2" }}</td>
+                                        <td class="best_orders">{{ o.price|format_price }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>

@@ -127,13 +127,16 @@ def getTransactionStepAndAction(txn, request):
             # Both confirmed, ready for initiation
             step = 4
             next_action = is_lender
-    elif txn.transaction_status == txn.RENTAL_INITIATED:
+    elif txn.transaction_status in (txn.RENTAL_DAY_AWAITING_VERIFICATION, txn.RENTAL_ONGOING, txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION):
         step = 5
         next_action = True
-    elif txn.transaction_status == txn.RENTAL_RETURNED:
+    elif txn.transaction_status in (txn.RENTAL_RETURNED_DEPOSIT_PENDING, txn.RENTAL_RETURNED_DEPOSIT_RETURNED, txn.RENTAL_RETURNED_DEPOSIT_CONTESTED):
         step = 6
         next_action = is_lender
-    elif txn.transaction_status in (txn.DEPOSIT_RETURNED, txn.DEPOSIT_REDUCED, txn.MEDIATION_REQUIRED):
+    elif txn.transaction_status in (txn.AWAITING_FEEDBACK, txn.RENTAL_PROCESS_COMPLETED):
+        step = 7
+        next_action = False
+    elif txn.transaction_status in (txn.MEDIATION_REQUIRED, txn.DISPUTE_REQUESTED):
         step = 7
         next_action = False
 

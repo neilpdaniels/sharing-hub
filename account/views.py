@@ -29,9 +29,62 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.conf import settings
 from urllib.parse import urlparse, quote
+from django.contrib.auth import views as auth_views
 
 
 logger = logging.getLogger(__name__)
+
+
+def _verify_turnstile_token(token, remote_ip=''):
+    secret = getattr(settings, 'CLOUDFLARE_TURNSTILE_SECRET_KEY', '')
+    if not secret:
+        return True
+    if not token:
+        return False
+
+    try:
+        response = requests.post(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            data={
+                'secret': secret,
+                'response': token,
+                'remoteip': remote_ip,
+            },
+            timeout=5,
+        )
+        payload = response.json()
+        return bool(payload.get('success'))
+    except Exception as exc:
+        logger.warning('Turnstile verification failed during login: %s', exc)
+        return False
+
+
+class TurnstileLoginView(auth_views.LoginView):
+    template_name = 'registration/login.html'
+
+    def _show_turnstile(self):
+        return self.request.session.get('login_failed_attempts', 0) > 0
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['show_turnstile'] = self._show_turnstile()
+        context['TURNSTILE_SITE_KEY'] = getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', '')
+        return context
+
+    def form_valid(self, form):
+        if self._show_turnstile():
+            token = (self.request.POST.get('cf-turnstile-response') or '').strip()
+            if not _verify_turnstile_token(token, self.request.META.get('REMOTE_ADDR', '')):
+                form.add_error(None, 'Human verification failed. Please complete the checkbox and try again.')
+                return self.form_invalid(form)
+
+        # Successful login resets failure counter.
+        self.request.session['login_failed_attempts'] = 0
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        self.request.session['login_failed_attempts'] = self.request.session.get('login_failed_attempts', 0) + 1
+        return super().form_invalid(form)
 
 
 def _is_safe_relative_path(path):
@@ -71,6 +124,17 @@ def _build_twilio_client():
         raise ValueError('Twilio Verify settings are not configured.')
     twilio_rest = importlib.import_module('twilio.rest')
     return twilio_rest.Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+
+
+def _is_profile_kyc_verified(profile):
+    """Determine whether a profile meets current KYC gate requirements."""
+    stripe_verified = getattr(profile, 'stripe_identity_verified', False)
+    baseline_verified = (
+        profile.email_confirmed
+        and profile.mobile_verified
+        and profile.address_verified
+    )
+    return bool(stripe_verified or baseline_verified)
 
 
 # def user_login(request):
@@ -173,6 +237,22 @@ def mobile_verify(request):
     }
     return render(request, 'account/mobile_verify.html', context)
 
+
+@login_required
+def kyc_verify(request):
+    """Render KYC verification status page."""
+    profile = get_object_or_404(Profile, user=request.user)
+    is_verified = _is_profile_kyc_verified(profile)
+
+    context = {
+        'is_verified': is_verified,
+        'verified_at': None,
+        'email_confirmed': profile.email_confirmed,
+        'mobile_verified': profile.mobile_verified,
+        'address_verified': profile.address_verified,
+    }
+    return render(request, 'account/kyc_verify.html', context)
+
 def register(request):
     def generate_unique_verification_code():
         for _ in range(20):
@@ -186,18 +266,9 @@ def register(request):
         return request.build_absolute_uri(f"{reverse('register')}?resume={quote(token)}")
 
     def send_registration_code_email(email, code):
+        from .tasks import send_registration_verification_email
         resume_link = build_resume_link(email)
-        send_mail(
-            subject='Your SharingHub verification code',
-            message=(
-                'Your SharingHub registration code is: ' + code + '\n\n'
-                'This code expires in 15 minutes.\n\n'
-                'Resume verification: ' + resume_link
-            ),
-            from_email=None,
-            recipient_list=[email],
-            fail_silently=False,
-        )
+        send_registration_verification_email.delay(email, code, resume_link)
 
     def get_pending_verification(email):
         return RegistrationVerification.objects.filter(
@@ -375,7 +446,7 @@ def register(request):
 
                     login(request, new_user)
                     messages.success(request, 'Registration complete and email verified.')
-                    return redirect('/')
+                    return redirect(reverse('navigation:browseCategory', args=('metals', )))
 
     context = {
         'user_form': user_form,
@@ -446,10 +517,7 @@ class ProfileImageUpload(View):
             try:
                 user_profile = Profile.objects.get(user=request.user)
                 user_profile.image = form.cleaned_data['image']
-                user_profile.saveWithImage()
-                # image = form.save(commit=False)
-                # image.user = request.user
-                # image.save()
+                user_profile.saveWithImage()  # This now saves and queues async processing
                 data = {'is_valid': True,
                         'image_name': user_profile.image.name, 
                         'image_url': user_profile.image.url}
@@ -473,7 +541,8 @@ def activate_account(request, uidb64, token):
         user.save()
         user.profile.save()
         login(request, user)
-        return redirect('/')
+        product_url = request.build_absolute_uri(reverse('navigation:browseCategory', args=('metals', )))
+        return redirect(product_url)
     else:
         return render(request, 'account_activation_invalid.html')
 
@@ -644,36 +713,5 @@ def address_resolve(request):
             logger.warning('getAddress resolve failed with status %s', response.status_code)
         except Exception as exc:
             logger.warning('getAddress resolve failed: %s', exc)
-
-
-@login_required
-def kyc_verify(request):
-    """
-    Initiate KYC verification via Stripe Identity.
-    For now, this is a placeholder. Integration with Stripe Verify will:
-    1. Create a VerificationSession via Stripe API
-    2. Redirect to Stripe Verify
-    3. Handle callback with verification result
-    4. Set stripe_identity_verified and stripe_identity_verified_at on Profile
-    """
-    profile = Profile.objects.get(user=request.user)
-    
-    if request.method == 'POST':
-        # TODO: Integrate with Stripe Identity API
-        # For now, show a message that integration is pending
-        messages.info(
-            request,
-            'KYC verification integration with Stripe is being configured. '
-            'Your account will need to be verified before renting high-risk items. '
-            'Please contact support for assistance.'
-        )
-        return redirect('account:myaccount')
-    
-    context = {
-        'profile': profile,
-        'is_verified': profile.stripe_identity_verified,
-        'verified_at': profile.stripe_identity_verified_at,
-    }
-    return render(request, 'account/kyc_verify.html', context)
 
     return JsonResponse({'result': None})

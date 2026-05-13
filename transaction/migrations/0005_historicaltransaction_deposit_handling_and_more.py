@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='historicaltransaction',
             name='renter_kyc_verified',
-            field=models.BooleanField(default=False, help_text='Whether renter has completed required KYC verification'),
+            field=models.BooleanField(default=False, help_text='Whether borrower has completed required KYC verification'),
         ),
         migrations.AddField(
             model_name='historicaltransaction',
@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='transaction',
             name='renter_kyc_verified',
-            field=models.BooleanField(default=False, help_text='Whether renter has completed required KYC verification'),
+            field=models.BooleanField(default=False, help_text='Whether borrower has completed required KYC verification'),
         ),
         migrations.AddField(
             model_name='transaction',

@@ -2,34 +2,32 @@
 {% if messages_|length > 0 %}
 {% include "pagination.html" with page=messages_ %}
 {% endif %}
-<div class="table-striped">
-    <table class="table">
+<div class="table-responsive">
+    <table class="table table-striped mb-0 messages-table align-middle">
         <thead>
             <th>Click to Read</th>
-            <th>Date</th>
+            <th>Date / Time</th>
             <th>From</th>
-            <th>To</th>
             <th>Subject</th>
-            <th>Read By Recpient</th>
-            <th>Transaction</th>
-            <th>Transaction Current Status</th>
         </thead>
         <tbody>
         {% if messages_|length > 0 %}
             {% for message in messages_ %}
             <tr>
-                <td align="center"><span class="fa fa-envelope-open" id="expand_message_{{ message.id }}" href="#"></span></td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-link p-0 message-open-btn {% if message.read_by_user_to %}is-read{% else %}is-unread{% endif %}" id="expand_message_{{ message.id }}" aria-label="Open message {{ message.id }}">
+                        <span class="fa {% if message.read_by_user_to %}fa-envelope-open{% else %}fa-envelope{% endif %}"></span>
+                    </button>
+                </td>
                 <td>{{ message.created|date:'Y-m-d H:i'  }}</td>
-                <td>{% include "user_profile_modal.html" with user=message.user_from %}</td>
-                <td>{% include "user_profile_modal.html" with user=message.user_to %}</td>
-                <td>{{ message.subject }}</td>
-                <td><span id="{{message.id}}_read_by_user" hidden>{{message.user_to}}</span><span id="{{message.id}}_read_by" 
-                {% if message.read_by_user_to is False %}
-                style="color:rgb(221, 121, 28); font-weight: bold;"
-                {% endif %}
-                >{{ message.read_by_user_to }}</span></td>
-                <td><a href="{% url 'transaction:view_transaction' message.transaction.transaction_reference %}">{{ message.transaction.transaction_reference }}</td>
-                <td>{{ message.transaction.get_transaction_status_display }}</td>
+                <td>
+                    {% if message.is_system_generated %}
+                        <span class="badge badge-secondary">System</span>
+                    {% else %}
+                        {% include "user_profile_modal.html" with user=message.user_from %}
+                    {% endif %}
+                </td>
+                <td class="message-subject-cell">{{ message.subject }}</td>
             </tr>
             {% endfor %}
         {% endif %}
@@ -37,10 +35,59 @@
     </table>
 </div>
 
+<style>
+    .messages-table th,
+    .messages-table td {
+        padding: 0.45rem 0.68rem;
+        vertical-align: middle;
+        font-size: 0.94rem;
+        line-height: 1.22;
+    }
+
+    .messages-table thead th {
+        text-transform: none;
+        letter-spacing: normal;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #4a5563;
+        background: #eef2f5;
+        border-bottom: 1px solid #d9e0e6;
+    }
+
+    .messages-table tbody tr {
+        border-bottom: 1px solid #e4eaef;
+    }
+
+    .messages-table td:first-child {
+        width: 88px;
+        text-align: center;
+    }
+
+    .messages-table .message-subject-cell {
+        font-weight: 500;
+    }
+
+    #messageModal .modal-dialog {
+        max-width: min(960px, 92vw);
+    }
+
+    #messageModal .modal-body {
+        padding: 1.25rem 1.5rem;
+    }
+
+    #messageModalContent {
+        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 55vh;
+        overflow-y: auto;
+    }
+</style>
+
 
 <!-- Modal -->
 <div class="modal fade" id="messageModal" tabindex="-1" role="dialog" aria-labelledby="messageModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
         <div class="modal-content">
         <div class="modal-header">
             <h5 class="modal-title" id="messageModalLabel"></h5>

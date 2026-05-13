@@ -41,7 +41,7 @@
                             {% endif %}
                             <td>{{ order.expiry_date }}</td>
                             <td>{{ order.get_price_style_display }}</td>
-                            <td>{{ order.price }}</td>
+                            <td>{{ order.price|format_price }}</td>
                             <td>{{ order.relative_price_pct }}</td>
                             <td>{{ order.relative_offset }}</td>
                         </tr>
@@ -95,7 +95,7 @@
                                 {{ transaction.user_passive }}
                                 {% endif %}
                             </td>
-                            <td>{{ transaction.price }}</td>
+                            <td>{{ transaction.price|format_price }}</td>
                             <td>{{ transaction.quantity }}</td>
                             <td>{{ transaction.get_transaction_status_display }}</td>
                         </tr>

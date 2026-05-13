@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% load bootstrap4 %}
 
+{% block headerContent %}
+{% if show_turnstile %}
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{% endif %}
+{% endblock %}
+
 {% block title %}Log in{% endblock %}
 {% block page_header %}{% endblock %}
 
@@ -15,8 +21,12 @@
         </div>
 
         <div class="sh-auth-body">
-            {% if form.errors %}
-            <div class="alert alert-danger">Your email and password didn't match — please try again.</div>
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {% for error in form.non_field_errors %}
+                <div>{{ error }}</div>
+                {% endfor %}
+            </div>
             {% endif %}
 
             <form action="{% url 'login' %}" method="post" novalidate>
@@ -28,6 +38,11 @@
                 <div class="form-group">
                     {% bootstrap_field form.password show_label=False placeholder='Password' %}
                 </div>
+                {% if show_turnstile %}
+                <div class="form-group d-flex justify-content-center">
+                    <div class="cf-turnstile" data-sitekey="{{ TURNSTILE_SITE_KEY }}" data-theme="light"></div>
+                </div>
+                {% endif %}
                 <button type="submit" class="sh-btn-cta">Log in</button>
             </form>
 

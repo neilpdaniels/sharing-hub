@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load bootstrap4 %}
+{% load common_lib %}
 
 {% block site_search_bar %}{% endblock %}
 
@@ -283,7 +284,7 @@
               <span class="search-result-badge {% if order.direction == 'W' %}wanted{% else %}lend{% endif %}">
                 {% if order.direction == 'W' %}Wanted{% else %}To Lend{% endif %}
               </span>
-              <strong class="ml-2">£{{ order.price }}</strong>
+              <strong class="ml-2">£{{ order.price|format_price }}</strong>
             </p>
             {% if order.distance is not None %}
             <p class="card-text text-muted small">

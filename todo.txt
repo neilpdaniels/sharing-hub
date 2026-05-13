@@ -27,10 +27,11 @@ todo:
     sharing-hub fees
 
     
-    
+1) add stripe    
+2) have  a look if can extend to 30 day hold for visa and mastercard (https://docs.stripe.com/payments/extended-authorization?locale=en-GB)
+
 2) load up categories
 3) get pictures
 4) add text and images
 5) add some samples to the front page - slider?
 6) add ability to send instructions videos on transactions / orders
-7) have  a look if can extend to 30 day hold for visa and mastercard (https://docs.stripe.com/payments/extended-authorization?locale=en-GB)

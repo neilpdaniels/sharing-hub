@@ -23,11 +23,31 @@
 
             <div class="card mb-3">
                 <div class="card-body">
+                    <h5 class="card-title">Current Verification Status</h5>
+                    <ul class="mb-0">
+                        <li>
+                            {% if email_confirmed %}✓{% else %}○{% endif %}
+                            Email confirmed
+                        </li>
+                        <li>
+                            {% if mobile_verified %}✓{% else %}○{% endif %}
+                            Mobile number verified
+                        </li>
+                        <li>
+                            {% if address_verified %}✓{% else %}○{% endif %}
+                            Address verified
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
                     <h5 class="card-title">Why We Require KYC for High-Risk Items</h5>
                     <ul>
                         <li>High-risk products (electronics, jewelry, etc.) require additional security measures</li>
                         <li>KYC verification helps prevent fraud and theft</li>
-                        <li>Protects both lenders and renters</li>
+                        <li>Protects both lenders and borrowers</li>
                         <li>Required by financial regulations</li>
                     </ul>
                 </div>

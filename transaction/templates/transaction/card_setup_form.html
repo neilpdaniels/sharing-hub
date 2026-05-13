@@ -1,19 +1,25 @@
 <!-- Card Setup Form Include -->
 {% load static %}
 
-{% if is_renter and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.deposit > 0 and not transaction.deposit_collected_placeholder %}
+{% if can_setup_deposit_card %}
 <div class="card mb-3">
     <div class="card-body">
         <h5 class="card-title">Deposit Card Setup</h5>
         {% if transaction.deposit_card_setup_status == transaction.CARD_READY and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS %}
         <div class="border rounded p-3 mb-3" style="background:#f0fff4; border-color:#9ae6b4; color:#22543d;">
             <strong>Card ready:</strong> {{ transaction.deposit_card_brand|default:"Card" }} ending {{ transaction.deposit_card_last4 }}
-            <div class="mt-1">£0.01 test hold completed successfully{% if transaction.deposit_test_hold_at %} at {{ transaction.deposit_test_hold_at }}{% endif %}.</div>
+            <div class="mt-1">£0.30 test hold completed successfully{% if transaction.deposit_test_hold_at %} at {{ transaction.deposit_test_hold_at }}{% endif %}.</div>
         </div>
         {% else %}
         <div class="border rounded p-3 mb-3" style="background:#eff6ff; border-color:#93c5fd; color:#1e3a8a;">
-            Choose a payment method to secure your deposit. We will run an initial £0.01 test hold to verify your card.
+            Choose a payment method to secure your deposit. We will run an initial £0.30 test hold to verify your card.
+            {% if transaction.transaction_status == transaction.RENTAL_ENQUIRY %}
+            <div class="mt-2">
+                You can add your card now before lender agreement to speed up checkout. If the rental does not proceed, the hold is automatically released.
+            </div>
+            {% endif %}
         </div>
+        <div id="card-setup-live-status" class="alert mb-3" style="display:none;"></div>
         
         {% if user_payment_methods %}
         <!-- Tabs for existing vs new card -->
@@ -29,7 +35,7 @@
         <div class="tab-content">
             <!-- Existing Cards Tab -->
             <div class="tab-pane fade show active" id="existing-cards" role="tabpanel">
-                <form method="post" class="mb-3">
+                <form method="post" class="mb-3" id="existing-card-form">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="use_existing_card">
                     <div class="form-group">
@@ -67,7 +73,7 @@
                 <div id="card-errors" class="text-danger mt-2" style="display:none;"></div>
             </div>
             <small class="form-text text-muted mb-3">Your card will be saved for future transactions. Manage your cards in <a href="{% url 'my_sharing_hub:payment_methods' %}">My Payment Methods</a>.</small>
-            <button id="submit-btn" class="btn btn-primary btn-block" type="submit">Save Card & Run £0.01 Test Hold</button>
+            <button id="submit-btn" class="btn btn-primary btn-block" type="submit">Save Card & Run £0.30 Test Hold</button>
         </form>
         
         <script src="https://js.stripe.com/v3/"></script>
@@ -113,8 +119,9 @@
                         document.getElementById('card-errors').textContent = error.message;
                         document.getElementById('card-errors').style.display = 'block';
                         submitBtn.disabled = false;
-                        submitBtn.textContent = 'Save Card & Run £0.01 Test Hold';
+                        submitBtn.textContent = 'Save Card & Run £0.30 Test Hold';
                     } else {
+                        startPolling();
                         document.getElementById('payment_method_id').value = setupIntent.payment_method;
                         form.submit();
                     }
@@ -122,9 +129,111 @@
                     document.getElementById('card-errors').textContent = 'An error occurred: ' + err.message;
                     document.getElementById('card-errors').style.display = 'block';
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Save Card & Run £0.01 Test Hold';
+                    submitBtn.textContent = 'Save Card & Run £0.30 Test Hold';
                 }
             });
+
+            const statusEl = document.getElementById('card-setup-live-status');
+            const statusUrl = '{% url "transaction:card_setup_status" transaction.transaction_reference %}';
+            const pollKey = 'card_setup_poll_{{ transaction.transaction_reference }}';
+            const pollStartedAtKey = pollKey + '_started_at';
+            let pollTimer = null;
+
+            function renderStatus(state, message) {
+                if (!statusEl) {
+                    return;
+                }
+                statusEl.style.display = 'block';
+                statusEl.className = 'alert mb-3';
+                statusEl.innerHTML = '';
+                if (state === 'completed') {
+                    statusEl.classList.add('alert-success');
+                    statusEl.style.background = '#38a169';
+                    statusEl.style.color = '#fff';
+                    statusEl.style.borderColor = '#2f855a';
+                    statusEl.style.fontWeight = 'bold';
+                    statusEl.style.fontSize = '1.2em';
+                    statusEl.innerHTML = '<span style="font-size:1.5em;vertical-align:middle;">&#10003;</span> ' + message;
+                } else if (state === 'failed') {
+                    statusEl.classList.add('alert-danger');
+                    statusEl.style.background = '#e53e3e';
+                    statusEl.style.color = '#fff';
+                    statusEl.style.borderColor = '#c53030';
+                    statusEl.style.fontWeight = 'bold';
+                    statusEl.innerHTML = '<span style="font-size:1.5em;vertical-align:middle;">&#10060;</span> ' + message;
+                } else {
+                    statusEl.classList.add('alert-info');
+                    statusEl.style.background = '#3182ce';
+                    statusEl.style.color = '#fff';
+                    statusEl.style.borderColor = '#2b6cb0';
+                    statusEl.style.fontWeight = 'normal';
+                    statusEl.style.fontSize = '1em';
+                    statusEl.innerHTML = message;
+                }
+            }
+
+            async function pollStatus() {
+                try {
+                    const response = await fetch(statusUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    if (!response.ok) {
+                        return;
+                    }
+                    const data = await response.json();
+                    renderStatus(data.state, data.message);
+                    if (data.state === 'completed' || data.state === 'failed') {
+                        window.sessionStorage.removeItem(pollKey);
+                        window.sessionStorage.removeItem(pollStartedAtKey);
+                        if (pollTimer) {
+                            clearInterval(pollTimer);
+                            pollTimer = null;
+                        }
+                        // No reload: just show the message and optionally fade out after a while
+                        if (data.state === 'completed') {
+                            setTimeout(function() {
+                                statusEl.style.transition = 'opacity 0.8s';
+                                statusEl.style.opacity = 0;
+                            }, 3500);
+                        }
+                    }
+                } catch (e) {
+                    // Keep silent and retry on next interval.
+                }
+            }
+
+            function startPolling() {
+                window.sessionStorage.setItem(pollKey, '1');
+                if (!window.sessionStorage.getItem(pollStartedAtKey)) {
+                    window.sessionStorage.setItem(pollStartedAtKey, String(Date.now()));
+                }
+                renderStatus('processing', 'Card verification in progress. Checking for updates...');
+                if (!pollTimer) {
+                    pollStatus();
+                    pollTimer = setInterval(pollStatus, 2500);
+                }
+            }
+
+            const existingCardForm = document.getElementById('existing-card-form');
+            if (existingCardForm) {
+                existingCardForm.addEventListener('submit', function () {
+                    startPolling();
+                });
+            }
+
+            if (window.sessionStorage.getItem(pollKey) === '1') {
+                startPolling();
+            }
+
+            setInterval(function () {
+                if (window.sessionStorage.getItem(pollKey) !== '1') {
+                    return;
+                }
+                const startedAtRaw = window.sessionStorage.getItem(pollStartedAtKey);
+                const startedAt = startedAtRaw ? parseInt(startedAtRaw, 10) : Date.now();
+                if (Date.now() - startedAt > 45000) {
+                    renderStatus('processing', 'Still processing. If this does not update shortly, refresh the page and try again.');
+                }
+            }, 5000);
+
         })();
         </script>
         {% else %}

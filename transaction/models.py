@@ -10,6 +10,7 @@ from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
 import sys
 from django.conf import settings
+from django.utils import timezone
 #from djongo import models
 
 
@@ -38,8 +39,14 @@ class Transaction(models.Model):
     order_passive_description = models.TextField(blank=True, max_length=250)    
     RENTAL_ENQUIRY = 'RENQ'
     RENTAL_AGREED = 'RAGR'
-    RENTAL_INITIATED = 'RINT'
-    RENTAL_RETURNED = 'RRTN'
+    RENTAL_DAY_AWAITING_VERIFICATION = 'RDAYAWV'
+    RENTAL_ONGOING = 'RONG'
+    RENTAL_RETURN_DAY_AWAITING_VERIFICATION = 'RRTDAYAWV'
+    RENTAL_RETURNED_DEPOSIT_PENDING = 'RRTDPEND'
+    RENTAL_RETURNED_DEPOSIT_RETURNED = 'RRTDRET'
+    RENTAL_RETURNED_DEPOSIT_CONTESTED = 'RRTDCON'
+    AWAITING_FEEDBACK = 'AWFB'
+    RENTAL_PROCESS_COMPLETED = 'RCOMP'
     DEPOSIT_RETURNED = 'DRET'
     DEPOSIT_REDUCED = 'DRED'
     MEDIATION_REQUIRED = 'DMED'
@@ -65,13 +72,16 @@ class Transaction(models.Model):
 
 
     TRANSACTION_STATUS_CHOICES = (
-        (RENTAL_ENQUIRY, 'Enquiry for rental'),
+        (RENTAL_ENQUIRY, 'Rental discussion'),
         (RENTAL_AGREED, 'Rental agreed'),
-        (RENTAL_INITIATED, 'Rental initiated'),
-        (RENTAL_RETURNED, 'Rental returned'),
-        (DEPOSIT_RETURNED, 'Deposit returned'),
-        (DEPOSIT_REDUCED, 'Reduced deposit return agreed'),
-        (MEDIATION_REQUIRED, 'Mediation required'),
+        (RENTAL_DAY_AWAITING_VERIFICATION, 'Rental day, awaiting verification'),
+        (RENTAL_ONGOING, 'Rental ongoing'),
+        (RENTAL_RETURN_DAY_AWAITING_VERIFICATION, 'Rental return day, awaiting verification'),
+        (RENTAL_RETURNED_DEPOSIT_PENDING, 'Rental returned, deposit return pending'),
+        (RENTAL_RETURNED_DEPOSIT_RETURNED, 'Rental returned, deposit returned'),
+        (RENTAL_RETURNED_DEPOSIT_CONTESTED, 'Rental returned, deposit contested'),
+        (AWAITING_FEEDBACK, 'Awaiting feedback'),
+        (RENTAL_PROCESS_COMPLETED, 'Rental process fully completed'),
         (CANCEL_REQUESTED, 'Cancellation requested'),
         (CANCEL_ACCEPTED, 'Cancelled'),
         (DISPUTE_REQUESTED, 'Dispute requested'),
@@ -156,15 +166,17 @@ class Transaction(models.Model):
     # Placeholder Stripe Connect deposit setup/collection states
     CARD_NONE = 'NONE'
     CARD_READY = 'READY'
+    CARD_FAILED = 'FAILED'
     CARD_SETUP_CHOICES = (
         (CARD_NONE, 'No deposit card on file'),
         (CARD_READY, 'Deposit card ready'),
+        (CARD_FAILED, 'Card setup failed'),
     )
     deposit_card_setup_status = models.CharField(
         max_length=10,
         choices=CARD_SETUP_CHOICES,
         default=CARD_NONE,
-        help_text='Placeholder status for renter deposit card setup via Stripe Connect'
+        help_text='Placeholder status for borrower deposit card setup via Stripe Connect'
     )
     deposit_cardholder_name = models.CharField(max_length=120, blank=True)
     deposit_card_brand = models.CharField(max_length=20, blank=True)
@@ -213,6 +225,11 @@ class Transaction(models.Model):
         max_length=100,
         blank=True,
         help_text='Stripe PaymentMethod ID for stored card'
+    )
+    stripe_customer_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='Stripe Customer ID for reusable payment methods'
     )
     
     # naming is wrong, but this is in case the orders are matched systematically rather than manually
@@ -276,7 +293,7 @@ class Transaction(models.Model):
     renter_agreed_at = models.DateTimeField(
         blank=True,
         null=True,
-        help_text='When renter confirmed the contract'
+        help_text='When borrower confirmed the contract'
     )
     
     # Deposit handling type
@@ -315,7 +332,7 @@ class Transaction(models.Model):
     )
     renter_kyc_verified = models.BooleanField(
         default=False,
-        help_text='Whether renter has completed required KYC verification'
+        help_text='Whether borrower has completed required KYC verification'
     )
 
     created = models.DateField(auto_now_add=True)
@@ -358,6 +375,22 @@ class Transaction(models.Model):
         
         return errors
 
+    def get_status_display_verbose(self):
+        """Return richer user-facing status text for key workflow milestones."""
+        if self.transaction_status == self.RENTAL_AGREED:
+            has_lender_confirmed = bool(self.lender_agreed_at)
+            has_borrower_confirmed = bool(self.renter_agreed_at)
+            payment_method_not_required = (self.deposit <= 0 and self.price <= 0)
+            has_card_ready = (
+                self.deposit_card_setup_status == self.CARD_READY
+                or payment_method_not_required
+            )
+
+            if has_lender_confirmed and has_borrower_confirmed and has_card_ready:
+                return 'All pre-rental actions completed - awaiting rental start date'
+
+        return self.get_transaction_status_display()
+
     def __str__(self):
         return self.transaction_reference
 
@@ -388,12 +421,14 @@ class TransactionMessage(models.Model):
     read_by_user_to = models.BooleanField(default=False)
     email_to_recepient = models.BooleanField(default=False)
     include_admin = models.BooleanField(default=False)
+    is_system_generated = models.BooleanField(default=False)
     history = HistoricalRecords()
 
 
 class TransactionMessageImage(models.Model):
     txn_message = models.ForeignKey(TransactionMessage, related_name='txn_msg_img', on_delete=models.CASCADE, blank=True, null=True)
-    image = models.ImageField(upload_to=RandomFileName('images/txn_msg/'))
+    image = models.ImageField(upload_to=RandomFileName('images/txn_msg/'), blank=True, null=True)
+    video = models.FileField(upload_to=RandomFileName('videos/txn_msg/'), blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     active = models.BooleanField(default=True)
     first_image = models.BooleanField(default=True)
@@ -403,7 +438,31 @@ class TransactionMessageImage(models.Model):
         super(TransactionMessageImage, self).save(*args, **kwargs)
 
     def save(self, *args, **kwargs):
-        #Opening the uploaded image
+        # Check if we should skip image processing (used by async task)
+        skip_processing = getattr(self, '_skip_image_processing', False)
+        
+        if self.video and not self.image:
+            super(TransactionMessageImage, self).save(*args, **kwargs)
+            return
+
+        if not self.image:
+            super(TransactionMessageImage, self).save(*args, **kwargs)
+            return
+        
+        # If image is new and we haven't already processed it, save it first then queue async processing
+        if not skip_processing and self.pk is None:  # New object
+            super(TransactionMessageImage, self).save(*args, **kwargs)
+            # Queue async image processing task
+            from .tasks import process_transaction_message_image
+            process_transaction_message_image.delay(self.id)
+            return
+        
+        if skip_processing:
+            # Just save without processing (called from async task)
+            super(TransactionMessageImage, self).save(*args, **kwargs)
+            return
+
+        # Existing object being updated - do processing synchronously for backward compatibility
         im = Image.open(self.image)
         output = BytesIO()
         fill_color = 'white'  # your background

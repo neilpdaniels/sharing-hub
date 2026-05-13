@@ -353,9 +353,9 @@
                             <div class="pp-summary-meta">
                                 <span class="font-weight-bold orderPrice">
                                     {% if needed_days_int and order.total_price %}
-                                        £{{ order.total_price|floatformat:"-2" }}<small class="text-muted"> for {{ needed_days_int }} day{{ needed_days_int|pluralize }}</small>
+                                    £{{ order.total_price|format_price }}<small class="text-muted"> for {{ needed_days_int }} day{{ needed_days_int|pluralize }}</small>
                                     {% else %}
-                                    £{{ order.display_price|floatformat:"-2" }}<small class="text-muted">/day</small>
+                                  £{{ order.display_price|format_price }}<small class="text-muted">/day</small>
                                     {% endif %}
                                 </span>
                                 {% if order.is_mates_rate_applied %}
@@ -374,7 +374,7 @@
                                 <span class="ml-2 text-muted small"><span class="fas fa-map-marker-alt"></span> {{ order.display_location }}</span>
                                 {% endif %}
                                 {% if order.display_deposit %}
-                                <span class="ml-2 badge badge-light border">£{{ order.display_deposit|floatformat:"-2" }} deposit</span>
+                                <span class="ml-2 badge badge-light border">£{{ order.display_deposit|format_price }} deposit</span>
                                 {% else %}
                                 <span class="ml-2 badge badge-light border text-muted">no deposit required</span>
                                 {% endif %}
@@ -433,10 +433,10 @@
               "id": {{ order.id }},
               "lat": {{ order.latitude }},
               "lng": {{ order.longitude }},
-              "price": "£{{ order.display_price|floatformat:"-2" }}",
+              "price": "£{{ order.display_price|format_price }}",
               "userId": {{ order.user_id }},
               "isFriend": {% if order.user_id in friend_user_ids %}true{% else %}false{% endif %},
-              "deposit": {% if order.display_deposit %}"£{{ order.display_deposit|floatformat:"-2" }}"{% else %}null{% endif %},
+              "deposit": {% if order.display_deposit %}"£{{ order.display_deposit|format_price }}"{% else %}null{% endif %},
               "matesApplied": {% if order.is_mates_rate_applied %}true{% else %}false{% endif %},
               "matesRates": {% if order.mates_rates is not None %}true{% else %}false{% endif %},
               "freeForFriends": {% if order.mates_rates == 0 %}true{% else %}false{% endif %},

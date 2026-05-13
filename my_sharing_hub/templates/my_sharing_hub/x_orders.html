@@ -45,10 +45,10 @@
             <a href="{% url 'navigation:productPage' order.product.slug %}">{{ order.product.name }}</a>
           </td>
           <td>
-            {% if order.price %}£{{ order.price|floatformat:"-2" }}{% else %}-{% endif %}
+            {% if order.price %}£{{ order.price|format_price }}{% else %}-{% endif %}
           </td>
           <td>
-            {% if order.deposit is not None %}£{{ order.deposit|floatformat:"-2" }}{% else %}-{% endif %}
+            {% if order.deposit is not None %}£{{ order.deposit|format_price }}{% else %}-{% endif %}
           </td>
           <td>{{ order.get_status_display }}</td>
           <td>

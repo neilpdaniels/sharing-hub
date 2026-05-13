@@ -1,5 +1,6 @@
 {% load static %}
 {% load thumbnail %}
+{% load common_lib %}
 <style>.badge-gold { background-color: #b8860b; color: #fff; }</style>
 {% if order %}
 <div class="pt-2 pb-1 border-top">
@@ -57,7 +58,7 @@
 
             <div class="mb-1" style="font-size:1.1rem;">
                 <span class="fas fa-tag mr-1"></span>
-                <strong class="text-dark">£{{ display_price|floatformat:"-2" }}/day</strong>
+                <strong class="text-dark">£{{ display_price|format_price }}/day</strong>
                 {% if is_friend_of_lender and order.mates_rates %}
                 <span class="ml-1 badge badge-gold">Mates rate applied</span>
                 {% endif %}
@@ -72,7 +73,7 @@
                     {% for band in price_bands %}
                     <tr>
                         <td class="py-0">Up to {{ band.duration_days }} day{{ band.duration_days|pluralize }}</td>
-                        <td class="py-0">£{{ band.price_per_day|floatformat:"-2" }}</td>
+                        <td class="py-0">£{{ band.price_per_day|format_price }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -85,10 +86,10 @@
             {% endif %}
             <div>
                 <span class="fas fa-truck mr-1"></span>{{ order.get_collection_policy_display }}
-                {% if order.delivery_cost %}&nbsp;· delivery £{{ order.delivery_cost|floatformat:"-2" }}{% endif %}
+                {% if order.delivery_cost %}&nbsp;· delivery £{{ order.delivery_cost|format_price }}{% endif %}
             </div>
             {% if display_deposit %}
-            <div><span class="fas fa-shield-alt mr-1"></span>£{{ display_deposit|floatformat:"-2" }} refundable deposit</div>
+            <div><span class="fas fa-shield-alt mr-1"></span>£{{ display_deposit|format_price }} refundable deposit</div>
             {% else %}
             <div><span class="fas fa-shield-alt mr-1"></span>No deposit required</div>
             {% endif %}

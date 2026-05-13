@@ -25,10 +25,38 @@ from django.core.files import File
 from account.models import Profile
 from urllib.parse import quote
 from django.views.decorators.csrf import csrf_exempt
+import urllib.request
+import urllib.parse
 
 from account.models import PaymentMethod
 
 from .stripe_connect import stripe_connect_service
+
+def _verify_turnstile(token, remote_ip=''):
+    """Verify Cloudflare Turnstile token."""
+    turnstile_secret = getattr(settings, 'CLOUDFLARE_TURNSTILE_SECRET_KEY', None)
+    if not turnstile_secret:
+        return True  # Skip validation if secret key not configured
+
+    try:
+        payload = urllib.parse.urlencode({
+            'secret': turnstile_secret,
+            'response': token,
+            'remoteip': remote_ip,
+        }).encode()
+        req = urllib.request.Request(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            data=payload,
+        )
+        result = json.loads(urllib.request.urlopen(req, timeout=5).read())
+        return result.get('success', False)
+    except Exception as e:
+        logging.error(f'Turnstile verification error: {e}')
+        return False
+from .tasks import (
+    async_setup_deposit_card_and_test_hold,
+    async_collect_deposit_hold,
+)
 
 
 def _require_mobile_verification(request):
@@ -45,6 +73,17 @@ def _require_mobile_verification(request):
     next_url = request.get_full_path()
     messages.warning(request, 'Please verify your mobile number before placing a listing or sending an enquiry.')
     return redirect(f'{verify_url}?next={quote(next_url)}')
+
+
+def _is_profile_kyc_verified(profile):
+    """Determine whether a profile satisfies current KYC requirements."""
+    stripe_verified = getattr(profile, 'stripe_identity_verified', False)
+    baseline_verified = (
+        profile.email_confirmed
+        and profile.mobile_verified
+        and profile.address_verified
+    )
+    return bool(stripe_verified or baseline_verified)
 
 
 @login_required
@@ -434,6 +473,18 @@ def hit_order(request, order_id=None):
             max_rental_days=order.max_rental_days,
         )
         if order_hit_form.is_valid():
+            turnstile_token = request.POST.get('cf-turnstile-response', '')
+            if not _verify_turnstile(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+                messages.error(request, 'Human verification failed. Please try again.')
+                # Re-render form without proceeding
+                context = {
+                    'order': order,
+                    'order_hit_form': order_hit_form,
+                    'captcha_error': 'Human verification failed',
+                    'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+                }
+                return render(request, 'transaction/hit_order.html', context)
+
             if order.expiry_date <= timezone.now() or order.status != Order.ACTIVE:
                 messages.error(request, 'This listing is no longer available.')
                 return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
@@ -488,13 +539,13 @@ def hit_order(request, order_id=None):
                 requires_kyc = False
                 kyc_message = f'This is a high-risk product (risk rating: {product.get_effective_risk_rating()}/100). '
                 
-                # Check if renter needs KYC
-                if not renter_profile.stripe_identity_verified:
+                # Check if borrower needs KYC
+                if not _is_profile_kyc_verified(renter_profile):
                     requires_kyc = True
-                    kyc_message += 'As the renter, you must complete KYC verification. '
+                    kyc_message += 'As the person who is borrowing, you must complete KYC verification. '
                 
                 # Check if lender needs KYC
-                if not lender_profile.stripe_identity_verified:
+                if not _is_profile_kyc_verified(lender_profile):
                     requires_kyc = True
                     kyc_message += 'The lender must also complete KYC verification before this rental can proceed. '
                 
@@ -533,6 +584,7 @@ def hit_order(request, order_id=None):
         'booked_dates_json': booked_dates_json,
         'handover_dates_json': handover_dates_json,
         'price_bands_json': price_bands_json,
+        'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
     }
     return render(request, 'transaction/hit_order.html', context)
 
@@ -543,8 +595,11 @@ def view_transaction(request, transaction_reference=None):
     if txn.user_passive != request.user and txn.user_aggressive != request.user:
         raise Http404
 
+    message_turnstile_required = txn.transactionmessage_set.count() > 20
+
     is_lender = (request.user == txn.user_passive)
     is_renter = (request.user == txn.user_aggressive)
+    card_setup_allowed_statuses = (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED)
 
     def _get_contract_deadline(transaction):
         """Deadline is min(lender confirmation + 24h, rental start datetime)."""
@@ -577,6 +632,15 @@ def view_transaction(request, transaction_reference=None):
             return False
         return timezone.now().date() >= transaction.rental_start_date
 
+    def _has_verified_payment_card(transaction):
+        payment_card_required = (transaction.deposit > 0 or transaction.price > 0)
+        if not payment_card_required:
+            return True
+        return (
+            transaction.deposit_card_setup_status == transaction.CARD_READY
+            and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS
+        )
+
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
 
@@ -606,10 +670,33 @@ def view_transaction(request, transaction_reference=None):
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
             messages.info(request, 'Rental enquiry rejected.')
 
-        elif action == 'confirm_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreement_pending_at:
+        elif action == 'request_cancellation' and txn.transaction_status == txn.RENTAL_ENQUIRY:
+            reason = (request.POST.get('cancellation_reason') or '').strip()
+            if not reason:
+                messages.error(request, 'Please provide a reason for cancellation.')
+            else:
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.CANCEL_ACCEPTED
+                txn.transaction_status_raised_by = request.user
+                txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+                
+                # Notify the other party
+                other_user = txn.user_aggressive if request.user == txn.user_passive else txn.user_passive
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=other_user,
+                    transaction=txn,
+                    subject=f'Transaction Cancelled - {txn.transaction_reference}',
+                    description=f"The transaction has been cancelled.\n\nReason: {reason}",
+                )
+                messages.success(request, 'Transaction cancelled.')
+
+        elif action == 'confirm_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and not txn.lender_agreed_at:
+            if not txn.lender_agreement_pending_at:
+                txn.lender_agreement_pending_at = timezone.now()
             txn.lender_agreed_at = timezone.now()
             txn.save()
-            # Send contract confirmation request to renter
+            # Send contract confirmation request to borrower
             contract_msg = f"""Lender has agreed to the rental.
 
 Rental Terms:
@@ -628,7 +715,7 @@ Transaction Ref: {txn.transaction_reference}"""
                 subject=f'Rental Agreement - Please Confirm {txn.transaction_reference}',
                 description=contract_msg,
             )
-            messages.success(request, 'Contract confirmed. Renter has been sent a confirmation request.')
+            messages.success(request, 'Contract confirmed. Borrower has been sent a confirmation request.')
 
         elif action == 'reinitiate_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
             contract_deadline = _get_contract_deadline(txn)
@@ -638,7 +725,7 @@ Transaction Ref: {txn.transaction_reference}"""
                 # Extend the deadline by resetting lender_agreed_at to now
                 txn.lender_agreed_at = timezone.now()
                 txn.save()
-                # Send a fresh confirmation request to renter
+                # Send a fresh confirmation request to borrower
                 contract_msg = f"""Lender has re-sent the rental confirmation request.
 
 Rental Terms:
@@ -657,9 +744,9 @@ Transaction Ref: {txn.transaction_reference}"""
                     subject=f'Rental Agreement - Re-sent (Please Confirm) {txn.transaction_reference}',
                     description=contract_msg,
                 )
-                messages.success(request, 'Confirmation request re-sent to renter. 24-hour window restarted.')
+                messages.success(request, 'Confirmation request re-sent to borrower. 24-hour window restarted.')
 
-        elif action == 'confirm_renter_contract' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and not txn.renter_agreed_at:
+        elif action == 'confirm_renter_contract' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
             contract_deadline = _get_contract_deadline(txn)
             if contract_deadline and timezone.now() > contract_deadline:
                 messages.error(
@@ -671,50 +758,49 @@ Transaction Ref: {txn.transaction_reference}"""
                 txn.save()
                 messages.success(request, 'Rental confirmed! Proceeding to next stage.')
 
-        elif action == 'add_deposit_card' and is_renter and txn.transaction_status == txn.RENTAL_AGREED:
+        elif action == 'reject_rental_agreement' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and not txn.renter_agreed_at:
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = txn.CANCEL_ACCEPTED
+            txn.transaction_status_raised_by = request.user
+            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_passive,
+                transaction=txn,
+                subject=f'Rental Agreement Rejected {txn.transaction_reference}',
+                description='Borrower has rejected the rental agreement.',
+            )
+            messages.info(request, 'Rental agreement rejected and the lender has been notified.')
+
+        elif action == 'add_deposit_card' and is_renter and txn.transaction_status in card_setup_allowed_statuses:
             cardholder_name = (request.POST.get('deposit_cardholder_name') or '').strip()
             card_brand = (request.POST.get('deposit_card_brand') or '').strip()
             card_last4 = (request.POST.get('deposit_card_last4') or '').strip()
 
-            if txn.deposit <= 0:
-                messages.info(request, 'No deposit is required for this transaction.')
+            if txn.deposit <= 0 and txn.price <= 0:
+                messages.info(request, 'No payment method is required for this transaction.')
             elif not cardholder_name:
                 messages.error(request, 'Please enter the cardholder name.')
             elif len(card_last4) != 4 or not card_last4.isdigit():
                 messages.error(request, 'Please enter a valid last 4 digits for the card.')
             else:
-                setup_result = stripe_connect_service.setup_deposit_card_and_test_hold(
-                    transaction=txn,
+                # Trigger async task for card setup
+                async_setup_deposit_card_and_test_hold.delay(
+                    transaction_id=txn.id,
                     cardholder_name=cardholder_name,
                     card_brand=card_brand,
                     card_last4=card_last4,
                 )
-                if not setup_result.get('ok'):
-                    txn.deposit_card_setup_status = txn.CARD_FAILED
-                    txn.deposit_test_hold_status = txn.TEST_HOLD_FAILED
-                    txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
-                    messages.error(request, setup_result.get('error', 'Card setup failed.'))
-                else:
-                    txn.deposit_card_setup_status = setup_result.get('card_setup_status', txn.CARD_READY)
-                    txn.deposit_cardholder_name = setup_result.get('cardholder_name', cardholder_name)
-                    txn.deposit_card_brand = setup_result.get('card_brand', card_brand.upper()[:20])
-                    txn.deposit_card_last4 = setup_result.get('card_last4', card_last4)
-                    txn.deposit_test_hold_status = setup_result.get('test_hold_status', txn.TEST_HOLD_SUCCESS)
-                    txn.deposit_test_hold_amount = setup_result.get('test_hold_amount', 0.01)
-                    txn.deposit_test_hold_at = setup_result.get('test_hold_at')
-                    txn.deposit_test_hold_reference = setup_result.get('test_hold_reference', '')
-                    txn.save()
-                    provider_label = setup_result.get('provider', 'service')
-                    messages.success(
-                        request,
-                        f'Deposit card saved. A £0.01 test hold succeeded via {provider_label}.'
-                    )
+                # Mark as processing
+                txn.deposit_card_setup_status = txn.CARD_NONE
+                txn.save()
 
-        elif action == 'use_existing_card' and is_renter and txn.transaction_status == txn.RENTAL_AGREED:
+        elif action == 'use_existing_card' and is_renter and txn.transaction_status in card_setup_allowed_statuses:
             payment_method_id = (request.POST.get('payment_method_id') or '').strip()
 
-            if txn.deposit <= 0:
-                messages.info(request, 'No deposit is required for this transaction.')
+            if txn.deposit <= 0 and txn.price <= 0:
+                messages.info(request, 'No payment method is required for this transaction.')
             elif not payment_method_id:
                 messages.error(request, 'Please select a payment method.')
             else:
@@ -725,109 +811,135 @@ Transaction Ref: {txn.transaction_reference}"""
                     txn.deposit_card_brand = pm.card_brand
                     txn.deposit_card_last4 = pm.card_last4
                     txn.deposit_test_hold_status = txn.TEST_HOLD_SUCCESS
-                    txn.deposit_test_hold_amount = 0.01
+                    txn.deposit_test_hold_amount = 0.30
                     txn.deposit_test_hold_at = timezone.now()
                     txn.stripe_setup_intent_id = pm.stripe_setup_intent_id
                     txn.stripe_payment_method_id = pm.stripe_payment_method_id
                     txn.save()
-                    messages.success(request, f'Using {pm.card_brand} ending {pm.card_last4} for deposit.')
                 except PaymentMethod.DoesNotExist:
                     messages.error(request, 'Payment method not found.')
 
-        elif action == 'confirm_stripe_card' and is_renter and txn.transaction_status == txn.RENTAL_AGREED:
+        elif action == 'confirm_stripe_card' and is_renter and txn.transaction_status in card_setup_allowed_statuses:
             payment_method_id = (request.POST.get('payment_method_id') or '').strip()
             setup_intent_id = (request.POST.get('setup_intent_id') or '').strip()
 
-            if txn.deposit <= 0:
-                messages.info(request, 'No deposit is required for this transaction.')
+            if txn.deposit <= 0 and txn.price <= 0:
+                messages.info(request, 'No payment method is required for this transaction.')
             elif not payment_method_id:
                 messages.error(request, 'Card details were not submitted successfully. Please try again.')
             else:
-                confirm_result = stripe_connect_service.confirm_card_setup(
-                    transaction=txn,
-                    setup_intent_id=setup_intent_id,
-                    payment_method_id=payment_method_id,
-                )
-                if not confirm_result.get('ok'):
-                    txn.deposit_card_setup_status = txn.CARD_FAILED
-                    txn.deposit_test_hold_status = txn.TEST_HOLD_FAILED
-                    txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
-                    messages.error(request, confirm_result.get('error', 'Card setup failed.'))
-                else:
-                    txn.deposit_card_setup_status = confirm_result.get('card_setup_status', txn.CARD_READY)
-                    txn.deposit_cardholder_name = confirm_result.get('cardholder_name', 'Stripe')
-                    txn.deposit_card_brand = confirm_result.get('card_brand', 'Card')
-                    txn.deposit_card_last4 = confirm_result.get('card_last4', 'xxxx')
-                    txn.deposit_test_hold_status = confirm_result.get('test_hold_status', txn.TEST_HOLD_SUCCESS)
-                    txn.deposit_test_hold_amount = confirm_result.get('test_hold_amount', 0.01)
-                    txn.deposit_test_hold_at = confirm_result.get('test_hold_at')
-                    txn.deposit_test_hold_reference = confirm_result.get('test_hold_reference', '')
-                    txn.stripe_setup_intent_id = setup_intent_id
-                    txn.stripe_payment_method_id = payment_method_id
-                    txn.save()
+                # Mark as processing and persist submitted Stripe references.
+                # Webhook handler will finalize verification status.
+                txn.deposit_card_setup_status = txn.CARD_NONE
+                txn.deposit_test_hold_status = txn.TEST_HOLD_NOT_RUN
+                txn.stripe_setup_intent_id = setup_intent_id
+                txn.stripe_payment_method_id = payment_method_id
+                txn.save(update_fields=[
+                    'deposit_card_setup_status',
+                    'deposit_test_hold_status',
+                    'stripe_setup_intent_id',
+                    'stripe_payment_method_id',
+                    'amended',
+                ])
 
-                    provider_label = confirm_result.get('provider', 'service')
-                    messages.success(
-                        request,
-                        f'Deposit card saved securely. A £0.01 test hold succeeded via {provider_label}.'
-                    )
-
-                    try:
-                        PaymentMethod.objects.update_or_create(
-                            stripe_payment_method_id=payment_method_id,
-                            defaults={
-                                'user': request.user,
-                                'stripe_setup_intent_id': setup_intent_id,
-                                'card_brand': confirm_result.get('card_brand', 'Card'),
-                                'card_last4': confirm_result.get('card_last4', 'xxxx'),
-                            },
-                        )
-                    except Exception as exc:
-                        logging.exception('Failed to save payment method: %s', exc)
-
-        elif action == 'collect_deposit' and is_lender and txn.transaction_status in (txn.RENTAL_AGREED, txn.RENTAL_INITIATED):
+        elif action == 'collect_deposit' and is_lender and txn.transaction_status in (
+            txn.RENTAL_AGREED, 
+            txn.RENTAL_DAY_AWAITING_VERIFICATION,
+            txn.RENTAL_ONGOING,
+            txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+            txn.RENTAL_RETURNED_DEPOSIT_PENDING,
+        ):
             if not _can_collect_deposit(txn):
                 messages.error(
                     request,
                     'Deposit cannot be collected yet. Ensure card setup/test hold is complete and rental start date has been reached.'
                 )
             else:
-                collect_result = stripe_connect_service.collect_deposit_hold(transaction=txn)
-                if not collect_result.get('ok'):
-                    txn.deposit_collection_status = txn.COLLECT_FAILED
-                    txn.save(update_fields=['deposit_collection_status', 'amended'])
-                    messages.error(request, collect_result.get('error', 'Deposit collection failed.'))
-                else:
-                    txn.deposit_collected_placeholder = True
-                    txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER
-                    txn.deposit_collection_status = collect_result.get('collection_status', txn.COLLECT_SUCCESS)
-                    txn.deposit_collection_requested_at = collect_result.get('collection_requested_at')
-                    txn.deposit_collection_reference = collect_result.get('collection_reference', '')
-                    txn.save()
-                    provider_label = collect_result.get('provider', 'service')
-                    messages.success(
-                        request,
-                        f'Deposit collected via {provider_label}: full authorization hold/retrieval recorded.'
-                    )
+                # Trigger async task for deposit collection
+                async_collect_deposit_hold.delay(transaction_id=txn.id)
+                # Mark as processing
+                txn.deposit_collection_status = txn.COLLECT_NOT_RUN
+                txn.save()
+                messages.info(
+                    request,
+                    'Deposit collection in progress. You will receive email confirmation when complete.'
+                )
 
         elif action == 'send_message' and (is_lender or is_renter):
             body = (request.POST.get('message_body') or '').strip()
-            if not body:
-                messages.error(request, 'Please enter a message before sending.')
+            image_files = request.FILES.getlist('message_images')
+            video_files = request.FILES.getlist('message_videos')
+            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+            if message_turnstile_required:
+                turnstile_token = request.POST.get('cf-turnstile-response', '')
+                if not _verify_turnstile(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+                    if is_ajax:
+                        return JsonResponse({'ok': False, 'error': 'Human verification failed. Please complete the checkbox and try again.'}, status=400)
+                    messages.error(request, 'Human verification failed. Please try again.')
+                    return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+            if not body and not image_files and not video_files:
+                if is_ajax:
+                    return JsonResponse({'ok': False, 'error': 'Please enter a message or attach at least one file before sending.'}, status=400)
+                messages.error(request, 'Please enter a message or attach at least one file before sending.')
             else:
-                TransactionMessage.objects.create(
+                invalid_video = next((f for f in video_files if not (getattr(f, 'content_type', '') or '').startswith('video/')), None)
+                if invalid_video is not None:
+                    if is_ajax:
+                        return JsonResponse({'ok': False, 'error': f'{invalid_video.name} is not a valid video file.'}, status=400)
+                    messages.error(request, f'{invalid_video.name} is not a valid video file.')
+                    return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+                txn_message = TransactionMessage.objects.create(
                     user_from=request.user,
                     user_to=(txn.user_aggressive if is_lender else txn.user_passive),
                     transaction=txn,
                     subject=f'Transaction {txn.transaction_reference}',
                     description=body,
                 )
-                messages.success(request, 'Message sent.')
+
+                for idx, image_file in enumerate(image_files):
+                    TransactionMessageImage.objects.create(
+                        txn_message=txn_message,
+                        user=request.user,
+                        image=image_file,
+                        first_image=(idx == 0),
+                        active=True,
+                    )
+
+                for video_file in video_files:
+                    TransactionMessageImage.objects.create(
+                        txn_message=txn_message,
+                        user=request.user,
+                        video=video_file,
+                        first_image=False,
+                        active=True,
+                    )
+
+                attachment_count = len(image_files) + len(video_files)
+                if is_ajax:
+                    if attachment_count:
+                        msg = f'Message sent with {attachment_count} attachment(s).'
+                    else:
+                        msg = 'Message sent.'
+                    return JsonResponse({'ok': True, 'message': msg})
+                if attachment_count:
+                    messages.info(request, f'Message sent with {attachment_count} attachment(s).')
+                else:
+                    messages.info(request, 'Message sent.')
 
         elif action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
+            if not _has_verified_payment_card(txn):
+                messages.error(
+                    request,
+                    'Rental is due to begin but cannot be initiated until the borrower has provided a payment card and verification hold has succeeded.'
+                )
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
             checkout_video = request.POST.get('checkout_video_url', '').strip()
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.RENTAL_INITIATED
+            txn.transaction_status = txn.RENTAL_ONGOING
             txn.checkout_condition_video_url = checkout_video
             if checkout_video:
                 txn.product_status = txn.CHECKOUT_VIDEO_ADDED
@@ -840,35 +952,35 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.save()
             messages.success(request, 'Rental initiated. Checkout evidence and placeholders saved.')
 
-        elif action == 'mark_returned' and txn.transaction_status == txn.RENTAL_INITIATED and (is_lender or is_renter):
+        elif action == 'mark_returned' and txn.transaction_status in (txn.RENTAL_DAY_AWAITING_VERIFICATION, txn.RENTAL_ONGOING, txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION) and (is_lender or is_renter):
             return_video = request.POST.get('return_video_url', '').strip()
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.RENTAL_RETURNED
+            txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
             txn.return_condition_video_url = return_video
             if return_video:
                 txn.product_status = txn.RETURN_VIDEO_ADDED
             txn.save()
             messages.success(request, 'Rental marked as returned.')
 
-        elif action == 'deposit_full' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED:
+        elif action == 'deposit_full' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.DEPOSIT_RETURNED
+            txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_RETURNED
             txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
             txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
             txn.save()
             messages.success(request, 'Deposit marked as returned in full.')
 
-        elif action == 'deposit_reduced' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED:
+        elif action == 'deposit_reduced' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.DEPOSIT_REDUCED
+            txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_RETURNED
             txn.deposit_status = txn.DEPOSIT_RETURNED_REDUCED
             txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
             txn.save()
             messages.success(request, 'Reduced deposit return recorded.')
 
-        elif action == 'mediation_required' and (is_lender or is_renter) and txn.transaction_status == txn.RENTAL_RETURNED:
+        elif action == 'mediation_required' and (is_lender or is_renter) and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.MEDIATION_REQUIRED
+            txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_CONTESTED
             txn.deposit_status = txn.DEPOSIT_MEDIATION
             txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
             txn.save()
@@ -897,17 +1009,36 @@ Transaction Ref: {txn.transaction_reference}"""
         contract_seconds_remaining = int((contract_deadline - now_ts).total_seconds())
 
     can_collect_deposit = _can_collect_deposit(txn)
+    has_verified_payment_card = _has_verified_payment_card(txn)
+    rental_start_blocked_by_missing_card = (
+        is_lender
+        and txn.transaction_status == txn.RENTAL_AGREED
+        and bool(txn.lender_agreed_at)
+        and bool(txn.renter_agreed_at)
+        and not has_verified_payment_card
+    )
 
     # Generate Stripe SetupIntent for card collection if needed
     setup_intent_client_secret = None
     setup_intent_id = None
-    if (is_renter and txn.transaction_status == txn.RENTAL_AGREED and 
-        txn.lender_agreed_at and txn.deposit > 0 and 
-        not txn.deposit_card_setup_status == txn.CARD_READY):
+    if (
+        is_renter
+        and txn.transaction_status in card_setup_allowed_statuses
+        and (txn.deposit > 0 or txn.price > 0)
+        and txn.deposit_card_setup_status != txn.CARD_READY
+        and not txn.deposit_collected_placeholder
+    ):
         setup_result = stripe_connect_service.create_setup_intent(transaction=txn)
         if setup_result.get('ok'):
             setup_intent_client_secret = setup_result.get('client_secret')
             setup_intent_id = setup_result.get('setup_intent_id')
+
+    can_setup_deposit_card = (
+        is_renter
+        and txn.transaction_status in card_setup_allowed_statuses
+        and (txn.deposit > 0 or txn.price > 0)
+        and not txn.deposit_collected_placeholder
+    )
 
     # Get user's saved payment methods
     user_payment_methods = []
@@ -932,12 +1063,55 @@ Transaction Ref: {txn.transaction_reference}"""
         'contract_deadline_iso': contract_deadline.isoformat() if contract_deadline else '',
         'contract_seconds_remaining': contract_seconds_remaining,
         'can_collect_deposit': can_collect_deposit,
+        'has_verified_payment_card': has_verified_payment_card,
+        'rental_start_blocked_by_missing_card': rental_start_blocked_by_missing_card,
         'setup_intent_client_secret': setup_intent_client_secret,
         'setup_intent_id': setup_intent_id,
+        'can_setup_deposit_card': can_setup_deposit_card,
         'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),
         'user_payment_methods': user_payment_methods,
+        'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+        'message_turnstile_required': message_turnstile_required,
     }
     return render(request, 'transaction/view_transaction.html', context)
+
+
+@login_required
+def card_setup_status(request, transaction_reference=None):
+    txn = get_object_or_404(Transaction, transaction_reference=transaction_reference)
+    if txn.user_passive != request.user and txn.user_aggressive != request.user:
+        raise Http404
+
+    if (
+        txn.deposit_card_setup_status == txn.CARD_READY
+        and txn.deposit_test_hold_status == txn.TEST_HOLD_SUCCESS
+    ):
+        state = 'completed'
+        message = (
+            f"Card ready: {txn.deposit_card_brand or 'Card'} ending {txn.deposit_card_last4 or 'xxxx'}. "
+            "The £0.30 verification hold succeeded."
+        )
+    elif (
+        txn.deposit_card_setup_status == txn.CARD_FAILED
+        or txn.deposit_test_hold_status == txn.TEST_HOLD_FAILED
+    ):
+        state = 'failed'
+        message = 'Card verification failed. Please try again or use a different card.'
+    else:
+        state = 'processing'
+        message = 'Card verification in progress. This usually takes a few seconds.'
+
+    return JsonResponse(
+        {
+            'state': state,
+            'message': message,
+            'card_setup_status': txn.deposit_card_setup_status,
+            'test_hold_status': txn.deposit_test_hold_status,
+            'card_brand': txn.deposit_card_brand,
+            'card_last4': txn.deposit_card_last4,
+            'updated': txn.amended.isoformat() if txn.amended else '',
+        }
+    )
 
 
 @login_required

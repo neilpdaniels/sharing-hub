@@ -1,3 +1,4 @@
+{% load common_lib %}
 <!-- Rental Terms & Conditions Modal -->
 <div class="modal fade" id="rentalTcsModal" tabindex="-1" role="dialog" aria-labelledby="rentalTcsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg" role="document">
@@ -28,7 +29,7 @@
                                 {% endif %}
                             </div>
                             <div class="col-6">
-                                <p class="mb-1"><strong>Renter (Borrower):</strong></p>
+                                <p class="mb-1"><strong>Borrower (Person who is borrowing):</strong></p>
                                 <p class="mb-1">{{ transaction.user_aggressive.get_full_name|default:transaction.user_aggressive.username }}</p>
                                 {% if transaction.user_aggressive.profile.mobile_number %}
                                 <p class="mb-1"><small class="text-muted">{{ transaction.user_aggressive.profile.mobile_number }}</small></p>
@@ -51,7 +52,7 @@
                         <p class="mb-1"><strong>Product:</strong> {{ transaction.order_passive.product.name }}</p>
                         <p class="mb-1"><strong>Rental Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
                         <p class="mb-1"><strong>Rental Duration:</strong> {{ transaction.get_rental_length_days }} days</p>
-                        <p class="mb-0"><strong>Daily Rate:</strong> £{{ transaction.price }}/day</p>
+                        <p class="mb-0"><strong>Daily Rate:</strong> £{{ transaction.price|format_price }}/day</p>
                     </div>
                 </div>
 
@@ -66,7 +67,7 @@
                             <li class="mt-2"><strong>Return Condition:</strong> You agree to return the item in the same condition as received, allowing for normal wear and tear.</li>
                             <li class="mt-2"><strong>Return Date and Time:</strong> The item must be returned on or before {{ transaction.rental_end_date }}. Late returns are not permitted and may incur additional charges.</li>
                             <li class="mt-2"><strong>Return Location:</strong> You agree to return the item to the location specified by the lender.</li>
-                            <li class="mt-2"><strong>Deposit:</strong> A deposit of £{{ transaction.deposit|floatformat:"-2" }} will be held during this rental as security against damage beyond normal wear and tear.</li>
+                            <li class="mt-2"><strong>Deposit:</strong> A deposit of £{{ transaction.deposit|format_price }} will be held during this rental as security against damage beyond normal wear and tear.</li>
                             <li class="mt-2"><strong>Deposit Return:</strong> The deposit will be returned within 7 business days of the item being returned in acceptable condition. If damage beyond normal wear and tear is identified, the deposit may be partially or fully retained to cover repair costs.</li>
                             <li class="mt-2"><strong>Loss or Theft:</strong> You agree to be fully responsible for any loss or theft of the item during the rental period.</li>
                             <li class="mt-2"><strong>Insurance:</strong> It is recommended that you arrange appropriate insurance coverage during the rental period.</li>

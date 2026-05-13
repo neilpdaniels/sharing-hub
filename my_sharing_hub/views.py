@@ -18,6 +18,8 @@ from transaction.tasks import getUserTransactions
 from common.models import Order, OrderImage, OrderBlockedDate, LetPriceBand
 from django.utils import timezone
 from datetime import timedelta
+import calendar
+from datetime import date
 
 from account.models import PaymentMethod
 
@@ -236,6 +238,53 @@ def copy_order_as_new(request, order_id):
 @login_required
 def open_transactions(request):
     user = request.user
+    today = timezone.localdate()
+
+    def _requires_my_action(txn_obj):
+        """Return True only when the logged-in user is the next actor for this transaction AND the date is right."""
+        is_lender_local = (txn_obj.user_passive_id == user.id)
+        is_renter_local = (txn_obj.user_aggressive_id == user.id)
+        status = txn_obj.transaction_status
+
+        if status == txn_obj.RENTAL_ENQUIRY:
+            # Pre-rental action; no date check needed
+            return is_lender_local
+
+        if status == txn_obj.RENTAL_AGREED:
+            lender_done = bool(txn_obj.lender_agreed_at)
+            renter_done = bool(txn_obj.renter_agreed_at)
+
+            if not lender_done and not renter_done:
+                # Both parties need to sign; no date restriction
+                return is_lender_local or is_renter_local
+            if lender_done and not renter_done:
+                # Renter needs to sign; no date restriction
+                return is_renter_local
+            if renter_done and not lender_done:
+                # Lender needs to sign; no date restriction
+                return is_lender_local
+
+            # Both signed; check card setup or rental start date
+            if txn_obj.deposit_card_setup_status != txn_obj.CARD_READY:
+                return is_renter_local
+            
+            # Lender ready to initiate: only red on or after rental_start_date
+            if is_lender_local and txn_obj.rental_start_date:
+                return today >= txn_obj.rental_start_date
+            return False
+
+        if status == txn_obj.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
+            # Renter marks as returned: only red on or after rental_end_date
+            if is_renter_local and txn_obj.rental_end_date:
+                return today >= txn_obj.rental_end_date
+            return False
+
+        if status == txn_obj.RENTAL_RETURNED_DEPOSIT_PENDING:
+            # Lender resolves deposit; no date restriction
+            return is_lender_local
+
+        return False
+
     closed_statuses = [
         Transaction.CANCEL_ACCEPTED,
         Transaction.DEPOSIT_RETURNED,
@@ -245,10 +294,104 @@ def open_transactions(request):
     object_pass_list = user.rel_from_set.exclude(transaction_status__in=closed_statuses)
     object_agg_list = user.rel_to_set.exclude(transaction_status__in=closed_statuses)
     # object_list =  user.rel_to_set.filter()
-    object_list =  sorted(
+    object_list = sorted(
     (chain(object_pass_list, object_agg_list)),
     key=attrgetter('amended'), reverse=True)
-    paginator = Paginator(object_list, 10) # per page
+
+    active_view = request.GET.get('view', 'list')
+    if active_view not in ('list', 'calendar'):
+        active_view = 'list'
+
+    month_param = (request.GET.get('month') or '').strip()
+    day_param = (request.GET.get('day') or '').strip()
+    today = timezone.localdate()
+    try:
+        if month_param:
+            calendar_year, calendar_month = [int(part) for part in month_param.split('-', 1)]
+            month_anchor = date(calendar_year, calendar_month, 1)
+        else:
+            month_anchor = date(today.year, today.month, 1)
+    except Exception:
+        month_anchor = date(today.year, today.month, 1)
+
+    selected_date = None
+    if day_param:
+        try:
+            selected_date = datetime.strptime(day_param, '%Y-%m-%d').date()
+        except ValueError:
+            selected_date = None
+    if selected_date is None and active_view == 'calendar':
+        if today.month == month_anchor.month and today.year == month_anchor.year:
+            selected_date = today
+        else:
+            selected_date = month_anchor
+
+    cal = calendar.Calendar(firstweekday=0)
+    month_days = list(cal.itermonthdates(month_anchor.year, month_anchor.month))
+    month_start = month_anchor
+    month_end = month_days[-1]
+
+    day_map = {}
+    for txn in object_list:
+        txn.requires_my_action = _requires_my_action(txn)
+        # Count unread messages for this transaction
+        txn.unread_message_count = TransactionMessage.objects.filter(
+            transaction=txn,
+            user_to=user,
+            read_by_user_to=False
+        ).count()
+        start_date = txn.rental_start_date
+        end_date = txn.rental_end_date or start_date
+        if not start_date:
+            continue
+
+        range_start = max(start_date, month_start)
+        range_end = min(end_date, month_end)
+        if range_end < range_start:
+            continue
+
+        is_lending = (txn.user_passive_id == user.id)
+        current_day = range_start
+        while current_day <= range_end:
+            slot = day_map.setdefault(current_day, {'lending': 0, 'borrowing': 0, 'pending': False})
+            if is_lending:
+                slot['lending'] += 1
+            else:
+                slot['borrowing'] += 1
+            if txn.requires_my_action:
+                slot['pending'] = True
+            current_day += timedelta(days=1)
+
+    calendar_weeks = []
+    for week in cal.monthdatescalendar(month_anchor.year, month_anchor.month):
+        week_cells = []
+        for day in week:
+            slot = day_map.get(day, {'lending': 0, 'borrowing': 0, 'pending': False})
+            week_cells.append({
+                'date': day,
+                'in_month': day.month == month_anchor.month,
+                'is_today': day == today,
+                'lending': slot['lending'],
+                'borrowing': slot['borrowing'],
+                'pending': slot['pending'],
+            })
+        calendar_weeks.append(week_cells)
+
+    prev_month = (month_anchor.replace(day=1) - timedelta(days=1)).replace(day=1)
+    if month_anchor.month == 12:
+        next_month = date(month_anchor.year + 1, 1, 1)
+    else:
+        next_month = date(month_anchor.year, month_anchor.month + 1, 1)
+
+    filtered_list = object_list
+    if active_view == 'calendar' and selected_date is not None:
+        filtered_list = [
+            txn for txn in object_list
+            if txn.rental_start_date
+            and (txn.rental_start_date <= selected_date <= (txn.rental_end_date or txn.rental_start_date))
+        ]
+
+    paginator = Paginator(filtered_list, 10) # per page
     page = request.GET.get('page')
     try:
         transactions = paginator.page(page)
@@ -260,6 +403,19 @@ def open_transactions(request):
         'page' : page,
         'type' : 'open',
         'transactions' : transactions,
+        'active_view': active_view,
+        'calendar_weeks': calendar_weeks,
+        'calendar_month_label': month_anchor.strftime('%B %Y'),
+        'calendar_month_key': month_anchor.strftime('%Y-%m'),
+        'calendar_prev_month_key': prev_month.strftime('%Y-%m'),
+        'calendar_next_month_key': next_month.strftime('%Y-%m'),
+        'selected_day_key': selected_date.strftime('%Y-%m-%d') if selected_date else '',
+        'selected_day_label': selected_date.strftime('%b %d, %Y') if selected_date else '',
+        'urlencode': (
+            f'view=calendar&month={month_anchor.strftime("%Y-%m")}&day={selected_date.strftime("%Y-%m-%d")}'
+            if active_view == 'calendar' and selected_date
+            else 'view=list'
+        ),
     }
     # return redirect('/navigation/seeAll/')
     getUserTransactions.delay(int(request.user.id))
@@ -306,7 +462,7 @@ def expand_message(request):
         message.read_by_user_to = True
         message.save()
     content = {
-        'from': message.user_from.username,
+        'from': 'System' if message.is_system_generated else message.user_from.username,
         'to' : message.user_to.username,
         'subject': message.subject,
         'body' : message.description,

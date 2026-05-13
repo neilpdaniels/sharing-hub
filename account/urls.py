@@ -22,6 +22,7 @@ urlpatterns = [
     path('myaccount/', views.myaccount, name='myaccount'),
     path('mobile-verify/', views.mobile_verify, name='mobile_verify'),
     path('kyc-verify/', views.kyc_verify, name='kyc_verify'),
+    path('login/', views.TurnstileLoginView.as_view(), name='login'),
     path('', include('django.contrib.auth.urls')),
     path('register/', views.register, name='register'),
     path('register/address-lookup/', views.address_lookup, name='address_lookup'),

@@ -54,35 +54,12 @@ class Profile(models.Model):
         return 'Profile for user {}'.format(self.user.username)
 
     def saveWithImage(self, *args, **kwargs):
-        #Opening the uploaded image
-        im = Image.open(self.image)
-        output = BytesIO()
-        fill_color = 'white'  # your background
-        if im.mode in ('RGBA', 'LA'):
-            background = Image.new(im.mode[:-1], im.size, fill_color)
-            background.paste(im, im.split()[-1])
-            im = background
-
-        #Resize/modify the image
-        max_h = 800
-        if im.size[0] > max_h:
-            ratio = im.size[0] / max_h
-            v_height = im.size[1] / ratio
-            im = im.resize( (max_h, int(v_height)) )
-        max_v = 600
-        if im.size[1] > max_v:
-            ratio = im.size[1] / max_v
-            h_height = im.size[0] / ratio
-            im = im.resize( (int(h_height), max_v) )
-		
-        #after modifications, save it to the output
-        im.save(output, format='JPEG', quality=100)
-        output.seek(0)
-
-        #change the imagefield value to be the newley modifed image value
-        self.image = InMemoryUploadedFile(output,'ImageField', "%s.jpg" %self.image.name.split('.')[0], 'image/jpeg', sys.getsizeof(output), None)
+        """Save profile and queue async image processing."""
+        # Save the profile first
         super(Profile, self).save(*args, **kwargs)
-
+        # Queue async image processing
+        from account.tasks import process_profile_image
+        process_profile_image.delay(self.id)
 
 class RegistrationVerification(models.Model):
     email = models.EmailField(db_index=True)

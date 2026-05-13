@@ -6,9 +6,9 @@ from transaction.tasks import createNewTransaction, getUserTransactions
 
 @receiver(user_logged_out)
 def show_logout_message(sender, user, request, **kwargs):
-    messages.success(request, 'You have been logged out successfully.')
+    return
 
 @receiver(user_logged_in)
 def show_login_message(sender, user, request, **kwargs):
     getUserTransactions.delay(int(user.id))
-    messages.success(request, 'You have logged in successfully.')
+    request.session['show_txn_login_notice'] = True

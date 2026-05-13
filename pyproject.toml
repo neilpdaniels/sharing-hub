@@ -28,7 +28,9 @@ dependencies = [
     "pymemcache>=4.0.0",
     "python-memcached>=1.62",
     "redis>=7.1.0",
+    "django-summernote>=0.8.20.0",
     "sorl-thumbnail>=13.0.0",
+    "stripe>=15.0.0",
     "twilio>=9.0.0",
     "zeep>=4.3.2",
 ]

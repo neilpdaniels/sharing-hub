@@ -207,4 +207,4 @@ class TransactionMessageAddForm(forms.ModelForm):
 class TransactionMessageImageForm(forms.ModelForm):
     class Meta:
         model = TransactionMessageImage
-        fields = ('image', )
+        fields = ('image', 'video')

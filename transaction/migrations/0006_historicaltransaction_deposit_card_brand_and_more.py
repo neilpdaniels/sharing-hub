@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='historicaltransaction',
             name='deposit_card_setup_status',
-            field=models.CharField(choices=[('NONE', 'No deposit card on file'), ('READY', 'Deposit card ready')], default='NONE', help_text='Placeholder status for renter deposit card setup via Stripe Connect', max_length=10),
+            field=models.CharField(choices=[('NONE', 'No deposit card on file'), ('READY', 'Deposit card ready')], default='NONE', help_text='Placeholder status for borrower deposit card setup via Stripe Connect', max_length=10),
         ),
         migrations.AddField(
             model_name='historicaltransaction',
@@ -78,7 +78,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='transaction',
             name='deposit_card_setup_status',
-            field=models.CharField(choices=[('NONE', 'No deposit card on file'), ('READY', 'Deposit card ready')], default='NONE', help_text='Placeholder status for renter deposit card setup via Stripe Connect', max_length=10),
+            field=models.CharField(choices=[('NONE', 'No deposit card on file'), ('READY', 'Deposit card ready')], default='NONE', help_text='Placeholder status for borrower deposit card setup via Stripe Connect', max_length=10),
         ),
         migrations.AddField(
             model_name='transaction',

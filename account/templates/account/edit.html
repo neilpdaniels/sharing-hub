@@ -9,26 +9,40 @@
 {% block content %}
 <div class="container">
   <div class="row">
-    <div class="col-lg-2"></div>
-    <div class="col-lg-8">
+    <div class="col-lg-1"></div>
+    <div class="col-lg-10">
       <h1>Edit your account</h1>
-      <p>you can edit with the following:</p>
-        <form action="." method="post" enctype="multipart/form-data" id="account-edit-form"
-          data-mobile-verified="{{ request.user.profile.mobile_verified|yesno:'1,0' }}"
-          data-address-verified="{{ request.user.profile.address_verified|yesno:'1,0' }}">
-          <input type="hidden" id="initial_mobile_number" value="{{ request.user.profile.mobile_number|default:'' }}">
-          <input type="hidden" id="initial_address_line_1" value="{{ request.user.profile.address_line_1|default:'' }}">
-          <input type="hidden" id="initial_address_line_2" value="{{ request.user.profile.address_line_2|default:'' }}">
-          <input type="hidden" id="initial_town" value="{{ request.user.profile.town|default:'' }}">
-          <input type="hidden" id="initial_county" value="{{ request.user.profile.county|default:'' }}">
-          <input type="hidden" id="initial_postcode" value="{{ request.user.profile.postcode|default:'' }}">
-          {% bootstrap_form user_form %}
-          {% bootstrap_form profile_form %}
+      <p>You can edit your profile details and avatar separately.</p>
 
-          <hr class="my-4">
-          <h4 class="mb-3">Avatar</h4>
+      <div class="row">
+        <div class="col-md-7 col-12">
+          <form action="." method="post" enctype="multipart/form-data" id="account-profile-form"
+            data-mobile-verified="{{ request.user.profile.mobile_verified|yesno:'1,0' }}"
+            data-address-verified="{{ request.user.profile.address_verified|yesno:'1,0' }}">
+            <input type="hidden" name="action" value="save_profile">
+            <input type="hidden" id="initial_mobile_number" value="{{ request.user.profile.mobile_number|default:'' }}">
+            <input type="hidden" id="initial_address_line_1" value="{{ request.user.profile.address_line_1|default:'' }}">
+            <input type="hidden" id="initial_address_line_2" value="{{ request.user.profile.address_line_2|default:'' }}">
+            <input type="hidden" id="initial_town" value="{{ request.user.profile.town|default:'' }}">
+            <input type="hidden" id="initial_county" value="{{ request.user.profile.county|default:'' }}">
+            <input type="hidden" id="initial_postcode" value="{{ request.user.profile.postcode|default:'' }}">
+            {% bootstrap_form user_form %}
+            {% bootstrap_form profile_form %}
+            {% csrf_token %}
+            <p><input type="submit" id="profile-form-submit" hidden value="Save profile"></p>
+          </form>
+          <button type="button" class="btn btn-primary js-profile-form-submit mb-4">
+            <span class="fas fa-floppy-o"></span> Save profile details
+          </button>
+        </div>
 
-          <div class="sh-avatar-box mb-3">
+        <div class="col-md-5 col-12">
+          <form action="." method="post" id="avatar-edit-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_avatar">
+
+            <h4 class="mb-3">Avatar</h4>
+            <div class="sh-avatar-box mb-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
               <div class="sh-field-label mb-1">Avataaars</div>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="randomiseAvatarBtn">Randomise</button>
@@ -138,34 +152,31 @@
               </div>
             </div>
           </div>
+            <button type="submit" class="btn btn-primary btn-block">Save avatar only</button>
+          </form>
 
-          {% csrf_token %}
-          <p><input type="submit" id="form-submit" hidden value="Save"></p>
-      </form>
-      <button type="button" class="btn btn-primary js-form-submit">
-        <span class="fas fa-floppy-o"></span> Submit
-      </button>
-
-      <hr class="my-4">
-      <h4>Profile avatar</h4>
-      {% if request.user.profile.image %}
-      <p class="mb-2">
-        <img src="{{ request.user.profile.image.url }}" alt="Current avatar" style="max-width:120px; border-radius:8px;">
-      </p>
-      {% endif %}
-      <div class="d-flex flex-wrap" style="gap: 0.5rem;">
-        <form action="." method="post" class="d-inline">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="switch_avatar">
-          <input type="hidden" name="avatar_source" value="original">
-          <button type="submit" class="btn btn-outline-secondary btn-sm" {% if not request.user.profile.image_original %}disabled{% endif %}>Use original photo</button>
-        </form>
-        <form action="." method="post" class="d-inline">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="switch_avatar">
-          <input type="hidden" name="avatar_source" value="generated">
-          <button type="submit" class="btn btn-outline-secondary btn-sm" {% if not request.user.profile.image_generated %}disabled{% endif %}>Use generated avatar</button>
-        </form>
+          <hr class="my-4">
+          <h4>Profile avatar</h4>
+          {% if request.user.profile.image %}
+          <p class="mb-2">
+            <img src="{{ request.user.profile.image.url }}" alt="Current avatar" style="max-width:120px; border-radius:8px;">
+          </p>
+          {% endif %}
+          <div class="d-flex flex-wrap" style="gap: 0.5rem;">
+            <form action="." method="post" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="switch_avatar">
+              <input type="hidden" name="avatar_source" value="original">
+              <button type="submit" class="btn btn-outline-secondary btn-sm" {% if not request.user.profile.image_original %}disabled{% endif %}>Use original photo</button>
+            </form>
+            <form action="." method="post" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="switch_avatar">
+              <input type="hidden" name="avatar_source" value="generated">
+              <button type="submit" class="btn btn-outline-secondary btn-sm" {% if not request.user.profile.image_generated %}disabled{% endif %}>Use generated avatar</button>
+            </form>
+          </div>
+        </div>
       </div>
 
       <div class="modal fade" id="verification-reset-modal" tabindex="-1" role="dialog" aria-labelledby="verificationResetModalLabel" aria-hidden="true">
@@ -192,6 +203,7 @@
       </div>
 
     </div>
+    <div class="col-lg-1"></div>
   </div>
 </div>
 {% endblock %}
@@ -529,8 +541,8 @@ $('#id_date_of_birth').datepicker({
   refreshPreview();
 })();
 
-$(".js-form-submit").click(function () {
-  var form = document.getElementById('account-edit-form');
+$(".js-profile-form-submit").click(function () {
+  var form = document.getElementById('account-profile-form');
   var warningList = document.getElementById('verification-reset-warning-list');
   var normalizePhone = function(value) {
     value = (value || '').trim();
@@ -578,12 +590,12 @@ $(".js-form-submit").click(function () {
     return;
   }
 
-  $("#form-submit").click();
+  $("#profile-form-submit").click();
 });
 
 $('#verification-reset-proceed').click(function () {
   $('#verification-reset-modal').modal('hide');
-  $("#form-submit").click();
+  $("#profile-form-submit").click();
 });
 
 {% endblock %}

@@ -102,6 +102,83 @@ class Category(models.Model):
         super(Category, self).save(*args, **kwargs)
         bestPrices, created = BestPricedForCategory.objects.get_or_create(category_id=self)
 
+    def get_attribute_definitions(self):
+        """
+        Return a normalized list of category attribute definitions.
+
+        This keeps legacy behavior (attribute_one_* ... attribute_five_*) while allowing
+        new rows from CategoryAttribute to overlay/extend definitions.
+        """
+        attributes = []
+        for order in range(1, 6):
+            suffix = {
+                1: 'one',
+                2: 'two',
+                3: 'three',
+                4: 'four',
+                5: 'five',
+            }[order]
+            attributes.append(
+                {
+                    'order': order,
+                    'name': getattr(self, f'attribute_{suffix}_name'),
+                    'sortable': getattr(self, f'attribute_{suffix}_sortable'),
+                    'filterable': getattr(self, f'attribute_{suffix}_filterable'),
+                    'default_filtered_value': getattr(
+                        self,
+                        f'attribute_{suffix}_default_filtered_value',
+                    ),
+                }
+            )
+
+        # Overlay with row-based definitions where present.
+        for attr in self.category_attributes.all():
+            index = attr.order - 1
+            if 0 <= index < len(attributes):
+                attributes[index] = {
+                    'order': attr.order,
+                    'name': attr.name,
+                    'sortable': attr.sortable,
+                    'filterable': attr.filterable,
+                    'default_filtered_value': attr.default_filtered_value,
+                }
+            else:
+                attributes.append(
+                    {
+                        'order': attr.order,
+                        'name': attr.name,
+                        'sortable': attr.sortable,
+                        'filterable': attr.filterable,
+                        'default_filtered_value': attr.default_filtered_value,
+                    }
+                )
+
+        return sorted(attributes, key=lambda item: item['order'])
+
+
+class CategoryAttribute(models.Model):
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name='category_attributes',
+    )
+    order = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(50)],
+        help_text='Display order for the attribute (starts at 1)',
+    )
+    name = models.CharField(max_length=200, null=True, blank=True)
+    sortable = models.BooleanField(default=False)
+    filterable = models.BooleanField(default=False)
+    default_filtered_value = models.CharField(max_length=200, null=True, blank=True)
+
+    class Meta:
+        ordering = ('order',)
+        unique_together = ('category', 'order')
+
+    def __str__(self):
+        label = self.name or f'Attribute {self.order}'
+        return f'{self.category.title}: {label}'
+
 class Product(models.Model):
     category_id = models.ForeignKey(Category, on_delete=models.CASCADE)
     tags = models.ManyToManyField(CategoryTag, blank=True, related_name='products')

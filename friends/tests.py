@@ -7,9 +7,9 @@ from .models import Friendship, FriendsHelper
 class FriendshipModelTests(TestCase):
     
     def setUp(self):
-        self.user1 = User.objects.create_user(username='user1', password='test')
-        self.user2 = User.objects.create_user(username='user2', password='test')
-        self.user3 = User.objects.create_user(username='user3', password='test')
+        self.user1 = User.objects.create_user(username='user1', email='user1@example.com', password='test')
+        self.user2 = User.objects.create_user(username='user2', email='user2@example.com', password='test')
+        self.user3 = User.objects.create_user(username='user3', email='user3@example.com', password='test')
     
     def test_cannot_add_self_as_friend(self):
         """Test that a user cannot add themselves as a friend."""

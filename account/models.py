@@ -1,14 +1,12 @@
 from django.db import models
 from django.conf import settings
-from .validators import MinAgeValidator
-from common.helpers import RandomFileName 
-from PIL import Image
-from io import BytesIO
+from django.contrib.auth.models import User
 from django.core.files.uploadedfile import InMemoryUploadedFile
-import sys
-from django.contrib.auth.models import User, models
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils import timezone
+
+from .validators import MinAgeValidator
+from common.helpers import RandomFileName
 
 # make email address unique
 User._meta.get_field('email').__dict__['_unique'] = True

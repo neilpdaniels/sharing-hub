@@ -1,68 +1,58 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse, JsonResponse, Http404
-from django.contrib.auth import authenticate, login
-from django.core.exceptions import ValidationError
-from .forms import OrderEditForm, OrderExpireForm
-from .forms import OrderAddForm, OrderImageForm, LetPriceBandFormSet, RentalEnquiryForm
-from .forms import TransactionMessageImageForm, TransactionMessageAddForm
-from django.contrib.auth.decorators import login_required
-from common.models import Order, Product, OrderImage, TransactionFee, OrderBlockedDate
-from .models import Transaction, TransactionMessage, TransactionMessageImage, TransactionCharge, TransactionImage, TransactionFeedback
-from django.contrib import messages
-from datetime import datetime, timedelta, time as dt_time
-from django.urls import reverse
-from django.http import JsonResponse
-from django.views import View
-from common.decorators import ajax_required
-import logging
-from django.conf import settings
-from operator import attrgetter
-from django.utils import timezone
-import common.helpers
-from .helpers import (
-    returnFeeValue,
-    getTransactionStepAndAction,
-    get_user_feedback_breakdown_map,
-)
-import os
+# Standard library
 import json
+import logging
 import random
-from django.core.files import File
-from account.models import Profile
+from datetime import datetime, timedelta, time as dt_time
+from operator import attrgetter
 from urllib.parse import quote
+
+# Django
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.files import File
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-import urllib.request
-import urllib.parse
 
-from account.models import PaymentMethod
-
-from .stripe_connect import stripe_connect_service
-
-def _verify_turnstile(token, remote_ip=''):
-    """Verify Cloudflare Turnstile token."""
-    turnstile_secret = getattr(settings, 'CLOUDFLARE_TURNSTILE_SECRET_KEY', None)
-    if not turnstile_secret:
-        return True  # Skip validation if secret key not configured
-
-    try:
-        payload = urllib.parse.urlencode({
-            'secret': turnstile_secret,
-            'response': token,
-            'remoteip': remote_ip,
-        }).encode()
-        req = urllib.request.Request(
-            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-            data=payload,
-        )
-        result = json.loads(urllib.request.urlopen(req, timeout=5).read())
-        return result.get('success', False)
-    except Exception as e:
-        logging.error(f'Turnstile verification error: {e}')
-        return False
-from .tasks import (
-    async_setup_deposit_card_and_test_hold,
-    async_collect_deposit_hold,
+# Local apps
+from account.models import PaymentMethod, Profile
+from common.decorators import ajax_required
+from common.helpers import is_profile_kyc_verified
+from common.models import Order, OrderBlockedDate, OrderImage, Product, TransactionFee
+from common.security import verify_turnstile_token
+from .forms import (
+    LetPriceBandFormSet,
+    OrderAddForm,
+    OrderExpireForm,
+    OrderImageForm,
+    RentalEnquiryForm,
+    TransactionMessageAddForm,
+    TransactionMessageImageForm,
 )
+from .helpers import (
+    get_user_feedback_breakdown_map,
+    getTransactionStepAndAction,
+    returnFeeValue,
+)
+from .models import (
+    Transaction,
+    TransactionFeedback,
+    TransactionImage,
+    TransactionMessage,
+    TransactionMessageImage,
+)
+from .stripe_connect import stripe_connect_service
+from .tasks import (
+    async_collect_deposit_hold,
+    async_setup_deposit_card_and_test_hold,
+)
+
+
 
 
 def _generate_txn_pin(length=6):
@@ -86,15 +76,175 @@ def _require_mobile_verification(request):
     return redirect(f'{verify_url}?next={quote(next_url)}')
 
 
-def _is_profile_kyc_verified(profile):
-    """Determine whether a profile satisfies current KYC requirements."""
-    stripe_verified = getattr(profile, 'stripe_identity_verified', False)
-    baseline_verified = (
-        profile.email_confirmed
-        and profile.mobile_verified
-        and profile.address_verified
-    )
-    return bool(stripe_verified or baseline_verified)
+class OrderFormHandler:
+    @staticmethod
+    def apply_common_order_fields(order, user, product=None):
+        order.user = user
+        if product is not None:
+            order.product = product
+        order.direction = Order.TO_LET
+        order.quantity = 1
+        order.status = Order.ACTIVE
+        return order
+
+    @staticmethod
+    def set_order_expiry(order, expiry_date):
+        order.expiry_date = datetime.combine(expiry_date, dt_time(23, 59, 59))
+
+    @staticmethod
+    def save_order_and_bands(order_form, band_formset, user, product=None):
+        order = order_form.save(commit=False)
+        OrderFormHandler.apply_common_order_fields(order, user, product=product)
+        OrderFormHandler.set_order_expiry(order, order_form.cleaned_data['expiry_date'])
+        order.save()
+
+        band_formset.instance = order
+        band_formset.save()
+        return order
+
+    @staticmethod
+    def sync_blocked_dates(order, blocked_raw, blocked_handover_raw, clear_existing=False):
+        if clear_existing:
+            OrderBlockedDate.objects.filter(
+                order=order,
+                reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.HANDOVER_UNAVAILABLE],
+            ).delete()
+
+        for ds in (blocked_raw or '').split(','):
+            ds = ds.strip()
+            if not ds:
+                continue
+            try:
+                date_value = datetime.fromisoformat(ds).date()
+            except ValueError:
+                continue
+            OrderBlockedDate.objects.get_or_create(
+                order=order,
+                date=date_value,
+                defaults={'reason': OrderBlockedDate.MANUAL},
+            )
+
+        for ds in (blocked_handover_raw or '').split(','):
+            ds = ds.strip()
+            if not ds:
+                continue
+            try:
+                date_value = datetime.fromisoformat(ds).date()
+            except ValueError:
+                continue
+            if OrderBlockedDate.objects.filter(
+                order=order,
+                date=date_value,
+                reason=OrderBlockedDate.BOOKED,
+            ).exists():
+                continue
+            if OrderBlockedDate.objects.filter(
+                order=order,
+                date=date_value,
+                reason=OrderBlockedDate.MANUAL,
+            ).exists():
+                continue
+            OrderBlockedDate.objects.get_or_create(
+                order=order,
+                date=date_value,
+                defaults={'reason': OrderBlockedDate.HANDOVER_UNAVAILABLE},
+            )
+
+    @staticmethod
+    def sync_add_images(order, request):
+        order_image_ids = request.POST.get('order_image_id', '').split()
+        main_image_id = request.POST.get('main_image_id', '').strip()
+        count = len(order.images.filter(active=True))
+
+        for order_image_id in order_image_ids:
+            try:
+                order_image = OrderImage.objects.get(pk=order_image_id)
+            except OrderImage.DoesNotExist as exc:
+                raise Http404('OrderImage does not exist') from exc
+
+            if request.user != order_image.user:
+                continue
+            if count >= 5:
+                continue
+
+            order_image.order = order
+            order_image.is_main = str(order_image_id) == main_image_id
+            order_image.saveNoImageModification()
+            count += 1
+
+        if not main_image_id:
+            first = order.images.filter(active=True).first()
+            if first:
+                first.is_main = True
+                first.saveNoImageModification()
+
+    @staticmethod
+    def sync_edit_images(order, request):
+        selected_ids = []
+        for oid in request.POST.get('order_image_id', '').split():
+            if oid not in selected_ids:
+                selected_ids.append(oid)
+        selected_ids = selected_ids[:5]
+        main_image_id = request.POST.get('main_image_id', '').strip()
+
+        for img in order.images.filter(active=True):
+            if str(img.id) not in selected_ids:
+                img.active = False
+                img.is_main = False
+                img.saveNoImageModification()
+
+        for order_image_id in selected_ids:
+            try:
+                order_image = OrderImage.objects.get(pk=order_image_id)
+            except OrderImage.DoesNotExist as exc:
+                raise Http404('OrderImage does not exist') from exc
+
+            if request.user != order_image.user:
+                continue
+
+            order_image.order = order
+            order_image.active = True
+            order_image.is_main = str(order_image_id) == main_image_id
+            order_image.saveNoImageModification()
+
+        if not main_image_id:
+            first = order.images.filter(active=True).first()
+            if first:
+                first.is_main = True
+                first.saveNoImageModification()
+
+    @staticmethod
+    def build_edit_order_context(order):
+        order_images = list(order.images.filter(active=True))
+        order_image_ids_str = ' '.join(str(img.id) for img in order_images)
+        main_image = next((img for img in order_images if img.is_main), None)
+        if not main_image and order_images:
+            main_image = order_images[0]
+
+        manual_blocked_dates = [
+            bd.date.isoformat()
+            for bd in order.blocked_dates.filter(reason=OrderBlockedDate.MANUAL)
+        ]
+        booked_dates = [
+            bd.date.isoformat()
+            for bd in order.blocked_dates.filter(reason=OrderBlockedDate.BOOKED)
+        ]
+        blocked_handover_dates = [
+            bd.date.isoformat()
+            for bd in order.blocked_dates.filter(reason=OrderBlockedDate.HANDOVER_UNAVAILABLE)
+        ]
+
+        return {
+            'existing_order_images': order_images,
+            'order_image_ids_str': order_image_ids_str,
+            'main_image_id': str(main_image.id) if main_image else '',
+            'blocked_dates_json': json.dumps(manual_blocked_dates),
+            'booked_dates_json': json.dumps(booked_dates),
+            'blocked_handover_dates_json': json.dumps(blocked_handover_dates),
+        }
+
+
+
 
 
 @login_required
@@ -115,74 +265,19 @@ def add_order(request, product_id=None):
         band_formset = LetPriceBandFormSet(data=request.POST, instance=order)
 
         if order_form.is_valid() and band_formset.is_valid():
-            order = order_form.save(commit=False)
-            order.user = request.user
-            order.product_id = request.POST['product_id']
-            order.direction = Order.TO_LET
-            order.quantity = 1
-            order.status = Order.ACTIVE
-            # expiry_date comes in as a date — set to end of that day
-            from datetime import datetime, time
-            expiry_date = order_form.cleaned_data['expiry_date']
-            order.expiry_date = datetime.combine(expiry_date, time(23, 59, 59))
-            order.save()
-
-            band_formset.instance = order
-            band_formset.save()
-
-            # Save blocked dates from calendar
-            blocked_raw = request.POST.get('blocked_dates', '')
-            blocked_handover_raw = request.POST.get('blocked_handover_dates', '')
-            if blocked_raw:
-                import datetime
-                for ds in blocked_raw.split(','):
-                    ds = ds.strip()
-                    if ds:
-                        try:
-                            d = datetime.date.fromisoformat(ds)
-                            OrderBlockedDate.objects.get_or_create(
-                                order=order, date=d,
-                                defaults={'reason': OrderBlockedDate.MANUAL}
-                            )
-                        except ValueError:
-                            pass
-            if blocked_handover_raw:
-                import datetime
-                for ds in blocked_handover_raw.split(','):
-                    ds = ds.strip()
-                    if ds:
-                        try:
-                            d = datetime.date.fromisoformat(ds)
-                            if not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.BOOKED).exists() \
-                               and not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.MANUAL).exists():
-                                OrderBlockedDate.objects.get_or_create(
-                                    order=order,
-                                    date=d,
-                                    defaults={'reason': OrderBlockedDate.HANDOVER_UNAVAILABLE},
-                                )
-                        except ValueError:
-                            pass
-
-            orderImage_ids = request.POST['order_image_id'].split()
-            main_image_id = request.POST.get('main_image_id', '').strip()
-            count = len(order.images.filter(active=True))
-            for orderImage_id in orderImage_ids:
-                try:
-                    orderImage = OrderImage.objects.get(pk=orderImage_id)
-                    if request.user == orderImage.user:
-                        if count < 5:
-                            orderImage.order = order
-                            orderImage.is_main = (str(orderImage_id) == main_image_id)
-                            orderImage.saveNoImageModification()
-                            count += 1
-                except OrderImage.DoesNotExist:
-                    raise Http404("OrderImage does not exist")
-            # If no main was explicitly chosen, mark the first image as main
-            if not main_image_id:
-                first = order.images.filter(active=True).first()
-                if first:
-                    first.is_main = True
-                    first.saveNoImageModification()
+            order = OrderFormHandler.save_order_and_bands(
+                order_form,
+                band_formset,
+                request.user,
+                product=product,
+            )
+            OrderFormHandler.sync_blocked_dates(
+                order,
+                request.POST.get('blocked_dates', ''),
+                request.POST.get('blocked_handover_dates', ''),
+                clear_existing=False,
+            )
+            OrderFormHandler.sync_add_images(order, request)
 
             messages.success(request, 'Your listing has been added')
             product_url = request.build_absolute_uri(
@@ -221,91 +316,18 @@ def edit_order(request, order_id=None):
         band_formset = LetPriceBandFormSet(data=request.POST, instance=order)
 
         if order_form.is_valid() and band_formset.is_valid():
-            order = order_form.save(commit=False)
-            order.user = request.user
-            order.product = order.product
-            order.direction = Order.TO_LET
-            order.quantity = 1
-            order.status = Order.ACTIVE
-
-            # expiry_date comes in as a date — set to end of that day
-            from datetime import datetime, time
-            expiry_date = order_form.cleaned_data['expiry_date']
-            order.expiry_date = datetime.combine(expiry_date, time(23, 59, 59))
-            order.save()
-
-            band_formset.instance = order
-            band_formset.save()
-
-            # Replace manually blocked dates from calendar selections.
-            OrderBlockedDate.objects.filter(
-                order=order,
-                reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.HANDOVER_UNAVAILABLE],
-            ).delete()
-            blocked_raw = request.POST.get('blocked_dates', '')
-            blocked_handover_raw = request.POST.get('blocked_handover_dates', '')
-            if blocked_raw:
-                import datetime
-                for ds in blocked_raw.split(','):
-                    ds = ds.strip()
-                    if ds:
-                        try:
-                            d = datetime.date.fromisoformat(ds)
-                            OrderBlockedDate.objects.get_or_create(
-                                order=order,
-                                date=d,
-                                defaults={'reason': OrderBlockedDate.MANUAL},
-                            )
-                        except ValueError:
-                            pass
-            if blocked_handover_raw:
-                import datetime
-                for ds in blocked_handover_raw.split(','):
-                    ds = ds.strip()
-                    if ds:
-                        try:
-                            d = datetime.date.fromisoformat(ds)
-                            if not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.BOOKED).exists() \
-                               and not OrderBlockedDate.objects.filter(order=order, date=d, reason=OrderBlockedDate.MANUAL).exists():
-                                OrderBlockedDate.objects.get_or_create(
-                                    order=order,
-                                    date=d,
-                                    defaults={'reason': OrderBlockedDate.HANDOVER_UNAVAILABLE},
-                                )
-                        except ValueError:
-                            pass
-
-            # Sync selected images (max 5) and main image.
-            selected_ids = []
-            order_image_ids_raw = request.POST.get('order_image_id', '')
-            for oid in order_image_ids_raw.split():
-                if oid not in selected_ids:
-                    selected_ids.append(oid)
-            selected_ids = selected_ids[:5]
-            main_image_id = request.POST.get('main_image_id', '').strip()
-
-            for img in order.images.filter(active=True):
-                if str(img.id) not in selected_ids:
-                    img.active = False
-                    img.is_main = False
-                    img.saveNoImageModification()
-
-            for order_image_id in selected_ids:
-                try:
-                    order_image = OrderImage.objects.get(pk=order_image_id)
-                    if request.user == order_image.user:
-                        order_image.order = order
-                        order_image.active = True
-                        order_image.is_main = (str(order_image_id) == main_image_id)
-                        order_image.saveNoImageModification()
-                except OrderImage.DoesNotExist:
-                    raise Http404('OrderImage does not exist')
-
-            if not main_image_id:
-                first = order.images.filter(active=True).first()
-                if first:
-                    first.is_main = True
-                    first.saveNoImageModification()
+            order = OrderFormHandler.save_order_and_bands(
+                order_form,
+                band_formset,
+                request.user,
+            )
+            OrderFormHandler.sync_blocked_dates(
+                order,
+                request.POST.get('blocked_dates', ''),
+                request.POST.get('blocked_handover_dates', ''),
+                clear_existing=True,
+            )
+            OrderFormHandler.sync_edit_images(order, request)
 
             messages.success(request, 'Order updated')
             product_url = request.build_absolute_uri(
@@ -317,23 +339,7 @@ def edit_order(request, order_id=None):
         band_formset = LetPriceBandFormSet(instance=order)
         order_image_form = OrderImageForm(instance=order)
 
-    order_images = list(order.images.filter(active=True))
-    order_image_ids_str = ' '.join(str(img.id) for img in order_images)
-    main_image = next((img for img in order_images if img.is_main), None)
-    if not main_image and order_images:
-        main_image = order_images[0]
-    manual_blocked_dates = [
-        bd.date.isoformat()
-        for bd in order.blocked_dates.filter(reason=OrderBlockedDate.MANUAL)
-    ]
-    booked_dates = [
-        bd.date.isoformat()
-        for bd in order.blocked_dates.filter(reason=OrderBlockedDate.BOOKED)
-    ]
-    blocked_handover_dates = [
-        bd.date.isoformat()
-        for bd in order.blocked_dates.filter(reason=OrderBlockedDate.HANDOVER_UNAVAILABLE)
-    ]
+    edit_context = OrderFormHandler.build_edit_order_context(order)
 
     context = {
         'order_form': order_form,
@@ -342,12 +348,7 @@ def edit_order(request, order_id=None):
         'product': order.product,
         'order': order,
         'edit_mode': True,
-        'existing_order_images': order_images,
-        'order_image_ids_str': order_image_ids_str,
-        'main_image_id': str(main_image.id) if main_image else '',
-        'blocked_dates_json': json.dumps(manual_blocked_dates),
-        'booked_dates_json': json.dumps(booked_dates),
-        'blocked_handover_dates_json': json.dumps(blocked_handover_dates),
+        **edit_context,
     }
     return render(request, 'transaction/add_order.html', context)
 
@@ -485,7 +486,7 @@ def hit_order(request, order_id=None):
         )
         if order_hit_form.is_valid():
             turnstile_token = request.POST.get('cf-turnstile-response', '')
-            if not _verify_turnstile(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+            if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', '')):
                 messages.error(request, 'Human verification failed. Please try again.')
                 # Re-render form without proceeding
                 context = {
@@ -551,12 +552,12 @@ def hit_order(request, order_id=None):
                 kyc_message = f'This is a high-risk product (risk rating: {product.get_effective_risk_rating()}/100). '
                 
                 # Check if borrower needs KYC
-                if not _is_profile_kyc_verified(renter_profile):
+                if not is_profile_kyc_verified(renter_profile):
                     requires_kyc = True
                     kyc_message += 'As the person who is borrowing, you must complete KYC verification. '
                 
                 # Check if lender needs KYC
-                if not _is_profile_kyc_verified(lender_profile):
+                if not is_profile_kyc_verified(lender_profile):
                     requires_kyc = True
                     kyc_message += 'The lender must also complete KYC verification before this rental can proceed. '
                 
@@ -899,7 +900,7 @@ Transaction Ref: {txn.transaction_reference}"""
 
             if message_turnstile_required:
                 turnstile_token = request.POST.get('cf-turnstile-response', '')
-                if not _verify_turnstile(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+                if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', '')):
                     if is_ajax:
                         return JsonResponse({'ok': False, 'error': 'Human verification failed. Please complete the checkbox and try again.'}, status=400)
                     messages.error(request, 'Human verification failed. Please try again.')

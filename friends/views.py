@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 from django.http import HttpResponseForbidden
 from django.db.models import Q
+import math
 
 from .models import Friendship, BlockedUser
 from .forms import AddFriendForm
@@ -22,15 +23,22 @@ def _get_nearby_friend_suggestions(user, max_distance_km=3, limit=100):
             'radius_km': max_distance_km,
         }
 
-    if not my_profile.latitude or not my_profile.longitude:
+    if my_profile.latitude is None or my_profile.longitude is None:
         return {
             'suggestions': [],
             'has_location': False,
             'radius_km': max_distance_km,
         }
 
-    blocked_ids = set(BlockedUser.objects.filter(blocked_by=user).values_list('blocked_user_id', flat=True))
-    blocked_by_ids = set(BlockedUser.objects.filter(blocked_user=user).values_list('blocked_by_id', flat=True))
+    my_lat = float(my_profile.latitude)
+    my_lon = float(my_profile.longitude)
+
+    blocked_ids = set(
+        BlockedUser.objects.filter(blocked_by=user).values_list('blocked_user_id', flat=True)
+    )
+    blocked_by_ids = set(
+        BlockedUser.objects.filter(blocked_user=user).values_list('blocked_by_id', flat=True)
+    )
 
     relationship_ids = set()
     for user_from_id, user_to_id in Friendship.objects.filter(
@@ -43,6 +51,11 @@ def _get_nearby_friend_suggestions(user, max_distance_km=3, limit=100):
 
     excluded_ids = blocked_ids | blocked_by_ids | relationship_ids | {user.id}
 
+    # Rough bbox filter first to avoid distance calculations over all profiles.
+    lat_delta = max_distance_km / 111.0
+    lon_scale = max(math.cos(math.radians(my_lat)), 0.01)
+    lon_delta = max_distance_km / (111.0 * lon_scale)
+
     nearby = []
     candidate_profiles = Profile.objects.select_related('user').exclude(
         user_id__in=excluded_ids
@@ -50,14 +63,28 @@ def _get_nearby_friend_suggestions(user, max_distance_km=3, limit=100):
         latitude__isnull=True
     ).exclude(
         longitude__isnull=True
+    ).filter(
+        latitude__gte=my_lat - lat_delta,
+        latitude__lte=my_lat + lat_delta,
+        longitude__gte=my_lon - lon_delta,
+        longitude__lte=my_lon + lon_delta,
+    ).only(
+        'user',
+        'town',
+        'postcode',
+        'latitude',
+        'longitude',
+        'user__username',
+        'user__first_name',
+        'user__last_name',
     )
 
     for profile in candidate_profiles:
         distance_km = PostcodeGeocoder.calculate_distance(
-            my_profile.latitude,
-            my_profile.longitude,
-            profile.latitude,
-            profile.longitude,
+            my_lat,
+            my_lon,
+            float(profile.latitude),
+            float(profile.longitude),
         )
         if distance_km <= max_distance_km:
             nearby.append({

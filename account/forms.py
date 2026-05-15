@@ -1,7 +1,10 @@
 from django import forms
 from django.contrib.auth.models import User
-from .models import Profile
 from django.contrib.auth.password_validation import validate_password
+
+from common.phone_utils import normalize_to_domestic
+from .form_mixins import AvatarFieldsMixin
+from .models import Profile
 from .validators import calculate_age
 import re
 
@@ -12,7 +15,8 @@ class LoginForm(forms.Form):
         username = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control'}),
                                     label='username')
 
-class UserRegistrationStartForm(forms.Form):
+class UserRegistrationStartForm(AvatarFieldsMixin):
+    """User registration form with avatar customization."""
     required_css_class = 'required'
 
     first_name = forms.CharField(required=True, max_length=150)
@@ -32,82 +36,6 @@ class UserRegistrationStartForm(forms.Form):
     town = forms.CharField(required=True, max_length=255)
     county = forms.CharField(required=False, max_length=255)
     postcode = forms.CharField(required=True, max_length=8)
-    avatar_preset = forms.CharField(required=False, widget=forms.HiddenInput())
-    avatar_hair_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
-    avatar_hair_length = forms.ChoiceField(
-        required=False,
-        choices=(('short', 'Short'), ('long', 'Long')),
-        initial='short',
-        widget=forms.HiddenInput(),
-    )
-    avatar_eyes = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('default', 'Default'),
-            ('happy', 'Happy'),
-            ('wink', 'Wink'),
-            ('surprised', 'Surprised'),
-            ('squint', 'Squint'),
-            ('closed', 'Closed'),
-        ),
-        initial='default',
-    )
-    avatar_mouth = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('smile', 'Smile'),
-            ('default', 'Default'),
-            ('serious', 'Serious'),
-            ('twinkle', 'Twinkle'),
-            ('tongue', 'Tongue'),
-        ),
-        initial='smile',
-    )
-    avatar_clothing = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('hoodie', 'Hoodie'),
-            ('graphicShirt', 'Graphic shirt'),
-            ('overall', 'Overall'),
-            ('shirtCrewNeck', 'Crew neck'),
-            ('shirtVNeck', 'V-neck'),
-            ('blazerAndShirt', 'Blazer + shirt'),
-        ),
-        initial='hoodie',
-    )
-    avatar_clothes_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
-    avatar_accessories = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('none', 'None'),
-            ('round', 'Round glasses'),
-            ('prescription01', 'Prescription 1'),
-            ('prescription02', 'Prescription 2'),
-            ('wayfarers', 'Wayfarers'),
-            ('sunglasses', 'Sunglasses'),
-            ('kurt', 'Kurt'),
-            ('eyepatch', 'Eyepatch'),
-        ),
-        initial='none',
-    )
-    avatar_accessories_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
-    avatar_facial_hair = forms.IntegerField(
-        required=False,
-        min_value=0,
-        max_value=100,
-        initial=25,
-        widget=forms.NumberInput(attrs={'type': 'range', 'min': 0, 'max': 100, 'step': 5}),
-        label='Facial hair'
-    )
-    avatar_skin_tone = forms.IntegerField(
-        required=False,
-        min_value=1,
-        max_value=6,
-        initial=4,
-        widget=forms.NumberInput(attrs={'type': 'range', 'min': 1, 'max': 6, 'step': 1}),
-        label='Skin tone'
-    )
-    avatar_facial_hair_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
 
     def clean_username(self):
         username = self.cleaned_data['username'].strip()
@@ -131,15 +59,7 @@ class UserRegistrationStartForm(forms.Form):
 
     def clean_mobile_number(self):
         number = self.cleaned_data['mobile_number'].strip()
-        # Strip leading + and country code if user typed +44
-        if number.startswith('+44'):
-            number = '0' + number[3:].lstrip()
-        # If no leading 0, prepend one
-        if number and not number.startswith('0'):
-            number = '0' + number
-        # Remove spaces/dashes for storage
-        number = number.replace(' ', '').replace('-', '')
-        return number
+        return normalize_to_domestic(number)
 
     def clean_email(self):
         email = self.cleaned_data['email'].strip().lower()
@@ -155,32 +75,7 @@ class UserRegistrationStartForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        avatar_preset = (cleaned_data.get('avatar_preset') or '').strip()
-        avatar_hair_color = (cleaned_data.get('avatar_hair_color') or '').strip().lower()
-        avatar_clothes_color = (cleaned_data.get('avatar_clothes_color') or '').strip().lower()
-        avatar_accessories_color = (cleaned_data.get('avatar_accessories_color') or '').strip().lower()
-        avatar_facial_hair_color = (cleaned_data.get('avatar_facial_hair_color') or '').strip().lower()
-        avatar_hair_length = (cleaned_data.get('avatar_hair_length') or 'short').strip()
-
-        if avatar_preset and not re.match(r'^[a-zA-Z0-9_-]{1,64}$', avatar_preset):
-            raise forms.ValidationError('Selected avatar value is invalid.')
-
-        if avatar_hair_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_hair_color):
-            raise forms.ValidationError('Selected hair color is invalid.')
-
-        if avatar_clothes_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_clothes_color):
-            raise forms.ValidationError('Selected clothing color is invalid.')
-
-        if avatar_accessories_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_accessories_color):
-            raise forms.ValidationError('Selected eye wear color is invalid.')
-
-        if avatar_facial_hair_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_facial_hair_color):
-            raise forms.ValidationError('Selected facial hair color is invalid.')
-
-        if avatar_hair_length not in {'short', 'long'}:
-            raise forms.ValidationError('Selected hair length is invalid.')
-
-        return cleaned_data
+        return self._validate_avatar_options(cleaned_data)
 
 
 class UserRegistrationVerifyForm(forms.Form):
@@ -201,66 +96,10 @@ class UserRegistrationVerifyForm(forms.Form):
         return cleaned_data
 
 
-class AvatarEditForm(forms.Form):
-    avatar_preset = forms.CharField(required=False, widget=forms.HiddenInput())
-    avatar_hair_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
-    avatar_hair_length = forms.ChoiceField(
-        required=False,
-        choices=(('short', 'Short'), ('long', 'Long')),
-        initial='short',
-        widget=forms.HiddenInput(),
-    )
-    avatar_eyes = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('default', 'Default'),
-            ('happy', 'Happy'),
-            ('wink', 'Wink'),
-            ('surprised', 'Surprised'),
-            ('squint', 'Squint'),
-            ('closed', 'Closed'),
-        ),
-        initial='default',
-    )
-    avatar_mouth = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('smile', 'Smile'),
-            ('default', 'Default'),
-            ('serious', 'Serious'),
-            ('twinkle', 'Twinkle'),
-            ('tongue', 'Tongue'),
-        ),
-        initial='smile',
-    )
-    avatar_clothing = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('hoodie', 'Hoodie'),
-            ('graphicShirt', 'Graphic shirt'),
-            ('overall', 'Overall'),
-            ('shirtCrewNeck', 'Crew neck'),
-            ('shirtVNeck', 'V-neck'),
-            ('blazerAndShirt', 'Blazer + shirt'),
-        ),
-        initial='hoodie',
-    )
-    avatar_clothes_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
-    avatar_accessories = forms.ChoiceField(
-        required=False,
-        choices=(
-            ('none', 'None'),
-            ('round', 'Round glasses'),
-            ('prescription01', 'Prescription 1'),
-            ('prescription02', 'Prescription 2'),
-            ('wayfarers', 'Wayfarers'),
-            ('sunglasses', 'Sunglasses'),
-            ('kurt', 'Kurt'),
-            ('eyepatch', 'Eyepatch'),
-        ),
-        initial='none',
-    )
-    avatar_accessories_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
+class AvatarEditForm(AvatarFieldsMixin):
+    """Avatar customization edit form."""
+
+    # Update initial value for avatar_facial_hair (different from registration)
     avatar_facial_hair = forms.IntegerField(
         required=False,
         min_value=0,
@@ -269,44 +108,10 @@ class AvatarEditForm(forms.Form):
         widget=forms.NumberInput(attrs={'type': 'range', 'min': 0, 'max': 100, 'step': 1}),
         label='Facial hair'
     )
-    avatar_skin_tone = forms.IntegerField(
-        required=False,
-        min_value=1,
-        max_value=6,
-        initial=4,
-        widget=forms.NumberInput(attrs={'type': 'range', 'min': 1, 'max': 6, 'step': 1}),
-        label='Skin tone'
-    )
-    avatar_facial_hair_color = forms.CharField(required=False, widget=forms.HiddenInput(), initial='')
 
     def clean(self):
         cleaned_data = super().clean()
-        avatar_preset = (cleaned_data.get('avatar_preset') or '').strip()
-        avatar_hair_color = (cleaned_data.get('avatar_hair_color') or '').strip().lower()
-        avatar_clothes_color = (cleaned_data.get('avatar_clothes_color') or '').strip().lower()
-        avatar_accessories_color = (cleaned_data.get('avatar_accessories_color') or '').strip().lower()
-        avatar_facial_hair_color = (cleaned_data.get('avatar_facial_hair_color') or '').strip().lower()
-        avatar_hair_length = (cleaned_data.get('avatar_hair_length') or 'short').strip()
-
-        if avatar_preset and not re.match(r'^[a-zA-Z0-9_-]{1,64}$', avatar_preset):
-            raise forms.ValidationError('Selected avatar value is invalid.')
-
-        if avatar_hair_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_hair_color):
-            raise forms.ValidationError('Selected hair color is invalid.')
-
-        if avatar_clothes_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_clothes_color):
-            raise forms.ValidationError('Selected clothing color is invalid.')
-
-        if avatar_accessories_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_accessories_color):
-            raise forms.ValidationError('Selected eye wear color is invalid.')
-
-        if avatar_facial_hair_color and not re.match(r'^(transparent|[a-fA-F0-9]{6})$', avatar_facial_hair_color):
-            raise forms.ValidationError('Selected facial hair color is invalid.')
-
-        if avatar_hair_length not in {'short', 'long'}:
-            raise forms.ValidationError('Selected hair length is invalid.')
-
-        return cleaned_data
+        return self._validate_avatar_options(cleaned_data)
 
 
 class UserEditForm(forms.ModelForm):
@@ -344,9 +149,5 @@ class ProfileEditForm(forms.ModelForm):
 
     def clean_mobile_number(self):
         number = (self.cleaned_data.get('mobile_number') or '').strip()
-        if number.startswith('+44'):
-            number = '0' + number[3:].lstrip()
-        if number and not number.startswith('0'):
-            number = '0' + number
-        return number.replace(' ', '').replace('-', '')
+        return normalize_to_domestic(number)
 

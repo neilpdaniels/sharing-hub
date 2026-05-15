@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Order, Category, CategoryTag, Product, OrderImage, System
+from .models import Order, Category, CategoryAttribute, CategoryTag, Product, OrderImage, System
 from .models import BestPricedForCategory, BestPricedForProduct
 from .models import TransactionFee, TransactionFeeBand
 from simple_history.admin import SimpleHistoryAdmin
@@ -10,6 +10,13 @@ class CategoryAdmin(SummernoteModelAdmin):
     list_display = ('title','slug', 'create_date','parent_category_id')
     filter_horizontal = ('tags',)
     summernote_fields = ('description',)
+
+
+@admin.register(CategoryAttribute)
+class CategoryAttributeAdmin(admin.ModelAdmin):
+    list_display = ('category', 'order', 'name', 'sortable', 'filterable')
+    list_filter = ('sortable', 'filterable', 'category')
+    search_fields = ('name', 'category__title')
 
 
 @admin.register(CategoryTag)

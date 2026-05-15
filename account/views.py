@@ -1,65 +1,60 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse
-from django.contrib.auth import authenticate, login
-from .forms import LoginForm, UserRegistrationStartForm, UserRegistrationVerifyForm, ProfileImageForm, \
-                    UserEditForm, ProfileEditForm, ProfileAddForm, AvatarEditForm
-from django.contrib.auth.decorators import login_required
-from .models import Profile, RegistrationVerification
-from django.contrib import messages
-from django.views import View
-import logging
+# Standard library
 import importlib
-from django.http import JsonResponse
-from .tasks import send_random_mail
-from django.core.mail import send_mail
-from django.core import signing
-from django.utils import timezone
+import json
+import logging
 from datetime import timedelta
 from random import randint
+from urllib.parse import urlparse, quote
+
+# Third-party
 import requests
 
-from django.contrib.sites.shortcuts import get_current_site
-from django.utils.encoding import force_bytes
-from django.utils.encoding import force_str
-from django.template.loader import render_to_string
-from django.utils.http import urlsafe_base64_encode
-from django.utils.http import urlsafe_base64_decode
-from .tokens import account_activation_token
-from django.contrib.auth.models import User
-from django.urls import reverse
+# Django
 from django.conf import settings
-from urllib.parse import urlparse, quote
-from django.contrib.auth import views as auth_views
-from .avatar_generation import generate_avatar_with_replicate, AvatarGenerationError
-from .avatar_presets import build_random_avatar_content, normalize_avatar_options
+from django.contrib import messages
+from django.contrib.auth import authenticate, login, views as auth_views
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.contrib.sites.shortcuts import get_current_site
+from django.core import signing
 from django.core.files.base import ContentFile
+from django.core.mail import send_mail
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.views import View
+
+# Local apps
+from common.helpers import is_profile_kyc_verified
+from common.phone_utils import format_to_e164, mask_mobile_number
+from common.security import verify_turnstile_token
+from .avatar_generation import AvatarGenerationError, generate_avatar_with_replicate
+from .avatar_presets import build_random_avatar_content, normalize_avatar_options
+from .forms import (
+    AvatarEditForm,
+    LoginForm,
+    ProfileAddForm,
+    ProfileEditForm,
+    ProfileImageForm,
+    UserEditForm,
+    UserRegistrationStartForm,
+    UserRegistrationVerifyForm,
+)
+from .models import Profile, RegistrationVerification
+from .services import RegistrationService
+from .tasks import send_random_mail
+from .tokens import account_activation_token
 
 
 logger = logging.getLogger(__name__)
 
 
-def _verify_turnstile_token(token, remote_ip=''):
-    secret = getattr(settings, 'CLOUDFLARE_TURNSTILE_SECRET_KEY', '')
-    if not secret:
-        return True
-    if not token:
-        return False
 
-    try:
-        response = requests.post(
-            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-            data={
-                'secret': secret,
-                'response': token,
-                'remoteip': remote_ip,
-            },
-            timeout=5,
-        )
-        payload = response.json()
-        return bool(payload.get('success'))
-    except Exception as exc:
-        logger.warning('Turnstile verification failed during login: %s', exc)
-        return False
+
 
 
 class TurnstileLoginView(auth_views.LoginView):
@@ -77,7 +72,7 @@ class TurnstileLoginView(auth_views.LoginView):
     def form_valid(self, form):
         if self._show_turnstile():
             token = (self.request.POST.get('cf-turnstile-response') or '').strip()
-            if not _verify_turnstile_token(token, self.request.META.get('REMOTE_ADDR', '')):
+            if not verify_turnstile_token(token, self.request.META.get('REMOTE_ADDR', '')):
                 form.add_error(None, 'Human verification failed. Please complete the checkbox and try again.')
                 return self.form_invalid(form)
 
@@ -99,55 +94,34 @@ def _is_safe_relative_path(path):
     return not parsed.scheme and not parsed.netloc
 
 
-def _to_twilio_e164_uk(raw_number):
-    cleaned = ''.join(ch for ch in (raw_number or '') if ch.isdigit() or ch == '+')
-    if not cleaned:
-        return None
-    if cleaned.startswith('+'):
-        return cleaned
-    if cleaned.startswith('00'):
-        return '+' + cleaned[2:]
-    digits = ''.join(ch for ch in cleaned if ch.isdigit())
-    if digits.startswith('44'):
-        return '+' + digits
-    if digits.startswith('0'):
-        return '+44' + digits[1:]
-    return '+44' + digits
-
-
-def _mask_mobile(raw_number):
-    digits = ''.join(ch for ch in (raw_number or '') if ch.isdigit())
-    if len(digits) < 4:
-        return 'your mobile number'
-    return '******' + digits[-4:]
-
-
 def _build_twilio_client():
-    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN or not settings.TWILIO_VERIFY_SERVICE_SID:
+    if (
+        not settings.TWILIO_ACCOUNT_SID
+        or not settings.TWILIO_AUTH_TOKEN
+        or not settings.TWILIO_VERIFY_SERVICE_SID
+    ):
         raise ValueError('Twilio Verify settings are not configured.')
     twilio_rest = importlib.import_module('twilio.rest')
     return twilio_rest.Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 
 
-def _is_profile_kyc_verified(profile):
-    """Determine whether a profile meets current KYC gate requirements."""
-    stripe_verified = getattr(profile, 'stripe_identity_verified', False)
-    baseline_verified = (
-        profile.email_confirmed
-        and profile.mobile_verified
-        and profile.address_verified
-    )
-    return bool(stripe_verified or baseline_verified)
+def _build_registration_resume_link(request, email):
+    token = signing.dumps({'email': email}, salt='registration-resume')
+    return request.build_absolute_uri(f"{reverse('register')}?resume={quote(token)}")
 
 
-# def user_login(request):
-#     if request.method == 'POST':
-#         form = LoginForm(request.POST)
-#         if form.is_valid():
-#             cd = form.cleaned_data
-#             user = authenticate(request,
-#                                 username=cd['username'],
-#                                 password=cd['password'])
+def _send_registration_code_email(request, email, code):
+    from .tasks import send_registration_verification_email
+    resume_link = _build_registration_resume_link(request, email)
+    send_registration_verification_email.delay(email, code, resume_link)
+
+
+
+
+
+
+
+
 #             if user is not None:
 #                 if user.is_active:
 #                     login(request, user)
@@ -193,7 +167,7 @@ def mobile_verify(request):
     if profile.mobile_verified:
         return redirect(next_url)
 
-    e164_number = _to_twilio_e164_uk(profile.mobile_number)
+    e164_number = format_to_e164(profile.mobile_number)
 
     if request.method == 'POST':
         action = request.POST.get('action', 'send')
@@ -235,7 +209,7 @@ def mobile_verify(request):
 
     context = {
         'next_url': next_url,
-        'mobile_masked': _mask_mobile(profile.mobile_number),
+        'mobile_masked': mask_mobile_number(profile.mobile_number),
         'mobile_e164': e164_number or '',
     }
     return render(request, 'account/mobile_verify.html', context)
@@ -245,7 +219,7 @@ def mobile_verify(request):
 def kyc_verify(request):
     """Render KYC verification status page."""
     profile = get_object_or_404(Profile, user=request.user)
-    is_verified = _is_profile_kyc_verified(profile)
+    is_verified = is_profile_kyc_verified(profile)
 
     context = {
         'is_verified': is_verified,
@@ -257,28 +231,6 @@ def kyc_verify(request):
     return render(request, 'account/kyc_verify.html', context)
 
 def register(request):
-    def generate_unique_verification_code():
-        for _ in range(20):
-            code = f"{randint(0, 999999):06d}"
-            if not RegistrationVerification.objects.filter(verification_code=code).exists():
-                return code
-        raise ValueError('Could not generate a unique verification code.')
-
-    def build_resume_link(email):
-        token = signing.dumps({'email': email}, salt='registration-resume')
-        return request.build_absolute_uri(f"{reverse('register')}?resume={quote(token)}")
-
-    def send_registration_code_email(email, code):
-        from .tasks import send_registration_verification_email
-        resume_link = build_resume_link(email)
-        send_registration_verification_email.delay(email, code, resume_link)
-
-    def get_pending_verification(email):
-        return RegistrationVerification.objects.filter(
-            email__iexact=email,
-            is_used=False,
-        ).order_by('-created_at').first()
-
     stage = 'start'
     user_form = UserRegistrationStartForm()
     verify_form = UserRegistrationVerifyForm()
@@ -288,24 +240,37 @@ def register(request):
         resume_token = (request.GET.get('resume') or '').strip()
         if resume_token:
             try:
-                payload = signing.loads(resume_token, salt='registration-resume', max_age=15 * 60)
+                payload = signing.loads(
+                    resume_token,
+                    salt='registration-resume',
+                    max_age=15 * 60,
+                )
                 token_email = (payload.get('email') or '').strip().lower()
             except signing.SignatureExpired:
-                messages.error(request, 'This verification link has expired. Please register again to get a new code.')
+                messages.error(
+                    request,
+                    'This verification link has expired. Please register again to get a new code.',
+                )
             except signing.BadSignature:
                 messages.error(request, 'This verification link is invalid.')
             else:
-                verification = get_pending_verification(token_email)
+                verification = RegistrationService.get_pending_verification(token_email)
                 if verification is None:
                     messages.error(request, 'No pending verification found. Please register again.')
                 elif verification.is_expired:
                     verification.delete()
-                    messages.error(request, 'Verification code expired. Please register again to request a new code.')
+                    messages.error(
+                        request,
+                        'Verification code expired. Please register again to request a new code.',
+                    )
                 else:
                     request.session['pending_registration_email'] = token_email
                     verify_email = token_email
                     stage = 'verify'
-                    messages.info(request, 'Welcome back. Enter your code to complete registration.')
+                    messages.info(
+                        request,
+                        'Welcome back. Enter your code to complete registration.',
+                    )
 
     if request.method == 'POST':
         action = request.POST.get('action', 'start')
@@ -313,186 +278,66 @@ def register(request):
         if action == 'start':
             user_form = UserRegistrationStartForm(request.POST, request.FILES)
             if user_form.is_valid():
-                # Verify Cloudflare Turnstile token
-                import urllib.request
-                import urllib.parse
-                import json as _json
-                from django.conf import settings as _settings
-                _token = request.POST.get('cf-turnstile-response', '')
-                _secret = _settings.CLOUDFLARE_TURNSTILE_SECRET_KEY
-                _data = urllib.parse.urlencode({'secret': _secret, 'response': _token, 'remoteip': request.META.get('REMOTE_ADDR', '')}).encode()
-                try:
-                    _req = urllib.request.Request('https://challenges.cloudflare.com/turnstile/v0/siteverify', data=_data)
-                    _resp = _json.loads(urllib.request.urlopen(_req, timeout=5).read())
-                    _turnstile_ok = _resp.get('success', False)
-                except Exception:
-                    _turnstile_ok = False
-                if not _turnstile_ok:
+                token = (request.POST.get('cf-turnstile-response') or '').strip()
+                if not verify_turnstile_token(token, request.META.get('REMOTE_ADDR', '')):
                     messages.error(request, 'Human verification failed. Please try again.')
                 else:
-                    email = user_form.cleaned_data['email']
-                    code = generate_unique_verification_code()
-                    avatar_seed = (user_form.cleaned_data.get('avatar_preset') or '').strip() or user_form.cleaned_data['username']
-                    avatar_style = 'avataaars'
-                    avatar_hair_color = (user_form.cleaned_data.get('avatar_hair_color') or '').strip()
-                    avatar_gender_vibe = 'neutral'
-                    avatar_hair_length = (user_form.cleaned_data.get('avatar_hair_length') or 'short').strip()
-                    avatar_glasses = bool(user_form.cleaned_data.get('avatar_glasses'))
-                    avatar_facial_hair = int(user_form.cleaned_data.get('avatar_facial_hair') or 25)
-                    avatar_facial_hair_color = (user_form.cleaned_data.get('avatar_facial_hair_color') or '').strip()
-                    avatar_clothes_color = (user_form.cleaned_data.get('avatar_clothes_color') or '').strip()
-                    avatar_accessories_color = (user_form.cleaned_data.get('avatar_accessories_color') or '').strip()
-                    avatar_skin_tone = str(user_form.cleaned_data.get('avatar_skin_tone') or '4').strip()
-                    avatar_eyes = (user_form.cleaned_data.get('avatar_eyes') or 'default').strip()
-                    avatar_mouth = (user_form.cleaned_data.get('avatar_mouth') or 'smile').strip()
-                    avatar_clothing = (user_form.cleaned_data.get('avatar_clothing') or 'hoodie').strip()
-                    avatar_accessories = (user_form.cleaned_data.get('avatar_accessories') or 'round').strip()
-                    (
-                        avatar_style,
-                        avatar_hair_color,
-                        avatar_gender_vibe,
-                        avatar_skin_tone,
-                        avatar_hair_length,
-                        avatar_glasses,
-                        avatar_facial_hair,
-                        avatar_facial_hair_color,
-                        avatar_eyes,
-                        avatar_mouth,
-                        avatar_clothing,
-                        avatar_accessories,
-                        avatar_clothes_color,
-                        avatar_accessories_color,
-                    ) = normalize_avatar_options(
-                        avatar_style,
-                        avatar_hair_color,
-                        avatar_gender_vibe,
-                        avatar_skin_tone,
-                        avatar_hair_length,
-                        avatar_glasses,
-                        avatar_facial_hair,
-                        avatar_facial_hair_color,
-                        avatar_eyes,
-                        avatar_mouth,
-                        avatar_clothing,
-                        avatar_accessories,
-                        avatar_clothes_color,
-                        avatar_accessories_color,
+                    cleaned = user_form.cleaned_data
+                    email = cleaned['email']
+                    avatar_data = RegistrationService.build_avatar_from_form(cleaned)
+                    verification = RegistrationService.create_verification_record(
+                        email,
+                        cleaned,
+                        avatar_data,
                     )
-
-                    avatar_content = build_random_avatar_content(
-                        seed=avatar_seed,
-                        style=avatar_style,
-                        hair_color=avatar_hair_color,
-                        gender_vibe=avatar_gender_vibe,
-                        skin_tone_level=avatar_skin_tone,
-                        hair_length=avatar_hair_length,
-                        glasses=avatar_glasses,
-                        facial_hair_level=avatar_facial_hair,
-                        facial_hair_color=avatar_facial_hair_color,
-                        eyes=avatar_eyes,
-                        mouth=avatar_mouth,
-                        clothing=avatar_clothing,
-                        accessories=avatar_accessories,
-                        clothes_color=avatar_clothes_color,
-                        accessories_color=avatar_accessories_color,
+                    _send_registration_code_email(
+                        request,
+                        email,
+                        verification.verification_code,
                     )
-                    avatar_bytes = avatar_content.read()
-                    avatar_name = avatar_content.name
-                    generated_image = ContentFile(avatar_bytes, name=avatar_name)
-                    profile_image = ContentFile(avatar_bytes, name=avatar_name)
-
-                    RegistrationVerification.objects.filter(email__iexact=email, is_used=False).delete()
-                    RegistrationVerification.objects.create(
-                        email=email,
-                        username=user_form.cleaned_data['username'],
-                        first_name=user_form.cleaned_data['first_name'],
-                        last_name=user_form.cleaned_data['last_name'],
-                        date_of_birth=user_form.cleaned_data['date_of_birth'],
-                        mobile_number=user_form.cleaned_data['mobile_number'],
-                        house_name_number=user_form.cleaned_data.get('house_name_number', ''),
-                        address_line_1=user_form.cleaned_data['address_line_1'],
-                        address_line_2=user_form.cleaned_data.get('address_line_2', ''),
-                        town=user_form.cleaned_data['town'],
-                        county=user_form.cleaned_data.get('county', ''),
-                        postcode=user_form.cleaned_data['postcode'],
-                        image=profile_image,
-                        avatar_preset=avatar_seed,
-                        avatar_style=avatar_style,
-                        avatar_hair_color=avatar_hair_color,
-                        avatar_gender_vibe=avatar_gender_vibe,
-                        avatar_hair_length=avatar_hair_length,
-                        avatar_glasses=avatar_glasses,
-                        avatar_facial_hair=avatar_facial_hair,
-                        avatar_facial_hair_color=avatar_facial_hair_color,
-                        avatar_skin_tone=avatar_skin_tone,
-                        avatar_eyes=avatar_eyes,
-                        avatar_mouth=avatar_mouth,
-                        avatar_clothing=avatar_clothing,
-                        avatar_accessories=avatar_accessories,
-                        avatar_clothes_color=avatar_clothes_color,
-                        avatar_accessories_color=avatar_accessories_color,
-                        generated_image=generated_image,
-                        verification_code=code,
-                        expires_at=timezone.now() + timedelta(minutes=15),
-                    )
-
-                    send_registration_code_email(email, code)
 
                     request.session['pending_registration_email'] = email
                     verify_email = email
                     stage = 'verify'
-                    messages.success(request, 'We sent a 6-digit code to your email. Enter it and then set your password.')
+                    messages.success(
+                        request,
+                        'We sent a 6-digit code to your email. Enter it and then set your password.',
+                    )
 
         elif action == 'resend':
             stage = 'verify'
             verify_email = request.session.get('pending_registration_email', '')
             if not verify_email:
-                messages.error(request, 'Verification session expired. Please start registration again.')
+                messages.error(
+                    request,
+                    'Verification session expired. Please start registration again.',
+                )
                 stage = 'start'
                 user_form = UserRegistrationStartForm()
             else:
-                verification = get_pending_verification(verify_email)
+                verification = RegistrationService.get_pending_verification(verify_email)
                 if verification is None:
-                    messages.error(request, 'No pending verification found. Please start registration again.')
+                    messages.error(
+                        request,
+                        'No pending verification found. Please start registration again.',
+                    )
+                    stage = 'start'
+                    user_form = UserRegistrationStartForm()
+                elif verification.is_expired:
+                    verification.delete()
+                    messages.error(
+                        request,
+                        'Verification code expired. Please start registration again.',
+                    )
                     stage = 'start'
                     user_form = UserRegistrationStartForm()
                 else:
-                    code = generate_unique_verification_code()
-                    RegistrationVerification.objects.filter(email__iexact=verify_email, is_used=False).delete()
-                    RegistrationVerification.objects.create(
-                        email=verification.email,
-                        username=verification.username,
-                        first_name=verification.first_name,
-                        last_name=verification.last_name,
-                        date_of_birth=verification.date_of_birth,
-                        mobile_number=verification.mobile_number,
-                        house_name_number=verification.house_name_number,
-                        address_line_1=verification.address_line_1,
-                        address_line_2=verification.address_line_2,
-                        town=verification.town,
-                        county=verification.county,
-                        postcode=verification.postcode,
-                        image=verification.image,
-                        avatar_preset=verification.avatar_preset,
-                        avatar_style=verification.avatar_style,
-                        avatar_hair_color=verification.avatar_hair_color,
-                        avatar_gender_vibe=verification.avatar_gender_vibe,
-                        avatar_hair_length=verification.avatar_hair_length,
-                        avatar_glasses=verification.avatar_glasses,
-                        avatar_facial_hair=verification.avatar_facial_hair,
-                        avatar_facial_hair_color=verification.avatar_facial_hair_color,
-                        avatar_skin_tone=verification.avatar_skin_tone,
-                        avatar_eyes=verification.avatar_eyes,
-                        avatar_mouth=verification.avatar_mouth,
-                        avatar_clothing=verification.avatar_clothing,
-                        avatar_accessories=verification.avatar_accessories,
-                        avatar_clothes_color=verification.avatar_clothes_color,
-                        avatar_accessories_color=verification.avatar_accessories_color,
-                        generated_image=verification.generated_image,
-                        verification_code=code,
-                        expires_at=timezone.now() + timedelta(minutes=15),
+                    new_verification = RegistrationService.resend_verification_code(verification)
+                    _send_registration_code_email(
+                        request,
+                        verify_email,
+                        new_verification.verification_code,
                     )
-                    send_registration_code_email(verify_email, code)
                     messages.success(request, 'We sent you a new verification code.')
 
         elif action == 'verify':
@@ -501,11 +346,14 @@ def register(request):
             verify_email = request.session.get('pending_registration_email', '')
 
             if not verify_email:
-                messages.error(request, 'Verification session expired. Please start registration again.')
+                messages.error(
+                    request,
+                    'Verification session expired. Please start registration again.',
+                )
                 stage = 'start'
                 user_form = UserRegistrationStartForm()
             elif verify_form.is_valid():
-                verification = get_pending_verification(verify_email)
+                verification = RegistrationService.get_pending_verification(verify_email)
 
                 if verification is None:
                     messages.error(request, 'No pending verification found. Please start again.')
@@ -523,70 +371,20 @@ def register(request):
                     stage = 'start'
                     user_form = UserRegistrationStartForm()
                 else:
-                    new_user = User.objects.create(
-                        username=verification.username,
-                        email=verify_email,
-                        first_name=verification.first_name,
-                        last_name=verification.last_name,
-                        is_active=True,
-                    )
-                    new_user.set_password(verify_form.cleaned_data['password'])
-                    new_user.save()
-
-                    active_image = verification.generated_image or verification.image
-                    image_original = verification.image
-                    image_generated = verification.generated_image
-                    avatar_provider = 'dicebear:avataaars'
-
-                    if not active_image and verification.avatar_preset:
-                        avatar_content = build_random_avatar_content(
-                            seed=verification.avatar_preset,
-                            style='avataaars',
-                            hair_color=verification.avatar_hair_color,
-                            gender_vibe=verification.avatar_gender_vibe,
-                            skin_tone_level=verification.avatar_skin_tone,
-                            hair_length=verification.avatar_hair_length,
-                            glasses=verification.avatar_glasses,
-                            facial_hair_level=verification.avatar_facial_hair,
-                            facial_hair_color=verification.avatar_facial_hair_color,
-                            eyes=verification.avatar_eyes,
-                            mouth=verification.avatar_mouth,
-                            clothing=verification.avatar_clothing,
-                            accessories=verification.avatar_accessories,
-                            clothes_color=verification.avatar_clothes_color,
-                            accessories_color=verification.avatar_accessories_color,
+                    try:
+                        new_user, _ = RegistrationService.complete_registration(
+                            verification,
+                            verify_form.cleaned_data['password'],
                         )
-                        avatar_bytes = avatar_content.read()
-                        avatar_name = avatar_content.name
-                        active_image = ContentFile(avatar_bytes, name=avatar_name)
-                        image_original = ContentFile(avatar_bytes, name=avatar_name)
-
-                    profile = Profile.objects.create(
-                        user=new_user,
-                        email_confirmed=True,
-                        date_of_birth=verification.date_of_birth,
-                        mobile_number=verification.mobile_number,
-                        address_line_1=verification.address_line_1,
-                        address_line_2=verification.address_line_2,
-                        town=verification.town,
-                        county=verification.county,
-                        postcode=verification.postcode,
-                        image_original=image_original,
-                        image_generated=image_generated,
-                        avatar_provider=avatar_provider,
-                        image=active_image,
-                    )
-
-                    if profile.image:
-                        profile.saveWithImage()
-
-                    verification.is_used = True
-                    verification.save(update_fields=['is_used', 'updated_at'])
-                    request.session.pop('pending_registration_email', None)
-
-                    login(request, new_user)
-                    messages.success(request, 'Registration complete and email verified.')
-                    return redirect(reverse('navigation:browseCategory', args=('metals', )))
+                    except ValueError as exc:
+                        messages.error(request, str(exc))
+                        stage = 'start'
+                        user_form = UserRegistrationStartForm()
+                    else:
+                        request.session.pop('pending_registration_email', None)
+                        login(request, new_user)
+                        messages.success(request, 'Registration complete and email verified.')
+                        return redirect(reverse('navigation:browseCategory', args=('metals',)))
 
     context = {
         'user_form': user_form,
@@ -599,9 +397,12 @@ def register(request):
 
 @login_required
 def edit(request):
-    if request.method=='POST':
-        profile = request.user.profile
-        if request.POST.get('action') == 'switch_avatar':
+    profile = request.user.profile
+
+    if request.method == 'POST':
+        action = request.POST.get('action', 'save_profile')
+
+        if action == 'switch_avatar':
             avatar_source = (request.POST.get('avatar_source') or '').strip()
             if avatar_source == 'generated':
                 if profile.image_generated:
@@ -621,121 +422,133 @@ def edit(request):
                     messages.error(request, 'No original profile photo available yet.')
             return redirect('edit')
 
-        old_mobile = profile.mobile_number or ''
-        old_address = {
-            'address_line_1': profile.address_line_1 or '',
-            'address_line_2': profile.address_line_2 or '',
-            'town': profile.town or '',
-            'county': profile.county or '',
-            'postcode': profile.postcode or '',
-        }
+        if action == 'save_avatar':
+            avatar_form = AvatarEditForm(data=request.POST)
+            user_form = UserEditForm(instance=request.user)
+            profile_form = ProfileEditForm(instance=profile)
 
-        user_form = UserEditForm(instance=request.user, 
-                                data=request.POST)
-        profile_form = ProfileEditForm(instance=profile,
-                                        data=request.POST,
-                                        files=request.FILES)
-        avatar_form = AvatarEditForm(data=request.POST)
-        if user_form.is_valid() and profile_form.is_valid() and avatar_form.is_valid():
-            messages.success(request, 'Profile updates saved')
-            user_form.save()
+            if avatar_form.is_valid():
+                avatar_seed = (avatar_form.cleaned_data.get('avatar_preset') or '').strip() or request.user.username
+                avatar_style = 'avataaars'
+                avatar_hair_color = (avatar_form.cleaned_data.get('avatar_hair_color') or '').strip()
+                avatar_gender_vibe = 'neutral'
+                avatar_hair_length = (avatar_form.cleaned_data.get('avatar_hair_length') or 'short').strip()
+                avatar_glasses = False
+                avatar_facial_hair = int(avatar_form.cleaned_data.get('avatar_facial_hair') or 33)
+                avatar_facial_hair_color = (avatar_form.cleaned_data.get('avatar_facial_hair_color') or '').strip()
+                avatar_clothes_color = (avatar_form.cleaned_data.get('avatar_clothes_color') or '').strip()
+                avatar_accessories_color = (avatar_form.cleaned_data.get('avatar_accessories_color') or '').strip()
+                avatar_skin_tone = str(avatar_form.cleaned_data.get('avatar_skin_tone') or '4').strip()
+                avatar_eyes = (avatar_form.cleaned_data.get('avatar_eyes') or 'default').strip()
+                avatar_mouth = (avatar_form.cleaned_data.get('avatar_mouth') or 'smile').strip()
+                avatar_clothing = (avatar_form.cleaned_data.get('avatar_clothing') or 'hoodie').strip()
+                avatar_accessories = (avatar_form.cleaned_data.get('avatar_accessories') or 'none').strip()
 
-            updated_profile = profile_form.save(commit=False)
-            mobile_changed = (updated_profile.mobile_number or '') != old_mobile
-            address_changed = any(
-                (getattr(updated_profile, field_name) or '') != old_address[field_name]
-                for field_name in old_address
-            )
+                (
+                    avatar_style,
+                    avatar_hair_color,
+                    avatar_gender_vibe,
+                    avatar_skin_tone,
+                    avatar_hair_length,
+                    avatar_glasses,
+                    avatar_facial_hair,
+                    avatar_facial_hair_color,
+                    avatar_eyes,
+                    avatar_mouth,
+                    avatar_clothing,
+                    avatar_accessories,
+                    avatar_clothes_color,
+                    avatar_accessories_color,
+                ) = normalize_avatar_options(
+                    avatar_style,
+                    avatar_hair_color,
+                    avatar_gender_vibe,
+                    avatar_skin_tone,
+                    avatar_hair_length,
+                    avatar_glasses,
+                    avatar_facial_hair,
+                    avatar_facial_hair_color,
+                    avatar_eyes,
+                    avatar_mouth,
+                    avatar_clothing,
+                    avatar_accessories,
+                    avatar_clothes_color,
+                    avatar_accessories_color,
+                )
 
-            if mobile_changed and profile.mobile_verified:
-                updated_profile.mobile_verified = False
-                messages.warning(request, 'Mobile verification has been reset because your phone number changed.')
+                avatar_content = build_random_avatar_content(
+                    seed=avatar_seed,
+                    style=avatar_style,
+                    hair_color=avatar_hair_color,
+                    gender_vibe=avatar_gender_vibe,
+                    skin_tone_level=avatar_skin_tone,
+                    hair_length=avatar_hair_length,
+                    glasses=avatar_glasses,
+                    facial_hair_level=avatar_facial_hair,
+                    facial_hair_color=avatar_facial_hair_color,
+                    eyes=avatar_eyes,
+                    mouth=avatar_mouth,
+                    clothing=avatar_clothing,
+                    accessories=avatar_accessories,
+                    clothes_color=avatar_clothes_color,
+                    accessories_color=avatar_accessories_color,
+                )
+                avatar_bytes = avatar_content.read()
+                avatar_name = avatar_content.name
+                avatar_file = ContentFile(avatar_bytes, name=avatar_name)
 
-            if address_changed and profile.address_verified:
-                updated_profile.address_verified = False
-                messages.warning(request, 'Address verification has been reset because your address changed.')
+                profile.image_generated = avatar_file
+                profile.image = avatar_file
+                profile.avatar_provider = 'dicebear:avataaars'
+                profile.save()
+                messages.success(request, 'Avatar updated.')
+            else:
+                messages.error(request, 'Avatar updates not saved.')
 
-            avatar_seed = (avatar_form.cleaned_data.get('avatar_preset') or '').strip() or request.user.username
-            avatar_style = 'avataaars'
-            avatar_hair_color = (avatar_form.cleaned_data.get('avatar_hair_color') or '').strip()
-            avatar_gender_vibe = 'neutral'
-            avatar_hair_length = (avatar_form.cleaned_data.get('avatar_hair_length') or 'short').strip()
-            avatar_glasses = False
-            avatar_facial_hair = int(avatar_form.cleaned_data.get('avatar_facial_hair') or 33)
-            avatar_facial_hair_color = (avatar_form.cleaned_data.get('avatar_facial_hair_color') or '').strip()
-            avatar_clothes_color = (avatar_form.cleaned_data.get('avatar_clothes_color') or '').strip()
-            avatar_accessories_color = (avatar_form.cleaned_data.get('avatar_accessories_color') or '').strip()
-            avatar_skin_tone = str(avatar_form.cleaned_data.get('avatar_skin_tone') or '4').strip()
-            avatar_eyes = (avatar_form.cleaned_data.get('avatar_eyes') or 'default').strip()
-            avatar_mouth = (avatar_form.cleaned_data.get('avatar_mouth') or 'smile').strip()
-            avatar_clothing = (avatar_form.cleaned_data.get('avatar_clothing') or 'hoodie').strip()
-            avatar_accessories = (avatar_form.cleaned_data.get('avatar_accessories') or 'none').strip()
-
-            (
-                avatar_style,
-                avatar_hair_color,
-                avatar_gender_vibe,
-                avatar_skin_tone,
-                avatar_hair_length,
-                avatar_glasses,
-                avatar_facial_hair,
-                avatar_facial_hair_color,
-                avatar_eyes,
-                avatar_mouth,
-                avatar_clothing,
-                avatar_accessories,
-                avatar_clothes_color,
-                avatar_accessories_color,
-            ) = normalize_avatar_options(
-                avatar_style,
-                avatar_hair_color,
-                avatar_gender_vibe,
-                avatar_skin_tone,
-                avatar_hair_length,
-                avatar_glasses,
-                avatar_facial_hair,
-                avatar_facial_hair_color,
-                avatar_eyes,
-                avatar_mouth,
-                avatar_clothing,
-                avatar_accessories,
-                avatar_clothes_color,
-                avatar_accessories_color,
-            )
-
-            avatar_content = build_random_avatar_content(
-                seed=avatar_seed,
-                style=avatar_style,
-                hair_color=avatar_hair_color,
-                gender_vibe=avatar_gender_vibe,
-                skin_tone_level=avatar_skin_tone,
-                hair_length=avatar_hair_length,
-                glasses=avatar_glasses,
-                facial_hair_level=avatar_facial_hair,
-                facial_hair_color=avatar_facial_hair_color,
-                eyes=avatar_eyes,
-                mouth=avatar_mouth,
-                clothing=avatar_clothing,
-                accessories=avatar_accessories,
-                clothes_color=avatar_clothes_color,
-                accessories_color=avatar_accessories_color,
-            )
-            avatar_bytes = avatar_content.read()
-            avatar_name = avatar_content.name
-            avatar_file = ContentFile(avatar_bytes, name=avatar_name)
-
-            updated_profile.image_generated = avatar_file
-            updated_profile.image = avatar_file
-            updated_profile.avatar_provider = 'dicebear:avataaars'
-
-            updated_profile.save()
-            messages.success(request, 'Avatar updated.')
         else:
-            messages.error(request, 'Profile updates not saved')
+            old_mobile = profile.mobile_number or ''
+            old_address = {
+                'address_line_1': profile.address_line_1 or '',
+                'address_line_2': profile.address_line_2 or '',
+                'town': profile.town or '',
+                'county': profile.county or '',
+                'postcode': profile.postcode or '',
+            }
+
+            user_form = UserEditForm(instance=request.user, data=request.POST)
+            profile_form = ProfileEditForm(
+                instance=profile,
+                data=request.POST,
+                files=request.FILES,
+            )
+            avatar_form = AvatarEditForm(initial={'avatar_preset': request.user.username})
+
+            if user_form.is_valid() and profile_form.is_valid():
+                messages.success(request, 'Profile updates saved')
+                user_form.save()
+
+                updated_profile = profile_form.save(commit=False)
+                mobile_changed = (updated_profile.mobile_number or '') != old_mobile
+                address_changed = any(
+                    (getattr(updated_profile, field_name) or '') != old_address[field_name]
+                    for field_name in old_address
+                )
+
+                if mobile_changed and profile.mobile_verified:
+                    updated_profile.mobile_verified = False
+                    messages.warning(request, 'Mobile verification has been reset because your phone number changed.')
+
+                if address_changed and profile.address_verified:
+                    updated_profile.address_verified = False
+                    messages.warning(request, 'Address verification has been reset because your address changed.')
+
+                updated_profile.save()
+            else:
+                messages.error(request, 'Profile updates not saved')
 
     else:
         user_form = UserEditForm(instance=request.user)
-        profile_form = ProfileEditForm(instance=request.user.profile)
+        profile_form = ProfileEditForm(instance=profile)
         avatar_form = AvatarEditForm(initial={'avatar_preset': request.user.username})
 
     context = {

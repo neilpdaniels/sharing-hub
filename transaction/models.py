@@ -1,6 +1,7 @@
 from django.db import models
 from common.models import Order, Product, TransactionFee
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, FileExtensionValidator
+from django.core.exceptions import ValidationError
 from simple_history.models import HistoricalRecords
 import random
 import string
@@ -10,6 +11,20 @@ from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
 import sys
 from django.conf import settings
+
+# File size limits (in bytes)
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50 MB
+
+def validate_image_size(file_obj):
+    """Validate image file size (max 5 MB)."""
+    if file_obj.size > MAX_IMAGE_SIZE:
+        raise ValidationError(f'Image file too large. Max size is 5 MB, got {file_obj.size / (1024*1024):.1f} MB.')
+
+def validate_video_size(file_obj):
+    """Validate video file size (max 50 MB)."""
+    if file_obj.size > MAX_VIDEO_SIZE:
+        raise ValidationError(f'Video file too large. Max size is 50 MB, got {file_obj.size / (1024*1024):.1f} MB.')
 from django.utils import timezone
 #from djongo import models
 
@@ -157,11 +172,34 @@ class Transaction(models.Model):
     checkout_condition_video_url = models.URLField(blank=True, max_length=500)
     return_condition_video_url = models.URLField(blank=True, max_length=500)
 
+    # Rental-start (checkout) workflow evidence and handover verification
+    checkout_borrower_video_url = models.URLField(blank=True, max_length=500)
+    checkout_borrower_confirmed = models.BooleanField(default=False)
+    checkout_handover_pin = models.CharField(max_length=8, blank=True)
+    checkout_handover_pin_generated_at = models.DateTimeField(blank=True, null=True)
+    checkout_handover_verified_at = models.DateTimeField(blank=True, null=True)
+
+    # Return-day workflow evidence and handover verification
+    return_borrower_video_url = models.URLField(blank=True, max_length=500)
+    return_lender_video_url = models.URLField(blank=True, max_length=500)
+    return_lender_confirmed = models.BooleanField(default=False)
+    return_handover_pin = models.CharField(max_length=8, blank=True)
+    return_handover_pin_generated_at = models.DateTimeField(blank=True, null=True)
+    return_handover_verified_at = models.DateTimeField(blank=True, null=True)
+
     payment_collected_placeholder = models.BooleanField(default=False)
     deposit_collected_placeholder = models.BooleanField(default=False)
     payment_placeholder_notes = models.TextField(blank=True, max_length=1000)
     deposit_placeholder_notes = models.TextField(blank=True, max_length=1000)
     deposit_resolution_notes = models.TextField(blank=True, max_length=1000)
+    deposit_proposed_return_amount = models.FloatField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(999999)],
+        help_text='Current lender proposal for deposit amount to return',
+    )
+    deposit_proposed_by_lender_at = models.DateTimeField(blank=True, null=True)
+    deposit_proposal_contested_at = models.DateTimeField(blank=True, null=True)
+    deposit_proposal_accepted_at = models.DateTimeField(blank=True, null=True)
 
     # Placeholder Stripe Connect deposit setup/collection states
     CARD_NONE = 'NONE'
@@ -427,8 +465,26 @@ class TransactionMessage(models.Model):
 
 class TransactionMessageImage(models.Model):
     txn_message = models.ForeignKey(TransactionMessage, related_name='txn_msg_img', on_delete=models.CASCADE, blank=True, null=True)
-    image = models.ImageField(upload_to=RandomFileName('images/txn_msg/'), blank=True, null=True)
-    video = models.FileField(upload_to=RandomFileName('videos/txn_msg/'), blank=True, null=True)
+    image = models.ImageField(
+        upload_to=RandomFileName('images/txn_msg/'),
+        blank=True,
+        null=True,
+        validators=[validate_image_size],
+        help_text='Max 5 MB'
+    )
+    video = models.FileField(
+        upload_to=RandomFileName('videos/txn_msg/'),
+        blank=True,
+        null=True,
+        validators=[validate_video_size],
+        help_text='Max 50 MB. Optimized/display version.'
+    )
+    video_raw = models.FileField(
+        upload_to=RandomFileName('videos/txn_msg_raw/'),
+        blank=True,
+        null=True,
+        help_text='Raw/uncompressed video archive for verification purposes. Chain of custody.'
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
     active = models.BooleanField(default=True)
     first_image = models.BooleanField(default=True)
@@ -471,24 +527,33 @@ class TransactionMessageImage(models.Model):
             background.paste(im, im.split()[-1])
             im = background
 
-        #Resize/modify the image
-        max_h = 1600
-        if im.size[0] > max_h:
-            ratio = im.size[0] / max_h
-            v_height = im.size[1] / ratio
-            im = im.resize( (max_h, int(v_height)) )
-        max_v = 1600
-        if im.size[1] > max_v:
-            ratio = im.size[1] / max_v
-            h_height = im.size[0] / ratio
-            im = im.resize( (int(h_height), max_v) )
-		
-        #after modifications, save it to the output
-        im.save(output, format='JPEG', quality=100)
+# Resize/modify the image for web optimization (max 1920px width, 80% quality)
+        max_width = 1920
+        if im.size[0] > max_width:
+            ratio = im.size[0] / max_width
+            new_height = int(im.size[1] / ratio)
+            im = im.resize((max_width, new_height), Image.Resampling.LANCZOS)
+        
+        # Also limit height to prevent extremely tall images
+        max_height = 1920
+        if im.size[1] > max_height:
+            ratio = im.size[1] / max_height
+            new_width = int(im.size[0] / ratio)
+            im = im.resize((new_width, max_height), Image.Resampling.LANCZOS)
+	
+        # After modifications, save to output with 80% quality for web optimization
+        im.save(output, format='JPEG', quality=80, optimize=True)
         output.seek(0)
 
-        #change the imagefield value to be the newley modifed image value
-        self.image = InMemoryUploadedFile(output,'ImageField', "%s.jpg" %self.image.name.split('.')[0], 'image/jpeg', sys.getsizeof(output), None)
+        # Change the imagefield value to the optimized image
+        self.image = InMemoryUploadedFile(
+            output,
+            'ImageField',
+            "%s.jpg" % self.image.name.split('.')[0],
+            'image/jpeg',
+            sys.getsizeof(output),
+            None
+        )
         super(TransactionMessageImage, self).save(*args, **kwargs)
 
 
@@ -496,13 +561,33 @@ class TransactionFeedback(models.Model):
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='feedbacks')
     left_by = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='feedbacks_left')
     left_for = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='feedbacks_received')
-    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(0), MaxValueValidator(5)])
+    communication_rating = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(5)],
+    )
+    delivery_return_rating = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(5)],
+    )
+    overall_rating = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(5)],
+    )
     comment = models.TextField(max_length=1000, blank=True)
     is_negative = models.BooleanField(
         default=False,
         help_text='True if feedback is negative (for non-site payments)',
     )
     created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['transaction', 'left_by', 'left_for'],
+                name='uniq_feedback_per_direction_per_transaction',
+            ),
+        ]
 
     def __str__(self):
         return f"Feedback {self.rating} for {self.left_for} by {self.left_by} (txn {self.transaction_id})"

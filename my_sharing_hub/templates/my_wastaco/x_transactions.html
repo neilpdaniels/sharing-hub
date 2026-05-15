@@ -174,10 +174,18 @@
                                 {% if transaction.requires_my_action %}
                                     <span class="txn-role-dot txn-role-dot-pending" title="awaiting your action"></span>
                                 {% endif %}
-                                <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
-                                <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
-                                <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
-                                <span>{{ borrower.get_full_name|default:borrower.username }}</span>
+                                {% if request.user == transaction.user_passive %}
+                                    <span>You are lending to <span class="font-weight-bold">{{ borrower.get_full_name|default:borrower.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ borrower.username }}">{{ borrower.username }}</a>]</span>
+                                    {% include "user_profile_modal_only.html" with user=borrower %}
+                                {% elif request.user == transaction.user_aggressive %}
+                                    <span>You are borrowing from <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ lender.username }}">{{ lender.username }}</a>]</span>
+                                    {% include "user_profile_modal_only.html" with user=lender %}
+                                {% else %}
+                                    <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
+                                    <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
+                                    <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
+                                    <span>{{ borrower.get_full_name|default:borrower.username }}</span>
+                                {% endif %}
                             {% endwith %}
                         </td>
                         <td>
@@ -243,10 +251,18 @@
                             {% if transaction.requires_my_action %}
                                 <span class="txn-role-dot txn-role-dot-pending" title="awaiting your action"></span>
                             {% endif %}
-                            <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
-                            <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
-                            <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
-                            <span>{{ borrower.get_full_name|default:borrower.username }}</span>
+                            {% if request.user == transaction.user_passive %}
+                                <span>You are lending to <span class="font-weight-bold">{{ borrower.get_full_name|default:borrower.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ borrower.username }}">{{ borrower.username }}</a>]</span>
+                                {% include "user_profile_modal_only.html" with user=borrower %}
+                            {% elif request.user == transaction.user_aggressive %}
+                                <span>You are borrowing from <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ lender.username }}">{{ lender.username }}</a>]</span>
+                                {% include "user_profile_modal_only.html" with user=lender %}
+                            {% else %}
+                                <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
+                                <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
+                                <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
+                                <span>{{ borrower.get_full_name|default:borrower.username }}</span>
+                            {% endif %}
                         {% endwith %}
                     </td>
                     <td>

@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse
 from django.contrib.auth import authenticate, login
 from .forms import LoginForm, UserRegistrationStartForm, UserRegistrationVerifyForm, ProfileImageForm, \
-                    UserEditForm, ProfileEditForm, ProfileAddForm
+                    UserEditForm, ProfileEditForm, ProfileAddForm, AvatarEditForm
 from django.contrib.auth.decorators import login_required
 from .models import Profile, RegistrationVerification
 from django.contrib import messages
@@ -30,6 +30,9 @@ from django.urls import reverse
 from django.conf import settings
 from urllib.parse import urlparse, quote
 from django.contrib.auth import views as auth_views
+from .avatar_generation import generate_avatar_with_replicate, AvatarGenerationError
+from .avatar_presets import build_random_avatar_content, normalize_avatar_options
+from django.core.files.base import ContentFile
 
 
 logger = logging.getLogger(__name__)
@@ -308,7 +311,7 @@ def register(request):
         action = request.POST.get('action', 'start')
 
         if action == 'start':
-            user_form = UserRegistrationStartForm(request.POST)
+            user_form = UserRegistrationStartForm(request.POST, request.FILES)
             if user_form.is_valid():
                 # Verify Cloudflare Turnstile token
                 import urllib.request
@@ -329,6 +332,74 @@ def register(request):
                 else:
                     email = user_form.cleaned_data['email']
                     code = generate_unique_verification_code()
+                    avatar_seed = (user_form.cleaned_data.get('avatar_preset') or '').strip() or user_form.cleaned_data['username']
+                    avatar_style = 'avataaars'
+                    avatar_hair_color = (user_form.cleaned_data.get('avatar_hair_color') or '').strip()
+                    avatar_gender_vibe = 'neutral'
+                    avatar_hair_length = (user_form.cleaned_data.get('avatar_hair_length') or 'short').strip()
+                    avatar_glasses = bool(user_form.cleaned_data.get('avatar_glasses'))
+                    avatar_facial_hair = int(user_form.cleaned_data.get('avatar_facial_hair') or 25)
+                    avatar_facial_hair_color = (user_form.cleaned_data.get('avatar_facial_hair_color') or '').strip()
+                    avatar_clothes_color = (user_form.cleaned_data.get('avatar_clothes_color') or '').strip()
+                    avatar_accessories_color = (user_form.cleaned_data.get('avatar_accessories_color') or '').strip()
+                    avatar_skin_tone = str(user_form.cleaned_data.get('avatar_skin_tone') or '4').strip()
+                    avatar_eyes = (user_form.cleaned_data.get('avatar_eyes') or 'default').strip()
+                    avatar_mouth = (user_form.cleaned_data.get('avatar_mouth') or 'smile').strip()
+                    avatar_clothing = (user_form.cleaned_data.get('avatar_clothing') or 'hoodie').strip()
+                    avatar_accessories = (user_form.cleaned_data.get('avatar_accessories') or 'round').strip()
+                    (
+                        avatar_style,
+                        avatar_hair_color,
+                        avatar_gender_vibe,
+                        avatar_skin_tone,
+                        avatar_hair_length,
+                        avatar_glasses,
+                        avatar_facial_hair,
+                        avatar_facial_hair_color,
+                        avatar_eyes,
+                        avatar_mouth,
+                        avatar_clothing,
+                        avatar_accessories,
+                        avatar_clothes_color,
+                        avatar_accessories_color,
+                    ) = normalize_avatar_options(
+                        avatar_style,
+                        avatar_hair_color,
+                        avatar_gender_vibe,
+                        avatar_skin_tone,
+                        avatar_hair_length,
+                        avatar_glasses,
+                        avatar_facial_hair,
+                        avatar_facial_hair_color,
+                        avatar_eyes,
+                        avatar_mouth,
+                        avatar_clothing,
+                        avatar_accessories,
+                        avatar_clothes_color,
+                        avatar_accessories_color,
+                    )
+
+                    avatar_content = build_random_avatar_content(
+                        seed=avatar_seed,
+                        style=avatar_style,
+                        hair_color=avatar_hair_color,
+                        gender_vibe=avatar_gender_vibe,
+                        skin_tone_level=avatar_skin_tone,
+                        hair_length=avatar_hair_length,
+                        glasses=avatar_glasses,
+                        facial_hair_level=avatar_facial_hair,
+                        facial_hair_color=avatar_facial_hair_color,
+                        eyes=avatar_eyes,
+                        mouth=avatar_mouth,
+                        clothing=avatar_clothing,
+                        accessories=avatar_accessories,
+                        clothes_color=avatar_clothes_color,
+                        accessories_color=avatar_accessories_color,
+                    )
+                    avatar_bytes = avatar_content.read()
+                    avatar_name = avatar_content.name
+                    generated_image = ContentFile(avatar_bytes, name=avatar_name)
+                    profile_image = ContentFile(avatar_bytes, name=avatar_name)
 
                     RegistrationVerification.objects.filter(email__iexact=email, is_used=False).delete()
                     RegistrationVerification.objects.create(
@@ -344,6 +415,23 @@ def register(request):
                         town=user_form.cleaned_data['town'],
                         county=user_form.cleaned_data.get('county', ''),
                         postcode=user_form.cleaned_data['postcode'],
+                        image=profile_image,
+                        avatar_preset=avatar_seed,
+                        avatar_style=avatar_style,
+                        avatar_hair_color=avatar_hair_color,
+                        avatar_gender_vibe=avatar_gender_vibe,
+                        avatar_hair_length=avatar_hair_length,
+                        avatar_glasses=avatar_glasses,
+                        avatar_facial_hair=avatar_facial_hair,
+                        avatar_facial_hair_color=avatar_facial_hair_color,
+                        avatar_skin_tone=avatar_skin_tone,
+                        avatar_eyes=avatar_eyes,
+                        avatar_mouth=avatar_mouth,
+                        avatar_clothing=avatar_clothing,
+                        avatar_accessories=avatar_accessories,
+                        avatar_clothes_color=avatar_clothes_color,
+                        avatar_accessories_color=avatar_accessories_color,
+                        generated_image=generated_image,
                         verification_code=code,
                         expires_at=timezone.now() + timedelta(minutes=15),
                     )
@@ -384,6 +472,23 @@ def register(request):
                         town=verification.town,
                         county=verification.county,
                         postcode=verification.postcode,
+                        image=verification.image,
+                        avatar_preset=verification.avatar_preset,
+                        avatar_style=verification.avatar_style,
+                        avatar_hair_color=verification.avatar_hair_color,
+                        avatar_gender_vibe=verification.avatar_gender_vibe,
+                        avatar_hair_length=verification.avatar_hair_length,
+                        avatar_glasses=verification.avatar_glasses,
+                        avatar_facial_hair=verification.avatar_facial_hair,
+                        avatar_facial_hair_color=verification.avatar_facial_hair_color,
+                        avatar_skin_tone=verification.avatar_skin_tone,
+                        avatar_eyes=verification.avatar_eyes,
+                        avatar_mouth=verification.avatar_mouth,
+                        avatar_clothing=verification.avatar_clothing,
+                        avatar_accessories=verification.avatar_accessories,
+                        avatar_clothes_color=verification.avatar_clothes_color,
+                        avatar_accessories_color=verification.avatar_accessories_color,
+                        generated_image=verification.generated_image,
                         verification_code=code,
                         expires_at=timezone.now() + timedelta(minutes=15),
                     )
@@ -428,7 +533,35 @@ def register(request):
                     new_user.set_password(verify_form.cleaned_data['password'])
                     new_user.save()
 
-                    Profile.objects.create(
+                    active_image = verification.generated_image or verification.image
+                    image_original = verification.image
+                    image_generated = verification.generated_image
+                    avatar_provider = 'dicebear:avataaars'
+
+                    if not active_image and verification.avatar_preset:
+                        avatar_content = build_random_avatar_content(
+                            seed=verification.avatar_preset,
+                            style='avataaars',
+                            hair_color=verification.avatar_hair_color,
+                            gender_vibe=verification.avatar_gender_vibe,
+                            skin_tone_level=verification.avatar_skin_tone,
+                            hair_length=verification.avatar_hair_length,
+                            glasses=verification.avatar_glasses,
+                            facial_hair_level=verification.avatar_facial_hair,
+                            facial_hair_color=verification.avatar_facial_hair_color,
+                            eyes=verification.avatar_eyes,
+                            mouth=verification.avatar_mouth,
+                            clothing=verification.avatar_clothing,
+                            accessories=verification.avatar_accessories,
+                            clothes_color=verification.avatar_clothes_color,
+                            accessories_color=verification.avatar_accessories_color,
+                        )
+                        avatar_bytes = avatar_content.read()
+                        avatar_name = avatar_content.name
+                        active_image = ContentFile(avatar_bytes, name=avatar_name)
+                        image_original = ContentFile(avatar_bytes, name=avatar_name)
+
+                    profile = Profile.objects.create(
                         user=new_user,
                         email_confirmed=True,
                         date_of_birth=verification.date_of_birth,
@@ -438,7 +571,14 @@ def register(request):
                         town=verification.town,
                         county=verification.county,
                         postcode=verification.postcode,
+                        image_original=image_original,
+                        image_generated=image_generated,
+                        avatar_provider=avatar_provider,
+                        image=active_image,
                     )
+
+                    if profile.image:
+                        profile.saveWithImage()
 
                     verification.is_used = True
                     verification.save(update_fields=['is_used', 'updated_at'])
@@ -453,6 +593,7 @@ def register(request):
         'verify_form': verify_form,
         'register_stage': stage,
         'verify_email': verify_email,
+        'avatar_generation_enabled': getattr(settings, 'AVATAR_GENERATION_ENABLED', False),
     }
     return render(request, 'account/register.html', context)
 
@@ -460,6 +601,26 @@ def register(request):
 def edit(request):
     if request.method=='POST':
         profile = request.user.profile
+        if request.POST.get('action') == 'switch_avatar':
+            avatar_source = (request.POST.get('avatar_source') or '').strip()
+            if avatar_source == 'generated':
+                if profile.image_generated:
+                    profile.image = profile.image_generated
+                    profile.avatar_provider = 'replicate'
+                    profile.saveWithImage()
+                    messages.success(request, 'Switched to generated avatar.')
+                else:
+                    messages.error(request, 'No generated avatar available yet.')
+            elif avatar_source == 'original':
+                if profile.image_original:
+                    profile.image = profile.image_original
+                    profile.avatar_provider = ''
+                    profile.saveWithImage()
+                    messages.success(request, 'Switched to original photo.')
+                else:
+                    messages.error(request, 'No original profile photo available yet.')
+            return redirect('edit')
+
         old_mobile = profile.mobile_number or ''
         old_address = {
             'address_line_1': profile.address_line_1 or '',
@@ -474,7 +635,8 @@ def edit(request):
         profile_form = ProfileEditForm(instance=profile,
                                         data=request.POST,
                                         files=request.FILES)
-        if user_form.is_valid() and profile_form.is_valid():
+        avatar_form = AvatarEditForm(data=request.POST)
+        if user_form.is_valid() and profile_form.is_valid() and avatar_form.is_valid():
             messages.success(request, 'Profile updates saved')
             user_form.save()
 
@@ -493,17 +655,93 @@ def edit(request):
                 updated_profile.address_verified = False
                 messages.warning(request, 'Address verification has been reset because your address changed.')
 
+            avatar_seed = (avatar_form.cleaned_data.get('avatar_preset') or '').strip() or request.user.username
+            avatar_style = 'avataaars'
+            avatar_hair_color = (avatar_form.cleaned_data.get('avatar_hair_color') or '').strip()
+            avatar_gender_vibe = 'neutral'
+            avatar_hair_length = (avatar_form.cleaned_data.get('avatar_hair_length') or 'short').strip()
+            avatar_glasses = False
+            avatar_facial_hair = int(avatar_form.cleaned_data.get('avatar_facial_hair') or 33)
+            avatar_facial_hair_color = (avatar_form.cleaned_data.get('avatar_facial_hair_color') or '').strip()
+            avatar_clothes_color = (avatar_form.cleaned_data.get('avatar_clothes_color') or '').strip()
+            avatar_accessories_color = (avatar_form.cleaned_data.get('avatar_accessories_color') or '').strip()
+            avatar_skin_tone = str(avatar_form.cleaned_data.get('avatar_skin_tone') or '4').strip()
+            avatar_eyes = (avatar_form.cleaned_data.get('avatar_eyes') or 'default').strip()
+            avatar_mouth = (avatar_form.cleaned_data.get('avatar_mouth') or 'smile').strip()
+            avatar_clothing = (avatar_form.cleaned_data.get('avatar_clothing') or 'hoodie').strip()
+            avatar_accessories = (avatar_form.cleaned_data.get('avatar_accessories') or 'none').strip()
+
+            (
+                avatar_style,
+                avatar_hair_color,
+                avatar_gender_vibe,
+                avatar_skin_tone,
+                avatar_hair_length,
+                avatar_glasses,
+                avatar_facial_hair,
+                avatar_facial_hair_color,
+                avatar_eyes,
+                avatar_mouth,
+                avatar_clothing,
+                avatar_accessories,
+                avatar_clothes_color,
+                avatar_accessories_color,
+            ) = normalize_avatar_options(
+                avatar_style,
+                avatar_hair_color,
+                avatar_gender_vibe,
+                avatar_skin_tone,
+                avatar_hair_length,
+                avatar_glasses,
+                avatar_facial_hair,
+                avatar_facial_hair_color,
+                avatar_eyes,
+                avatar_mouth,
+                avatar_clothing,
+                avatar_accessories,
+                avatar_clothes_color,
+                avatar_accessories_color,
+            )
+
+            avatar_content = build_random_avatar_content(
+                seed=avatar_seed,
+                style=avatar_style,
+                hair_color=avatar_hair_color,
+                gender_vibe=avatar_gender_vibe,
+                skin_tone_level=avatar_skin_tone,
+                hair_length=avatar_hair_length,
+                glasses=avatar_glasses,
+                facial_hair_level=avatar_facial_hair,
+                facial_hair_color=avatar_facial_hair_color,
+                eyes=avatar_eyes,
+                mouth=avatar_mouth,
+                clothing=avatar_clothing,
+                accessories=avatar_accessories,
+                clothes_color=avatar_clothes_color,
+                accessories_color=avatar_accessories_color,
+            )
+            avatar_bytes = avatar_content.read()
+            avatar_name = avatar_content.name
+            avatar_file = ContentFile(avatar_bytes, name=avatar_name)
+
+            updated_profile.image_generated = avatar_file
+            updated_profile.image = avatar_file
+            updated_profile.avatar_provider = 'dicebear:avataaars'
+
             updated_profile.save()
+            messages.success(request, 'Avatar updated.')
         else:
             messages.error(request, 'Profile updates not saved')
 
     else:
         user_form = UserEditForm(instance=request.user)
         profile_form = ProfileEditForm(instance=request.user.profile)
+        avatar_form = AvatarEditForm(initial={'avatar_preset': request.user.username})
 
     context = {
         'user_form' : user_form,
-        'profile_form' : profile_form
+        'profile_form' : profile_form,
+        'avatar_form': avatar_form,
     }
     return render(request, 'account/edit.html', context)
 
@@ -517,6 +755,7 @@ class ProfileImageUpload(View):
             try:
                 user_profile = Profile.objects.get(user=request.user)
                 user_profile.image = form.cleaned_data['image']
+                user_profile.image_original = form.cleaned_data['image']
                 user_profile.saveWithImage()  # This now saves and queues async processing
                 data = {'is_valid': True,
                         'image_name': user_profile.image.name, 

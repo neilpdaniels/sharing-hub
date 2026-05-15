@@ -1,6 +1,65 @@
 from common.models import TransactionFee, TransactionFeeBand
 from transaction.models import Transaction
+from django.db.models import Avg, Count, Q
 import logging
+
+
+def empty_feedback_breakdown():
+    return {
+        'completed_free_transactions': 0,
+        'completed_transactions': 0,
+        'completed_transactions_total': 0,
+        'free_transaction_feedback_score': None,
+        'completed_transaction_feedback_score': None,
+        'has_free_feedback_score': False,
+        'has_completed_feedback_score': False,
+    }
+
+
+def get_user_feedback_breakdown(*, user_id):
+    from transaction.models import TransactionFeedback
+
+    if not user_id:
+        return empty_feedback_breakdown()
+
+    feedback_qs = TransactionFeedback.objects.filter(
+        left_for_id=user_id,
+        transaction__transaction_status=Transaction.RENTAL_PROCESS_COMPLETED,
+    )
+
+    aggregates = feedback_qs.aggregate(
+        completed_transactions_total=Count('transaction', distinct=True),
+        completed_free_transactions=Count(
+            'transaction',
+            filter=Q(transaction__price__lte=0),
+            distinct=True,
+        ),
+        completed_transactions=Count(
+            'transaction',
+            filter=Q(transaction__price__gt=0),
+            distinct=True,
+        ),
+        free_transaction_feedback_score=Avg('overall_rating', filter=Q(transaction__price__lte=0)),
+        completed_transaction_feedback_score=Avg('overall_rating', filter=Q(transaction__price__gt=0)),
+    )
+
+    breakdown = {
+        'completed_free_transactions': aggregates.get('completed_free_transactions') or 0,
+        'completed_transactions': aggregates.get('completed_transactions') or 0,
+        'completed_transactions_total': aggregates.get('completed_transactions_total') or 0,
+        'free_transaction_feedback_score': aggregates.get('free_transaction_feedback_score'),
+        'completed_transaction_feedback_score': aggregates.get('completed_transaction_feedback_score'),
+        'has_free_feedback_score': aggregates.get('free_transaction_feedback_score') is not None,
+        'has_completed_feedback_score': aggregates.get('completed_transaction_feedback_score') is not None,
+    }
+    return breakdown
+
+
+def get_user_feedback_breakdown_map(user_ids):
+    user_ids = [uid for uid in set(user_ids or []) if uid]
+    if not user_ids:
+        return {}
+    return {uid: get_user_feedback_breakdown(user_id=uid) for uid in user_ids}
 
 def getMinPriceByWeight(fee_bands, total_weight):
     toReturn = 0

@@ -384,6 +384,23 @@
                                 <span class="ml-1 badge badge-gold">Mates rates available</span>
                                 {% endif %}
                               </div>
+                              <div class="mt-1 small text-muted">
+                                Paid score:
+                                {% if order.user_feedback_stats.has_completed_feedback_score %}
+                                {{ order.user_feedback_stats.completed_transaction_feedback_score|floatformat:1 }}/5
+                                {% else %}
+                                N/A
+                                {% endif %}
+                                ({{ order.user_feedback_stats.completed_transactions }} txns)
+                                &nbsp;|&nbsp;
+                                Free score:
+                                {% if order.user_feedback_stats.has_free_feedback_score %}
+                                {{ order.user_feedback_stats.free_transaction_feedback_score|floatformat:1 }}/5
+                                {% else %}
+                                N/A
+                                {% endif %}
+                                ({{ order.user_feedback_stats.completed_free_transactions }} txns)
+                              </div>
                             </div>
                               </div>
                             <!-- Expand + actions -->

@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% load common_lib %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+  <div class="row">
+    <div class="col-lg-10 mx-auto">
+      <h3 class="mb-1">Open Listings</h3>
+      <p class="text-muted mb-3">{{ listing_user.get_full_name|default:listing_user.username }} • {{ total_results }} active listing{{ total_results|pluralize }}</p>
+
+      {% if orders.object_list %}
+        {% for order in orders.object_list %}
+        <div class="card mb-3 search-result-card">
+          <div class="row no-gutters">
+            <div class="col-md-3">
+              {% if order.images.first %}
+              <img src="{{ order.images.first.image.url }}" class="img-fluid h-100 w-100" style="object-fit: cover; min-height: 160px;" alt="{{ order.product.name }}">
+              {% elif order.product.image %}
+              <img src="{{ order.product.image.url }}" class="img-fluid h-100 w-100" style="object-fit: cover; min-height: 160px;" alt="{{ order.product.name }}">
+              {% else %}
+              <div class="h-100 w-100 d-flex align-items-center justify-content-center" style="min-height: 160px; background: #f2f7f7; color: #7a8a93;">No image</div>
+              {% endif %}
+            </div>
+            <div class="col-md-9">
+              <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-start">
+                  <div>
+                    <h5 class="card-title mb-1">{{ order.product.name }}</h5>
+                    <p class="text-muted small mb-2">{{ order.product.category_id.title|capfirst }}</p>
+                  </div>
+                </div>
+
+                <p class="mb-1">
+                  <strong>£{{ order.price|format_price }}</strong>
+                  <small class="text-muted">/day</small>
+                  {% if order.deposit %}
+                  <span class="ml-2 badge badge-light border">£{{ order.deposit|format_price }} deposit</span>
+                  {% else %}
+                  <span class="ml-2 badge badge-light border text-muted">No deposit required</span>
+                  {% endif %}
+                  {% if order.mates_rates == 0 %}
+                  <span class="ml-1 badge badge-gold"><span class="fas fa-star mr-1"></span>Free for friends</span>
+                  {% elif order.mates_rates %}
+                  <span class="ml-1 badge badge-gold">Mates rates available</span>
+                  {% endif %}
+                </p>
+
+                <p class="mb-1 text-muted small">
+                  <span class="fas fa-calendar-alt mr-1"></span>Posted {{ order.create_date|date:'M d, Y' }}
+                  {% if order.expiry_date %}
+                  • Expires {{ order.expiry_date|date:'M d, Y' }}
+                  {% endif %}
+                </p>
+
+                <p class="mb-1 text-muted small">
+                  <span class="fas fa-box-open mr-1"></span><strong>Delivery/Collection:</strong> {{ order.get_collection_policy_display }}
+                  {% if order.delivery_cost %}
+                  <small>(Delivery: £{{ order.delivery_cost|format_price }})</small>
+                  {% endif %}
+                  {% if order.max_rental_days %}
+                  • Max {{ order.max_rental_days }} day{{ order.max_rental_days|pluralize }}
+                  {% endif %}
+                </p>
+
+                {% if order.postcode %}
+                <p class="mb-2 text-muted small">
+                  <span class="fas fa-map-marker-alt mr-1"></span>{{ order.postcode|upper }}
+                  {% if order.radius_km %}• {{ order.radius_km }} km radius{% endif %}
+                </p>
+                {% endif %}
+
+                <div class="search-result-actions">
+                  <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="btn btn-sm btn-outline-primary">View listing</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if orders.has_other_pages %}
+        <nav class="mt-3">
+          <ul class="pagination justify-content-center">
+            {% if orders.has_previous %}
+            <li class="page-item"><a class="page-link" href="?page={{ orders.previous_page_number }}">Previous</a></li>
+            {% endif %}
+            <li class="page-item disabled"><span class="page-link">Page {{ orders.number }} of {{ orders.paginator.num_pages }}</span></li>
+            {% if orders.has_next %}
+            <li class="page-item"><a class="page-link" href="?page={{ orders.next_page_number }}">Next</a></li>
+            {% endif %}
+          </ul>
+        </nav>
+        {% endif %}
+      {% else %}
+      <div class="card search-empty-card">
+        <div class="card-body">
+          <p class="mb-0 text-muted">No open listings right now.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

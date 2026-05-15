@@ -3,6 +3,7 @@ import logging
 import urllib.parse
 
 from django.contrib import messages
+from django.contrib.auth.models import User
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
@@ -35,6 +36,40 @@ from ..models import SearchHistory
 
 
 logger = logging.getLogger(__name__)
+
+
+def user_listings(request, username):
+    listing_user = get_object_or_404(User, username__iexact=username)
+    now = timezone.now()
+
+    orders_qs = (
+        Order.objects
+        .select_related('product', 'product__category_id', 'user')
+        .prefetch_related('images')
+        .filter(
+            user=listing_user,
+            status=Order.ACTIVE,
+            expiry_date__gte=now,
+        )
+        .order_by('-create_date')
+    )
+
+    paginator = Paginator(orders_qs, 20)
+    page = request.GET.get('page', 1)
+    try:
+        orders_page = paginator.page(page)
+    except PageNotAnInteger:
+        orders_page = paginator.page(1)
+    except EmptyPage:
+        orders_page = paginator.page(paginator.num_pages)
+
+    context = {
+        'listing_user': listing_user,
+        'orders': orders_page,
+        'total_results': orders_qs.count(),
+    }
+    template = loader.get_template('navigation/user_listings.html')
+    return HttpResponse(template.render(context, request))
 
 
 def search(request):

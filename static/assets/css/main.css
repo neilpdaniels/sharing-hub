@@ -31,6 +31,10 @@ body{
   line-height: 1.5;
   color: #212529;
 }
+
+html {
+  font-size: 85%;
+}
 img{
   max-width: 100%;
 }
@@ -240,13 +244,13 @@ a.dark-link  {
 }
 
 a {
-  color: #0083ff;
+  color: #0b4a8b;
   outline: none;
 }
 
 a:focus,
 a:hover {
-  color: #323232;
+  color: #07315e;
   text-decoration: none;
   outline; none;
 }

@@ -109,6 +109,22 @@
     <div class="small">
         <span class="font-weight-bold">Lender: </span>
         {% include "user_profile_modal.html" with user=order.user %}
+        <span class="text-muted ml-2">
+            Paid score:
+            {% if order_user_feedback_stats.has_completed_feedback_score %}
+            {{ order_user_feedback_stats.completed_transaction_feedback_score|floatformat:1 }}/5
+            {% else %}
+            N/A
+            {% endif %}
+            ({{ order_user_feedback_stats.completed_transactions }} txns)
+            · Free score:
+            {% if order_user_feedback_stats.has_free_feedback_score %}
+            {{ order_user_feedback_stats.free_transaction_feedback_score|floatformat:1 }}/5
+            {% else %}
+            N/A
+            {% endif %}
+            ({{ order_user_feedback_stats.completed_free_transactions }} txns)
+        </span>
         {% if request.user.is_authenticated and request.user != order.user %}
             {% if friendship_status == 'ACCEPTED' %}
             <span class="badge badge-success ml-2">Friend</span>

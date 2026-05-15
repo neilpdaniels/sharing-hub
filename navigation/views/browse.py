@@ -28,6 +28,7 @@ from common.models import (
     Order, Product, System,
 )
 from common.tasks import listEmptyCategories, runStaticMigration
+from transaction.helpers import get_user_feedback_breakdown, get_user_feedback_breakdown_map
 from transaction.models import Transaction
 
 from ..forms import CategorySuggestionForm
@@ -520,6 +521,10 @@ def productPage(request, product_slug):
 
     sell_orders = visible_orders
 
+    user_feedback_breakdowns = get_user_feedback_breakdown_map([o.user_id for o in sell_orders])
+    for order in sell_orders:
+        order.user_feedback_stats = user_feedback_breakdowns.get(order.user_id, {})
+
     # Sort
     if sort_by == 'nearest':
         sell_orders.sort(key=lambda o: o.distance_km if o.distance_km is not None else 99999)
@@ -791,6 +796,7 @@ def expandOrder(request):
         'is_friend_of_lender': is_friend_of_lender,
         'display_price': display_price,
         'display_deposit': display_deposit,
+        'order_user_feedback_stats': get_user_feedback_breakdown(user_id=order.user_id),
     }
     return HttpResponse(template.render(content, request))
 

@@ -278,9 +278,9 @@ class Order(models.Model):
     WILL_DELIVER = 'WD'
     EITHER = 'EI'
     COLLECTION_CHOICES = (
-        (MUST_COLLECT, 'Must collect'),
-        (WILL_DELIVER, 'Will deliver'),
-        (EITHER, 'Collect or deliver'),
+        (MUST_COLLECT, 'You must collect'),
+        (WILL_DELIVER, 'Lender will deliver'),
+        (EITHER, 'Collection or delivery - To be discussed'),
     )
     collection_policy = models.CharField(
         max_length=2,

@@ -18,6 +18,22 @@
             <h3 class="mb-1">Rental Transaction</h3>
             <p class="text-muted mb-3">Reference: {{ transaction.transaction_reference }}</p>
 
+            {% if feedback_prompt_required %}
+            <div class="card mb-3 border-warning" style="border-width: 2px;">
+                <div class="card-body" style="background: #fff6dc;">
+                    <h4 class="mb-2" style="font-weight: 800;">Congratulations - Please Leave Feedback To Close This Transaction</h4>
+                    <p class="mb-0">Your feedback is required to complete closure. Please use the feedback panel on the right and submit all ratings.</p>
+                </div>
+            </div>
+            {% elif feedback_both_complete %}
+            <div class="card mb-3 border-success">
+                <div class="card-body" style="background: #ecfff2;">
+                    <h5 class="mb-1 text-success">Transaction Closed</h5>
+                    <p class="mb-0">Both parties have submitted feedback. This rental is fully completed.</p>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">{{ transaction.product.name }}</h5>
@@ -36,7 +52,16 @@
                     <div class="row">
                         <div class="col-md-6 mb-3 mb-md-0">
                             <h6 class="mb-2">Lender</h6>
-                            <p class="mb-1">{{ transaction.user_passive.get_full_name|default:transaction.user_passive.username }}</p>
+                            <div class="d-flex align-items-center mb-1">
+                                {% if transaction.user_passive.profile.image %}
+                                <img
+                                    src="{{ transaction.user_passive.profile.image.url }}"
+                                    alt="{{ transaction.user_passive.username }} avatar"
+                                    style="width: 40px; height: 40px; border-radius: 10px; object-fit: cover; border: 1px solid #cfe4e4; margin-right: 8px;"
+                                >
+                                {% endif %}
+                                <p class="mb-0">{{ transaction.user_passive.get_full_name|default:transaction.user_passive.username }}</p>
+                            </div>
                             {% if transaction.user_passive.profile.mobile_number %}
                             <p class="mb-1"><small class="text-muted">{{ transaction.user_passive.profile.mobile_number }}</small></p>
                             {% endif %}
@@ -48,10 +73,35 @@
                                 {{ transaction.user_passive.profile.postcode }}
                             </small></p>
                             {% endif %}
+                            <p class="mb-0 mt-2"><small class="text-muted">
+                                <strong>Paid completed:</strong> {{ lender_feedback_stats.completed_transactions }}<br>
+                                <strong>Free completed:</strong> {{ lender_feedback_stats.completed_free_transactions }}<br>
+                                <strong>Score (paid):</strong>
+                                {% if lender_feedback_stats.has_completed_feedback_score %}
+                                {{ lender_feedback_stats.completed_transaction_feedback_score|floatformat:1 }}/5
+                                {% else %}
+                                N/A
+                                {% endif %}<br>
+                                <strong>Score (free):</strong>
+                                {% if lender_feedback_stats.has_free_feedback_score %}
+                                {{ lender_feedback_stats.free_transaction_feedback_score|floatformat:1 }}/5
+                                {% else %}
+                                N/A
+                                {% endif %}
+                            </small></p>
                         </div>
                         <div class="col-md-6">
                             <h6 class="mb-2">Borrower</h6>
-                            <p class="mb-1">{{ transaction.user_aggressive.get_full_name|default:transaction.user_aggressive.username }}</p>
+                            <div class="d-flex align-items-center mb-1">
+                                {% if transaction.user_aggressive.profile.image %}
+                                <img
+                                    src="{{ transaction.user_aggressive.profile.image.url }}"
+                                    alt="{{ transaction.user_aggressive.username }} avatar"
+                                    style="width: 40px; height: 40px; border-radius: 10px; object-fit: cover; border: 1px solid #cfe4e4; margin-right: 8px;"
+                                >
+                                {% endif %}
+                                <p class="mb-0">{{ transaction.user_aggressive.get_full_name|default:transaction.user_aggressive.username }}</p>
+                            </div>
                             {% if transaction.user_aggressive.profile.mobile_number %}
                             <p class="mb-1"><small class="text-muted">{{ transaction.user_aggressive.profile.mobile_number }}</small></p>
                             {% endif %}
@@ -63,6 +113,22 @@
                                 {{ transaction.user_aggressive.profile.postcode }}
                             </small></p>
                             {% endif %}
+                            <p class="mb-0 mt-2"><small class="text-muted">
+                                <strong>Paid completed:</strong> {{ renter_feedback_stats.completed_transactions }}<br>
+                                <strong>Free completed:</strong> {{ renter_feedback_stats.completed_free_transactions }}<br>
+                                <strong>Score (paid):</strong>
+                                {% if renter_feedback_stats.has_completed_feedback_score %}
+                                {{ renter_feedback_stats.completed_transaction_feedback_score|floatformat:1 }}/5
+                                {% else %}
+                                N/A
+                                {% endif %}<br>
+                                <strong>Score (free):</strong>
+                                {% if renter_feedback_stats.has_free_feedback_score %}
+                                {{ renter_feedback_stats.free_transaction_feedback_score|floatformat:1 }}/5
+                                {% else %}
+                                N/A
+                                {% endif %}
+                            </small></p>
                         </div>
                     </div>
                 </div>
@@ -267,9 +333,30 @@
                         Not added yet
                         {% endif %}
                     </p>
+                    <p class="mb-1"><strong>Checkout evidence (borrower):</strong>
+                        {% if transaction.checkout_borrower_video_url %}
+                        <a href="{{ transaction.checkout_borrower_video_url }}" target="_blank" rel="noopener">View</a>
+                        {% else %}
+                        Not added yet
+                        {% endif %}
+                    </p>
                     <p class="mb-0"><strong>Return video:</strong>
                         {% if transaction.return_condition_video_url %}
                         <a href="{{ transaction.return_condition_video_url }}" target="_blank" rel="noopener">View</a>
+                        {% else %}
+                        Not added yet
+                        {% endif %}
+                    </p>
+                    <p class="mb-0 mt-2"><strong>Return evidence (borrower):</strong>
+                        {% if transaction.return_borrower_video_url %}
+                        <a href="{{ transaction.return_borrower_video_url }}" target="_blank" rel="noopener">View</a>
+                        {% else %}
+                        Not added yet
+                        {% endif %}
+                    </p>
+                    <p class="mb-0"><strong>Return evidence (lender):</strong>
+                        {% if transaction.return_lender_video_url %}
+                        <a href="{{ transaction.return_lender_video_url }}" target="_blank" rel="noopener">View</a>
                         {% else %}
                         Not added yet
                         {% endif %}
@@ -298,6 +385,52 @@
                     {% endif %}
                 </div>
             </div>
+
+            {% if feedback_stage %}
+            <div class="card mb-3 {% if feedback_prompt_required %}border-warning{% endif %}">
+                <div class="card-body">
+                    <h5 class="card-title">Feedback</h5>
+
+                    {% if feedback_left_by_me %}
+                    <p class="mb-2 text-success">You have submitted your feedback.</p>
+                    {% else %}
+                    <p class="mb-2 text-muted">Please rate this transaction (0 to 5) to close it.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="submit_feedback">
+                        <div class="form-group mb-2">
+                            <label for="id_feedback_communication_rating">Comms (0-5)</label>
+                            <input id="id_feedback_communication_rating" class="form-control" type="number" name="communication_rating" min="0" max="5" step="1" required>
+                        </div>
+                        <div class="form-group mb-2">
+                            <label for="id_feedback_delivery_return_rating">Delivery and return (0-5)</label>
+                            <input id="id_feedback_delivery_return_rating" class="form-control" type="number" name="delivery_return_rating" min="0" max="5" step="1" required>
+                        </div>
+                        <div class="form-group mb-2">
+                            <label for="id_feedback_overall_rating">Overall (0-5)</label>
+                            <input id="id_feedback_overall_rating" class="form-control" type="number" name="overall_rating" min="0" max="5" step="1" required>
+                        </div>
+                        <div class="form-group mb-2">
+                            <label for="id_feedback_comment">Any comments</label>
+                            <textarea id="id_feedback_comment" class="form-control" name="feedback_comment" rows="2" placeholder="Optional"></textarea>
+                        </div>
+                        <button class="btn btn-warning btn-block" type="submit">Submit Feedback</button>
+                    </form>
+                    {% endif %}
+
+                    {% if feedback_from_lender or feedback_from_renter %}
+                    <hr>
+                    <h6 class="mb-2">Submitted Feedback</h6>
+                    {% if feedback_from_lender %}
+                    <p class="mb-1 small"><strong>Lender:</strong> Comms {{ feedback_from_lender.communication_rating }}/5, Delivery/Return {{ feedback_from_lender.delivery_return_rating }}/5, Overall {{ feedback_from_lender.overall_rating }}/5</p>
+                    {% endif %}
+                    {% if feedback_from_renter %}
+                    <p class="mb-0 small"><strong>Borrower:</strong> Comms {{ feedback_from_renter.communication_rating }}/5, Delivery/Return {{ feedback_from_renter.delivery_return_rating }}/5, Overall {{ feedback_from_renter.overall_rating }}/5</p>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
 
             <div class="card mb-3">
                 <div class="card-body">
@@ -485,7 +618,7 @@
             {% if is_lender and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at %}
             <div class="card mb-3">
                 <div class="card-body">
-                    <h5 class="card-title">Action: Initiate Rental</h5>
+                    <h5 class="card-title">Action: Submit Checkout Evidence (Lender)</h5>
                     {% if rental_start_blocked_by_missing_card %}
                     <div class="alert alert-warning mb-3" role="alert">
                         Rental is due to begin but cannot be started yet because the borrower has not completed payment card setup.
@@ -514,64 +647,233 @@
                             <label for="id_deposit_placeholder_notes">Deposit notes</label>
                             <textarea id="id_deposit_placeholder_notes" class="form-control" name="deposit_placeholder_notes" rows="2"></textarea>
                         </div>
-                        <button class="btn btn-primary btn-block" type="submit">Initiate Rental</button>
+                        <button class="btn btn-primary btn-block" type="submit">Submit Checkout Evidence</button>
                     </form>
                     {% endif %}
                 </div>
             </div>
             {% endif %}
 
-            {% if transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION %}
             <div class="card mb-3">
                 <div class="card-body">
-                    <h5 class="card-title">Action: Mark Returned</h5>
+                    <h5 class="card-title">Action: Review Checkout Evidence (Borrower)</h5>
+                    <p class="text-muted mb-2">Confirm lender evidence or submit your own counter-evidence.</p>
+                    <form method="post" class="mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm_checkout_evidence">
+                        <button class="btn btn-success btn-block" type="submit">Agree With Lender Evidence</button>
+                    </form>
                     <form method="post">
                         {% csrf_token %}
-                        <input type="hidden" name="action" value="mark_returned">
+                        <input type="hidden" name="action" value="submit_checkout_borrower_evidence">
                         <div class="form-group">
-                            <label for="id_return_video_url">Return condition video URL</label>
-                            <input id="id_return_video_url" class="form-control" type="url" name="return_video_url" placeholder="https://...">
+                            <label for="id_checkout_borrower_video_url">Borrower counter-evidence video URL</label>
+                            <input id="id_checkout_borrower_video_url" class="form-control" type="url" name="checkout_borrower_video_url" placeholder="https://..." value="{{ transaction.checkout_borrower_video_url }}">
                         </div>
-                        <button class="btn btn-primary btn-block" type="submit">Mark Returned</button>
+                        <button class="btn btn-outline-warning btn-block" type="submit">Submit Counter-Evidence</button>
                     </form>
                 </div>
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED %}
-            <div class="card mb-3">
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and checkout_pin_available %}
+            <div class="card mb-3 border-success">
                 <div class="card-body">
-                    <h5 class="card-title">Deposit Resolution</h5>
+                    <h5 class="card-title text-success">Checkout Handover PIN</h5>
+                    <p class="mb-1">Share this PIN with the lender so they can complete handover verification:</p>
+                    <p class="display-4 mb-1" style="letter-spacing: 0.2rem;">{{ transaction.checkout_handover_pin }}</p>
+                    {% if transaction.checkout_handover_pin_generated_at %}
+                    <p class="text-muted mb-0"><small>Generated: {{ transaction.checkout_handover_pin_generated_at|date:"M d, Y H:i" }}</small></p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
 
-                    <form method="post" class="mb-2">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="deposit_full">
-                        <div class="form-group mb-2">
-                            <label for="id_deposit_full_notes">Notes</label>
-                            <textarea id="id_deposit_full_notes" class="form-control" name="deposit_resolution_notes" rows="2"></textarea>
-                        </div>
-                        <button class="btn btn-success btn-block" type="submit">Return Deposit in Full</button>
-                    </form>
-
-                    <form method="post" class="mb-2">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="deposit_reduced">
-                        <div class="form-group mb-2">
-                            <label for="id_deposit_reduced_notes">Reduced return details</label>
-                            <textarea id="id_deposit_reduced_notes" class="form-control" name="deposit_resolution_notes" rows="2"></textarea>
-                        </div>
-                        <button class="btn btn-warning btn-block" type="submit">Agree Reduced Deposit Return</button>
-                    </form>
-
+            {% if is_lender and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and checkout_pin_available %}
+            <div class="card mb-3 border-primary">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Enter Borrower Checkout PIN (Lender)</h5>
+                    <p class="text-muted mb-2">Enter the PIN provided by borrower to confirm handover and start rental.</p>
                     <form method="post">
                         {% csrf_token %}
-                        <input type="hidden" name="action" value="mediation_required">
-                        <div class="form-group mb-2">
-                            <label for="id_deposit_mediation_notes">Issue details</label>
-                            <textarea id="id_deposit_mediation_notes" class="form-control" name="deposit_resolution_notes" rows="2"></textarea>
+                        <input type="hidden" name="action" value="verify_checkout_handover_pin">
+                        <div class="form-group">
+                            <label for="id_checkout_handover_pin">Checkout PIN</label>
+                            <input id="id_checkout_handover_pin" class="form-control" type="text" name="checkout_handover_pin" maxlength="8" placeholder="Enter PIN">
                         </div>
-                        <button class="btn btn-danger btn-block" type="submit">Mark as Mediation Required</button>
+                        <button class="btn btn-primary btn-block" type="submit">Verify Handover & Start Rental</button>
                     </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_lender and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and not checkout_pin_available and not deposit_funds_held %}
+            <div class="card mb-3 border-warning">
+                <div class="card-body">
+                    <h5 class="card-title">Deposit Hold Required Before PIN</h5>
+                    <p class="mb-2 text-muted">Borrower PIN cannot be generated until deposit funds are held.</p>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_ONGOING or is_renter and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Return Day Evidence (Borrower)</h5>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="submit_return_borrower_evidence">
+                        <div class="form-group">
+                            <label for="id_return_video_url">Borrower return evidence video URL</label>
+                            <input id="id_return_video_url" class="form-control" type="url" name="return_video_url" placeholder="https://..." value="{{ transaction.return_borrower_video_url }}">
+                        </div>
+                        <button class="btn btn-primary btn-block" type="submit">Submit / Update Return Evidence</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Review Return Evidence (Lender)</h5>
+                    <p class="text-muted mb-2">Confirm you agree with borrower evidence, or provide your own counter-evidence.</p>
+                    <form method="post" class="mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm_return_evidence">
+                        <button class="btn btn-success btn-block" type="submit">Agree With Borrower Evidence</button>
+                    </form>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="submit_lender_return_evidence">
+                        <div class="form-group">
+                            <label for="id_lender_return_video_url">Lender counter-evidence video URL</label>
+                            <input id="id_lender_return_video_url" class="form-control" type="url" name="lender_return_video_url" placeholder="https://..." value="{{ transaction.return_lender_video_url }}">
+                        </div>
+                        <button class="btn btn-outline-warning btn-block" type="submit">Submit Counter-Evidence</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and return_pin_available %}
+            <div class="card mb-3 border-success">
+                <div class="card-body">
+                    <h5 class="card-title text-success">Return Verification PIN</h5>
+                    <p class="mb-1">Give this PIN to the borrower for handover verification:</p>
+                    <p class="display-4 mb-1" style="letter-spacing: 0.2rem;">{{ transaction.return_handover_pin }}</p>
+                    {% if transaction.return_handover_pin_generated_at %}
+                    <p class="text-muted mb-0"><small>Generated: {{ transaction.return_handover_pin_generated_at|date:"M d, Y H:i" }}</small></p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and return_pin_available %}
+            <div class="card mb-3 border-primary">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Enter Return Verification PIN</h5>
+                    <p class="text-muted mb-2">Ask the lender for the PIN and submit it to complete return handover.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="verify_return_handover_pin">
+                        <div class="form-group">
+                            <label for="id_return_handover_pin">Return PIN</label>
+                            <input id="id_return_handover_pin" class="form-control" type="text" name="return_handover_pin" maxlength="8" placeholder="Enter PIN">
+                        </div>
+                        <button class="btn btn-primary btn-block" type="submit">Verify Return & Continue</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Propose Deposit Return (Lender)</h5>
+                    <form method="post" class="mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="propose_deposit_return">
+                        <div class="form-group mb-2">
+                            <label for="id_deposit_proposed_return_amount">Amount to return (£)</label>
+                            <input id="id_deposit_proposed_return_amount" class="form-control" type="number" name="deposit_proposed_return_amount" min="0" step="0.01" max="{{ transaction.deposit }}" value="{{ transaction.deposit_proposed_return_amount|default:transaction.deposit }}">
+                        </div>
+                        <div class="form-group mb-2">
+                            <label for="id_deposit_proposal_notes">Notes</label>
+                            <textarea id="id_deposit_proposal_notes" class="form-control" name="deposit_resolution_notes" rows="2" placeholder="Reason for full/reduced return...">{{ transaction.deposit_resolution_notes }}</textarea>
+                        </div>
+                        <button class="btn btn-primary btn-block" type="submit">Send / Update Proposal</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING and transaction.deposit_proposed_by_lender_at %}
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h5 class="card-title">Current Deposit Proposal</h5>
+                    <p class="mb-1"><strong>Proposed return:</strong> £{{ transaction.deposit_proposed_return_amount|format_price }} of £{{ transaction.deposit|format_price }}</p>
+                    <p class="mb-0 text-muted"><small>Updated: {{ transaction.deposit_proposed_by_lender_at|date:"M d, Y H:i" }}</small></p>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING and transaction.deposit_proposed_by_lender_at %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Review Deposit Proposal (Borrower)</h5>
+                    <p class="mb-2">Lender proposed £{{ transaction.deposit_proposed_return_amount|format_price }} return. Accept or contest.</p>
+                    <form method="post" class="mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="agree_deposit_return">
+                        <button class="btn btn-success btn-block" type="submit">Agree Proposal</button>
+                    </form>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="contest_deposit_return">
+                        <div class="form-group mb-2">
+                            <label for="id_deposit_contest_notes">Reason for contest</label>
+                            <textarea id="id_deposit_contest_notes" class="form-control" name="deposit_resolution_notes" rows="2" required></textarea>
+                        </div>
+                        <button class="btn btn-outline-danger btn-block" type="submit">Contest Proposal</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
+            <div class="card mb-3 border-danger">
+                <div class="card-body">
+                    <h5 class="card-title text-danger">Deposit Dispute In Progress</h5>
+                    {% if dispute_hold_deadline %}
+                    <p class="mb-2"><strong>Estimated hold deadline:</strong> {{ dispute_hold_deadline|date:"M d, Y H:i" }}</p>
+                    {% endif %}
+
+                    {% if urgent_dispute_funds_action %}
+                    <div class="alert alert-danger mb-2" role="alert">
+                        Card-hold window is approaching. Secure funds now to protect dispute resolution.
+                    </div>
+                    <form method="post" class="mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="secure_dispute_funds">
+                        <button class="btn btn-danger btn-block" type="submit">Secure Deposit Funds Now</button>
+                    </form>
+                    {% endif %}
+
+                    {% if transaction.transaction_status != transaction.DISPUTE_REQUESTED %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="raise_deposit_dispute_admin">
+                        <div class="form-group mb-2">
+                            <label for="id_raise_deposit_dispute_notes">Details for admin</label>
+                            <textarea id="id_raise_deposit_dispute_notes" class="form-control" name="deposit_resolution_notes" rows="2" required></textarea>
+                        </div>
+                        <button class="btn btn-outline-danger btn-block" type="submit">Raise Deposit Dispute To Admin</button>
+                    </form>
+                    {% else %}
+                    <p class="mb-0 text-muted">Dispute already escalated to admin. Continue adding evidence via messages.</p>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -682,34 +984,74 @@ const addVideosBtn = document.getElementById('addVideosBtn');
 const messageForm = document.getElementById('txnMessageForm');
 const messageFeedback = document.getElementById('messageSendFeedback');
 
+// File size limits (in bytes)
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;  // 5 MB
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
+
 if (imageInput && videoInput && dropZone && mediaList && addImagesBtn && addVideosBtn) {
     const imageTransfer = new DataTransfer();
     const videoTransfer = new DataTransfer();
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    function showError(message) {
+        if (messageFeedback) {
+            messageFeedback.textContent = message;
+            messageFeedback.style.color = '#dc3545';
+            messageFeedback.style.display = 'block';
+        } else {
+            alert(message);
+        }
+    }
 
     function refreshSelectedMedia() {
         mediaList.innerHTML = '';
 
         Array.from(imageTransfer.files).forEach((file) => {
             const item = document.createElement('li');
-            item.textContent = `Image: ${file.name}`;
+            item.textContent = `Image: ${file.name} (${formatFileSize(file.size)})`;
             mediaList.appendChild(item);
         });
 
         Array.from(videoTransfer.files).forEach((file) => {
             const item = document.createElement('li');
-            item.textContent = `Video: ${file.name}`;
+            item.textContent = `Video: ${file.name} (${formatFileSize(file.size)})`;
             mediaList.appendChild(item);
         });
     }
 
     function addFiles(files) {
+        let hasErrors = false;
+        const errorMessages = [];
+
         Array.from(files).forEach((file) => {
             if (file.type.startsWith('image/')) {
-                imageTransfer.items.add(file);
+                if (file.size > MAX_IMAGE_SIZE) {
+                    hasErrors = true;
+                    errorMessages.push(`Image "${file.name}" is too large. Max size is 5 MB, got ${formatFileSize(file.size)}.`);
+                } else {
+                    imageTransfer.items.add(file);
+                }
             } else if (file.type.startsWith('video/')) {
-                videoTransfer.items.add(file);
+                if (file.size > MAX_VIDEO_SIZE) {
+                    hasErrors = true;
+                    errorMessages.push(`Video "${file.name}" is too large. Max size is 50 MB, got ${formatFileSize(file.size)}.`);
+                } else {
+                    videoTransfer.items.add(file);
+                }
             }
         });
+
+        if (hasErrors && errorMessages.length > 0) {
+            showError(errorMessages.join(' '));
+        }
+
         imageInput.files = imageTransfer.files;
         videoInput.files = videoTransfer.files;
         refreshSelectedMedia();

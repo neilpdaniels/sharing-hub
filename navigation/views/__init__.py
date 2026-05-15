@@ -10,6 +10,7 @@ from .info import suggestCategory  # noqa: F401
 from .search import (  # noqa: F401
     search,
     search_by_postcode,
+    user_listings,
     whats_popular,
     whats_popular_admin,
 )

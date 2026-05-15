@@ -24,12 +24,149 @@
           <input type="hidden" id="initial_postcode" value="{{ request.user.profile.postcode|default:'' }}">
           {% bootstrap_form user_form %}
           {% bootstrap_form profile_form %}
+
+          <hr class="my-4">
+          <h4 class="mb-3">Avatar</h4>
+
+          <div class="sh-avatar-box mb-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="sh-field-label mb-1">Avataaars</div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="randomiseAvatarBtn">Randomise</button>
+            </div>
+
+            {{ avatar_form.avatar_preset }}
+            {{ avatar_form.avatar_hair_color }}
+
+            <div class="sh-avatar-preview-wrap mb-3">
+              <img id="randomAvatarPreview" class="sh-avatar-preview" alt="Avatar preview" />
+            </div>
+
+            <div class="d-none">
+              {{ avatar_form.avatar_hair_length }}
+              {{ avatar_form.avatar_clothes_color }}
+              {{ avatar_form.avatar_accessories_color }}
+              {% bootstrap_field avatar_form.avatar_eyes show_label=False %}
+              {% bootstrap_field avatar_form.avatar_mouth show_label=False %}
+              {% bootstrap_field avatar_form.avatar_clothing show_label=False %}
+              {% bootstrap_field avatar_form.avatar_accessories show_label=False %}
+              {% bootstrap_field avatar_form.avatar_facial_hair_color show_label=False %}
+            </div>
+
+            <div class="mb-2 sh-slider-row">
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <div class="sh-mini-label mb-0">Hair length</div>
+                <span id="hairLengthValue" class="small text-muted">Short</span>
+              </div>
+              <input type="range" id="avatarHairLengthSlider" class="sh-compact-slider" min="0" max="1" step="1" value="0">
+            </div>
+
+            <div class="mb-2 sh-slider-row">
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <div class="sh-mini-label mb-0">Eyes</div>
+              </div>
+              <input type="range" id="avatarEyesSlider" class="sh-compact-slider" min="0" max="5" step="1" value="0">
+            </div>
+
+            <div class="mb-2 sh-slider-row">
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <div class="sh-mini-label mb-0">Eye wear</div>
+              </div>
+              <input type="range" id="avatarAccessoriesSlider" class="sh-compact-slider" min="0" max="7" step="1" value="0">
+            </div>
+
+            <div class="mb-2 sh-slider-row">
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <div class="sh-mini-label mb-0">Mouth</div>
+              </div>
+              <input type="range" id="avatarMouthSlider" class="sh-compact-slider" min="0" max="4" step="1" value="0">
+            </div>
+
+            <div class="mb-2 sh-slider-row">
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <div class="sh-mini-label mb-0">Clothing</div>
+              </div>
+              <input type="range" id="avatarClothingSlider" class="sh-compact-slider" min="0" max="5" step="1" value="0">
+            </div>
+
+            <div class="mb-1">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="sh-mini-label mb-0">Facial hair</div>
+              </div>
+              {% bootstrap_field avatar_form.avatar_facial_hair show_label=False %}
+            </div>
+
+            <div class="mb-1">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="sh-mini-label mb-0">Skin tone</div>
+              </div>
+              {% bootstrap_field avatar_form.avatar_skin_tone show_label=False %}
+            </div>
+
+            <div class="mb-1">
+              <div class="sh-mini-label mb-2">Colours</div>
+              <div class="mb-2">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <div class="sh-mini-label mb-0">Hair colour</div>
+                  <label class="sh-color-picker-wrap mb-0">
+                    <input type="color" id="avatarHairColorPicker" class="sh-color-picker" value="#0e0e0e" aria-label="Custom hair colour">
+                  </label>
+                </div>
+              </div>
+              <div class="mb-2">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <div class="sh-mini-label mb-0">Facial hair colour</div>
+                  <label class="sh-color-picker-wrap mb-0">
+                    <input type="color" id="avatarFacialHairColorPicker" class="sh-color-picker" value="#724133" aria-label="Custom facial hair colour">
+                  </label>
+                </div>
+              </div>
+              <div class="mb-2">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <div class="sh-mini-label mb-0">Clothing colour</div>
+                  <label class="sh-color-picker-wrap mb-0">
+                    <input type="color" id="avatarClothingColorPicker" class="sh-color-picker" value="#262e33" aria-label="Custom clothing colour">
+                  </label>
+                </div>
+              </div>
+              <div class="mb-2">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <div class="sh-mini-label mb-0">Eye wear colour</div>
+                  <label class="sh-color-picker-wrap mb-0">
+                    <input type="color" id="avatarEyewearColorPicker" class="sh-color-picker" value="#262e33" aria-label="Custom eye wear colour">
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {% csrf_token %}
           <p><input type="submit" id="form-submit" hidden value="Save"></p>
       </form>
       <button type="button" class="btn btn-primary js-form-submit">
         <span class="fas fa-floppy-o"></span> Submit
       </button>
+
+      <hr class="my-4">
+      <h4>Profile avatar</h4>
+      {% if request.user.profile.image %}
+      <p class="mb-2">
+        <img src="{{ request.user.profile.image.url }}" alt="Current avatar" style="max-width:120px; border-radius:8px;">
+      </p>
+      {% endif %}
+      <div class="d-flex flex-wrap" style="gap: 0.5rem;">
+        <form action="." method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="switch_avatar">
+          <input type="hidden" name="avatar_source" value="original">
+          <button type="submit" class="btn btn-outline-secondary btn-sm" {% if not request.user.profile.image_original %}disabled{% endif %}>Use original photo</button>
+        </form>
+        <form action="." method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="switch_avatar">
+          <input type="hidden" name="avatar_source" value="generated">
+          <button type="submit" class="btn btn-outline-secondary btn-sm" {% if not request.user.profile.image_generated %}disabled{% endif %}>Use generated avatar</button>
+        </form>
+      </div>
 
       <div class="modal fade" id="verification-reset-modal" tabindex="-1" role="dialog" aria-labelledby="verificationResetModalLabel" aria-hidden="true">
         <div class="modal-dialog" role="document">
@@ -76,6 +213,321 @@ $('#id_date_of_birth').datepicker({
     yearRange: "1900:2100",
     maxDate: 0,
 });
+
+(function() {
+  var presetHidden = document.getElementById('id_avatar_preset');
+  var preview = document.getElementById('randomAvatarPreview');
+  var randomBtn = document.getElementById('randomiseAvatarBtn');
+  var hairInput = document.getElementById('id_avatar_hair_color');
+  var hairLengthInput = document.getElementById('id_avatar_hair_length');
+  var facialHairInput = document.getElementById('id_avatar_facial_hair');
+  var facialHairColorInput = document.getElementById('id_avatar_facial_hair_color');
+  var skinInput = document.getElementById('id_avatar_skin_tone');
+  var eyesInput = document.getElementById('id_avatar_eyes');
+  var mouthInput = document.getElementById('id_avatar_mouth');
+  var clothingInput = document.getElementById('id_avatar_clothing');
+  var clothesColorInput = document.getElementById('id_avatar_clothes_color');
+  var accessoriesInput = document.getElementById('id_avatar_accessories');
+  var accessoriesColorInput = document.getElementById('id_avatar_accessories_color');
+  var hairColorPicker = document.getElementById('avatarHairColorPicker');
+  var facialHairColorPicker = document.getElementById('avatarFacialHairColorPicker');
+  var clothingColorPicker = document.getElementById('avatarClothingColorPicker');
+  var eyewearColorPicker = document.getElementById('avatarEyewearColorPicker');
+  var hairLengthSlider = document.getElementById('avatarHairLengthSlider');
+  var eyesSlider = document.getElementById('avatarEyesSlider');
+  var mouthSlider = document.getElementById('avatarMouthSlider');
+  var clothingSlider = document.getElementById('avatarClothingSlider');
+  var accessoriesSlider = document.getElementById('avatarAccessoriesSlider');
+  var hairLengthValue = document.getElementById('hairLengthValue');
+
+  var hairLengthOptions = ['short', 'long'];
+  var hairLengthLabels = ['Short', 'Long'];
+  var eyesOptions = ['default', 'happy', 'wink', 'surprised', 'squint', 'closed'];
+  var mouthOptions = ['smile', 'default', 'serious', 'twinkle', 'tongue'];
+  var clothingOptions = ['hoodie', 'graphicShirt', 'overall', 'shirtCrewNeck', 'shirtVNeck', 'blazerAndShirt'];
+  var accessoriesOptions = ['none', 'round', 'prescription01', 'prescription02', 'wayfarers', 'sunglasses', 'kurt', 'eyepatch'];
+  if (!presetHidden || !preview) return;
+
+  function optionIndex(options, value) {
+    var idx = options.indexOf(value);
+    return idx >= 0 ? idx : 0;
+  }
+
+  function syncSliderState() {
+    if (hairLengthInput && hairLengthSlider) {
+      hairLengthInput.value = hairLengthOptions[parseInt(hairLengthSlider.value || '0', 10)] || 'short';
+      if (hairLengthValue) {
+        hairLengthValue.textContent = hairLengthLabels[parseInt(hairLengthSlider.value || '0', 10)] || 'Short';
+      }
+    }
+    if (eyesInput && eyesSlider) {
+      eyesInput.value = eyesOptions[parseInt(eyesSlider.value || '0', 10)] || 'default';
+    }
+    if (mouthInput && mouthSlider) {
+      mouthInput.value = mouthOptions[parseInt(mouthSlider.value || '0', 10)] || 'smile';
+    }
+    if (clothingInput && clothingSlider) {
+      clothingInput.value = clothingOptions[parseInt(clothingSlider.value || '0', 10)] || 'hoodie';
+    }
+    if (accessoriesInput && accessoriesSlider) {
+      accessoriesInput.value = accessoriesOptions[parseInt(accessoriesSlider.value || '0', 10)] || 'round';
+    }
+  }
+
+  function primeSliderState() {
+    if (hairLengthSlider && hairLengthInput) {
+      hairLengthSlider.value = String(optionIndex(hairLengthOptions, hairLengthInput.value || 'short'));
+    }
+    if (eyesSlider && eyesInput) {
+      eyesSlider.value = String(optionIndex(eyesOptions, eyesInput.value || 'default'));
+    }
+    if (mouthSlider && mouthInput) {
+      mouthSlider.value = String(optionIndex(mouthOptions, mouthInput.value || 'smile'));
+    }
+    if (clothingSlider && clothingInput) {
+      clothingSlider.value = String(optionIndex(clothingOptions, clothingInput.value || 'hoodie'));
+    }
+    if (accessoriesSlider && accessoriesInput) {
+      accessoriesSlider.value = String(optionIndex(accessoriesOptions, accessoriesInput.value || 'none'));
+    }
+    syncSliderState();
+  }
+
+  function buildAvatarUrl(seed) {
+    var hair = hairInput ? hairInput.value : '';
+    var hairLength = getHairLengthValue();
+    var facialHair = facialHairInput ? parseInt(facialHairInput.value || '25', 10) : 25;
+    var facialHairColor = facialHairColorInput ? facialHairColorInput.value : '';
+    var skin = skinInput ? skinInput.value : '4';
+    var eyes = eyesInput ? eyesInput.value : 'default';
+    var mouth = mouthInput ? mouthInput.value : 'smile';
+    var clothing = clothingInput ? clothingInput.value : 'hoodie';
+    var clothesColor = clothesColorInput ? clothesColorInput.value : '';
+    var accessories = accessoriesInput ? accessoriesInput.value : 'round';
+    var accessoriesColor = accessoriesColorInput ? accessoriesColorInput.value : '';
+    var skinMap = {
+      '1': 'f2d3b1',
+      '2': 'e8c39e',
+      '3': 'd9a07b',
+      '4': 'c6865f',
+      '5': 'a56b46',
+      '6': '7a4a2f'
+    };
+
+    var params = new URLSearchParams();
+    params.set('seed', seed);
+    params.set('size', '128');
+    if (hair) {
+      params.set('hairColor', hair);
+    }
+    if (skinMap[skin]) {
+      params.set('skinColor', skinMap[skin]);
+    }
+
+    if (!Number.isFinite(facialHair)) {
+      facialHair = 25;
+    }
+    facialHair = Math.max(0, Math.min(100, facialHair));
+
+    if (hairLength === 'short') {
+      params.set('top', 'shortFlat,shortRound,shortWaved,theCaesar,theCaesarAndSidePart,sides,shavedSides,dreads01,dreads02,frizzle,shaggyMullet,shortCurly');
+    } else if (hairLength === 'long') {
+      params.set('top', 'longButNotTooLong,straight01,straight02,straightAndStrand,bun,bob,curly,curvy,miaWallace,frida,bigHair');
+    }
+
+    if (!params.get('top')) {
+      params.set('top', 'bob,bun,curly,curvy,dreads01,dreads02,frizzle,longButNotTooLong,miaWallace,shortFlat,shortRound,shortWaved,straight01,straight02,theCaesar');
+    }
+
+    params.set('eyes', eyes);
+    params.set('mouth', mouth);
+    params.set('clothing', clothing);
+    if (clothesColor) {
+      params.set('clothesColor', clothesColor);
+    }
+
+    if (accessories === 'none') {
+      params.set('accessoriesProbability', '0');
+    } else {
+      params.set('accessories', accessories);
+      params.set('accessoriesProbability', '100');
+      if (accessoriesColor) {
+        params.set('accessoriesColor', accessoriesColor);
+      }
+    }
+
+    var beardStage = resolveBeardStage(facialHair);
+    if (beardStage === 'off') {
+      params.set('facialHairProbability', '0');
+    } else {
+      var beardStyle = {
+        light: 'beardLight',
+        medium: 'beardMedium',
+        majestic: 'beardMajestic'
+      }[beardStage];
+      params.set('facialHair', beardStyle);
+      params.set('facialHairProbability', '100');
+    }
+    if (facialHairColor) {
+      params.set('facialHairColor', facialHairColor);
+    } else if (hair) {
+      params.set('facialHairColor', hair);
+    }
+
+    return 'https://api.dicebear.com/9.x/avataaars/svg?' + params.toString();
+  }
+
+  function snapBeardLevel(level) {
+    if (!Number.isFinite(level)) {
+      level = 33;
+    }
+    var stages = [0, 33, 66, 100];
+    return stages.reduce(function(closest, candidate) {
+      if (Math.abs(candidate - level) < Math.abs(closest - level)) {
+        return candidate;
+      }
+      return closest;
+    }, stages[0]);
+  }
+
+  function getHairLengthValue() {
+    return (hairLengthInput && hairLengthInput.value) ? hairLengthInput.value : 'short';
+  }
+
+  function setHairColor(color) {
+    if (hairInput) {
+      hairInput.value = color || '';
+    }
+    if (hairColorPicker && color) {
+      hairColorPicker.value = '#' + color;
+    }
+    refreshPreview();
+  }
+
+  function setFacialHairColor(color) {
+    if (facialHairColorInput) {
+      facialHairColorInput.value = color || '';
+    }
+    if (facialHairColorPicker) {
+      facialHairColorPicker.value = '#' + (color || (hairInput ? hairInput.value : '724133') || '724133');
+    }
+    refreshPreview();
+  }
+
+  function setClothingColor(color) {
+    if (clothesColorInput) {
+      clothesColorInput.value = color || '';
+    }
+    if (clothingColorPicker && color) {
+      clothingColorPicker.value = '#' + color;
+    }
+    refreshPreview();
+  }
+
+  function setEyewearColor(color) {
+    if (accessoriesColorInput) {
+      accessoriesColorInput.value = color || '';
+    }
+    if (eyewearColorPicker && color) {
+      eyewearColorPicker.value = '#' + color;
+    }
+    refreshPreview();
+  }
+
+  function randomSeed() {
+    return 'avatar_' + Math.random().toString(36).slice(2, 11);
+  }
+
+  function setSeed(seed) {
+    presetHidden.value = seed;
+    preview.src = buildAvatarUrl(seed);
+  }
+
+  function refreshPreview() {
+    syncSliderState();
+    if (facialHairInput) {
+      var snappedLevel = snapBeardLevel(parseInt(facialHairInput.value || '33', 10));
+      facialHairInput.value = String(snappedLevel);
+    }
+    if (presetHidden.value) {
+      setSeed(presetHidden.value);
+    }
+  }
+
+  function resolveBeardStage(level) {
+    if (!Number.isFinite(level)) {
+      level = 25;
+    }
+    level = Math.max(0, Math.min(100, level));
+    if (level <= 0) return 'off';
+    if (level <= 33) return 'light';
+    if (level <= 66) return 'medium';
+    return 'majestic';
+  }
+
+  if (presetHidden.value) {
+    setSeed(presetHidden.value);
+  } else {
+    setSeed(randomSeed());
+  }
+
+  if (randomBtn) {
+    randomBtn.addEventListener('click', function() {
+      setSeed(randomSeed());
+    });
+  }
+
+  function bindColorPicker(picker, fallbackHex, applyColorFn) {
+    if (!picker) return;
+
+    var applyAndClose = function() {
+      applyColorFn((picker.value || fallbackHex).replace('#', '').toLowerCase());
+      setTimeout(function() {
+        picker.blur();
+      }, 0);
+    };
+
+    picker.addEventListener('input', applyAndClose);
+    picker.addEventListener('change', applyAndClose);
+  }
+
+  bindColorPicker(hairColorPicker, '#0e0e0e', setHairColor);
+  bindColorPicker(facialHairColorPicker, '#724133', setFacialHairColor);
+  bindColorPicker(clothingColorPicker, '#262e33', setClothingColor);
+  bindColorPicker(eyewearColorPicker, '#262e33', setEyewearColor);
+
+  primeSliderState();
+  setHairColor(hairInput ? hairInput.value : '0e0e0e');
+  setFacialHairColor(facialHairColorInput ? facialHairColorInput.value : '');
+  setClothingColor(clothesColorInput ? clothesColorInput.value : '262e33');
+  setEyewearColor(accessoriesColorInput ? accessoriesColorInput.value : '262e33');
+
+  [
+    hairLengthSlider,
+    eyesSlider,
+    mouthSlider,
+    clothingSlider,
+    accessoriesSlider,
+  ].forEach(function(slider) {
+    if (slider) {
+      slider.addEventListener('input', refreshPreview);
+    }
+  });
+
+  if (facialHairInput) {
+    facialHairInput.addEventListener('input', function() {
+      facialHairInput.value = String(snapBeardLevel(parseInt(facialHairInput.value || '33', 10)));
+      refreshPreview();
+    });
+    facialHairInput.classList.add('sh-compact-slider');
+  }
+  if (skinInput) {
+    skinInput.addEventListener('input', refreshPreview);
+    skinInput.classList.add('sh-compact-slider');
+  }
+
+  refreshPreview();
+})();
 
 $(".js-form-submit").click(function () {
   var form = document.getElementById('account-edit-form');

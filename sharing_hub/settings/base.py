@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from celery.schedules import crontab
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -23,7 +24,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(os.path.join(__file__
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SHARING_HUB_SECRET_KEY','')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 # Cloudflare Turnstile
 CLOUDFLARE_TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '0x4AAAAAADGXnnXv3ggedOSG')
@@ -66,7 +67,10 @@ MEDIA_ROOT=os.path.join(BASE_DIR, 'media/')
 # Application definition
 
 INSTALLED_APPS = [
+    'rest_framework',
+    'rest_framework_simplejwt',
     'haystack',
+    'mobile_api.apps.MobileApiConfig',
     'navigation.apps.NavigationConfig',
     'pages.apps.PagesConfig',
     'account.apps.AccountConfig',
@@ -218,3 +222,21 @@ BOOTSTRAP4 = {
 TRANSPACT_WSDL = 'https://www.transpact.com/SecurePartner/Partner.asmx?WSDL'
 TRANSPACT_PARTNER_USERNAME = 'neil.daniels@sharing-hub.com'
 TRANSPACT_PARTNER_PASSWORD = '10mC9wRrX'
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': True,
+}

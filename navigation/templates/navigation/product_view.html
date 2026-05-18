@@ -1,5 +1,3 @@
-{% load thumbnail %}
-{% load static %}
 {% load common_lib %}
 
 <li class="product-card mb-4">
@@ -7,18 +5,12 @@
 <div class="media">
     <div class="">
     {% if product.image %}
-    {% thumbnail product.image "100" format="PNG" as im %}
-    <img src="{{ im.url }}">
-    {% endthumbnail %}
-    {% else %}
-        <img class="" src="{% static 'assets/images/not-available.jpg' %}" height="150" width="150" alt="">
+    <img src="{{ product.image.url }}" height="150" width="150" alt="{{ product.name }}" style="object-fit:cover;">
     {% endif %}
     </div>
     <div class="media-body ">
     <h5 class="card-title">{{ product.name | title }}</h5>
-    {% if product.description %}
-    <p class="card-text">{{ product.description | safe }}</p>
-    {% endif %}
+    <p class="card-text">{{ product.description|default_if_none:''|safe }}</p>
     </div>
 </div>
 </a>

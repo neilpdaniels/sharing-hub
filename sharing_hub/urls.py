@@ -26,6 +26,7 @@ urlpatterns = [
     # path('userRegistration/', include("userRegistration.urls")),
     path('site_cfg_admin/', admin.site.urls),
     path('admin/', include('admin_honeypot.urls', namespace='admin_honeypot')),
+    path('api/v1/', include('mobile_api.urls', namespace='mobile_api')),
     path('account/', include('account.urls')),
     path('friends/', include('friends.urls', namespace='friends')),
     path('transaction/', include('transaction.urls', namespace='transaction')),

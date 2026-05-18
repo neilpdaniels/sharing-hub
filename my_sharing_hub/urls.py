@@ -9,6 +9,7 @@ urlpatterns = [
     path('copy_order_as_new/<int:order_id>/', views.copy_order_as_new, name='copy_order_as_new'),
     path('open_transactions/' , views.open_transactions, name='open_transactions'),
     path('closed_transactions/' , views.closed_transactions, name='closed_transactions'),
+    path('inbox/' , views.inbox, name='inbox'),
     path('pending_actions/' , views.pending_actions, name='pending_actions'),
     path('messages_received/' , views.messages_received, name='messages_received'),
     path('messages_sent/' , views.messages_sent, name='messages_sent'),

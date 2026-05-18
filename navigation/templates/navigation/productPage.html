@@ -214,18 +214,12 @@
         <div class="row">
             <div class="col-lg-3">
                 {% if product.image %}
-                {% thumbnail product.image "200" format="PNG" as im %}
-                <img class="card-img-top" src="{{ im.url }}" alt="Card image cap">
-                {% endthumbnail %}
-                {% else %}
-                <img class="card-img-top" src="{% static 'assets/images/not-available.jpg' %}" alt="Card image cap">
+              <img class="card-img-top" src="{{ product.image.url }}" alt="{{ product.name }}">
                 {% endif %}
             </div>
             <div class="col-l-5">
                 <h2 class="mb-1">{{ product.name | title }}</h2>
-                {% if product.description %}
-                <p class="text-muted lead" style="font-size:1rem;">{{ product.description|safe }}</p>
-                {% endif %}
+              <p class="text-muted lead" style="font-size:1rem;">{{ product.description|default_if_none:''|safe }}</p>
                 {% if spot_price_value > 0.0 %}
                 <p class="mb-0"><small class="text-muted">Approximate retail value: <strong>£{{ spot_price_value|floatformat:2 }}</strong></small></p>
                 {% endif %}

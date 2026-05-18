@@ -1,0 +1,81 @@
+from django.urls import path
+
+from .views import (
+    CategoryListView,
+    MobileAccountDetailView,
+    MobileLoginView,
+    MobileMeView,
+    MobileRegisterResendView,
+    MobileRegisterStartView,
+    MobileRegisterVerifyView,
+    MobilePaymentMethodDeleteView,
+    MobilePaymentMethodListView,
+    MobilePaymentMethodSetDefaultView,
+    MobileTokenRefreshView,
+    OrderAmendView,
+    OrderCancelView,
+    OrderDetailView,
+    OrderListView,
+    CategoryProductsView,
+    ProductDetailView,
+    SearchProductsView,
+    TransactionActionView,
+    TransactionCodesView,
+    TransactionDetailView,
+    TransactionListView,
+    TransactionMessagesView,
+    MobileInboxView,
+)
+
+app_name = 'mobile_api'
+
+urlpatterns = [
+    path('auth/login/', MobileLoginView.as_view(), name='auth_login'),
+    path('auth/register/start/', MobileRegisterStartView.as_view(), name='auth_register_start'),
+    path('auth/register/resend/', MobileRegisterResendView.as_view(), name='auth_register_resend'),
+    path('auth/register/verify/', MobileRegisterVerifyView.as_view(), name='auth_register_verify'),
+    path('auth/refresh/', MobileTokenRefreshView.as_view(), name='auth_refresh'),
+    path('auth/me/', MobileMeView.as_view(), name='auth_me'),
+    path('account/me/', MobileAccountDetailView.as_view(), name='account_me'),
+    path('payment-methods/', MobilePaymentMethodListView.as_view(), name='payment_methods_list'),
+    path(
+        'payment-methods/<int:payment_method_id>/set-default/',
+        MobilePaymentMethodSetDefaultView.as_view(),
+        name='payment_methods_set_default',
+    ),
+    path(
+        'payment-methods/<int:payment_method_id>/delete/',
+        MobilePaymentMethodDeleteView.as_view(),
+        name='payment_methods_delete',
+    ),
+    path('orders/mine/', OrderListView.as_view(), name='orders_list'),
+    path('orders/<int:order_id>/', OrderDetailView.as_view(), name='orders_detail'),
+    path('orders/<int:order_id>/amend/', OrderAmendView.as_view(), name='orders_amend'),
+    path('orders/<int:order_id>/cancel/', OrderCancelView.as_view(), name='orders_cancel'),
+    path('categories/', CategoryListView.as_view(), name='categories_list'),
+    path('categories/<slug:category_slug>/products/', CategoryProductsView.as_view(), name='categories_products'),
+    path('products/<slug:product_slug>/', ProductDetailView.as_view(), name='products_detail'),
+    path('search/products/', SearchProductsView.as_view(), name='search_products'),
+    path('transactions/', TransactionListView.as_view(), name='transactions_list'),
+    path('messages/inbox/', MobileInboxView.as_view(), name='messages_inbox'),
+    path(
+        'transactions/<str:transaction_reference>/',
+        TransactionDetailView.as_view(),
+        name='transactions_detail',
+    ),
+    path(
+        'transactions/<str:transaction_reference>/messages/',
+        TransactionMessagesView.as_view(),
+        name='transactions_messages',
+    ),
+    path(
+        'transactions/<str:transaction_reference>/actions/',
+        TransactionActionView.as_view(),
+        name='transactions_actions',
+    ),
+    path(
+        'transactions/<str:transaction_reference>/codes/',
+        TransactionCodesView.as_view(),
+        name='transactions_codes',
+    ),
+]

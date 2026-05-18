@@ -9,6 +9,8 @@ dependencies = [
     "bs4>=0.0.2",
     "celery>=5.6.2",
     "django==4.2.*",
+    "djangorestframework>=3.15.2",
+    "djangorestframework-simplejwt>=5.5.1",
     "django-admin-honeypot-2024>=1.0.0",
     "django-bootstrap4>=26.1",
     "django-celery-beat>=2.8.1",

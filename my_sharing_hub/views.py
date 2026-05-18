@@ -124,6 +124,51 @@ def messages_sent(request):
     }
     return render(request, 'my_sharing_hub/x_messages.html', context)
 
+
+def _decorate_inbox_message(message, user):
+    message.inbox_direction = 'Sent' if message.user_from_id == user.id else 'Received'
+    message.inbox_is_unread = message.user_to_id == user.id and not message.read_by_user_to
+    if message.is_system_generated:
+        message.inbox_counterparty = 'System'
+    elif message.user_from_id == user.id:
+        message.inbox_counterparty = message.user_to.get_full_name().strip() or message.user_to.username
+    else:
+        message.inbox_counterparty = message.user_from.get_full_name().strip() or message.user_from.username
+    if message.transaction and message.transaction.order_passive and message.transaction.order_passive.product:
+        message.inbox_item_name = message.transaction.order_passive.product.name
+    else:
+        message.inbox_item_name = ''
+    message.inbox_transaction_reference = message.transaction.transaction_reference if message.transaction else ''
+    message.inbox_preview = (message.description or '').strip() or (message.subject or 'Message')
+    return message
+
+
+@login_required
+def inbox(request):
+    user = request.user
+    object_list = list(
+        TransactionMessage.objects.filter(Q(user_from=user) | Q(user_to=user))
+        .select_related('transaction', 'transaction__order_passive__product', 'user_from', 'user_to')
+        .prefetch_related('txn_msg_img')
+    )
+    object_list = sorted(sorted(object_list, key=attrgetter('created'), reverse=True), key=lambda message: 0 if message.user_to_id == user.id and not message.read_by_user_to else 1)
+    object_list = [_decorate_inbox_message(message, user) for message in object_list]
+
+    paginator = Paginator(object_list, 10)
+    page = request.GET.get('page')
+    try:
+        messages_ = paginator.page(page)
+    except PageNotAnInteger:
+        messages_ = paginator.page(1)
+    except EmptyPage:
+        messages_ = paginator.page(paginator.num_pages)
+    context = {
+        'messages_': messages_,
+        'type': 'inbox',
+    }
+    return render(request, 'my_sharing_hub/inbox.html', context)
+
+
 @login_required
 def pending_actions(request):    
     context = {

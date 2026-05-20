@@ -21,6 +21,7 @@ class OrderSummary {
     required this.deposit,
     required this.deliveryCost,
     required this.priceBands,
+    required this.distanceKm,
     required this.maxRentalDays,
     required this.expiryDate,
     required this.amended,
@@ -49,6 +50,7 @@ class OrderSummary {
   final double deposit;
   final double deliveryCost;
   final List<LetPriceBandSummary> priceBands;
+  final double? distanceKm;
   final int maxRentalDays;
   final DateTime? expiryDate;
   final DateTime? amended;
@@ -64,9 +66,10 @@ class OrderSummary {
       productSlug: json['product_slug'] as String? ?? '',
       categorySlug: json['category_slug'] as String? ?? '',
       listingImageUrl: json['listing_image_url'] as String? ?? '',
-      listingImageUrls: (json['listing_image_urls'] as List<dynamic>? ?? const [])
-          .map((value) => value.toString())
-          .toList(growable: false),
+      listingImageUrls:
+          (json['listing_image_urls'] as List<dynamic>? ?? const [])
+              .map((value) => value.toString())
+              .toList(growable: false),
       direction: json['direction'] as String? ?? '',
       status: json['status'] as String? ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0,
@@ -79,14 +82,19 @@ class OrderSummary {
       collectionPolicy: json['collection_policy'] as String? ?? '',
       deposit: (json['deposit'] as num?)?.toDouble() ?? 0,
       deliveryCost: (json['delivery_cost'] as num?)?.toDouble() ?? 0,
-        priceBands: (json['price_bands'] as List<dynamic>? ?? const [])
+      priceBands: (json['price_bands'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(LetPriceBandSummary.fromJson)
           .toList(growable: false),
+      distanceKm:
+          _parseDouble(json['distance_km']) ??
+          _parseDouble(json['nearest_distance_km']),
       maxRentalDays: json['max_rental_days'] as int? ?? 0,
       expiryDate: _parseDate(json['expiry_date'] as String?),
       amended: _parseDate(json['amended'] as String?),
-      blockedDates: _parseDateList(json['blocked_dates'] as List<dynamic>? ?? const []),
+      blockedDates: _parseDateList(
+        json['blocked_dates'] as List<dynamic>? ?? const [],
+      ),
       handoverUnavailableDates: _parseDateList(
         json['handover_unavailable_dates'] as List<dynamic>? ?? const [],
       ),
@@ -120,10 +128,7 @@ class OrderSummary {
 }
 
 class LetPriceBandSummary {
-  LetPriceBandSummary({
-    required this.durationDays,
-    required this.pricePerDay,
-  });
+  LetPriceBandSummary({required this.durationDays, required this.pricePerDay});
 
   final int durationDays;
   final double pricePerDay;

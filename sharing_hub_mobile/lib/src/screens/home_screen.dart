@@ -19,6 +19,7 @@ import 'my_transactions_screen.dart';
 import 'payment_methods_screen.dart';
 import 'product_detail_screen.dart';
 import 'register_screen.dart';
+import 'transaction_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -77,7 +78,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _searchLocationController = TextEditingController();
+  final TextEditingController _searchLocationController =
+      TextEditingController();
 
   List<CategorySummary> _categories = const [];
   List<ProductSummary> _browseProducts = const [];
@@ -97,6 +99,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _ordersLoading = false;
   bool _inboxLoading = false;
   bool _locating = false;
+
+  // Detail page navigation state
+  String?
+  _detailPageType; // 'product', 'orders', 'transactions', 'inbox', 'account', 'payment'
+  String? _selectedProductSlug;
+  String? _selectedTransactionReference;
 
   bool get _isAuthenticated {
     final token = widget.accessToken;
@@ -148,7 +156,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      var categories = await widget.catalogRepository.fetchCategories(parentSlug: 'top');
+      var categories = await widget.catalogRepository.fetchCategories(
+        parentSlug: 'top',
+      );
       if (categories.isEmpty) {
         categories = await widget.catalogRepository.fetchCategories();
       }
@@ -161,7 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) {
@@ -194,7 +206,9 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) {
@@ -227,7 +241,9 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) {
@@ -259,7 +275,9 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) {
@@ -299,7 +317,9 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) {
@@ -335,11 +355,15 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location applied to browse and search results.')),
+        const SnackBar(
+          content: Text('Location applied to browse and search results.'),
+        ),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) {
@@ -351,19 +375,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openProduct(String productSlug) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ProductDetailScreen(
-          productSlug: productSlug,
-          catalogRepository: widget.catalogRepository,
-          transactionRepository: widget.transactionRepository,
-          accessToken: widget.accessToken,
-        ),
-      ),
-    );
+    setState(() {
+      _detailPageType = 'product';
+      _selectedProductSlug = productSlug;
+    });
   }
 
-  Future<void> _amendOrder(OrderSummary order, Map<String, dynamic> fields) async {
+  Future<void> _amendOrder(
+    OrderSummary order,
+    Map<String, dynamic> fields,
+  ) async {
     final accessToken = widget.accessToken;
     if (accessToken == null || accessToken.isEmpty) {
       return;
@@ -389,36 +410,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openMyOrders() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MyOrdersScreen(
-          orders: _orders,
-          loading: _ordersLoading,
-          onRefresh: _loadOrders,
-          onAmendOrder: _amendOrder,
-          onCancelOrder: _cancelOrder,
-        ),
-      ),
-    );
+    setState(() {
+      _detailPageType = 'orders';
+    });
     await _loadOrders();
   }
 
   Future<void> _openMyTransactions() async {
-    final onRefresh = widget.onRefresh;
-    final onOpenTransaction = widget.onOpenTransaction;
-    if (onRefresh == null || onOpenTransaction == null) {
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MyTransactionsScreen(
-          transactions: widget.transactions,
-          loading: widget.loading,
-          onRefresh: onRefresh,
-          onOpenTransaction: onOpenTransaction,
-        ),
-      ),
-    );
+    setState(() {
+      _detailPageType = 'transactions';
+    });
   }
 
   Future<void> _openInbox() async {
@@ -429,36 +430,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_inboxMessages.isEmpty && !_inboxLoading) {
       await _loadInbox();
     }
-    if (!mounted) {
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => InboxScreen(
-          messages: _inboxMessages,
-          loading: _inboxLoading,
-          onRefresh: _loadInbox,
-          onOpenTransaction: _openTransactionByReference,
-        ),
-      ),
-    );
-    await _loadInbox();
+    setState(() {
+      _detailPageType = 'inbox';
+    });
   }
 
   Future<void> _openTransactionByReference(String transactionReference) async {
-    final accessToken = widget.accessToken;
-    if (accessToken == null || accessToken.isEmpty) {
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => TransactionDetailScreen(
-          transactionReference: transactionReference,
-          accessToken: accessToken,
-          repository: widget.transactionRepository,
-        ),
-      ),
-    );
+    setState(() {
+      _detailPageType = 'transaction-detail';
+      _selectedTransactionReference = transactionReference;
+    });
   }
 
   Future<void> _openAccountDetails() async {
@@ -466,14 +447,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (accessToken == null || accessToken.isEmpty) {
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AccountDetailsScreen(
-          accessToken: accessToken,
-          accountRepository: widget.accountRepository,
-        ),
-      ),
-    );
+    setState(() {
+      _detailPageType = 'account';
+    });
   }
 
   Future<void> _openPaymentMethods() async {
@@ -481,14 +457,18 @@ class _HomeScreenState extends State<HomeScreen> {
     if (accessToken == null || accessToken.isEmpty) {
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PaymentMethodsScreen(
-          accessToken: accessToken,
-          accountRepository: widget.accountRepository,
-        ),
-      ),
-    );
+    setState(() {
+      _detailPageType = 'payment';
+    });
+  }
+
+  void _openLoginTabFromDetail() {
+    setState(() {
+      _detailPageType = null;
+      _selectedProductSlug = null;
+      _selectedTransactionReference = null;
+      _selectedIndex = 2;
+    });
   }
 
   Future<void> _handleRefresh() async {
@@ -503,18 +483,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _closeDetailPage() {
+    setState(() {
+      _detailPageType = null;
+      _selectedProductSlug = null;
+      _selectedTransactionReference = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final appLogoAsset = widget.isDarkMode
+        ? 'assets/images/logo-sharing-hub-dark.png'
+        : 'assets/images/logo-sharing-hub.png';
+
     return Scaffold(
       appBar: AppBar(
-        title: Image.asset(
-          'assets/images/logo-sharing-hub.png',
-          height: 48,
-          fit: BoxFit.contain,
-        ),
+        title: Image.asset(appLogoAsset, height: 48, fit: BoxFit.contain),
         actions: [
           IconButton(
-            onPressed: _categoriesLoading || widget.loading ? null : _handleRefresh,
+            onPressed: _categoriesLoading || widget.loading
+                ? null
+                : _handleRefresh,
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
           ),
@@ -522,9 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: widget.onThemeToggle == null
                 ? null
                 : () => widget.onThemeToggle!(!widget.isDarkMode),
-            icon: Icon(
-              widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-            ),
+            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
             tooltip: widget.isDarkMode ? 'Light mode' : 'Dark mode',
           ),
           if (_isAuthenticated)
@@ -550,25 +538,72 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
-          setState(() => _selectedIndex = index);
+          setState(() {
+            // Always dismiss detail overlays before switching tabs.
+            _detailPageType = null;
+            _selectedProductSlug = null;
+            _selectedTransactionReference = null;
+            _selectedIndex = index;
+          });
         },
         type: BottomNavigationBarType.fixed,
         items: _isAuthenticated
             ? const [
-                BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Browse'),
-                BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'My Sharing-Hub'),
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.explore_outlined),
+                  label: 'Browse',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline),
+                  label: 'My Sharing-Hub',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.search),
+                  label: 'Search',
+                ),
               ]
             : const [
-                BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), label: 'Browse'),
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-                BottomNavigationBarItem(icon: Icon(Icons.login), label: 'Log in'),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.explore_outlined),
+                  label: 'Browse',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.search),
+                  label: 'Search',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.login),
+                  label: 'Log in',
+                ),
               ],
       ),
     );
   }
 
   Widget _buildBody() {
+    // Show detail pages if a detail page type is set
+    if (_detailPageType != null) {
+      switch (_detailPageType) {
+        case 'product':
+          return _buildProductDetailPage(_closeDetailPage);
+        case 'orders':
+          return _buildOrdersPage(_closeDetailPage);
+        case 'transactions':
+          return _buildTransactionsPage(_closeDetailPage);
+        case 'inbox':
+          return _buildInboxPage(_closeDetailPage);
+        case 'transaction-detail':
+          return _buildTransactionDetailPage(_closeDetailPage);
+        case 'account':
+          return _buildAccountPage(_closeDetailPage);
+        case 'payment':
+          return _buildPaymentPage(_closeDetailPage);
+        default:
+          return const SizedBox.shrink();
+      }
+    }
+
+    // Otherwise show tab content
     if (!_isAuthenticated) {
       switch (_selectedIndex) {
         case 0:
@@ -593,7 +628,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onOpenRegister: () async {
               return Navigator.of(context).push<AuthSession>(
                 MaterialPageRoute(
-                  builder: (_) => RegisterScreen(authRepository: widget.authRepository),
+                  builder: (_) =>
+                      RegisterScreen(authRepository: widget.authRepository),
                 ),
               );
             },
@@ -657,7 +693,9 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => _loadBrowseProducts(cat.slug),
           child: Card(
             elevation: 3,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -693,7 +731,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCategoryProducts() {
-    final selectedCat = _categories.where((c) => c.slug == _selectedCategorySlug).firstOrNull;
+    final selectedCat = _categories
+        .where((c) => c.slug == _selectedCategorySlug)
+        .firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -712,7 +752,9 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Row(
             children: [
-              Expanded(child: _sectionTitle(selectedCat?.title ?? 'Items listed')),
+              Expanded(
+                child: _sectionTitle(selectedCat?.title ?? 'Items listed'),
+              ),
               const SizedBox(width: 8),
               const Text('Sort:'),
               const SizedBox(width: 4),
@@ -739,26 +781,29 @@ class _HomeScreenState extends State<HomeScreen> {
           child: _browseLoading
               ? const Center(child: CircularProgressIndicator())
               : _browseProducts.isEmpty
-                  ? const Center(child: Text('No items listed in this category.'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      itemCount: _browseProducts.length,
-                      itemBuilder: (context, index) {
-                        final product = _browseProducts[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: _productThumb(product.imageUrl),
-                          title: Text(product.name),
-                          subtitle: Text(
-                            product.nearestDistanceKm != null
-                                ? '${product.activeOrderCount} active listings | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
-                                : '${product.activeOrderCount} active listings',
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _openProduct(product.slug),
-                        );
-                      },
-                    ),
+              ? const Center(child: Text('No items listed in this category.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  itemCount: _browseProducts.length,
+                  itemBuilder: (context, index) {
+                    final product = _browseProducts[index];
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: _productThumb(product.imageUrl),
+                      title: Text(product.name),
+                      subtitle: Text(
+                        product.nearestDistanceKm != null
+                            ? '${product.activeOrderCount} active listings | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
+                            : '${product.activeOrderCount} active listings',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openProduct(product.slug),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -806,85 +851,137 @@ class _HomeScreenState extends State<HomeScreen> {
             onSubmitted: (_) => _searchProducts(),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              const Text('Distance:'),
-              const SizedBox(width: 12),
-              DropdownButton<int?>(
-                value: _selectedDistance,
-                items: const [
-                  DropdownMenuItem<int?>(value: null, child: Text('Any distance')),
-                  DropdownMenuItem<int?>(value: 5, child: Text('5 km')),
-                  DropdownMenuItem<int?>(value: 10, child: Text('10 km')),
-                  DropdownMenuItem<int?>(value: 25, child: Text('25 km')),
-                  DropdownMenuItem<int?>(value: 50, child: Text('50 km')),
-                  DropdownMenuItem<int?>(value: 100, child: Text('100 km')),
-                ]
-                    .toList(growable: false),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedDistance = value;
-                  });
-                },
-              ),
-              const SizedBox(width: 12),
-              const Text('Sort:'),
-              const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: _searchSortBy,
-                items: const [
-                  DropdownMenuItem(value: 'name', child: Text('Name')),
-                  DropdownMenuItem(value: 'newest', child: Text('Newest')),
-                  DropdownMenuItem(value: 'nearest', child: Text('Nearest first')),
-                ],
-                onChanged: (value) {
-                  if (value == null) {
-                    return;
-                  }
-                  setState(() {
-                    _searchSortBy = value;
-                  });
-                },
-              ),
-              const Spacer(),
-              ElevatedButton.icon(
-                onPressed: _searchLoading ? null : _searchProducts,
-                icon: const Icon(Icons.search),
-                label: const Text('Search'),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 420;
+              final filterRow = [
+                const Text('Distance:', style: TextStyle(fontSize: 13)),
+                const SizedBox(width: 12),
+                DropdownButton<int?>(
+                  value: _selectedDistance,
+                  items: const [
+                    DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('Any', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem<int?>(
+                      value: 5,
+                      child: Text('5 km', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem<int?>(
+                      value: 10,
+                      child: Text('10 km', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem<int?>(
+                      value: 25,
+                      child: Text('25 km', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem<int?>(
+                      value: 50,
+                      child: Text('50 km', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem<int?>(
+                      value: 100,
+                      child: Text('100 km', style: TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedDistance = value;
+                    });
+                  },
+                  style: const TextStyle(fontSize: 13, color: Colors.black),
+                ),
+                const SizedBox(width: 12),
+                const Text('Sort:', style: TextStyle(fontSize: 13)),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _searchSortBy,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'name',
+                      child: Text('Name', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem(
+                      value: 'newest',
+                      child: Text('Newest', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem(
+                      value: 'nearest',
+                      child: Text('Nearest', style: TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _searchSortBy = value;
+                    });
+                  },
+                  style: const TextStyle(fontSize: 13, color: Colors.black),
+                ),
+              ];
+              final searchButton = Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: FilledButton.icon(
+                    onPressed: _searchLoading ? null : _searchProducts,
+                    icon: _searchLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.search),
+                    label: const Text('Search'),
+                  ),
+                ),
+              );
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(children: filterRow),
+                    searchButton,
+                  ],
+                );
+              } else {
+                return Row(
+                  children: [...filterRow, const Spacer(), searchButton],
+                );
+              }
+            },
           ),
           const SizedBox(height: 18),
           Expanded(
             child: _searchLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _searchResults.isEmpty
-                    ? Center(
-                        child: Text(
-                          'Use search to find items listed and open item pages.',
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
+                ? Center(
+                    child: Text(
+                      'Use search to find items listed and open item pages.',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _searchResults.length,
+                    itemBuilder: (context, index) {
+                      final product = _searchResults[index];
+                      return Card(
+                        child: ListTile(
+                          leading: _productThumb(product.imageUrl),
+                          title: Text(product.name),
+                          subtitle: Text(
+                            product.nearestDistanceKm != null
+                                ? '${product.categoryTitle} | ${product.activeOrderCount} active listings | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
+                                : '${product.categoryTitle} | ${product.activeOrderCount} active listings',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _openProduct(product.slug),
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: _searchResults.length,
-                        itemBuilder: (context, index) {
-                          final product = _searchResults[index];
-                          return Card(
-                            child: ListTile(
-                              leading: _productThumb(product.imageUrl),
-                              title: Text(product.name),
-                              subtitle: Text(
-                                product.nearestDistanceKm != null
-                                    ? '${product.categoryTitle} | ${product.activeOrderCount} active listings | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
-                                    : '${product.categoryTitle} | ${product.activeOrderCount} active listings',
-                              ),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () => _openProduct(product.slug),
-                            ),
-                          );
-                        },
-                      ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -892,20 +989,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _sectionTitle(String text) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.titleLarge,
-    );
+    return Text(text, style: Theme.of(context).textTheme.titleLarge);
   }
 
   String _stripHtmlTags(String htmlString) {
     final regex = RegExp(r'<[^>]*>');
-    return htmlString.replaceAll(regex, '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return htmlString
+        .replaceAll(regex, '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   Widget _categoryThumb(String imageUrl) {
     if (imageUrl.trim().isEmpty) {
-      return const Icon(Icons.category_outlined, size: 48, color: Color(0xFF2E7D6B));
+      return const Icon(
+        Icons.category_outlined,
+        size: 48,
+        color: Color(0xFF2E7D6B),
+      );
     }
 
     return ClipRRect(
@@ -916,7 +1017,11 @@ class _HomeScreenState extends State<HomeScreen> {
         height: 56,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
-          return const Icon(Icons.category_outlined, size: 48, color: Color(0xFF2E7D6B));
+          return const Icon(
+            Icons.category_outlined,
+            size: 48,
+            color: Color(0xFF2E7D6B),
+          );
         },
       ),
     );
@@ -950,6 +1055,291 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
+    );
+  }
+
+  // Detail page builders
+  Widget _buildProductDetailPage(VoidCallback onClose) {
+    if (_selectedProductSlug == null) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: [
+        ProductDetailScreen(
+          productSlug: _selectedProductSlug,
+          catalogRepository: widget.catalogRepository,
+          transactionRepository: widget.transactionRepository,
+          accessToken: widget.accessToken,
+          onRequireLogin: _openLoginTabFromDetail,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrdersPage(VoidCallback onClose) {
+    return Stack(
+      children: [
+        MyOrdersScreen(
+          orders: _orders,
+          loading: _ordersLoading,
+          onRefresh: _loadOrders,
+          onAmendOrder: _amendOrder,
+          onCancelOrder: _cancelOrder,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransactionsPage(VoidCallback onClose) {
+    final onRefresh = widget.onRefresh;
+    if (onRefresh == null) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: [
+        MyTransactionsScreen(
+          transactions: widget.transactions,
+          loading: widget.loading,
+          onRefresh: onRefresh,
+          onOpenTransaction: (tx) => _openTransactionByReference(tx.reference),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInboxPage(VoidCallback onClose) {
+    return Stack(
+      children: [
+        InboxScreen(
+          messages: _inboxMessages,
+          loading: _inboxLoading,
+          onRefresh: _loadInbox,
+          onOpenTransaction: (ref) => _openTransactionByReference(ref),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransactionDetailPage(VoidCallback onClose) {
+    final accessToken = widget.accessToken;
+    if (accessToken == null ||
+        accessToken.isEmpty ||
+        _selectedTransactionReference == null) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: [
+        TransactionDetailScreen(
+          transactionReference: _selectedTransactionReference!,
+          accessToken: accessToken,
+          repository: widget.transactionRepository,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountPage(VoidCallback onClose) {
+    final accessToken = widget.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: [
+        AccountDetailsScreen(
+          accessToken: accessToken,
+          accountRepository: widget.accountRepository,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPaymentPage(VoidCallback onClose) {
+    final accessToken = widget.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: [
+        PaymentMethodsScreen(
+          accessToken: accessToken,
+          accountRepository: widget.accountRepository,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

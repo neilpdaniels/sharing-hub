@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/order_models.dart';
 
-typedef AmendOrderCallback = Future<void> Function(
-  OrderSummary order,
-  Map<String, dynamic> fields,
-);
+typedef AmendOrderCallback =
+    Future<void> Function(OrderSummary order, Map<String, dynamic> fields);
 typedef CancelOrderCallback = Future<void> Function(OrderSummary order);
 
 class MyOrdersScreen extends StatelessWidget {
@@ -26,14 +24,19 @@ class MyOrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final gradientColors = isDarkMode
+        ? const [Color(0xFF0F1419), Color(0xFF1A2332)]
+        : const [Color(0xFFF8F4EE), Color(0xFFF1FAF8)];
+
     return Scaffold(
       appBar: AppBar(title: const Text('My Orders')),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF8F4EE), Color(0xFFF1FAF8)],
+            colors: gradientColors,
           ),
         ),
         child: RefreshIndicator(
@@ -65,7 +68,9 @@ class MyOrdersScreen extends StatelessWidget {
   Widget _orderCard(BuildContext context, OrderSummary order) {
     final thumbUrl = order.listingImageUrl.isNotEmpty
         ? order.listingImageUrl
-        : (order.listingImageUrls.isNotEmpty ? order.listingImageUrls.first : '');
+        : (order.listingImageUrls.isNotEmpty
+              ? order.listingImageUrls.first
+              : '');
 
     return Card(
       child: Padding(
@@ -90,12 +95,13 @@ class MyOrdersScreen extends StatelessWidget {
                           width: 72,
                           height: 72,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            width: 72,
-                            height: 72,
-                            color: const Color(0x11000000),
-                            child: const Icon(Icons.broken_image_outlined),
-                          ),
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                                width: 72,
+                                height: 72,
+                                color: const Color(0x11000000),
+                                child: const Icon(Icons.broken_image_outlined),
+                              ),
                         ),
                 ),
                 const SizedBox(width: 12),
@@ -103,10 +109,15 @@ class MyOrdersScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(order.productName, style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        order.productName,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 4),
                       Text('Listing status: ${order.status}'),
-                      Text('${order.currency} ${order.price.toStringAsFixed(2)}'),
+                      Text(
+                        '${order.currency} ${order.price.toStringAsFixed(2)}',
+                      ),
                     ],
                   ),
                 ),
@@ -129,7 +140,9 @@ class MyOrdersScreen extends StatelessWidget {
                       context: context,
                       builder: (context) => AlertDialog(
                         title: const Text('Cancel Order'),
-                        content: const Text('Are you sure you want to cancel this order?'),
+                        content: const Text(
+                          'Are you sure you want to cancel this order?',
+                        ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.of(context).pop(false),
@@ -156,9 +169,16 @@ class MyOrdersScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _showAmendDialog(BuildContext context, OrderSummary order) async {
-    final priceController = TextEditingController(text: order.price.toStringAsFixed(2));
-    final descriptionController = TextEditingController(text: order.description);
+  Future<void> _showAmendDialog(
+    BuildContext context,
+    OrderSummary order,
+  ) async {
+    final priceController = TextEditingController(
+      text: order.price.toStringAsFixed(2),
+    );
+    final descriptionController = TextEditingController(
+      text: order.description,
+    );
 
     await showDialog<void>(
       context: context,
@@ -170,7 +190,9 @@ class MyOrdersScreen extends StatelessWidget {
             children: [
               TextField(
                 controller: priceController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(labelText: 'Price'),
               ),
               const SizedBox(height: 8),

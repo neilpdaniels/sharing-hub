@@ -155,39 +155,74 @@ class TransactionDetail extends TransactionSummary {
       deposit: (json['deposit'] as num?)?.toDouble() ?? 0,
       friendDeposit: (json['friend_deposit'] as num?)?.toDouble() ?? 0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
-      rentalStartDate: TransactionSummary._parseDate(json['rental_start_date'] as String?),
-      rentalEndDate: TransactionSummary._parseDate(json['rental_end_date'] as String?),
+      rentalStartDate: TransactionSummary._parseDate(
+        json['rental_start_date'] as String?,
+      ),
+      rentalEndDate: TransactionSummary._parseDate(
+        json['rental_end_date'] as String?,
+      ),
       createdAt: TransactionSummary._parseDate(json['created'] as String?),
       updatedAt: TransactionSummary._parseDate(json['amended'] as String?),
       enquiryMessage: json['enquiry_message'] as String? ?? '',
-      orderPassiveDescription: json['order_passive_description'] as String? ?? '',
+      orderPassiveDescription:
+          json['order_passive_description'] as String? ?? '',
       productStatus: json['product_status'] as String? ?? '',
-      checkoutConditionVideoUrl: json['checkout_condition_video_url'] as String? ?? '',
-      checkoutBorrowerVideoUrl: json['checkout_borrower_video_url'] as String? ?? '',
-      returnConditionVideoUrl: json['return_condition_video_url'] as String? ?? '',
-      returnBorrowerVideoUrl: json['return_borrower_video_url'] as String? ?? '',
+      checkoutConditionVideoUrl:
+          json['checkout_condition_video_url'] as String? ?? '',
+      checkoutBorrowerVideoUrl:
+          json['checkout_borrower_video_url'] as String? ?? '',
+      returnConditionVideoUrl:
+          json['return_condition_video_url'] as String? ?? '',
+      returnBorrowerVideoUrl:
+          json['return_borrower_video_url'] as String? ?? '',
       returnLenderVideoUrl: json['return_lender_video_url'] as String? ?? '',
-      checkoutHandoverVerifiedAt: TransactionSummary._parseDate(json['checkout_handover_verified_at'] as String?),
-      returnHandoverVerifiedAt: TransactionSummary._parseDate(json['return_handover_verified_at'] as String?),
-      lenderAgreedAt: TransactionSummary._parseDate(json['lender_agreed_at'] as String?),
-      renterAgreedAt: TransactionSummary._parseDate(json['renter_agreed_at'] as String?),
-      lenderAgreementPendingAt: TransactionSummary._parseDate(json['lender_agreement_pending_at'] as String?),
-      checkoutHandoverPinGeneratedAt: TransactionSummary._parseDate(json['checkout_handover_pin_generated_at'] as String?),
-      returnHandoverPinGeneratedAt: TransactionSummary._parseDate(json['return_handover_pin_generated_at'] as String?),
-      depositCardSetupStatus: json['deposit_card_setup_status'] as String? ?? '',
+      checkoutHandoverVerifiedAt: TransactionSummary._parseDate(
+        json['checkout_handover_verified_at'] as String?,
+      ),
+      returnHandoverVerifiedAt: TransactionSummary._parseDate(
+        json['return_handover_verified_at'] as String?,
+      ),
+      lenderAgreedAt: TransactionSummary._parseDate(
+        json['lender_agreed_at'] as String?,
+      ),
+      renterAgreedAt: TransactionSummary._parseDate(
+        json['renter_agreed_at'] as String?,
+      ),
+      lenderAgreementPendingAt: TransactionSummary._parseDate(
+        json['lender_agreement_pending_at'] as String?,
+      ),
+      checkoutHandoverPinGeneratedAt: TransactionSummary._parseDate(
+        json['checkout_handover_pin_generated_at'] as String?,
+      ),
+      returnHandoverPinGeneratedAt: TransactionSummary._parseDate(
+        json['return_handover_pin_generated_at'] as String?,
+      ),
+      depositCardSetupStatus:
+          json['deposit_card_setup_status'] as String? ?? '',
       depositTestHoldStatus: json['deposit_test_hold_status'] as String? ?? '',
-      depositTestHoldAt: TransactionSummary._parseDate(json['deposit_test_hold_at'] as String?),
-      depositCollectionStatus: json['deposit_collection_status'] as String? ?? '',
-      depositCollectionRequestedAt: TransactionSummary._parseDate(json['deposit_collection_requested_at'] as String?),
-      depositProposedReturnAmount: (json['deposit_proposed_return_amount'] as num?)?.toDouble() ?? 0,
-      depositProposedByLenderAt: TransactionSummary._parseDate(json['deposit_proposed_by_lender_at'] as String?),
-      depositProposalContestedAt: TransactionSummary._parseDate(json['deposit_proposal_contested_at'] as String?),
+      depositTestHoldAt: TransactionSummary._parseDate(
+        json['deposit_test_hold_at'] as String?,
+      ),
+      depositCollectionStatus:
+          json['deposit_collection_status'] as String? ?? '',
+      depositCollectionRequestedAt: TransactionSummary._parseDate(
+        json['deposit_collection_requested_at'] as String?,
+      ),
+      depositProposedReturnAmount:
+          (json['deposit_proposed_return_amount'] as num?)?.toDouble() ?? 0,
+      depositProposedByLenderAt: TransactionSummary._parseDate(
+        json['deposit_proposed_by_lender_at'] as String?,
+      ),
+      depositProposalContestedAt: TransactionSummary._parseDate(
+        json['deposit_proposal_contested_at'] as String?,
+      ),
       depositResolutionNotes: json['deposit_resolution_notes'] as String? ?? '',
       listingImageUrl: json['listing_image_url'] as String? ?? '',
-      listingImageUrls: (json['listing_image_urls'] as List<dynamic>? ?? const [])
-          .map((value) => value.toString())
-          .where((value) => value.trim().isNotEmpty)
-          .toList(growable: false),
+      listingImageUrls:
+          (json['listing_image_urls'] as List<dynamic>? ?? const [])
+              .map((value) => value.toString())
+              .where((value) => value.trim().isNotEmpty)
+              .toList(growable: false),
       meIsLender: json['me_is_lender'] as bool? ?? false,
       meIsRenter: json['me_is_renter'] as bool? ?? false,
     );
@@ -264,6 +299,8 @@ class InboxMessage {
     required this.subject,
     required this.description,
     required this.created,
+    required this.rentalStartDate,
+    required this.rentalEndDate,
     required this.attachments,
   });
 
@@ -277,6 +314,8 @@ class InboxMessage {
   final String subject;
   final String description;
   final DateTime? created;
+  final DateTime? rentalStartDate;
+  final DateTime? rentalEndDate;
   final List<TransactionMessageAttachment> attachments;
 
   factory InboxMessage.fromJson(Map<String, dynamic> json) {
@@ -291,6 +330,12 @@ class InboxMessage {
       subject: json['subject'] as String? ?? '',
       description: json['description'] as String? ?? '',
       created: TransactionSummary._parseDate(json['created'] as String?),
+      rentalStartDate: TransactionSummary._parseDate(
+        json['rental_start_date'] as String?,
+      ),
+      rentalEndDate: TransactionSummary._parseDate(
+        json['rental_end_date'] as String?,
+      ),
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(TransactionMessageAttachment.fromJson)

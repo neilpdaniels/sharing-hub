@@ -3,11 +3,9 @@ import '../storage/token_store.dart';
 import 'api_client.dart';
 
 class AuthRepository {
-  AuthRepository({
-    required ApiClient apiClient,
-    required TokenStore tokenStore,
-  })  : _apiClient = apiClient,
-        _tokenStore = tokenStore;
+  AuthRepository({required ApiClient apiClient, required TokenStore tokenStore})
+    : _apiClient = apiClient,
+      _tokenStore = tokenStore;
 
   final ApiClient _apiClient;
   final TokenStore _tokenStore;
@@ -45,6 +43,13 @@ class AuthRepository {
     String houseNameNumber = '',
     String addressLine2 = '',
     String county = '',
+    String avatarEyes = 'default',
+    String avatarMouth = 'smile',
+    String avatarClothing = 'hoodie',
+    String avatarAccessories = 'none',
+    String avatarHairLength = 'short',
+    int avatarSkinTone = 4,
+    int avatarFacialHair = 25,
   }) async {
     final json = await _apiClient.postJson('/auth/register/start/', {
       'first_name': firstName,
@@ -60,6 +65,13 @@ class AuthRepository {
       'town': town,
       'county': county,
       'postcode': postcode,
+      'avatar_eyes': avatarEyes,
+      'avatar_mouth': avatarMouth,
+      'avatar_clothing': avatarClothing,
+      'avatar_accessories': avatarAccessories,
+      'avatar_hair_length': avatarHairLength,
+      'avatar_skin_tone': avatarSkinTone.toString(),
+      'avatar_facial_hair': avatarFacialHair,
     });
 
     return json['message'] as String? ?? 'Verification code sent.';
@@ -69,7 +81,8 @@ class AuthRepository {
     final json = await _apiClient.postJson('/auth/register/resend/', {
       'email': email,
     });
-    return json['message'] as String? ?? 'A new verification code has been sent.';
+    return json['message'] as String? ??
+        'A new verification code has been sent.';
   }
 
   Future<AuthSession> registerVerify({
@@ -101,7 +114,10 @@ class AuthRepository {
     }
 
     try {
-      final me = await _apiClient.getJsonObject('/auth/me/', accessToken: access);
+      final me = await _apiClient.getJsonObject(
+        '/auth/me/',
+        accessToken: access,
+      );
       return AuthSession(
         accessToken: access,
         refreshToken: refresh,

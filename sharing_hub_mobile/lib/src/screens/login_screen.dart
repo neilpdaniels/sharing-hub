@@ -112,12 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
-                Text(
-                  'Sharing Hub',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _loginController,
                   textInputAction: TextInputAction.next,
@@ -135,9 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                  ),
+                  decoration: const InputDecoration(labelText: 'Password'),
                   onFieldSubmitted: (_) => _submit(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -148,10 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
+                  Text(_error!, style: const TextStyle(color: Colors.red)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
@@ -169,7 +159,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: widget.busy ? null : _openRegister,
                   child: const Text('Create account'),
                 ),
-                if (widget.showBiometricLogin && widget.onBiometricLogin != null) ...[
+                if (widget.showBiometricLogin &&
+                    widget.onBiometricLogin != null) ...[
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
                     onPressed: widget.busy ? null : widget.onBiometricLogin,
@@ -185,7 +176,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (widget.embedded) {
-      return Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: content));
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: content,
+        ),
+      );
     }
 
     return Scaffold(
@@ -197,7 +193,12 @@ class _LoginScreenState extends State<LoginScreen> {
             colors: [Color(0xFF0B132B), Color(0xFF1C2541)],
           ),
         ),
-        child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: content)),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: content,
+          ),
+        ),
       ),
     );
   }

@@ -18,12 +18,14 @@ class ProductDetailScreen extends StatefulWidget {
     this.catalogRepository,
     this.transactionRepository,
     this.accessToken,
+    this.onRequireLogin,
   });
 
   final String? productSlug;
   final CatalogRepository? catalogRepository;
   final TransactionRepository? transactionRepository;
   final String? accessToken;
+  final VoidCallback? onRequireLogin;
 
   @override
   State<ProductDetailScreen> createState() => _ProductDetailScreenState();
@@ -42,7 +44,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String _sortBy = _sortNewest;
   String _viewMode = _viewList;
   bool _friendsOnly = false;
-  bool _withDepositOnly = false;
+  bool _noDepositOnly = false;
   bool _deliveryOnly = false;
 
   @override
@@ -54,10 +56,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Future<void> _load() async {
     final productSlug = widget.productSlug;
     final catalogRepository = widget.catalogRepository;
-    if (productSlug == null || productSlug.isEmpty || catalogRepository == null) {
+    if (productSlug == null ||
+        productSlug.isEmpty ||
+        catalogRepository == null) {
       setState(() {
         _loading = false;
-        _error = 'Product detail is missing required data. Please reopen this product.';
+        _error =
+            'Product detail is missing required data. Please reopen this product.';
       });
       return;
     }
@@ -95,13 +100,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final appBarTitle = _product?.name ?? 'Product';
     return Scaffold(
-      appBar: AppBar(title: const Text('Product')),
+      appBar: AppBar(title: Text(appBarTitle)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
-              : _buildContent(context),
+          ? Center(child: Text(_error!))
+          : _buildContent(context),
     );
   }
 
@@ -117,9 +123,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(product.name, style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 6),
-          Text(product.categoryTitle, style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            product.categoryTitle,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
           const SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
@@ -128,7 +135,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     product.imageUrl,
                     height: 220,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => _productImagePlaceholder(),
+                    errorBuilder: (context, error, stackTrace) =>
+                        _productImagePlaceholder(),
                   )
                 : _productImagePlaceholder(),
           ),
@@ -158,16 +166,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               (order) => Card(
                 child: ListTile(
                   leading: _productThumb(
-                    order.listingImageUrl.isNotEmpty ? order.listingImageUrl : product.imageUrl,
+                    order.listingImageUrl.isNotEmpty
+                        ? order.listingImageUrl
+                        : product.imageUrl,
                   ),
                   title: Text(order.productName),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_orderDistanceKm(order, product) != null)
+                        Text(
+                          '${_orderDistanceKm(order, product)!.toStringAsFixed(1)} km away',
+                        ),
                       Text(
-                        '${order.direction == 'L' ? 'To Lend' : 'Wanted'} | '
-                        'Collection: ${_collectionPolicyText(order.collectionPolicy)}\n'
+                        'Collection: ${_collectionPolicyText(order.collectionPolicy)}',
+                      ),
+                      Text(
                         'Postcode: ${order.postcode.isEmpty ? '-' : order.postcode}',
                       ),
                       const SizedBox(height: 6),
@@ -194,9 +209,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('${order.currency} ${order.price.toStringAsFixed(2)} / day'),
+                      Text(
+                        '${order.currency} ${order.price.toStringAsFixed(2)} / day',
+                      ),
                       if (order.deposit > 0)
-                        Text('Dep ${order.currency} ${order.deposit.toStringAsFixed(2)}', style: Theme.of(context).textTheme.bodySmall),
+                        Text(
+                          'Dep ${order.currency} ${order.deposit.toStringAsFixed(2)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                     ],
                   ),
                   onTap: () => _showOrderDetails(order, product),
@@ -223,7 +243,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Product Details', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Product Details',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 10),
             if (product.categoryDescription.isNotEmpty)
               Text(_stripHtmlTags(product.categoryDescription)),
@@ -232,7 +255,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: product.tags.map((tag) => Chip(label: Text(tag))).toList(growable: false),
+                children: product.tags
+                    .map((tag) => Chip(label: Text(tag)))
+                    .toList(growable: false),
               ),
             ],
             if (attrs.isNotEmpty) ...[
@@ -240,7 +265,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: attrs.map((value) => Chip(label: Text(value))).toList(growable: false),
+                children: attrs
+                    .map((value) => Chip(label: Text(value)))
+                    .toList(growable: false),
               ),
             ],
           ],
@@ -251,7 +278,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   String _stripHtmlTags(String htmlString) {
     final regex = RegExp(r'<[^>]*>');
-    return htmlString.replaceAll(regex, '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return htmlString
+        .replaceAll(regex, '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   Widget _metaRow(String label, String value) {
@@ -260,6 +290,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       child: Text('$label: $value'),
     );
   }
+
   Widget _productThumb(String imageUrl) {
     if (imageUrl.trim().isEmpty) {
       return Container(
@@ -299,7 +330,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.image_not_supported_outlined, size: 44, color: Color(0xFF7A8A93)),
+          const Icon(
+            Icons.image_not_supported_outlined,
+            size: 44,
+            color: Color(0xFF7A8A93),
+          ),
           const SizedBox(height: 8),
           Text(
             'No product image',
@@ -310,12 +345,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  Future<void> _showOrderDetails(OrderSummary order, ProductDetail product) async {
+  Future<void> _showOrderDetails(
+    OrderSummary order,
+    ProductDetail product,
+  ) async {
     final imageUrls = order.listingImageUrls.isNotEmpty
         ? order.listingImageUrls
         : (order.listingImageUrl.isNotEmpty
-            ? [order.listingImageUrl]
-            : (product.imageUrl.isNotEmpty ? [product.imageUrl] : const <String>[]));
+              ? [order.listingImageUrl]
+              : (product.imageUrl.isNotEmpty
+                    ? [product.imageUrl]
+                    : const <String>[]));
 
     await showModalBottomSheet<void>(
       context: context,
@@ -328,14 +368,22 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               padding: const EdgeInsets.all(16),
               child: ListView(
                 children: [
-                  Text(order.productName, style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    order.productName,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 6),
-                  Text('Listing details', style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    'Listing details',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                   const SizedBox(height: 12),
                   if (imageUrls.isEmpty)
                     const SizedBox(
                       height: 200,
-                      child: Center(child: Icon(Icons.inventory_2_outlined, size: 42)),
+                      child: Center(
+                        child: Icon(Icons.inventory_2_outlined, size: 42),
+                      ),
                     )
                   else
                     SizedBox(
@@ -343,7 +391,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: imageUrls.length,
-                        separatorBuilder: (context, index) => const SizedBox(width: 10),
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(width: 10),
                         itemBuilder: (context, index) {
                           final url = imageUrls[index];
                           return ClipRRect(
@@ -353,10 +402,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               child: Image.network(
                                 url,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => const ColoredBox(
-                                  color: Color(0x11000000),
-                                  child: Center(child: Icon(Icons.broken_image_outlined)),
-                                ),
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const ColoredBox(
+                                      color: Color(0x11000000),
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.broken_image_outlined,
+                                        ),
+                                      ),
+                                    ),
                               ),
                             ),
                           );
@@ -370,15 +424,43 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Listing details', style: Theme.of(context).textTheme.titleMedium),
+                          Text(
+                            'Listing details',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                           const SizedBox(height: 8),
-                          _metaRow('Price per day', '${order.currency} ${order.price.toStringAsFixed(2)}'),
+                          _metaRow(
+                            'Price per day',
+                            '${order.currency} ${order.price.toStringAsFixed(2)}',
+                          ),
                           if (_hasDiscountedPricing(order))
-                            _metaRow('Note', '(discounted pricing for longer rentals)'),
-                          _metaRow('Deposit', order.deposit > 0 ? '${order.currency} ${order.deposit.toStringAsFixed(2)}' : '-'),
-                          _metaRow('Collection policy', _collectionPolicyText(order.collectionPolicy)),
-                          _metaRow('Postcode', order.postcode.isEmpty ? '-' : order.postcode),
-                          _metaRow('Description', order.description.isEmpty ? '-' : order.description),
+                            _metaRow(
+                              'Note',
+                              '(discounted pricing for longer rentals)',
+                            ),
+                          _metaRow(
+                            'Deposit',
+                            order.deposit > 0
+                                ? '${order.currency} ${order.deposit.toStringAsFixed(2)}'
+                                : '-',
+                          ),
+                          _metaRow(
+                            'Collection policy',
+                            _collectionPolicyText(order.collectionPolicy),
+                          ),
+                          if (_orderDistanceKm(order, product) != null)
+                            _metaRow(
+                              'Distance',
+                              '${_orderDistanceKm(order, product)!.toStringAsFixed(1)} km away',
+                            ),
+                          _metaRow(
+                            'Postcode',
+                            order.postcode.isEmpty ? '-' : order.postcode,
+                          ),
+                          _metaRow(
+                            'Description',
+                            order.description.isEmpty ? '-' : order.description,
+                          ),
                         ],
                       ),
                     ),
@@ -402,9 +484,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final dependencies = await _resolveEnquiryDependencies();
     if (dependencies == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to send an enquiry.')),
+        final goToLogin = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Login required'),
+              content: const Text('You must be logged in to send an enquiry.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Go to login'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
         );
+
+        if (goToLogin == true) {
+          widget.onRequireLogin?.call();
+        }
       }
       return;
     }
@@ -423,7 +525,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (initialRange == null) {
       messageController.dispose();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No available dates remain for this listing.')),
+        const SnackBar(
+          content: Text('No available dates remain for this listing.'),
+        ),
       );
       return;
     }
@@ -444,13 +548,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   lastDate: _lastEnquiryDate(order),
                   currentDate: _dateOnly(DateTime.now()),
                   initialDateRange: selectedRange,
-                  selectableDayPredicate: (day, selectedStartDay, selectedEndDay) {
-                    final normalizedDay = _dateOnly(day);
-                    final isBoundaryUnavailable = handoverDates.contains(normalizedDay);
-                    return !blockedDates.contains(normalizedDay) &&
-                        !isBoundaryUnavailable &&
-                        !normalizedDay.isAfter(_lastEnquiryDate(order));
-                  },
+                  selectableDayPredicate:
+                      (day, selectedStartDay, selectedEndDay) {
+                        final normalizedDay = _dateOnly(day);
+                        final isBoundaryUnavailable = handoverDates.contains(
+                          normalizedDay,
+                        );
+                        return !blockedDates.contains(normalizedDay) &&
+                            !isBoundaryUnavailable &&
+                            !normalizedDay.isAfter(_lastEnquiryDate(order));
+                      },
                 );
 
                 if (picked == null) {
@@ -465,8 +572,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 });
               }
 
-                final blockedCount = blockedDates.length;
-                final handoverCount = handoverDates.length;
+              final blockedCount = blockedDates.length;
+              final handoverCount = handoverDates.length;
               final selectedLabel =
                   '${_formatDate(selectedRange.start)} - ${_formatDate(selectedRange.end)}';
 
@@ -558,7 +665,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       )) {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Selected dates include blocked days or an unavailable start/end day.'),
+            content: Text(
+              'Selected dates include blocked days or an unavailable start/end day.',
+            ),
           ),
         );
         return;
@@ -698,8 +807,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Future<_EnquiryDependencies?> _resolveEnquiryDependencies() async {
     final injectedRepository = widget.transactionRepository;
     final injectedToken = widget.accessToken;
-    if (injectedRepository != null && injectedToken != null && injectedToken.isNotEmpty) {
-      return _EnquiryDependencies(repository: injectedRepository, accessToken: injectedToken);
+    if (injectedRepository != null &&
+        injectedToken != null &&
+        injectedToken.isNotEmpty) {
+      return _EnquiryDependencies(
+        repository: injectedRepository,
+        accessToken: injectedToken,
+      );
     }
 
     final storedToken = await TokenStore().getAccessToken();
@@ -707,11 +821,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return null;
     }
 
-    final repository = injectedRepository ?? TransactionRepository(
-      apiClient: ApiClient(baseUrl: AppConfig.baseUrl),
-    );
+    final repository =
+        injectedRepository ??
+        TransactionRepository(apiClient: ApiClient(baseUrl: AppConfig.baseUrl));
 
-    return _EnquiryDependencies(repository: repository, accessToken: storedToken);
+    return _EnquiryDependencies(
+      repository: repository,
+      accessToken: storedToken,
+    );
   }
 
   Widget _listingControls() {
@@ -720,8 +837,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       children: [
         SegmentedButton<String>(
           segments: const [
-            ButtonSegment<String>(value: _viewList, icon: Icon(Icons.list), label: Text('List')),
-            ButtonSegment<String>(value: _viewMap, icon: Icon(Icons.map_outlined), label: Text('Map')),
+            ButtonSegment<String>(
+              value: _viewList,
+              icon: Icon(Icons.list),
+              label: Text('List'),
+            ),
+            ButtonSegment<String>(
+              value: _viewMap,
+              icon: Icon(Icons.map_outlined),
+              label: Text('Map'),
+            ),
           ],
           selected: {_viewMode},
           onSelectionChanged: (selection) {
@@ -741,8 +866,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               value: _sortBy,
               items: const [
                 DropdownMenuItem(value: _sortNewest, child: Text('Newest')),
-                DropdownMenuItem(value: _sortPriceAsc, child: Text('Price: Low to High')),
-                DropdownMenuItem(value: _sortPriceDesc, child: Text('Price: High to Low')),
+                DropdownMenuItem(
+                  value: _sortPriceAsc,
+                  child: Text('Price: Low to High'),
+                ),
+                DropdownMenuItem(
+                  value: _sortPriceDesc,
+                  child: Text('Price: High to Low'),
+                ),
               ],
               onChanged: (value) {
                 if (value == null) {
@@ -766,14 +897,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               onSelected: (selected) => setState(() => _friendsOnly = selected),
             ),
             FilterChip(
-              label: const Text('With deposit'),
-              selected: _withDepositOnly,
-              onSelected: (selected) => setState(() => _withDepositOnly = selected),
+              label: const Text('No deposit'),
+              selected: _noDepositOnly,
+              onSelected: (selected) =>
+                  setState(() => _noDepositOnly = selected),
             ),
             FilterChip(
               label: const Text('Delivery available'),
               selected: _deliveryOnly,
-              onSelected: (selected) => setState(() => _deliveryOnly = selected),
+              onSelected: (selected) =>
+                  setState(() => _deliveryOnly = selected),
             ),
           ],
         ),
@@ -790,7 +923,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(16),
-          child: Text('No mapped listings yet. Listings need latitude/longitude to appear on the map.'),
+          child: Text(
+            'No mapped listings yet. Listings need latitude/longitude to appear on the map.',
+          ),
         ),
       );
     }
@@ -805,31 +940,30 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           child: SizedBox(
             height: 300,
             child: FlutterMap(
-              options: MapOptions(
-                initialCenter: center,
-                initialZoom: 9,
-              ),
+              options: MapOptions(initialCenter: center, initialZoom: 9),
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.sharinghub.mobile',
                 ),
                 MarkerLayer(
-                  markers: mappedOrders.map((order) {
-                    return Marker(
-                      point: LatLng(order.latitude!, order.longitude!),
-                      width: 44,
-                      height: 44,
-                      child: GestureDetector(
-                        onTap: () => _showOrderDetails(order, product),
-                        child: Icon(
-                          Icons.location_pin,
-                          size: 36,
-                          color: _pinColor(order),
-                        ),
-                      ),
-                    );
-                  }).toList(growable: false),
+                  markers: mappedOrders
+                      .map((order) {
+                        return Marker(
+                          point: LatLng(order.latitude!, order.longitude!),
+                          width: 44,
+                          height: 44,
+                          child: GestureDetector(
+                            onTap: () => _showOrderDetails(order, product),
+                            child: Icon(
+                              Icons.location_pin,
+                              size: 36,
+                              color: _pinColor(order),
+                            ),
+                          ),
+                        );
+                      })
+                      .toList(growable: false),
                 ),
               ],
             ),
@@ -851,8 +985,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   LatLng _mapCenter(List<OrderSummary> orders) {
     final count = orders.length;
-    final totalLat = orders.fold<double>(0, (sum, order) => sum + (order.latitude ?? 0));
-    final totalLng = orders.fold<double>(0, (sum, order) => sum + (order.longitude ?? 0));
+    final totalLat = orders.fold<double>(
+      0,
+      (sum, order) => sum + (order.latitude ?? 0),
+    );
+    final totalLng = orders.fold<double>(
+      0,
+      (sum, order) => sum + (order.longitude ?? 0),
+    );
     return LatLng(totalLat / count, totalLng / count);
   }
 
@@ -871,26 +1011,36 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return false;
     }
     for (final band in order.priceBands) {
-      if (band.durationDays > 1 && band.pricePerDay > 0 && band.pricePerDay < order.price) {
+      if (band.durationDays > 1 &&
+          band.pricePerDay > 0 &&
+          band.pricePerDay < order.price) {
         return true;
       }
     }
     return false;
   }
 
+  double? _orderDistanceKm(OrderSummary order, ProductDetail product) {
+    return order.distanceKm ?? product.nearestDistanceKm;
+  }
+
   List<OrderSummary> _visibleOrders(ProductDetail product) {
-    final filtered = product.activeOrders.where((order) {
-      if (_friendsOnly && order.letVisibility != 'FRIENDS') {
-        return false;
-      }
-      if (_withDepositOnly && (order.deposit <= 0)) {
-        return false;
-      }
-      if (_deliveryOnly && order.collectionPolicy != 'WD' && order.collectionPolicy != 'EI') {
-        return false;
-      }
-      return true;
-    }).toList(growable: false);
+    final filtered = product.activeOrders
+        .where((order) {
+          if (_friendsOnly && order.letVisibility != 'FRIENDS') {
+            return false;
+          }
+          if (_noDepositOnly && (order.deposit > 0)) {
+            return false;
+          }
+          if (_deliveryOnly &&
+              order.collectionPolicy != 'WD' &&
+              order.collectionPolicy != 'EI') {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
 
     filtered.sort((a, b) {
       if (_sortBy == _sortPriceAsc) {
@@ -909,10 +1059,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 }
 
 class _EnquiryDependencies {
-  _EnquiryDependencies({
-    required this.repository,
-    required this.accessToken,
-  });
+  _EnquiryDependencies({required this.repository, required this.accessToken});
 
   final TransactionRepository repository;
   final String accessToken;

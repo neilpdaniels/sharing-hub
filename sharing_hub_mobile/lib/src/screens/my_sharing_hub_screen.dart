@@ -34,7 +34,7 @@ class MySharingHubScreen extends StatelessWidget {
           Card(
             child: ListTile(
               leading: const Icon(Icons.mark_email_unread_outlined),
-              title: const Text('Inbox'),
+              title: const Text('Messages'),
               subtitle: const Text('All sent and received messages'),
               trailing: const Icon(Icons.chevron_right),
               onTap: onOpenInbox,

@@ -18,14 +18,19 @@ class MyTransactionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final gradientColors = isDarkMode
+        ? const [Color(0xFF0F1419), Color(0xFF1A2332)]
+        : const [Color(0xFFF8F4EE), Color(0xFFF1FAF8)];
+
     return Scaffold(
       appBar: AppBar(title: const Text('My Transactions')),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF8F4EE), Color(0xFFF1FAF8)],
+            colors: gradientColors,
           ),
         ),
         child: RefreshIndicator(
@@ -40,10 +45,12 @@ class MyTransactionsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               if (loading)
-                const Center(child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: CircularProgressIndicator(),
-                ))
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
               else if (transactions.isEmpty)
                 const Card(
                   child: Padding(
@@ -64,16 +71,21 @@ class MyTransactionsScreen extends StatelessWidget {
     final statusColor = tx.status == 'RENQ'
         ? Colors.orange.shade700
         : tx.status == 'RONG'
-            ? Colors.green.shade700
-            : Theme.of(context).colorScheme.primary;
+        ? Colors.green.shade700
+        : Theme.of(context).colorScheme.primary;
     final statusText = _transactionStatusText(tx.status);
     final updatedText = _friendlyDate(tx.updatedAt);
     final rentalDates = _rentalDatesLabel(tx);
-    final itemTitle = tx.itemName.trim().isEmpty ? 'Rental conversation' : tx.itemName;
+    final itemTitle = tx.itemName.trim().isEmpty
+        ? 'Rental conversation'
+        : tx.itemName;
     final partiesText = tx.partiesSummary.trim().isEmpty
-        ? (tx.counterpartyName.trim().isEmpty ? 'Rental conversation' : tx.counterpartyName)
+        ? (tx.counterpartyName.trim().isEmpty
+              ? 'Rental conversation'
+              : tx.counterpartyName)
         : tx.partiesSummary;
-    final termsText = '£${tx.price.toStringAsFixed(2)} per day'
+    final termsText =
+        '£${tx.price.toStringAsFixed(2)} per day'
         '${tx.quantity > 1 ? ' | qty ${tx.quantity}' : ''}'
         '${rentalDates != null ? ' | $rentalDates' : ''}';
 
@@ -97,12 +109,20 @@ class MyTransactionsScreen extends StatelessWidget {
                   children: [
                     Text(
                       partiesText,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    Text(itemTitle, style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      itemTitle,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 2),
-                    Text(termsText, style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      termsText,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -110,7 +130,10 @@ class MyTransactionsScreen extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: statusColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(999),
@@ -124,7 +147,10 @@ class MyTransactionsScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Text('Updated $updatedText', style: Theme.of(context).textTheme.bodySmall),
+                        Text(
+                          'Updated $updatedText',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ],
                     ),
                   ],

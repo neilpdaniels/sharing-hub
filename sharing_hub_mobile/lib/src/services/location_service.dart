@@ -1,4 +1,3 @@
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
@@ -24,29 +23,6 @@ class LocationService {
     final position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
-
-    try {
-      final placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-        final candidates = <String>[
-          (place.postalCode ?? '').trim(),
-          (place.locality ?? '').trim(),
-          (place.subAdministrativeArea ?? '').trim(),
-          (place.administrativeArea ?? '').trim(),
-        ].where((value) => value.isNotEmpty).toList(growable: false);
-
-        if (candidates.isNotEmpty) {
-          return candidates.join(', ');
-        }
-      }
-    } catch (_) {
-      // Fallback below if reverse geocoding fails.
-    }
 
     return '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
   }

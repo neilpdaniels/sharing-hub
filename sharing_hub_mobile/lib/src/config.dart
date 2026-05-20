@@ -1,7 +1,7 @@
 class AppConfig {
-  // Android emulator should use 10.0.2.2 for localhost.
+  // Override at launch: --dart-define=API_BASE_URL=http://<your-lan-ip>:8000/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8000/api/v1',
+    defaultValue: 'http://192.168.1.155:8000/api/v1',
   );
 }

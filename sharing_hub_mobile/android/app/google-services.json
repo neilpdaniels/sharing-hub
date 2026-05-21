@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "62956681278",
+    "project_id": "mobberley-labs-sharing-hub",
+    "storage_bucket": "mobberley-labs-sharing-hub.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:62956681278:android:f57ee400331f228a65396f",
+        "android_client_info": {
+          "package_name": "com.sharinghub.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAqoxiWq_I7R3ZNxijNKOELXOszXAMj6ac"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

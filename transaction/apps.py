@@ -10,6 +10,8 @@ class TransactionConfig(AppConfig):
     name = 'transaction'
 
     def ready(self):
+        import transaction.signals  # noqa: F401
+
         # Warn once on startup if live Stripe mode is enabled without required keys.
         placeholder_mode = getattr(settings, 'STRIPE_CONNECT_PLACEHOLDER_MODE', True)
         if placeholder_mode:

@@ -50,3 +50,4 @@ django-memcache-status>=1.3
 zeep>=4.0.0
 twilio>=9.0.0
 stripe>=11.0.0
+google-auth>=2.35.0

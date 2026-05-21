@@ -19,6 +19,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django_otp.admin import OTPAdminSite
 import navigation
+from common.views import transaction_notifications_json
 
 # admin.site.__class__ = OTPAdminSite
 
@@ -33,6 +34,7 @@ urlpatterns = [
     path('navigation/', include('navigation.urls', namespace='navigation')),
     path('pages/', include('pages.urls', namespace='pages')),
     path('my_sharing_hub/', include('my_sharing_hub.urls', namespace='my_sharing_hub')),
+    path('notifications/transactions/', transaction_notifications_json, name='transaction_notifications_json'),
     path('', navigation.views.index, name='homepage'),
     re_path(r'^summernote/', include('django_summernote.urls')),
 ]

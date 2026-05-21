@@ -76,6 +76,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _searchLocationController =
@@ -109,6 +110,163 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _isAuthenticated {
     final token = widget.accessToken;
     return widget.session != null && token != null && token.isNotEmpty;
+  }
+
+  int get _searchTabIndex => _isAuthenticated ? 2 : 1;
+
+  bool get _showFilterDrawerAction {
+    if (_detailPageType != null) {
+      return false;
+    }
+    if (_selectedIndex == _searchTabIndex) {
+      return true;
+    }
+    return _selectedIndex == 0 && _selectedCategorySlug != null;
+  }
+
+  String _distanceLabel(int? value) {
+    if (value == null) {
+      return 'Any';
+    }
+    return '$value km';
+  }
+
+  Future<void> _applyHomeFilters() async {
+    Navigator.of(context).pop();
+    if (_selectedIndex == _searchTabIndex) {
+      await _searchProducts();
+      return;
+    }
+    final categorySlug = _selectedCategorySlug;
+    if (categorySlug != null) {
+      await _loadBrowseProducts(categorySlug);
+    }
+  }
+
+  Widget _buildHomeFilterDrawer() {
+    final isSearchFilters = _selectedIndex == _searchTabIndex;
+    final selectedSort = isSearchFilters ? _searchSortBy : _browseSortBy;
+
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              isSearchFilters ? 'Search filters' : 'Browse filters',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            Text('Sort', style: Theme.of(context).textTheme.titleMedium),
+            RadioListTile<String>(
+              value: 'name',
+              groupValue: selectedSort,
+              title: const Text('Name'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() {
+                  if (isSearchFilters) {
+                    _searchSortBy = value;
+                  } else {
+                    _browseSortBy = value;
+                  }
+                });
+              },
+            ),
+            RadioListTile<String>(
+              value: 'newest',
+              groupValue: selectedSort,
+              title: const Text('Newest'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() {
+                  if (isSearchFilters) {
+                    _searchSortBy = value;
+                  } else {
+                    _browseSortBy = value;
+                  }
+                });
+              },
+            ),
+            RadioListTile<String>(
+              value: 'nearest',
+              groupValue: selectedSort,
+              title: const Text('Nearest'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() {
+                  if (isSearchFilters) {
+                    _searchSortBy = value;
+                  } else {
+                    _browseSortBy = value;
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            Text('Distance', style: Theme.of(context).textTheme.titleMedium),
+            if (_searchLocationController.text.trim().isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Set a town or postcode on Search to enable distance filtering.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              )
+            else ...[
+              RadioListTile<int?>(
+                value: null,
+                groupValue: _selectedDistance,
+                title: Text(_distanceLabel(null)),
+                onChanged: (value) => setState(() => _selectedDistance = value),
+              ),
+              RadioListTile<int?>(
+                value: 5,
+                groupValue: _selectedDistance,
+                title: Text(_distanceLabel(5)),
+                onChanged: (value) => setState(() => _selectedDistance = value),
+              ),
+              RadioListTile<int?>(
+                value: 10,
+                groupValue: _selectedDistance,
+                title: Text(_distanceLabel(10)),
+                onChanged: (value) => setState(() => _selectedDistance = value),
+              ),
+              RadioListTile<int?>(
+                value: 25,
+                groupValue: _selectedDistance,
+                title: Text(_distanceLabel(25)),
+                onChanged: (value) => setState(() => _selectedDistance = value),
+              ),
+              RadioListTile<int?>(
+                value: 50,
+                groupValue: _selectedDistance,
+                title: Text(_distanceLabel(50)),
+                onChanged: (value) => setState(() => _selectedDistance = value),
+              ),
+              RadioListTile<int?>(
+                value: 100,
+                groupValue: _selectedDistance,
+                title: Text(_distanceLabel(100)),
+                onChanged: (value) => setState(() => _selectedDistance = value),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _applyHomeFilters,
+              icon: const Icon(Icons.check),
+              label: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -498,6 +656,7 @@ class _HomeScreenState extends State<HomeScreen> {
         : 'assets/images/logo-sharing-hub.png';
 
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         title: Image.asset(appLogoAsset, height: 48, fit: BoxFit.contain),
         actions: [
@@ -515,6 +674,12 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
             tooltip: widget.isDarkMode ? 'Light mode' : 'Dark mode',
           ),
+          if (_showFilterDrawerAction)
+            IconButton(
+              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+              icon: const Icon(Icons.tune),
+              tooltip: 'Filters',
+            ),
           if (_isAuthenticated)
             IconButton(
               onPressed: widget.onLogout,
@@ -523,6 +688,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
+      endDrawer: _showFilterDrawerAction ? _buildHomeFilterDrawer() : null,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -755,25 +921,6 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: _sectionTitle(selectedCat?.title ?? 'Items listed'),
               ),
-              const SizedBox(width: 8),
-              const Text('Sort:'),
-              const SizedBox(width: 4),
-              DropdownButton<String>(
-                value: _browseSortBy,
-                isDense: true,
-                items: const [
-                  DropdownMenuItem(value: 'name', child: Text('Name')),
-                  DropdownMenuItem(value: 'newest', child: Text('Newest')),
-                  DropdownMenuItem(value: 'nearest', child: Text('Nearest')),
-                ],
-                onChanged: (value) async {
-                  if (value == null) return;
-                  setState(() => _browseSortBy = value);
-                  if (_selectedCategorySlug != null) {
-                    await _loadBrowseProducts(_selectedCategorySlug!);
-                  }
-                },
-              ),
             ],
           ),
         ),
@@ -851,105 +998,21 @@ class _HomeScreenState extends State<HomeScreen> {
             onSubmitted: (_) => _searchProducts(),
           ),
           const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 420;
-              final filterRow = [
-                const Text('Distance:', style: TextStyle(fontSize: 13)),
-                const SizedBox(width: 12),
-                DropdownButton<int?>(
-                  value: _selectedDistance,
-                  items: const [
-                    DropdownMenuItem<int?>(
-                      value: null,
-                      child: Text('Any', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem<int?>(
-                      value: 5,
-                      child: Text('5 km', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem<int?>(
-                      value: 10,
-                      child: Text('10 km', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem<int?>(
-                      value: 25,
-                      child: Text('25 km', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem<int?>(
-                      value: 50,
-                      child: Text('50 km', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem<int?>(
-                      value: 100,
-                      child: Text('100 km', style: TextStyle(fontSize: 13)),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedDistance = value;
-                    });
-                  },
-                  style: const TextStyle(fontSize: 13, color: Colors.black),
-                ),
-                const SizedBox(width: 12),
-                const Text('Sort:', style: TextStyle(fontSize: 13)),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: _searchSortBy,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'name',
-                      child: Text('Name', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem(
-                      value: 'newest',
-                      child: Text('Newest', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem(
-                      value: 'nearest',
-                      child: Text('Nearest', style: TextStyle(fontSize: 13)),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() {
-                      _searchSortBy = value;
-                    });
-                  },
-                  style: const TextStyle(fontSize: 13, color: Colors.black),
-                ),
-              ];
-              final searchButton = Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: FilledButton.icon(
-                    onPressed: _searchLoading ? null : _searchProducts,
-                    icon: _searchLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.search),
-                    label: const Text('Search'),
-                  ),
-                ),
-              );
-              if (isNarrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(children: filterRow),
-                    searchButton,
-                  ],
-                );
-              } else {
-                return Row(
-                  children: [...filterRow, const Spacer(), searchButton],
-                );
-              }
-            },
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: FilledButton.icon(
+                onPressed: _searchLoading ? null : _searchProducts,
+                icon: _searchLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.search),
+                label: const Text('Search'),
+              ),
+            ),
           ),
           const SizedBox(height: 18),
           Expanded(
@@ -1070,6 +1133,8 @@ class _HomeScreenState extends State<HomeScreen> {
           catalogRepository: widget.catalogRepository,
           transactionRepository: widget.transactionRepository,
           accessToken: widget.accessToken,
+          searchLocation: _searchLocationController.text.trim(),
+          initialDistanceKm: _selectedDistance,
           onRequireLogin: _openLoginTabFromDetail,
         ),
         Positioned(

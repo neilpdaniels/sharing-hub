@@ -245,6 +245,7 @@
           <!-- end div .page-header -->
       
       <div class="container">
+        <div id="txn-live-notice-mount"></div>
         {% if request.user.is_authenticated and txn_login_notice %}
         <div id="txn-login-notice" class="alert alert-dismissible fade show mt-2" role="alert">
           <strong>Pending transactions:</strong>
@@ -455,6 +456,87 @@
 
     <script>
     (function() {
+      var noticeEndpoint = "{% url 'transaction_notifications_json' %}";
+      var liveNoticeMount = document.getElementById('txn-live-notice-mount');
+      var previousSignature = null;
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function buildNoticeHtml(payload) {
+        var count = payload.txn_notice_count || 0;
+        var items = payload.txn_notice_items || [];
+        var itemHtml = items.map(function(txn) {
+          return '<a class="txn-notice-item d-block mb-1" href="/transaction/view_transaction/' +
+            encodeURIComponent(txn.transaction_reference) + '/">' +
+            '<span><strong>' + escapeHtml(txn.product_name) + '</strong></span>' +
+            '<span class="mx-1">|</span>' +
+            '<span>' + escapeHtml(txn.date_label) + '</span>' +
+            '<span class="mx-1">|</span>' +
+            '<span>Action: ' + escapeHtml(txn.action_label) + '</span>' +
+            '</a>';
+        }).join('');
+
+        return '<div id="txn-login-notice" class="alert alert-dismissible fade show mt-2" role="alert">' +
+          '<strong>Pending transactions:</strong> ' +
+          count + ' item' + (count === 1 ? '' : 's') + ' need' + (count === 1 ? 's' : '') + ' your attention.' +
+          (itemHtml ? '<div class="mt-2 small">' + itemHtml + '</div>' : '') +
+          '<button type="button" class="close" data-dismiss="alert" aria-label="Close">' +
+          '<span aria-hidden="true">&times;</span>' +
+          '</button>' +
+          '</div>';
+      }
+
+      function renderLiveNotice(payload) {
+        var count = payload.txn_notice_count || 0;
+        if (!liveNoticeMount) {
+          return;
+        }
+        if (!count) {
+          if (!document.getElementById('txn-login-notice')) {
+            liveNoticeMount.innerHTML = '';
+          }
+          return;
+        }
+
+        var existingNotice = document.getElementById('txn-login-notice');
+        if (existingNotice && existingNotice.parentNode !== liveNoticeMount) {
+          existingNotice.parentNode.removeChild(existingNotice);
+        }
+        liveNoticeMount.innerHTML = buildNoticeHtml(payload);
+      }
+
+      function pollTransactionNotices() {
+        fetch(noticeEndpoint, {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function(response) {
+          if (!response.ok) {
+            throw new Error('notification poll failed');
+          }
+          return response.json();
+        })
+        .then(function(payload) {
+          var signature = JSON.stringify(payload.txn_notice_items || []);
+          if (signature !== previousSignature) {
+            renderLiveNotice(payload);
+            previousSignature = signature;
+          }
+        })
+        .catch(function() {});
+      }
+
+      {% if request.user.is_authenticated %}
+      window.setInterval(pollTransactionNotices, 45000);
+      {% endif %}
+
       var btn = document.getElementById('search-locate-btn');
       var icon = document.getElementById('search-locate-icon');
       var input = document.getElementById('search-location-input');

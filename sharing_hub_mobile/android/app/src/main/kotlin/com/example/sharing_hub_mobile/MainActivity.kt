@@ -1,4 +1,4 @@
-package com.example.sharing_hub_mobile
+package com.sharinghub.mobile
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

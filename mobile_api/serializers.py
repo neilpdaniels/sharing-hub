@@ -5,6 +5,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from account.models import PaymentMethod, Profile
 from common.models import Category, LetPriceBand, Order, OrderBlockedDate, Product
+from mobile_api.models import MobileDevice
 from transaction.models import Transaction, TransactionMessage, TransactionMessageImage
 
 
@@ -21,6 +22,26 @@ class ProfileSummarySerializer(serializers.Serializer):
     mobile_verified = serializers.BooleanField()
     address_verified = serializers.BooleanField()
     postcode = serializers.CharField(allow_blank=True, allow_null=True)
+
+
+class MobileDeviceRegisterSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=255)
+    platform = serializers.ChoiceField(
+        choices=[
+            MobileDevice.PLATFORM_ANDROID,
+            MobileDevice.PLATFORM_IOS,
+            MobileDevice.PLATFORM_WEB,
+            MobileDevice.PLATFORM_OTHER,
+        ],
+        required=False,
+        default=MobileDevice.PLATFORM_OTHER,
+    )
+    device_id = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    app_version = serializers.CharField(max_length=32, required=False, allow_blank=True)
+
+
+class MobileDeviceUnregisterSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
 
 class MobileTokenObtainSerializer(serializers.Serializer):
@@ -241,6 +262,8 @@ class TransactionMessageSerializer(serializers.ModelSerializer):
     transaction_reference = serializers.SerializerMethodField()
     transaction_status = serializers.SerializerMethodField()
     item_name = serializers.SerializerMethodField()
+    rental_start_date = serializers.SerializerMethodField()
+    rental_end_date = serializers.SerializerMethodField()
     counterparty_name = serializers.SerializerMethodField()
     direction = serializers.SerializerMethodField()
     unread = serializers.SerializerMethodField()
@@ -260,6 +283,8 @@ class TransactionMessageSerializer(serializers.ModelSerializer):
             'transaction_reference',
             'transaction_status',
             'item_name',
+            'rental_start_date',
+            'rental_end_date',
             'counterparty_name',
             'direction',
             'unread',
@@ -285,6 +310,18 @@ class TransactionMessageSerializer(serializers.ModelSerializer):
         if transaction is None or transaction.order_passive is None or transaction.order_passive.product is None:
             return ''
         return transaction.order_passive.product.name
+
+    def get_rental_start_date(self, obj):
+        transaction = obj.transaction
+        if transaction is None or transaction.rental_start_date is None:
+            return None
+        return transaction.rental_start_date
+
+    def get_rental_end_date(self, obj):
+        transaction = obj.transaction
+        if transaction is None or transaction.rental_end_date is None:
+            return None
+        return transaction.rental_end_date
 
     def get_counterparty_name(self, obj):
         request = self.context.get('request')
@@ -349,6 +386,8 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     product_slug = serializers.CharField(source='product.slug', read_only=True)
     category_slug = serializers.CharField(source='product.category_id.slug', read_only=True)
+    distance_km = serializers.FloatField(read_only=True, allow_null=True)
+    lender = serializers.SerializerMethodField()
     listing_image_url = serializers.SerializerMethodField()
     listing_image_urls = serializers.SerializerMethodField()
     blocked_dates = serializers.SerializerMethodField()
@@ -364,6 +403,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'product_name',
             'product_slug',
             'category_slug',
+            'lender',
             'listing_image_url',
             'listing_image_urls',
             'blocked_dates',
@@ -378,6 +418,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'postcode',
             'latitude',
             'longitude',
+            'distance_km',
             'radius_km',
             'deposit',
             'mates_rates',
@@ -396,6 +437,37 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     def get_listing_image_url(self, obj):
         urls = self.get_listing_image_urls(obj)
         return urls[0] if urls else ''
+
+    def get_lender(self, obj):
+        lender = obj.user
+        request = self.context.get('request')
+        full_name = f'{lender.first_name} {lender.last_name}'.strip()
+
+        profile = None
+        try:
+            profile = lender.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        avatar_url = ''
+        if profile is not None and profile.image:
+            if request is None:
+                avatar_url = profile.image.url
+            else:
+                avatar_url = request.build_absolute_uri(profile.image.url)
+
+        return {
+            'id': lender.id,
+            'display_name': full_name or lender.username,
+            'username': lender.username,
+            'avatar_url': avatar_url,
+            'rating': profile.user_rating if profile is not None else 0,
+            'successful_txns': profile.user_successful_txns if profile is not None else 0,
+            'postcode': profile.postcode if profile is not None else '',
+            'email_confirmed': profile.email_confirmed if profile is not None else False,
+            'mobile_verified': profile.mobile_verified if profile is not None else False,
+            'address_verified': profile.address_verified if profile is not None else False,
+        }
 
     def get_listing_image_urls(self, obj):
         request = self.context.get('request')
@@ -533,12 +605,14 @@ class ProductDetailSerializer(ProductSummarySerializer):
         )
 
     def get_active_orders(self, obj):
-        orders = (
-            obj.order_set.filter(status=Order.ACTIVE)
-            .select_related('user')
-            .prefetch_related('images')
-            .order_by('-amended')[:20]
-        )
+        orders = getattr(obj, 'filtered_active_orders', None)
+        if orders is None:
+            orders = (
+                obj.order_set.filter(status=Order.ACTIVE)
+                .select_related('user', 'product', 'product__category_id')
+                .prefetch_related('images', 'blocked_dates', 'price_bands')
+                .order_by('-amended')[:20]
+            )
         return OrderSummarySerializer(orders, many=True, context=self.context).data
 
 

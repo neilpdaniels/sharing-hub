@@ -26,8 +26,12 @@ todo:
 
     sharing-hub fees
 
+1024 png for mobile app icon / notigications
     
-1) add stripe    
+1) work on verifcation videos / code
+2) payments
+3) returns process
+
 2) have  a look if can extend to 30 day hold for visa and mastercard (https://docs.stripe.com/payments/extended-authorization?locale=en-GB)
 
 2) load up categories

@@ -18,6 +18,8 @@ class ProductDetailScreen extends StatefulWidget {
     this.catalogRepository,
     this.transactionRepository,
     this.accessToken,
+    this.searchLocation,
+    this.initialDistanceKm,
     this.onRequireLogin,
   });
 
@@ -25,6 +27,8 @@ class ProductDetailScreen extends StatefulWidget {
   final CatalogRepository? catalogRepository;
   final TransactionRepository? transactionRepository;
   final String? accessToken;
+  final String? searchLocation;
+  final int? initialDistanceKm;
   final VoidCallback? onRequireLogin;
 
   @override
@@ -32,6 +36,7 @@ class ProductDetailScreen extends StatefulWidget {
 }
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   static const String _sortNewest = 'newest';
   static const String _sortPriceAsc = 'price_asc';
   static const String _sortPriceDesc = 'price_desc';
@@ -43,6 +48,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String? _error;
   String _sortBy = _sortNewest;
   String _viewMode = _viewList;
+  late final String _searchLocation;
+  int? _distanceKmFilter;
   bool _friendsOnly = false;
   bool _noDepositOnly = false;
   bool _deliveryOnly = false;
@@ -50,6 +57,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _searchLocation = (widget.searchLocation ?? '').trim();
+    _distanceKmFilter = widget.initialDistanceKm;
     _load();
   }
 
@@ -75,6 +84,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     try {
       final product = await catalogRepository.fetchProductDetail(
         productSlug: productSlug,
+        location: _searchLocation.isEmpty ? null : _searchLocation,
+        distanceKm: _distanceKmFilter,
       );
       if (!mounted) {
         return;
@@ -102,7 +113,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget build(BuildContext context) {
     final appBarTitle = _product?.name ?? 'Product';
     return Scaffold(
-      appBar: AppBar(title: Text(appBarTitle)),
+      key: _scaffoldKey,
+      appBar: AppBar(
+        title: Text(appBarTitle),
+        actions: [
+          IconButton(
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+            icon: const Icon(Icons.tune),
+            tooltip: 'Filters',
+          ),
+        ],
+      ),
+      endDrawer: _buildFilterDrawer(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -179,9 +201,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         Text(
                           '${_orderDistanceKm(order, product)!.toStringAsFixed(1)} km away',
                         ),
-                      Text(
-                        'Collection: ${_collectionPolicyText(order.collectionPolicy)}',
-                      ),
+                      Text(_collectionPolicyText(order.collectionPolicy)),
                       Text(
                         'Postcode: ${order.postcode.isEmpty ? '-' : order.postcode}',
                       ),
@@ -210,11 +230,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '${order.currency} ${order.price.toStringAsFixed(2)} / day',
+                        '${order.currencySymbol}${order.price.toStringAsFixed(2)} / day',
                       ),
                       if (order.deposit > 0)
                         Text(
-                          'Dep ${order.currency} ${order.deposit.toStringAsFixed(2)}',
+                          'Dep ${order.currencySymbol}${order.deposit.toStringAsFixed(2)}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                     ],
@@ -247,9 +267,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               'Product Details',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(height: 10),
-            if (product.categoryDescription.isNotEmpty)
-              Text(_stripHtmlTags(product.categoryDescription)),
             if (product.tags.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(
@@ -276,18 +293,180 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  String _stripHtmlTags(String htmlString) {
-    final regex = RegExp(r'<[^>]*>');
-    return htmlString
-        .replaceAll(regex, '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
   Widget _metaRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Text('$label: $value'),
+    );
+  }
+
+  String _distanceLabel(int? value) {
+    if (value == null) {
+      return 'Any';
+    }
+    return '$value km';
+  }
+
+  Future<void> _applyProductFilters() async {
+    Navigator.of(context).pop();
+    if (_searchLocation.isNotEmpty) {
+      await _load();
+    }
+  }
+
+  Widget _buildFilterDrawer() {
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text('Filters', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            Text('Sort', style: Theme.of(context).textTheme.titleMedium),
+            RadioListTile<String>(
+              value: _sortNewest,
+              groupValue: _sortBy,
+              title: const Text('Newest'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _sortBy = value);
+              },
+            ),
+            RadioListTile<String>(
+              value: _sortPriceAsc,
+              groupValue: _sortBy,
+              title: const Text('Price: Low to High'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _sortBy = value);
+              },
+            ),
+            RadioListTile<String>(
+              value: _sortPriceDesc,
+              groupValue: _sortBy,
+              title: const Text('Price: High to Low'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _sortBy = value);
+              },
+            ),
+            if (_searchLocation.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Distance', style: Theme.of(context).textTheme.titleMedium),
+              RadioListTile<int?>(
+                value: null,
+                groupValue: _distanceKmFilter,
+                title: Text(_distanceLabel(null)),
+                onChanged: (value) => setState(() => _distanceKmFilter = value),
+              ),
+              RadioListTile<int?>(
+                value: 5,
+                groupValue: _distanceKmFilter,
+                title: Text(_distanceLabel(5)),
+                onChanged: (value) => setState(() => _distanceKmFilter = value),
+              ),
+              RadioListTile<int?>(
+                value: 10,
+                groupValue: _distanceKmFilter,
+                title: Text(_distanceLabel(10)),
+                onChanged: (value) => setState(() => _distanceKmFilter = value),
+              ),
+              RadioListTile<int?>(
+                value: 25,
+                groupValue: _distanceKmFilter,
+                title: Text(_distanceLabel(25)),
+                onChanged: (value) => setState(() => _distanceKmFilter = value),
+              ),
+              RadioListTile<int?>(
+                value: 50,
+                groupValue: _distanceKmFilter,
+                title: Text(_distanceLabel(50)),
+                onChanged: (value) => setState(() => _distanceKmFilter = value),
+              ),
+              RadioListTile<int?>(
+                value: 100,
+                groupValue: _distanceKmFilter,
+                title: Text(_distanceLabel(100)),
+                onChanged: (value) => setState(() => _distanceKmFilter = value),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              'Listing filters',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            CheckboxListTile(
+              value: _friendsOnly,
+              title: const Text('My friends'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _friendsOnly = value);
+              },
+            ),
+            CheckboxListTile(
+              value: _noDepositOnly,
+              title: const Text('No deposit'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _noDepositOnly = value);
+              },
+            ),
+            CheckboxListTile(
+              value: _deliveryOnly,
+              title: const Text('Delivery available'),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _deliveryOnly = value);
+              },
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _applyProductFilters,
+              icon: const Icon(Icons.check),
+              label: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _lenderVerificationSummary(OrderLenderSummary lender) {
+    final labels = <String>[
+      if (lender.emailConfirmed) 'Email',
+      if (lender.mobileVerified) 'Mobile',
+      if (lender.addressVerified) 'Address',
+    ];
+    if (labels.isEmpty) {
+      return 'No checks shown';
+    }
+    return labels.join(', ');
+  }
+
+  Future<void> _openLenderDetails(OrderLenderSummary lender) async {
+    final catalogRepository = widget.catalogRepository;
+    if (catalogRepository == null) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _LenderDetailScreen(
+          lender: lender,
+          catalogRepository: catalogRepository,
+        ),
+      ),
     );
   }
 
@@ -431,7 +610,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           const SizedBox(height: 8),
                           _metaRow(
                             'Price per day',
-                            '${order.currency} ${order.price.toStringAsFixed(2)}',
+                            '${order.currencySymbol}${order.price.toStringAsFixed(2)}',
                           ),
                           if (_hasDiscountedPricing(order))
                             _metaRow(
@@ -441,7 +620,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           _metaRow(
                             'Deposit',
                             order.deposit > 0
-                                ? '${order.currency} ${order.deposit.toStringAsFixed(2)}'
+                                ? '${order.currencySymbol}${order.deposit.toStringAsFixed(2)}'
                                 : '-',
                           ),
                           _metaRow(
@@ -462,6 +641,98 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             order.description.isEmpty ? '-' : order.description,
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _openLenderDetails(order.lender),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Lender details',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundImage:
+                                      order.lender.avatarUrl.isNotEmpty
+                                      ? NetworkImage(order.lender.avatarUrl)
+                                      : null,
+                                  child: order.lender.avatarUrl.isEmpty
+                                      ? Text(
+                                          order.lender.displayName.isNotEmpty
+                                              ? order.lender.displayName[0]
+                                                    .toUpperCase()
+                                              : '?',
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        order.lender.displayName,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                      if (order.lender.username.isNotEmpty)
+                                        Text(
+                                          '@${order.lender.username}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            _metaRow(
+                              'Rating',
+                              '${order.lender.rating.toStringAsFixed(1)} / 5',
+                            ),
+                            _metaRow(
+                              'Successful transactions',
+                              order.lender.successfulTxns.toString(),
+                            ),
+                            _metaRow(
+                              'Postcode',
+                              order.lender.postcode.isEmpty
+                                  ? '-'
+                                  : order.lender.postcode,
+                            ),
+                            _metaRow(
+                              'Verified',
+                              _lenderVerificationSummary(order.lender),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -592,7 +863,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Blocked dates: $blockedCount',
+                        'Already rented dates: $blockedCount',
                         style: Theme.of(dialogContext).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 4),
@@ -610,7 +881,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       if (blockedCount > 0 || handoverCount > 0) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Unavailable boundary dates are disabled in the calendar.',
+                          'Greyed-out dates are already rented or unavailable and cannot be selected.',
                           style: Theme.of(dialogContext).textTheme.bodySmall,
                         ),
                       ],
@@ -832,85 +1103,27 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _listingControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment<String>(
-              value: _viewList,
-              icon: Icon(Icons.list),
-              label: Text('List'),
-            ),
-            ButtonSegment<String>(
-              value: _viewMap,
-              icon: Icon(Icons.map_outlined),
-              label: Text('Map'),
-            ),
-          ],
-          selected: {_viewMode},
-          onSelectionChanged: (selection) {
-            final selected = selection.firstOrNull;
-            if (selected == null) {
-              return;
-            }
-            setState(() => _viewMode = selected);
-          },
+    return SegmentedButton<String>(
+      segments: const [
+        ButtonSegment<String>(
+          value: _viewList,
+          icon: Icon(Icons.list),
+          label: Text('List'),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            const Text('Sort:'),
-            const SizedBox(width: 10),
-            DropdownButton<String>(
-              value: _sortBy,
-              items: const [
-                DropdownMenuItem(value: _sortNewest, child: Text('Newest')),
-                DropdownMenuItem(
-                  value: _sortPriceAsc,
-                  child: Text('Price: Low to High'),
-                ),
-                DropdownMenuItem(
-                  value: _sortPriceDesc,
-                  child: Text('Price: High to Low'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value == null) {
-                  return;
-                }
-                setState(() {
-                  _sortBy = value;
-                });
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilterChip(
-              label: const Text('Friends only'),
-              selected: _friendsOnly,
-              onSelected: (selected) => setState(() => _friendsOnly = selected),
-            ),
-            FilterChip(
-              label: const Text('No deposit'),
-              selected: _noDepositOnly,
-              onSelected: (selected) =>
-                  setState(() => _noDepositOnly = selected),
-            ),
-            FilterChip(
-              label: const Text('Delivery available'),
-              selected: _deliveryOnly,
-              onSelected: (selected) =>
-                  setState(() => _deliveryOnly = selected),
-            ),
-          ],
+        ButtonSegment<String>(
+          value: _viewMap,
+          icon: Icon(Icons.map_outlined),
+          label: Text('Map'),
         ),
       ],
+      selected: {_viewMode},
+      onSelectionChanged: (selection) {
+        final selected = selection.firstOrNull;
+        if (selected == null) {
+          return;
+        }
+        setState(() => _viewMode = selected);
+      },
     );
   }
 
@@ -1021,7 +1234,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   double? _orderDistanceKm(OrderSummary order, ProductDetail product) {
-    return order.distanceKm ?? product.nearestDistanceKm;
+    return order.distanceKm;
   }
 
   List<OrderSummary> _visibleOrders(ProductDetail product) {
@@ -1063,6 +1276,293 @@ class _EnquiryDependencies {
 
   final TransactionRepository repository;
   final String accessToken;
+}
+
+class _LenderDetailScreen extends StatelessWidget {
+  const _LenderDetailScreen({
+    required this.lender,
+    required this.catalogRepository,
+  });
+
+  final OrderLenderSummary lender;
+  final CatalogRepository catalogRepository;
+
+  String _verificationSummary() {
+    final labels = <String>[
+      if (lender.emailConfirmed) 'Email verified',
+      if (lender.mobileVerified) 'Mobile verified',
+      if (lender.addressVerified) 'Address verified',
+    ];
+    if (labels.isEmpty) {
+      return 'No checks shown';
+    }
+    return labels.join(', ');
+  }
+
+  Widget _metaRow(BuildContext context, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Lender details')),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 32,
+                        backgroundImage: lender.avatarUrl.isNotEmpty
+                            ? NetworkImage(lender.avatarUrl)
+                            : null,
+                        child: lender.avatarUrl.isEmpty
+                            ? Text(
+                                lender.displayName.isNotEmpty
+                                    ? lender.displayName[0].toUpperCase()
+                                    : '?',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              lender.displayName,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            if (lender.username.isNotEmpty)
+                              Text(
+                                '@${lender.username}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _metaRow(
+                    context,
+                    'Rating',
+                    '${lender.rating.toStringAsFixed(1)} / 5',
+                  ),
+                  _metaRow(
+                    context,
+                    'Successful transactions',
+                    lender.successfulTxns.toString(),
+                  ),
+                  _metaRow(
+                    context,
+                    'Postcode',
+                    lender.postcode.isEmpty ? '-' : lender.postcode,
+                  ),
+                  _metaRow(context, 'Verification', _verificationSummary()),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Open this lender\'s current active listings across the app.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _LenderListingsScreen(
+                              lender: lender,
+                              catalogRepository: catalogRepository,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.inventory_2_outlined),
+                      label: const Text('View all listings from this lender'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LenderListingsScreen extends StatelessWidget {
+  const _LenderListingsScreen({
+    required this.lender,
+    required this.catalogRepository,
+  });
+
+  final OrderLenderSummary lender;
+  final CatalogRepository catalogRepository;
+
+  String _collectionPolicyText(String code) {
+    switch (code) {
+      case 'CO':
+        return 'Collection only';
+      case 'EI':
+        return 'Either collection or delivery';
+      case 'WD':
+        return 'Will deliver';
+      default:
+        return code.isEmpty ? '-' : code;
+    }
+  }
+
+  Widget _listingThumb(OrderSummary order) {
+    if (order.listingImageUrl.trim().isEmpty) {
+      return Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0F3F4),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(Icons.image_not_supported_outlined),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.network(
+        order.listingImageUrl,
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F3F4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.broken_image_outlined),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _detailLine(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Lender listings')),
+      body: FutureBuilder<List<OrderSummary>>(
+        future: catalogRepository.fetchLenderListings(lenderId: lender.id),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text(snapshot.error.toString()));
+          }
+
+          final orders = snapshot.data ?? const <OrderSummary>[];
+          return SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  lender.displayName,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Active listings: ${orders.length}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                if (orders.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No active listings found for this lender.'),
+                    ),
+                  ),
+                for (final order in orders) ...[
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _listingThumb(order),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  order.productName,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                                _detailLine(
+                                  context,
+                                  'Price per day: ${order.currencySymbol}${order.price.toStringAsFixed(2)}',
+                                ),
+                                _detailLine(
+                                  context,
+                                  order.deposit > 0
+                                      ? 'Deposit: ${order.currencySymbol}${order.deposit.toStringAsFixed(2)}'
+                                      : 'Deposit: -',
+                                ),
+                                _detailLine(
+                                  context,
+                                  'Collection policy: ${_collectionPolicyText(order.collectionPolicy)}',
+                                ),
+                                _detailLine(
+                                  context,
+                                  'Postcode: ${order.postcode.isEmpty ? '-' : order.postcode}',
+                                ),
+                                if (order.description.isNotEmpty)
+                                  _detailLine(context, order.description),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _LegendItem extends StatelessWidget {

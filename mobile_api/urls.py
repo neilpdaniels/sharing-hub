@@ -3,6 +3,8 @@ from django.urls import path
 from .views import (
     CategoryListView,
     MobileAccountDetailView,
+    MobileDeviceRegisterView,
+    MobileDeviceUnregisterView,
     MobileLoginView,
     MobileMeView,
     MobileRegisterResendView,
@@ -12,6 +14,7 @@ from .views import (
     MobilePaymentMethodListView,
     MobilePaymentMethodSetDefaultView,
     MobileTokenRefreshView,
+    LenderListingsView,
     OrderAmendView,
     OrderCancelView,
     OrderDetailView,
@@ -36,6 +39,8 @@ urlpatterns = [
     path('auth/register/verify/', MobileRegisterVerifyView.as_view(), name='auth_register_verify'),
     path('auth/refresh/', MobileTokenRefreshView.as_view(), name='auth_refresh'),
     path('auth/me/', MobileMeView.as_view(), name='auth_me'),
+    path('devices/register/', MobileDeviceRegisterView.as_view(), name='devices_register'),
+    path('devices/unregister/', MobileDeviceUnregisterView.as_view(), name='devices_unregister'),
     path('account/me/', MobileAccountDetailView.as_view(), name='account_me'),
     path('payment-methods/', MobilePaymentMethodListView.as_view(), name='payment_methods_list'),
     path(
@@ -55,6 +60,7 @@ urlpatterns = [
     path('categories/', CategoryListView.as_view(), name='categories_list'),
     path('categories/<slug:category_slug>/products/', CategoryProductsView.as_view(), name='categories_products'),
     path('products/<slug:product_slug>/', ProductDetailView.as_view(), name='products_detail'),
+    path('lenders/<int:lender_id>/listings/', LenderListingsView.as_view(), name='lender_listings'),
     path('search/products/', SearchProductsView.as_view(), name='search_products'),
     path('transactions/', TransactionListView.as_view(), name='transactions_list'),
     path('messages/inbox/', MobileInboxView.as_view(), name='messages_inbox'),

@@ -116,7 +116,7 @@ class MyOrdersScreen extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text('Listing status: ${order.status}'),
                       Text(
-                        '${order.currency} ${order.price.toStringAsFixed(2)}',
+                        '${order.currencySymbol}${order.price.toStringAsFixed(2)}',
                       ),
                     ],
                   ),

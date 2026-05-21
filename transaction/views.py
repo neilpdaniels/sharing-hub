@@ -60,6 +60,62 @@ def _generate_txn_pin(length=6):
     return ''.join(digits[random.randrange(0, 10)] for _ in range(length))
 
 
+def _iter_rental_dates(start_date, end_date):
+    if not start_date or not end_date:
+        return
+    cursor = start_date
+    while cursor <= end_date:
+        yield cursor
+        cursor += timedelta(days=1)
+
+
+def _holding_statuses():
+    return (
+        Transaction.RENTAL_ENQUIRY,
+        Transaction.RENTAL_AGREED,
+        Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
+        Transaction.RENTAL_ONGOING,
+        Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+        Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+        Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        Transaction.AWAITING_FEEDBACK,
+    )
+
+
+def _reserve_transaction_dates(txn):
+    if not txn.order_passive_id:
+        return
+    for date_value in _iter_rental_dates(txn.rental_start_date, txn.rental_end_date):
+        OrderBlockedDate.objects.get_or_create(
+            order_id=txn.order_passive_id,
+            date=date_value,
+            defaults={'reason': OrderBlockedDate.BOOKED},
+        )
+
+
+def _release_transaction_dates(txn):
+    if not txn.order_passive_id:
+        return
+
+    active_holds = Transaction.objects.filter(
+        order_passive_id=txn.order_passive_id,
+        transaction_status__in=_holding_statuses(),
+    ).exclude(id=txn.id)
+
+    for date_value in _iter_rental_dates(txn.rental_start_date, txn.rental_end_date):
+        held_elsewhere = active_holds.filter(
+            rental_start_date__lte=date_value,
+            rental_end_date__gte=date_value,
+        ).exists()
+        if not held_elsewhere:
+            OrderBlockedDate.objects.filter(
+                order_id=txn.order_passive_id,
+                date=date_value,
+                reason=OrderBlockedDate.BOOKED,
+            ).delete()
+
+
 def _require_mobile_verification(request):
     if not getattr(settings, 'MOBILE_VERIFICATION_ENABLED', True):
         return None
@@ -566,6 +622,26 @@ def hit_order(request, order_id=None):
                     txn.requires_kyc_message = kyc_message
             
             txn.save()
+            _reserve_transaction_dates(txn)
+
+            enquiry_message = (order_hit_form.cleaned_data.get('enquiry_message', '') or '').strip()
+            if enquiry_message:
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=order.user,
+                    transaction=txn,
+                    subject=f'Transaction {txn.transaction_reference}',
+                    description=enquiry_message,
+                )
+            else:
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=order.user,
+                    transaction=txn,
+                    subject=f'New enquiry {txn.transaction_reference}',
+                    description='You have a new enquiry on your listing.',
+                    is_system_generated=True,
+                )
 
             for ord_image in order.images.filter(active=True):
                 txn_image = TransactionImage()
@@ -676,17 +752,7 @@ def view_transaction(request, transaction_reference=None):
             txn.transaction_status = txn.RENTAL_AGREED
             txn.lender_agreement_pending_at = timezone.now()
             txn.save()
-
-            # Block this booked range on the underlying listing as soon as rental is agreed.
-            if txn.order_passive and txn.rental_start_date and txn.rental_end_date:
-                current_date = txn.rental_start_date
-                while current_date <= txn.rental_end_date:
-                    OrderBlockedDate.objects.get_or_create(
-                        order=txn.order_passive,
-                        date=current_date,
-                        defaults={'reason': OrderBlockedDate.BOOKED},
-                    )
-                    current_date += timedelta(days=1)
+            _reserve_transaction_dates(txn)
 
             messages.success(request, 'Rental agreement generated. Please confirm the contract terms.')
 
@@ -695,6 +761,15 @@ def view_transaction(request, transaction_reference=None):
             txn.transaction_status = txn.CANCEL_ACCEPTED
             txn.transaction_status_raised_by = request.user
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+            _release_transaction_dates(txn)
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_aggressive,
+                transaction=txn,
+                subject=f'Enquiry declined {txn.transaction_reference}',
+                description='Your rental enquiry was declined.',
+                is_system_generated=True,
+            )
             messages.info(request, 'Rental enquiry rejected.')
 
         elif action == 'request_cancellation' and txn.transaction_status == txn.RENTAL_ENQUIRY:
@@ -706,6 +781,7 @@ def view_transaction(request, transaction_reference=None):
                 txn.transaction_status = txn.CANCEL_ACCEPTED
                 txn.transaction_status_raised_by = request.user
                 txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+                _release_transaction_dates(txn)
                 
                 # Notify the other party
                 other_user = txn.user_aggressive if request.user == txn.user_passive else txn.user_passive
@@ -783,6 +859,14 @@ Transaction Ref: {txn.transaction_reference}"""
             else:
                 txn.renter_agreed_at = timezone.now()
                 txn.save()
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=txn.user_passive,
+                    transaction=txn,
+                    subject=f'Rental confirmed {txn.transaction_reference}',
+                    description='The borrower confirmed the rental agreement.',
+                    is_system_generated=True,
+                )
                 messages.success(request, 'Rental confirmed! Proceeding to next stage.')
 
         elif action == 'reject_rental_agreement' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and not txn.renter_agreed_at:
@@ -790,6 +874,7 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.transaction_status = txn.CANCEL_ACCEPTED
             txn.transaction_status_raised_by = request.user
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+            _release_transaction_dates(txn)
 
             TransactionMessage.objects.create(
                 user_from=request.user,

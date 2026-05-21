@@ -24,9 +24,9 @@ export DJANGO_SETTINGS_MODULE="$SETTINGS_MODULE"
 
 DEFAULT_FCM_SERVICE_ACCOUNT_FILE="$HOME/.secrets/mobberley-labs-sharing-hub-firebase-adminsdk-fbsvc-e668797b17.json"
 if [[ -f "$DEFAULT_FCM_SERVICE_ACCOUNT_FILE" ]]; then
-	if [[ -z "${FCM_SERVICE_ACCOUNT_FILE:-}" || ! -f "$FCM_SERVICE_ACCOUNT_FILE" ]]; then
-		export FCM_SERVICE_ACCOUNT_FILE="$DEFAULT_FCM_SERVICE_ACCOUNT_FILE"
-	fi
+    if [[ -z "${FCM_SERVICE_ACCOUNT_FILE:-}" || ! -f "$FCM_SERVICE_ACCOUNT_FILE" ]]; then
+        export FCM_SERVICE_ACCOUNT_FILE="$DEFAULT_FCM_SERVICE_ACCOUNT_FILE"
+    fi
 fi
 
 ALWAYS_EAGER="$(uv run python - <<'PY'
@@ -35,22 +35,18 @@ print(int(bool(getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False))))
 PY
 )"
 
-nohup uv run python manage.py runserver 0.0.0.0:8000 --settings="$SETTINGS_MODULE" > "$RUNSERVER_LOG" 2>&1 &
-echo "Started Django runserver (log: $RUNSERVER_LOG)"
-
 if [[ "$ALWAYS_EAGER" == "1" ]]; then
-	echo "CELERY_TASK_ALWAYS_EAGER=True -> skipping Celery worker, beat, and Flower"
-	exit 0
+    echo "CELERY_TASK_ALWAYS_EAGER=True -> skipping Celery worker, beat, and Flower"
+else
+    nohup uv run celery -A "$DJANGO_APP" worker -l info -f "$CELERY_WORKER_LOG" > /dev/null 2>&1 &
+    echo "Started Celery worker (log: $CELERY_WORKER_LOG)"
+
+    nohup uv run celery -A "$DJANGO_APP" beat -l info -f "$CELERY_BEAT_LOG" > /dev/null 2>&1 &
+    echo "Started Celery beat (log: $CELERY_BEAT_LOG)"
+
+    nohup uv run celery -A "$DJANGO_APP" flower > "$FLOWER_LOG" 2>&1 &
+    echo "Started Flower (log: $FLOWER_LOG)"
 fi
 
-nohup uv run celery -A "$DJANGO_APP" worker -l info -f "$CELERY_WORKER_LOG" > /dev/null 2>&1 &
-echo "Started Celery worker (log: $CELERY_WORKER_LOG)"
-
-nohup uv run celery -A "$DJANGO_APP" beat -l info -f "$CELERY_BEAT_LOG" > /dev/null 2>&1 &
-echo "Started Celery beat (log: $CELERY_BEAT_LOG)"
-
-nohup uv run celery -A "$DJANGO_APP" flower > "$FLOWER_LOG" 2>&1 &
-echo "Started Flower (log: $FLOWER_LOG)"
-
-
-
+echo "Starting Django runserver (live output + log: $RUNSERVER_LOG)"
+PYTHONUNBUFFERED=1 uv run python manage.py runserver 0.0.0.0:8000 --settings="$SETTINGS_MODULE" 2>&1 | tee -a "$RUNSERVER_LOG"

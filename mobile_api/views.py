@@ -20,6 +20,7 @@ from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
 from common.geocoding import PostcodeGeocoder
 from common.models import Category, Order, OrderBlockedDate, Product
+from mobile_api.models import MobileDevice
 from transaction.forms import RentalEnquiryForm
 from transaction.models import Transaction, TransactionFeedback, TransactionMessage, TransactionMessageImage
 from transaction.tasks import async_collect_deposit_hold, async_setup_deposit_card_and_test_hold
@@ -27,6 +28,8 @@ from transaction.tasks import async_collect_deposit_hold, async_setup_deposit_ca
 from .serializers import (
     CategorySummarySerializer,
     MobileTokenObtainSerializer,
+    MobileDeviceRegisterSerializer,
+    MobileDeviceUnregisterSerializer,
     OrderAmendSerializer,
     OrderSummarySerializer,
     PaymentMethodSerializer,
@@ -76,6 +79,113 @@ def _category_descendant_ids(category):
         )
 
     return descendant_ids
+
+
+def _parse_distance_km(distance_raw):
+    if not distance_raw or distance_raw.lower() == 'any':
+        return None
+    try:
+        return int(distance_raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_origin_coordinates(location):
+    if not location:
+        return None, None
+    coords = PostcodeGeocoder.geocode_location(location)
+    if not coords:
+        return None, None
+    return coords.get('latitude'), coords.get('longitude')
+
+
+def _filter_orders_by_distance(orders, origin_lat, origin_lon, max_distance_km=None):
+    filtered_orders = []
+    nearest_distance = None
+
+    for order in orders:
+        distance_km = None
+        if (
+            origin_lat is not None and
+            origin_lon is not None and
+            order.latitude is not None and
+            order.longitude is not None
+        ):
+            distance_km = PostcodeGeocoder.calculate_distance(
+                float(origin_lat),
+                float(origin_lon),
+                float(order.latitude),
+                float(order.longitude),
+            )
+
+        if max_distance_km is not None and (distance_km is None or distance_km > max_distance_km):
+            continue
+
+        order.distance_km = distance_km
+        filtered_orders.append(order)
+
+        if distance_km is not None and (
+            nearest_distance is None or distance_km < nearest_distance
+        ):
+            nearest_distance = distance_km
+
+    return filtered_orders, nearest_distance
+
+
+def _iter_rental_dates(start_date, end_date):
+    if not start_date or not end_date:
+        return
+    cursor = start_date
+    while cursor <= end_date:
+        yield cursor
+        cursor += timedelta(days=1)
+
+
+def _holding_statuses():
+    return (
+        Transaction.RENTAL_ENQUIRY,
+        Transaction.RENTAL_AGREED,
+        Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
+        Transaction.RENTAL_ONGOING,
+        Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+        Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+        Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        Transaction.AWAITING_FEEDBACK,
+    )
+
+
+def _reserve_transaction_dates(txn):
+    if not txn.order_passive_id:
+        return
+    for date_value in _iter_rental_dates(txn.rental_start_date, txn.rental_end_date):
+        OrderBlockedDate.objects.get_or_create(
+            order_id=txn.order_passive_id,
+            date=date_value,
+            defaults={'reason': OrderBlockedDate.BOOKED},
+        )
+
+
+def _release_transaction_dates(txn):
+    if not txn.order_passive_id:
+        return
+
+    active_holds = Transaction.objects.filter(
+        order_passive_id=txn.order_passive_id,
+        transaction_status__in=_holding_statuses(),
+    ).exclude(id=txn.id)
+
+    for date_value in _iter_rental_dates(txn.rental_start_date, txn.rental_end_date):
+        held_elsewhere = active_holds.filter(
+            rental_start_date__lte=date_value,
+            rental_end_date__gte=date_value,
+        ).exists()
+        if not held_elsewhere:
+            OrderBlockedDate.objects.filter(
+                order_id=txn.order_passive_id,
+                date=date_value,
+                reason=OrderBlockedDate.BOOKED,
+            ).delete()
 
 
 def _first_form_error(form):
@@ -297,6 +407,55 @@ class MobileMeView(APIView):
             payload['profile'] = ProfileSummarySerializer(profile).data
 
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class MobileDeviceRegisterView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = MobileDeviceRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        token = data['token'].strip()
+        if not token:
+            raise ValidationError('Token is required.')
+
+        defaults = {
+            'user': request.user,
+            'platform': data.get('platform') or MobileDevice.PLATFORM_OTHER,
+            'device_id': data.get('device_id', ''),
+            'app_version': data.get('app_version', ''),
+            'active': True,
+        }
+        device, created = MobileDevice.objects.update_or_create(
+            token=token,
+            defaults=defaults,
+        )
+
+        return Response(
+            {
+                'status': 'ok',
+                'created': created,
+                'device_id': device.id,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class MobileDeviceUnregisterView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = MobileDeviceUnregisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = (serializer.validated_data.get('token') or '').strip()
+
+        queryset = MobileDevice.objects.filter(user=request.user, active=True)
+        if token:
+            queryset = queryset.filter(token=token)
+        updated = queryset.update(active=False)
+        return Response({'status': 'ok', 'updated': updated}, status=status.HTTP_200_OK)
 
 
 class MobileAccountDetailView(APIView):
@@ -576,7 +735,49 @@ class ProductDetailView(generics.RetrieveAPIView):
             'tags',
             'order_set__images',
             'order_set__blocked_dates',
+            'order_set__price_bands',
         ).all()
+
+    def get_object(self):
+        product = super().get_object()
+        location = (self.request.GET.get('location') or '').strip()
+        max_distance_km = _parse_distance_km(
+            (self.request.GET.get('distance') or '').strip().lower()
+        )
+        origin_lat, origin_lon = _resolve_origin_coordinates(location)
+
+        active_orders = list(
+            product.order_set.filter(status=Order.ACTIVE)
+            .select_related('user', 'product', 'product__category_id')
+            .prefetch_related('images', 'blocked_dates', 'price_bands')
+            .order_by('-amended')[:20]
+        )
+
+        filtered_orders, nearest_distance = _filter_orders_by_distance(
+            active_orders,
+            origin_lat,
+            origin_lon,
+            max_distance_km=max_distance_km,
+        )
+
+        product.filtered_active_orders = filtered_orders
+        product.active_order_count = len(filtered_orders)
+        product.nearest_distance_km = nearest_distance
+        return product
+
+
+class LenderListingsView(generics.ListAPIView):
+    permission_classes = (AllowAny,)
+    serializer_class = OrderSummarySerializer
+
+    def get_queryset(self):
+        generics.get_object_or_404(User, id=self.kwargs['lender_id'])
+        return (
+            Order.objects.filter(user_id=self.kwargs['lender_id'], status=Order.ACTIVE)
+            .select_related('user', 'product', 'product__category_id')
+            .prefetch_related('price_bands', 'images', 'blocked_dates')
+            .order_by('-amended')
+        )
 
 
 class SearchProductsView(generics.ListAPIView):
@@ -745,9 +946,12 @@ class TransactionListView(generics.ListAPIView):
             if start_date and end_date and (
                 existing.rental_start_date != start_date or existing.rental_end_date != end_date
             ):
+                _release_transaction_dates(existing)
                 existing.rental_start_date = start_date
                 existing.rental_end_date = end_date
                 existing.save(update_fields=['rental_start_date', 'rental_end_date', 'amended'])
+                if existing.transaction_status in _holding_statuses():
+                    _reserve_transaction_dates(existing)
 
             if enquiry_message:
                 existing.enquiry_message = enquiry_message
@@ -793,6 +997,8 @@ class TransactionListView(generics.ListAPIView):
                 enquiry_message=enquiry_message,
             )
 
+            _reserve_transaction_dates(transaction)
+
             # Add initial enquiry message if provided
             if enquiry_message:
                 TransactionMessage.objects.create(
@@ -801,6 +1007,15 @@ class TransactionListView(generics.ListAPIView):
                     transaction=transaction,
                     subject=f'Transaction {transaction.transaction_reference}',
                     description=enquiry_message,
+                )
+            else:
+                TransactionMessage.objects.create(
+                    user_from=user,
+                    user_to=order.user,
+                    transaction=transaction,
+                    subject=f'New enquiry {transaction.transaction_reference}',
+                    description='You have a new enquiry on your listing.',
+                    is_system_generated=True,
                 )
 
             # Return the created transaction
@@ -966,11 +1181,20 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         data = serializer.validated_data
         action = data['action']
 
+        def notify_counterparty(subject, description):
+            recipient = txn.user_aggressive if request.user == txn.user_passive else txn.user_passive
+            self._system_message(txn, request.user, recipient, subject, description)
+
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_AGREED
             txn.lender_agreement_pending_at = timezone.now()
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'lender_agreement_pending_at', 'amended'])
+            _reserve_transaction_dates(txn)
+            notify_counterparty(
+                f'Rental agreement created {txn.transaction_reference}',
+                'Your enquiry was accepted. Review the rental agreement and confirm to proceed.',
+            )
             return Response({'status': 'ok', 'message': 'Rental agreement created.'})
 
         if action == 'reject_enquiry' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
@@ -978,6 +1202,11 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.transaction_status = txn.CANCEL_ACCEPTED
             txn.transaction_status_raised_by = request.user
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+            _release_transaction_dates(txn)
+            notify_counterparty(
+                f'Enquiry declined {txn.transaction_reference}',
+                'Your rental enquiry was declined.',
+            )
             return Response({'status': 'ok', 'message': 'Enquiry rejected.'})
 
         if action == 'request_cancellation' and txn.transaction_status == txn.RENTAL_ENQUIRY:
@@ -988,6 +1217,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.transaction_status = txn.CANCEL_ACCEPTED
             txn.transaction_status_raised_by = request.user
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+            _release_transaction_dates(txn)
             other_user = txn.user_aggressive if is_lender else txn.user_passive
             TransactionMessage.objects.create(
                 user_from=request.user,
@@ -1030,6 +1260,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         if action == 'confirm_renter_contract' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
             txn.renter_agreed_at = timezone.now()
             txn.save(update_fields=['renter_agreed_at', 'amended'])
+            notify_counterparty(
+                f'Rental confirmed {txn.transaction_reference}',
+                'The borrower confirmed the rental agreement.',
+            )
             return Response({'status': 'ok', 'message': 'Contract confirmed by renter.'})
 
         if action == 'reject_rental_agreement' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and not txn.renter_agreed_at:
@@ -1037,6 +1271,11 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.transaction_status = txn.CANCEL_ACCEPTED
             txn.transaction_status_raised_by = request.user
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+            _release_transaction_dates(txn)
+            notify_counterparty(
+                f'Rental agreement rejected {txn.transaction_reference}',
+                'The borrower rejected the rental agreement.',
+            )
             return Response({'status': 'ok', 'message': 'Rental agreement rejected.'})
 
         if action == 'use_existing_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
@@ -1173,6 +1412,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.transaction_status = txn.RENTAL_ONGOING
             txn.checkout_handover_verified_at = timezone.now()
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'checkout_handover_verified_at', 'amended'])
+            notify_counterparty(
+                f'Rental handover verified {txn.transaction_reference}',
+                'Handover was verified and the rental is now ongoing.',
+            )
             return Response({'status': 'ok', 'message': 'Checkout handover verified. Rental is now ongoing.'})
 
         if action == 'submit_return_borrower_evidence' and is_renter and txn.transaction_status in (
@@ -1194,6 +1437,11 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.return_handover_verified_at = None
             txn.product_status = txn.RETURN_VIDEO_ADDED
             txn.save()
+            if txn.prev_transaction_status != txn.transaction_status:
+                notify_counterparty(
+                    f'Return started {txn.transaction_reference}',
+                    'The borrower started the return process and submitted return evidence.',
+                )
             return Response({'status': 'ok', 'message': 'Return evidence submitted by borrower.'})
 
         if action == 'confirm_return_evidence' and is_lender and txn.transaction_status == txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
@@ -1232,6 +1480,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
             txn.return_handover_verified_at = timezone.now()
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'return_handover_verified_at', 'amended'])
+            notify_counterparty(
+                f'Return verified {txn.transaction_reference}',
+                'Return handover was verified. Deposit resolution can now begin.',
+            )
             return Response({'status': 'ok', 'message': 'Return handover verified.'})
 
         if action == 'propose_deposit_return' and is_lender and txn.transaction_status in (
@@ -1252,6 +1504,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.deposit_proposal_accepted_at = None
             txn.deposit_resolution_notes = notes
             txn.save()
+            notify_counterparty(
+                f'Deposit proposal updated {txn.transaction_reference}',
+                f'The lender proposed returning {proposed_amount:.2f} from the deposit.',
+            )
             return Response({'status': 'ok', 'message': f'Deposit proposal saved: {proposed_amount:.2f}.'})
 
         if action == 'agree_deposit_return' and is_renter and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
@@ -1262,6 +1518,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.deposit_status = txn.DEPOSIT_RETURNED_FULL if abs(txn.deposit_proposed_return_amount - txn.deposit) < 0.01 else txn.DEPOSIT_RETURNED_REDUCED
             txn.deposit_proposal_accepted_at = timezone.now()
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'deposit_status', 'deposit_proposal_accepted_at', 'amended'])
+            notify_counterparty(
+                f'Deposit proposal accepted {txn.transaction_reference}',
+                'The renter accepted the deposit return proposal.',
+            )
             return Response({'status': 'ok', 'message': 'Deposit proposal accepted.'})
 
         if action == 'contest_deposit_return' and is_renter and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
@@ -1274,6 +1534,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.deposit_proposal_contested_at = timezone.now()
             txn.deposit_resolution_notes = notes
             txn.save()
+            notify_counterparty(
+                f'Deposit proposal contested {txn.transaction_reference}',
+                'The renter contested the deposit return proposal.',
+            )
             return Response({'status': 'ok', 'message': 'Deposit proposal contested.'})
 
         if action == 'raise_deposit_dispute_admin' and (is_lender or is_renter) and txn.transaction_status in (
@@ -1289,6 +1553,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.deposit_status = txn.DEPOSIT_MEDIATION
             txn.deposit_resolution_notes = notes
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'deposit_status', 'deposit_resolution_notes', 'amended'])
+            notify_counterparty(
+                f'Deposit dispute raised {txn.transaction_reference}',
+                'The transaction has been escalated for deposit dispute review.',
+            )
             return Response({'status': 'ok', 'message': 'Deposit dispute raised to admin.'})
 
         if action == 'secure_dispute_funds' and is_lender and txn.transaction_status in (
@@ -1349,6 +1617,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.AWAITING_FEEDBACK
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'amended'])
+            notify_counterparty(
+                f'Feedback received {txn.transaction_reference}',
+                'The other party left feedback on this transaction.',
+            )
             return Response({'status': 'ok', 'message': 'Feedback submitted.'})
 
         raise ValidationError('Action is not available for the current transaction state or role.')

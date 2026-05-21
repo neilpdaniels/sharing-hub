@@ -46,6 +46,9 @@ class _InboxScreenState extends State<InboxScreen>
     final receivedMessages = widget.messages
         .where((message) => message.direction == 'received')
         .toList(growable: false);
+    final unreadReceivedCount = receivedMessages
+        .where((message) => message.unread)
+        .length;
     final sentMessages = widget.messages
         .where((message) => message.direction != 'received')
         .toList(growable: false);
@@ -55,9 +58,39 @@ class _InboxScreenState extends State<InboxScreen>
         title: const Text('Messages'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Received'),
-            Tab(text: 'Sent'),
+          tabs: [
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Received'),
+                  if (unreadReceivedCount > 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade700,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        unreadReceivedCount > 99
+                            ? '99+'
+                            : '$unreadReceivedCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Tab(text: 'Sent'),
           ],
         ),
       ),

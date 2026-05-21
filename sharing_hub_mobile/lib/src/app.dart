@@ -11,6 +11,7 @@ import 'services/auth_repository.dart';
 import 'services/biometric_auth_service.dart';
 import 'services/catalog_repository.dart';
 import 'services/order_repository.dart';
+import 'services/push_notification_service.dart';
 import 'services/theme_service.dart';
 import 'services/transaction_repository.dart';
 import 'storage/token_store.dart';
@@ -19,9 +20,13 @@ import 'theme.dart';
 void runSharingHubMobile() {
   final apiClient = ApiClient(baseUrl: AppConfig.baseUrl);
   final tokenStore = TokenStore();
-  final authRepository = AuthRepository(apiClient: apiClient, tokenStore: tokenStore);
+  final authRepository = AuthRepository(
+    apiClient: apiClient,
+    tokenStore: tokenStore,
+  );
   final accountRepository = AccountRepository(apiClient: apiClient);
   final transactionRepository = TransactionRepository(apiClient: apiClient);
+  final pushNotificationService = PushNotificationService(apiClient: apiClient);
   final orderRepository = OrderRepository(apiClient: apiClient);
   final catalogRepository = CatalogRepository(apiClient: apiClient);
 
@@ -32,6 +37,7 @@ void runSharingHubMobile() {
       tokenStore: tokenStore,
       accountRepository: accountRepository,
       transactionRepository: transactionRepository,
+      pushNotificationService: pushNotificationService,
       orderRepository: orderRepository,
       catalogRepository: catalogRepository,
     ),
@@ -46,6 +52,7 @@ class SharingHubMobileApp extends StatefulWidget {
     required this.tokenStore,
     required this.accountRepository,
     required this.transactionRepository,
+    required this.pushNotificationService,
     required this.orderRepository,
     required this.catalogRepository,
   });
@@ -55,6 +62,7 @@ class SharingHubMobileApp extends StatefulWidget {
   final TokenStore tokenStore;
   final AccountRepository accountRepository;
   final TransactionRepository transactionRepository;
+  final PushNotificationService pushNotificationService;
   final OrderRepository orderRepository;
   final CatalogRepository catalogRepository;
 
@@ -83,8 +91,10 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
   Future<void> _restoreSession() async {
     final hasSavedSession = await widget.tokenStore.hasSavedSession();
-    final deviceBiometricsAvailable = await widget.biometricAuthService.isAvailable();
-    final biometricUnlockEnabled = await widget.tokenStore.isBiometricUnlockEnabled();
+    final deviceBiometricsAvailable = await widget.biometricAuthService
+        .isAvailable();
+    final biometricUnlockEnabled = await widget.tokenStore
+        .isBiometricUnlockEnabled();
     final isDarkMode = await _themeService.isDarkMode();
     if (!mounted) {
       return;
@@ -111,6 +121,9 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
     });
 
     if (session != null) {
+      await widget.pushNotificationService.syncForSession(
+        accessToken: session.accessToken,
+      );
       await _loadTransactions();
     }
   }
@@ -121,7 +134,10 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
     });
 
     try {
-      final session = await widget.authRepository.login(login: login, password: password);
+      final session = await widget.authRepository.login(
+        login: login,
+        password: password,
+      );
       if (!mounted) {
         return;
       }
@@ -131,8 +147,12 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
         _hasSavedSession = true;
       });
 
-      _deviceBiometricsAvailable = await widget.biometricAuthService.isAvailable();
+      _deviceBiometricsAvailable = await widget.biometricAuthService
+          .isAvailable();
 
+      await widget.pushNotificationService.syncForSession(
+        accessToken: session.accessToken,
+      );
       await _loadTransactions();
     } finally {
       if (mounted) {
@@ -153,7 +173,11 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       _hasSavedSession = true;
     });
 
-    _deviceBiometricsAvailable = await widget.biometricAuthService.isAvailable();
+    _deviceBiometricsAvailable = await widget.biometricAuthService
+        .isAvailable();
+    await widget.pushNotificationService.syncForSession(
+      accessToken: session.accessToken,
+    );
     await _loadTransactions();
   }
 
@@ -188,6 +212,12 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   }
 
   Future<void> _logout() async {
+    final existingSession = _session;
+    if (existingSession != null) {
+      await widget.pushNotificationService.unregisterForSession(
+        accessToken: existingSession.accessToken,
+      );
+    }
     await widget.authRepository.logout();
     if (!mounted) {
       return;
@@ -223,7 +253,10 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   }
 
   Future<void> _biometricLogin() async {
-    if (_authBusy || !_hasSavedSession || !_deviceBiometricsAvailable || !_biometricUnlockEnabled) {
+    if (_authBusy ||
+        !_hasSavedSession ||
+        !_deviceBiometricsAvailable ||
+        !_biometricUnlockEnabled) {
       return;
     }
 
@@ -285,9 +318,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
   Widget _buildHome() {
     if (_initializing) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return HomeScreen(
@@ -298,8 +329,16 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       onLogout: _session != null ? _logout : null,
       onOpenTransaction: _session != null ? _openTransaction : null,
       onLogin: _login,
-      onBiometricLogin: _hasSavedSession && _deviceBiometricsAvailable && _biometricUnlockEnabled ? _biometricLogin : null,
-      showBiometricLogin: _hasSavedSession && _deviceBiometricsAvailable && _biometricUnlockEnabled,
+      onBiometricLogin:
+          _hasSavedSession &&
+              _deviceBiometricsAvailable &&
+              _biometricUnlockEnabled
+          ? _biometricLogin
+          : null,
+      showBiometricLogin:
+          _hasSavedSession &&
+          _deviceBiometricsAvailable &&
+          _biometricUnlockEnabled,
       biometricAvailable: _deviceBiometricsAvailable,
       biometricEnabled: _biometricUnlockEnabled,
       onBiometricToggle: _setBiometricUnlockEnabled,

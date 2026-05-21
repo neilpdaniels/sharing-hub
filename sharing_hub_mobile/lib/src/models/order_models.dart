@@ -6,6 +6,7 @@ class OrderSummary {
     required this.productName,
     required this.productSlug,
     required this.categorySlug,
+    required this.lender,
     required this.listingImageUrl,
     required this.listingImageUrls,
     required this.direction,
@@ -35,6 +36,7 @@ class OrderSummary {
   final String productName;
   final String productSlug;
   final String categorySlug;
+  final OrderLenderSummary lender;
   final String listingImageUrl;
   final List<String> listingImageUrls;
   final String direction;
@@ -57,6 +59,13 @@ class OrderSummary {
   final List<DateTime> blockedDates;
   final List<DateTime> handoverUnavailableDates;
 
+  String get currencySymbol {
+    if (currency.toUpperCase() == 'GBP') {
+      return '£';
+    }
+    return currency;
+  }
+
   factory OrderSummary.fromJson(Map<String, dynamic> json) {
     return OrderSummary(
       id: json['id'] as int? ?? 0,
@@ -65,6 +74,9 @@ class OrderSummary {
       productName: json['product_name'] as String? ?? '',
       productSlug: json['product_slug'] as String? ?? '',
       categorySlug: json['category_slug'] as String? ?? '',
+      lender: OrderLenderSummary.fromJson(
+        json['lender'] as Map<String, dynamic>? ?? const {},
+      ),
       listingImageUrl: json['listing_image_url'] as String? ?? '',
       listingImageUrls:
           (json['listing_image_urls'] as List<dynamic>? ?? const [])
@@ -124,6 +136,47 @@ class OrderSummary {
       return value.toDouble();
     }
     return double.tryParse(value.toString());
+  }
+}
+
+class OrderLenderSummary {
+  OrderLenderSummary({
+    required this.id,
+    required this.displayName,
+    required this.username,
+    required this.avatarUrl,
+    required this.rating,
+    required this.successfulTxns,
+    required this.postcode,
+    required this.emailConfirmed,
+    required this.mobileVerified,
+    required this.addressVerified,
+  });
+
+  final int id;
+  final String displayName;
+  final String username;
+  final String avatarUrl;
+  final double rating;
+  final int successfulTxns;
+  final String postcode;
+  final bool emailConfirmed;
+  final bool mobileVerified;
+  final bool addressVerified;
+
+  factory OrderLenderSummary.fromJson(Map<String, dynamic> json) {
+    return OrderLenderSummary(
+      id: json['id'] as int? ?? 0,
+      displayName: json['display_name'] as String? ?? '',
+      username: json['username'] as String? ?? '',
+      avatarUrl: json['avatar_url'] as String? ?? '',
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      successfulTxns: json['successful_txns'] as int? ?? 0,
+      postcode: json['postcode'] as String? ?? '',
+      emailConfirmed: json['email_confirmed'] as bool? ?? false,
+      mobileVerified: json['mobile_verified'] as bool? ?? false,
+      addressVerified: json['address_verified'] as bool? ?? false,
+    );
   }
 }
 

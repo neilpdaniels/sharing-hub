@@ -4,9 +4,7 @@ final ThemeData sharingHubLightTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.light,
   primaryColor: const Color(0xFF0E9F9A),
-  colorScheme: ColorScheme.fromSwatch(
-    brightness: Brightness.light,
-  ).copyWith(
+  colorScheme: ColorScheme.fromSwatch(brightness: Brightness.light).copyWith(
     primary: const Color(0xFF0E9F9A),
     secondary: const Color(0xFFE07A2F),
     surface: const Color(0xFFF8F4EE),
@@ -46,9 +44,7 @@ final ThemeData sharingHubLightTheme = ThemeData(
     style: ElevatedButton.styleFrom(
       backgroundColor: const Color(0xFF0E9F9A),
       foregroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       textStyle: const TextStyle(
         fontWeight: FontWeight.bold,
         fontSize: 18,
@@ -141,9 +137,7 @@ final ThemeData sharingHubDarkTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.dark,
   primaryColor: const Color(0xFF0E9F9A),
-  colorScheme: ColorScheme.fromSwatch(
-    brightness: Brightness.dark,
-  ).copyWith(
+  colorScheme: ColorScheme.fromSwatch(brightness: Brightness.dark).copyWith(
     primary: const Color(0xFF0E9F9A),
     secondary: const Color(0xFFE07A2F),
     surface: const Color(0xFF1A2332),
@@ -183,9 +177,7 @@ final ThemeData sharingHubDarkTheme = ThemeData(
     style: ElevatedButton.styleFrom(
       backgroundColor: const Color(0xFF0E9F9A),
       foregroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       textStyle: const TextStyle(
         fontWeight: FontWeight.bold,
         fontSize: 18,

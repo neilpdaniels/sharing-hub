@@ -1,9 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from common.models import Order, Product
-from .tasks import updateSummaryPrices
-import logging
-from datetime import datetime
+from .models import TransactionMessage
+from .tasks import send_new_message_push_notification
 
 
 # move into order.save
@@ -12,3 +10,12 @@ from datetime import datetime
 #     # order = instance
 #     logging.error("received order save")
 #     updateSummaryPrices(instance)
+
+
+@receiver(post_save, sender=TransactionMessage)
+def trigger_message_push_notification(sender, instance, created, **kwargs):
+    if not created:
+        return
+    if instance.user_from_id == instance.user_to_id:
+        return
+    send_new_message_push_notification.delay(instance.id)

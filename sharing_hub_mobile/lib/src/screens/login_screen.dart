@@ -32,6 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _loginController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _passwordVisible = false;
   String? _error;
 
   @override
@@ -129,8 +130,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Password'),
+                  obscureText: !_passwordVisible,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    suffixIcon: IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _passwordVisible = !_passwordVisible;
+                        });
+                      },
+                      icon: Icon(
+                        _passwordVisible
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      tooltip: _passwordVisible
+                          ? 'Hide password'
+                          : 'Show password',
+                    ),
+                  ),
                   onFieldSubmitted: (_) => _submit(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {

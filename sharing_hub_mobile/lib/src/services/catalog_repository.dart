@@ -1,4 +1,5 @@
 import '../models/catalog_models.dart';
+import '../models/order_models.dart';
 import 'api_client.dart';
 
 class CatalogRepository {
@@ -6,9 +7,7 @@ class CatalogRepository {
 
   final ApiClient _apiClient;
 
-  Future<List<CategorySummary>> fetchCategories({
-    String? parentSlug,
-  }) async {
+  Future<List<CategorySummary>> fetchCategories({String? parentSlug}) async {
     final params = <String, String>{};
     if (parentSlug != null && parentSlug.isNotEmpty) {
       params['parent_slug'] = parentSlug;
@@ -59,9 +58,32 @@ class CatalogRepository {
 
   Future<ProductDetail> fetchProductDetail({
     required String productSlug,
+    String? location,
+    int? distanceKm,
   }) async {
-    final json = await _apiClient.getJsonObject('/products/$productSlug/');
+    final params = <String, String>{};
+    if (location != null && location.trim().isNotEmpty) {
+      params['location'] = location.trim();
+    }
+    if (distanceKm != null) {
+      params['distance'] = distanceKm.toString();
+    }
+
+    final json = await _apiClient.getJsonObject(
+      '/products/$productSlug/',
+      queryParameters: params.isEmpty ? null : params,
+    );
     return ProductDetail.fromJson(json);
+  }
+
+  Future<List<OrderSummary>> fetchLenderListings({
+    required int lenderId,
+  }) async {
+    final json = await _apiClient.getJsonList('/lenders/$lenderId/listings/');
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(OrderSummary.fromJson)
+        .toList(growable: false);
   }
 
   Future<List<ProductSummary>> searchProducts({
@@ -71,9 +93,7 @@ class CatalogRepository {
     int? distanceKm,
     String? sortBy,
   }) async {
-    final params = <String, String>{
-      'q': query,
-    };
+    final params = <String, String>{'q': query};
 
     if (location != null && location.trim().isNotEmpty) {
       params['location'] = location.trim();
@@ -88,7 +108,10 @@ class CatalogRepository {
       params['sort_by'] = sortBy;
     }
 
-    final json = await _apiClient.getJsonList('/search/products/', queryParameters: params);
+    final json = await _apiClient.getJsonList(
+      '/search/products/',
+      queryParameters: params,
+    );
     return json
         .whereType<Map<String, dynamic>>()
         .map(ProductSummary.fromJson)

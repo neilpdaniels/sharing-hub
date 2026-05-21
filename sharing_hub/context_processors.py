@@ -2,25 +2,9 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-def from_settings(request):
-    return {
-        'ENVIRONMENT_NAME': settings.ENVIRONMENT_NAME,
-        'ENVIRONMENT_COLOR': settings.ENVIRONMENT_COLOR,
-    }
 
-
-def top_categories(request):
-    from common.models import Category
-    try:
-        top_cat = Category.objects.get(slug='top')
-        cats = list(Category.objects.filter(parent_category=top_cat).order_by('title'))
-    except Category.DoesNotExist:
-        cats = []
-    return {'top_categories': cats}
-
-
-def transaction_notifications(request):
-    if not getattr(request, 'user', None) or not request.user.is_authenticated:
+def get_transaction_notification_payload(user, session=None):
+    if not user or not user.is_authenticated:
         return {
             'unseen_txn_count': 0,
             'unseen_txn_items': [],
@@ -31,8 +15,7 @@ def transaction_notifications(request):
 
     from transaction.models import Transaction
 
-    user = request.user
-    show_login_notice = bool(request.session.pop('show_txn_login_notice', False))
+    show_login_notice = bool(session.pop('show_txn_login_notice', False)) if session is not None else False
     today = timezone.localdate()
 
     def _requires_action_and_label(txn):
@@ -89,7 +72,6 @@ def transaction_notifications(request):
             return f"{txn.rental_start_date:%b %d, %Y}"
         return 'Dates not set'
 
-    # Only include transactions that are currently pending action for this user.
     lender_pending = Q(user_passive=user) & (
         Q(transaction_status=Transaction.RENTAL_ENQUIRY) |
         Q(transaction_status=Transaction.RENTAL_AGREED, lender_agreement_pending_at__isnull=False, lender_agreed_at__isnull=True) |
@@ -149,3 +131,23 @@ def transaction_notifications(request):
         'txn_notice_count': len(txn_notice_items),
         'txn_notice_items': txn_notice_items,
     }
+
+def from_settings(request):
+    return {
+        'ENVIRONMENT_NAME': settings.ENVIRONMENT_NAME,
+        'ENVIRONMENT_COLOR': settings.ENVIRONMENT_COLOR,
+    }
+
+
+def top_categories(request):
+    from common.models import Category
+    try:
+        top_cat = Category.objects.get(slug='top')
+        cats = list(Category.objects.filter(parent_category=top_cat).order_by('title'))
+    except Category.DoesNotExist:
+        cats = []
+    return {'top_categories': cats}
+
+
+def transaction_notifications(request):
+    return get_transaction_notification_payload(getattr(request, 'user', None), getattr(request, 'session', None))

@@ -1,6 +1,15 @@
 from celery import shared_task
+import json
 import logging
+from pathlib import Path
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
+
+from django.conf import settings
 from django.utils import timezone
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2 import service_account
 
 from common.models import Order
 from .models import Transaction
@@ -8,6 +17,70 @@ from .stripe_connect import stripe_connect_service
 
 
 logger = logging.getLogger(__name__)
+
+
+def _load_fcm_http_v1_credentials():
+    service_account_file = (getattr(settings, 'FCM_SERVICE_ACCOUNT_FILE', '') or '').strip()
+    if not service_account_file:
+        logger.info('FCM_SERVICE_ACCOUNT_FILE not configured; skipping push send')
+        return None, None
+
+    configured_path = Path(service_account_file)
+    candidate_paths = []
+    if configured_path.is_absolute():
+        candidate_paths.append(configured_path)
+    else:
+        base_dir = (getattr(settings, 'BASE_DIR', '') or '').strip()
+        if base_dir:
+            candidate_paths.append(Path(base_dir) / configured_path)
+        candidate_paths.append(configured_path)
+
+    resolved_path = None
+    for candidate in candidate_paths:
+        if candidate.is_file():
+            resolved_path = candidate.resolve()
+            break
+
+    if resolved_path is None:
+        logger.warning(
+            'Firebase service account file not found. configured=%s tried=%s',
+            service_account_file,
+            [str(path.resolve()) for path in candidate_paths],
+        )
+        return None, None
+
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            str(resolved_path),
+            scopes=['https://www.googleapis.com/auth/firebase.messaging'],
+        )
+    except Exception:
+        logger.exception('Unable to load Firebase service account file: %s', resolved_path)
+        return None, None
+
+    project_id = (getattr(settings, 'FCM_PROJECT_ID', '') or '').strip() or credentials.project_id
+    if not project_id:
+        logger.warning('FCM project_id missing. Configure FCM_PROJECT_ID or use a service account with project_id.')
+        return None, None
+
+    return credentials, project_id
+
+
+def _is_invalid_fcm_token_error(parsed_error):
+    error_obj = (parsed_error or {}).get('error') or {}
+    status = error_obj.get('status') or ''
+    message = (error_obj.get('message') or '').lower()
+    if status == 'UNREGISTERED':
+        return True
+    if status == 'INVALID_ARGUMENT' and 'registration token' in message:
+        return True
+
+    for detail in error_obj.get('details') or []:
+        detail_type = detail.get('@type') or ''
+        if detail_type.endswith('google.firebase.fcm.v1.FcmError'):
+            if detail.get('errorCode') in ('UNREGISTERED', 'INVALID_ARGUMENT'):
+                return True
+    return False
 
 
 @shared_task
@@ -231,3 +304,120 @@ def process_transaction_message_image(image_id):
         logger.error(f'TransactionMessageImage {image_id} not found')
     except Exception as e:
         logger.exception(f'Error processing TransactionMessageImage {image_id}: {str(e)}')
+
+
+@shared_task
+def send_new_message_push_notification(message_id):
+    from mobile_api.models import MobileDevice
+    from .models import TransactionMessage
+
+    credentials, project_id = _load_fcm_http_v1_credentials()
+    if not credentials or not project_id:
+        return {'ok': False, 'reason': 'missing_fcm_http_v1_config'}
+
+    try:
+        credentials.refresh(GoogleAuthRequest())
+    except Exception:
+        logger.exception('Unable to refresh Firebase OAuth token for message_id=%s', message_id)
+        return {'ok': False, 'reason': 'fcm_oauth_refresh_failed'}
+
+    endpoint = 'https://fcm.googleapis.com/v1/projects/{}/messages:send'.format(
+        urllib_parse.quote(project_id, safe='')
+    )
+
+    try:
+        message = TransactionMessage.objects.select_related('transaction', 'user_to').get(id=message_id)
+    except TransactionMessage.DoesNotExist:
+        logger.warning('TransactionMessage not found for push send: %s', message_id)
+        return {'ok': False, 'reason': 'message_not_found'}
+
+    recipient_tokens = list(
+        MobileDevice.objects.filter(user=message.user_to, active=True)
+        .values_list('token', flat=True)
+    )
+    if not recipient_tokens:
+        return {'ok': True, 'sent': 0, 'reason': 'no_active_tokens'}
+
+    tx_ref = message.transaction.transaction_reference if message.transaction else ''
+    item_name = ''
+    if message.transaction and message.transaction.order_passive and message.transaction.order_passive.product:
+        item_name = message.transaction.order_passive.product.name
+    title = item_name or 'New message'
+    body = (message.description or '').strip() or 'You have a new message in Sharing Hub.'
+
+    headers = {
+        'Content-Type': 'application/json; UTF-8',
+        'Authorization': 'Bearer {}'.format(credentials.token),
+    }
+
+    invalid_tokens = []
+    sent_count = 0
+    failed_count = 0
+    for token in recipient_tokens:
+        payload = {
+            'message': {
+                'token': token,
+                'notification': {
+                    'title': title,
+                    'body': body[:180],
+                },
+                'data': {
+                    'type': 'transaction_message',
+                    'transaction_reference': tx_ref,
+                    'message_id': str(message.id),
+                },
+                'android': {
+                    'priority': 'high',
+                },
+                'apns': {
+                    'headers': {
+                        'apns-priority': '10',
+                    },
+                },
+            }
+        }
+
+        request = urllib_request.Request(
+            endpoint,
+            data=json.dumps(payload).encode('utf-8'),
+            headers=headers,
+            method='POST',
+        )
+
+        try:
+            with urllib_request.urlopen(request, timeout=10):
+                sent_count += 1
+        except urllib_error.HTTPError as exc:
+            failed_count += 1
+            raw_body = ''
+            parsed_error = {}
+            try:
+                raw_body = exc.read().decode('utf-8')
+                parsed_error = json.loads(raw_body)
+            except Exception:
+                parsed_error = {}
+
+            if _is_invalid_fcm_token_error(parsed_error):
+                invalid_tokens.append(token)
+                continue
+
+            logger.warning(
+                'FCM HTTP error for message_id=%s token=%s status=%s body=%s',
+                message_id,
+                token[:12],
+                exc.code,
+                raw_body[:500],
+            )
+        except Exception:
+            failed_count += 1
+            logger.exception('Unexpected FCM error for message_id=%s', message_id)
+
+    if invalid_tokens:
+        MobileDevice.objects.filter(token__in=set(invalid_tokens)).update(active=False)
+
+    return {
+        'ok': True,
+        'sent': sent_count,
+        'failed': failed_count,
+        'invalid_token_count': len(invalid_tokens),
+    }

@@ -51,6 +51,17 @@ STRIPE_CONNECT_SECRET_KEY = os.environ.get('STRIPE_CONNECT_SECRET_KEY', '')
 STRIPE_CONNECT_WEBHOOK_SECRET = os.environ.get('STRIPE_CONNECT_WEBHOOK_SECRET', '')
 STRIPE_CONNECT_PLATFORM_ACCOUNT = os.environ.get('STRIPE_CONNECT_PLATFORM_ACCOUNT', '')
 
+# Firebase Cloud Messaging settings.
+# HTTP v1 uses OAuth2 via a service account key file.
+FCM_PROJECT_ID = os.environ.get('FCM_PROJECT_ID', '')
+FCM_SENDER_ID = os.environ.get('FCM_SENDER_ID', '')
+_fcm_service_account_file = (os.environ.get('FCM_SERVICE_ACCOUNT_FILE', '') or '').strip()
+if _fcm_service_account_file and not os.path.isabs(_fcm_service_account_file):
+    _fcm_service_account_file = os.path.abspath(os.path.join(BASE_DIR, _fcm_service_account_file))
+FCM_SERVICE_ACCOUNT_FILE = _fcm_service_account_file
+# Deprecated: legacy HTTP key (kept for backward compatibility with older env files).
+FCM_SERVER_KEY = os.environ.get('FCM_SERVER_KEY', '')
+
 # NPD - added
 LOGIN_REDIRECT_URL = "my_sharing_hub:dashboard"
 LOGIN_URL = 'login'

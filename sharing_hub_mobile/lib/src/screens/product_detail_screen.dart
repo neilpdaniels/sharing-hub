@@ -54,6 +54,53 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _noDepositOnly = false;
   bool _deliveryOnly = false;
 
+  void _openFilterMenu() {
+    _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  Widget _buildQuickFilterButtons() {
+    const compactPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+    return Wrap(
+      spacing: 6,
+      children: [
+        OutlinedButton(
+          onPressed: _openFilterMenu,
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: compactPadding,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sort, size: 14),
+              SizedBox(width: 4),
+              Text('Sort'),
+            ],
+          ),
+        ),
+        OutlinedButton(
+          onPressed: _openFilterMenu,
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: compactPadding,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.filter_alt_outlined, size: 14),
+              SizedBox(width: 4),
+              Text('Filter'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -170,6 +217,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           Text(
             'Active listings (${product.activeOrders.length})',
             style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _buildQuickFilterButtons(),
           ),
           const SizedBox(height: 8),
           _listingControls(),
@@ -318,15 +370,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return Drawer(
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           children: [
-            Text('Filters', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            Text('Sort', style: Theme.of(context).textTheme.titleMedium),
+            Text('Filters', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text('Sort', style: Theme.of(context).textTheme.titleSmall),
             RadioListTile<String>(
               value: _sortNewest,
               groupValue: _sortBy,
               title: const Text('Newest'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
               onChanged: (value) {
                 if (value == null) {
                   return;
@@ -338,6 +392,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               value: _sortPriceAsc,
               groupValue: _sortBy,
               title: const Text('Price: Low to High'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
               onChanged: (value) {
                 if (value == null) {
                   return;
@@ -349,6 +405,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               value: _sortPriceDesc,
               groupValue: _sortBy,
               title: const Text('Price: High to Low'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
               onChanged: (value) {
                 if (value == null) {
                   return;
@@ -357,53 +415,67 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               },
             ),
             if (_searchLocation.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('Distance', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text('Distance', style: Theme.of(context).textTheme.titleSmall),
               RadioListTile<int?>(
                 value: null,
                 groupValue: _distanceKmFilter,
                 title: Text(_distanceLabel(null)),
+                dense: true,
+                visualDensity: VisualDensity.compact,
                 onChanged: (value) => setState(() => _distanceKmFilter = value),
               ),
               RadioListTile<int?>(
                 value: 5,
                 groupValue: _distanceKmFilter,
                 title: Text(_distanceLabel(5)),
+                dense: true,
+                visualDensity: VisualDensity.compact,
                 onChanged: (value) => setState(() => _distanceKmFilter = value),
               ),
               RadioListTile<int?>(
                 value: 10,
                 groupValue: _distanceKmFilter,
                 title: Text(_distanceLabel(10)),
+                dense: true,
+                visualDensity: VisualDensity.compact,
                 onChanged: (value) => setState(() => _distanceKmFilter = value),
               ),
               RadioListTile<int?>(
                 value: 25,
                 groupValue: _distanceKmFilter,
                 title: Text(_distanceLabel(25)),
+                dense: true,
+                visualDensity: VisualDensity.compact,
                 onChanged: (value) => setState(() => _distanceKmFilter = value),
               ),
               RadioListTile<int?>(
                 value: 50,
                 groupValue: _distanceKmFilter,
                 title: Text(_distanceLabel(50)),
+                dense: true,
+                visualDensity: VisualDensity.compact,
                 onChanged: (value) => setState(() => _distanceKmFilter = value),
               ),
               RadioListTile<int?>(
                 value: 100,
                 groupValue: _distanceKmFilter,
                 title: Text(_distanceLabel(100)),
+                dense: true,
+                visualDensity: VisualDensity.compact,
                 onChanged: (value) => setState(() => _distanceKmFilter = value),
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             Text(
               'Listing filters',
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(context).textTheme.titleSmall,
             ),
             CheckboxListTile(
               value: _friendsOnly,
               title: const Text('My friends'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
               onChanged: (value) {
                 if (value == null) {
                   return;
@@ -414,6 +486,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             CheckboxListTile(
               value: _noDepositOnly,
               title: const Text('No deposit'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
               onChanged: (value) {
                 if (value == null) {
                   return;
@@ -424,6 +498,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             CheckboxListTile(
               value: _deliveryOnly,
               title: const Text('Delivery available'),
+              dense: true,
+              visualDensity: VisualDensity.compact,
               onChanged: (value) {
                 if (value == null) {
                   return;
@@ -431,7 +507,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 setState(() => _deliveryOnly = value);
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: _applyProductFilters,
               icon: const Icon(Icons.check),

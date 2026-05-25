@@ -29,7 +29,7 @@
         font-size: 0.92rem;
       }
       .pp-breadcrumb a {
-        color: #1d7d97;
+        color: #2EC4B6;
         font-weight: 600;
       }
       .pp-breadcrumb .current {
@@ -65,7 +65,7 @@
         box-shadow: 0 14px 28px rgba(20, 51, 64, 0.06);
       }
       .pp-order-focus {
-        border-color: #1d7d97;
+        border-color: #2EC4B6;
         box-shadow: 0 0 0 3px rgba(29, 125, 151, 0.18), 0 14px 28px rgba(20, 51, 64, 0.08);
         transition: box-shadow 0.25s ease, border-color 0.25s ease;
       }
@@ -114,7 +114,7 @@
         border: 1px solid #bfd2d9;
         border-radius: 12px;
         background: #ffffff;
-        color: #1d7d97;
+        color: #2EC4B6;
         font-size: 0.88rem;
         font-weight: 700;
         display: inline-flex;
@@ -132,8 +132,8 @@
         box-shadow: 0 10px 22px rgba(29, 125, 151, 0.12);
       }
       .pp-view-toggle-btn.active {
-        background: #1d7d97;
-        border-color: #1d7d97;
+        background: #2EC4B6;
+        border-color: #2EC4B6;
         color: #fff;
         box-shadow: 0 12px 24px rgba(29, 125, 151, 0.22);
       }
@@ -150,12 +150,12 @@
         border-radius: 999px;
         border: 1px solid #bfd2d9;
         background: #f7fbfc;
-        color: #1d7d97;
+        color: #2EC4B6;
         text-decoration: none;
         font-weight: 600;
       }
       .admin-quick-actions a:hover {
-        background: #e9f1f3;
+        background: #F7EBD8;
         color: #14586b;
       }
       .pp-friends-filter {
@@ -407,6 +407,13 @@
                                     <a href="{% url 'transaction:edit_order' order.id %}" class="btn btn-sm btn-outline-primary" title="Edit"><span class="fas fa-edit"></span></a>
                                     <a href="{% url 'transaction:expire_order' order.id %}" class="btn btn-sm btn-outline-danger" title="Remove"><span class="fas fa-trash"></span></a>
                                     {% else %}
+                                  <form method="post" action="{% url 'navigation:toggle_favourite_order' order.id %}" class="d-inline-block js-favourite-toggle" data-order-id="{{ order.id }}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="btn btn-sm js-favourite-btn {% if order.is_favourite %}btn-danger{% else %}btn-outline-danger{% endif %}" title="Toggle favourite" aria-label="Toggle favourite">
+                                      <span class="js-favourite-icon {% if order.is_favourite %}fas{% else %}far{% endif %} fa-heart" aria-hidden="true"></span>
+                                    </button>
+                                  </form>
                                   <a class="btn btn-success js-enquire-link" href="{% url 'transaction:hit_order' order.id %}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
                                     {% endif %}
                                 {% else %}
@@ -1043,6 +1050,52 @@ $('#showBidsAndOffers').on("click",
     }); 
 {% endif %}
 
+(function() {
+  function submitFavourite(form) {
+    var button = form.querySelector('.js-favourite-btn');
+    var icon = form.querySelector('.js-favourite-icon');
+    var csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!button || !icon || !csrf) {
+      form.submit();
+      return;
+    }
+
+    button.disabled = true;
+    fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': csrf.value,
+      },
+      body: new URLSearchParams(new FormData(form)),
+    })
+      .then(function(response) {
+        if (!response.ok) throw new Error('Request failed');
+        return response.json();
+      })
+      .then(function(data) {
+        var isFav = !!data.is_favourite;
+        button.classList.toggle('btn-danger', isFav);
+        button.classList.toggle('btn-outline-danger', !isFav);
+        icon.classList.toggle('fas', isFav);
+        icon.classList.toggle('far', !isFav);
+      })
+      .catch(function() {
+        form.submit();
+      })
+      .finally(function() {
+        button.disabled = false;
+      });
+  }
+
+  document.querySelectorAll('form.js-favourite-toggle').forEach(function(form) {
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+      submitFavourite(form);
+    });
+  });
+})();
+
 // Locate button for product page filter
 (function() {
     var btn = document.getElementById('pp-locate-btn');
@@ -1055,7 +1108,7 @@ $('#showBidsAndOffers').on("click",
         btn.disabled = true;
         navigator.geolocation.getCurrentPosition(function(pos) {
             fetch('https://nominatim.openstreetmap.org/reverse?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&format=json', {
-                headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'rentalution-search' }
             }).then(function(r) { return r.json(); }).then(function(data) {
                 var a = data.address || {};
                 var place = a.town || a.city || a.village || a.suburb || a.county || '';

@@ -8,9 +8,9 @@ logger = logging.getLogger(__name__)
 def send_registration_verification_email(email, code, resume_link):
     """Send registration verification code email asynchronously."""
     send_mail(
-        subject='Your SharingHub verification code',
+        subject='Your rentalution verification code',
         message=(
-            'Your SharingHub registration code is: ' + code + '\n\n'
+            'Your rentalution registration code is: ' + code + '\n\n'
             'This code expires in 15 minutes.\n\n'
             'Resume verification: ' + resume_link
         ),
@@ -89,6 +89,6 @@ def send_random_mail():
     subject = 'blah'
     mail_sent = send_mail(subject,
                         message,
-                        'admin@sharing-hub.com',
-                        ['testuser@sharing-hub.com'])
+                        'admin@rentalution.com',
+                        ['testuser@rentalution.com'])
     return mail_sent

@@ -20,7 +20,7 @@ class BiometricAuthService {
   Future<bool> authenticate() async {
     try {
       return await _localAuthentication.authenticate(
-        localizedReason: 'Unlock Sharing Hub',
+        localizedReason: 'Unlock rentalution',
         options: const AuthenticationOptions(
           biometricOnly: false,
           stickyAuth: true,

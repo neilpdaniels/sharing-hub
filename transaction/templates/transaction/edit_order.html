@@ -33,7 +33,7 @@
   </div>
   {% bootstrap_field order_form.quantity %}
   {% bootstrap_field order_form.expiry_date %}
-  {% bootstrap_field order_form.price_style addon_after='<a href="javascript:void(0);" data-toggle="price_popover" data-placement="left" title="Price types:" data-content="There are 2 ways to price an order in SharingHub:<br /><ol><li><b>Absolute:</b> &nbsp;An order with a set price, which doesn\'t change</li><li><b>Relative:</b> &nbsp;A price calculated as a percentage of the spot value +/- any offset amount in £s.  This will be recalculated as our spot price feeds update.</ol>"><span class="fa fa-info-circle" id="price_info"></span></a>' %}
+  {% bootstrap_field order_form.price_style addon_after='<a href="javascript:void(0);" data-toggle="price_popover" data-placement="left" title="Price types:" data-content="There are 2 ways to price an order in rentalution:<br /><ol><li><b>Absolute:</b> &nbsp;An order with a set price, which doesn\'t change</li><li><b>Relative:</b> &nbsp;A price calculated as a percentage of the spot value +/- any offset amount in £s.  This will be recalculated as our spot price feeds update.</ol>"><span class="fa fa-info-circle" id="price_info"></span></a>' %}
   
   {% bootstrap_field order_form.relative_price_pct %}
   {% bootstrap_field order_form.relative_offset %}

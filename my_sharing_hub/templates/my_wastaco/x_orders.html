@@ -2,8 +2,8 @@
 {% load thumbnail %}
 {% load common_lib %}
 
-{% block subtitle %}My SharingHub{% endblock %}
-{% block title %}{{ type|title }} Orders{% endblock %}
+{% block subtitle %}My rentalution{% endblock %}
+{% block title %}{{ type|title }} Listings{% endblock %}
 
 {% block content %}
 <div class="container">
@@ -14,11 +14,11 @@
             <div class="table-striped">
                 <table class="table">
                     <thead>
-                        <th>Order reference</th>
+                        <th>Listing reference</th>
                         <th>Item</th>
                         <th>Direction</th>
                         <th>Quantity left</th>
-                        <th>Number of Transactions</th>
+                        <th>Number of Bookings</th>
                         <th>Expiry Date</th>
                         <th>Price type</th>
                         <th>Last Price</th>
@@ -51,7 +51,7 @@
                 </table>
             </div>
             {% else %}
-            <br /><h4>You have no {{ type }} orders</h4>  
+            <br /><h4>You have no {{ type }} listings</h4>  
             {% endif %}
         </div>
     </div>
@@ -68,12 +68,12 @@
             <div class="table-striped">
                 <table class="table">
                     <thead>
-                        <th>Transaction Ref.</th>
+                        <th>Booking Ref.</th>
                         <th>Seller</th>
                         <th>Buyer</th>
                         <th>Agreed Price per Item</th>
                         <th>Quantity</th>
-                        <th>Transaction Status</th>
+                        <th>Booking Status</th>
                     </thead>
                     <tbody>
                 {% for transaction in value %}

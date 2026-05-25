@@ -2,7 +2,7 @@ from datetime import timedelta
 import random
 
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import BooleanField, Q, Value
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import generics, status
@@ -19,7 +19,7 @@ from account.models import PaymentMethod, Profile
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
 from common.geocoding import PostcodeGeocoder
-from common.models import Category, Order, OrderBlockedDate, Product
+from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, Product
 from mobile_api.models import MobileDevice
 from transaction.forms import RentalEnquiryForm
 from transaction.models import Transaction, TransactionFeedback, TransactionMessage, TransactionMessageImage
@@ -130,6 +130,26 @@ def _filter_orders_by_distance(orders, origin_lat, origin_lon, max_distance_km=N
             nearest_distance = distance_km
 
     return filtered_orders, nearest_distance
+
+
+def _apply_favourite_flags_for_user(user, orders):
+    if not orders:
+        return
+
+    if user is None or not user.is_authenticated:
+        for order in orders:
+            order.is_favourite = False
+        return
+
+    order_ids = [order.id for order in orders]
+    favourite_ids = set(
+        FavouriteOrder.objects.filter(
+            user=user,
+            order_id__in=order_ids,
+        ).values_list('order_id', flat=True)
+    )
+    for order in orders:
+        order.is_favourite = order.id in favourite_ids
 
 
 def _iter_rental_dates(start_date, end_date):
@@ -761,9 +781,51 @@ class ProductDetailView(generics.RetrieveAPIView):
         )
 
         product.filtered_active_orders = filtered_orders
+        _apply_favourite_flags_for_user(self.request.user, product.filtered_active_orders)
         product.active_order_count = len(filtered_orders)
         product.nearest_distance_km = nearest_distance
         return product
+
+
+class FavouriteOrderListView(generics.ListAPIView):
+    permission_classes = (IsAuthenticated,)
+    serializer_class = OrderSummarySerializer
+
+    def get_queryset(self):
+        favourite_order_ids = FavouriteOrder.objects.filter(
+            user=self.request.user,
+        ).values_list('order_id', flat=True)
+
+        return (
+            Order.objects.filter(id__in=favourite_order_ids, status=Order.ACTIVE)
+            .select_related('user', 'product', 'product__category_id')
+            .prefetch_related('price_bands', 'images', 'blocked_dates')
+            .annotate(is_favourite=Value(True, output_field=BooleanField()))
+            .order_by('-amended')
+        )
+
+
+class FavouriteOrderToggleView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        order = generics.get_object_or_404(Order, id=self.kwargs['order_id'])
+
+        favourite, created = FavouriteOrder.objects.get_or_create(
+            user=request.user,
+            order=order,
+        )
+        if created:
+            return Response(
+                {'status': 'ok', 'is_favourite': True, 'message': 'Added to favourites.'},
+                status=status.HTTP_200_OK,
+            )
+
+        favourite.delete()
+        return Response(
+            {'status': 'ok', 'is_favourite': False, 'message': 'Removed from favourites.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class LenderListingsView(generics.ListAPIView):

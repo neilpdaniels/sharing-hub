@@ -26,7 +26,7 @@ from common.decorators import ajax_required
 from common.geocoding import PostcodeGeocoder
 from common.models import (
     BestPricedForCategory, BestPricedForProduct, Category, CategoryTag,
-    Order, Product, System,
+    FavouriteOrder, Order, Product, System,
 )
 from common.tasks import listEmptyCategories, runStaticMigration
 from transaction.models import Transaction
@@ -228,6 +228,17 @@ def search(request):
     else:  # newest
         nearby_orders.sort(key=lambda o: o.create_date, reverse=True)
 
+    favourite_order_ids = set()
+    if request.user.is_authenticated:
+        favourite_order_ids = set(
+            FavouriteOrder.objects.filter(
+                user=request.user,
+                order_id__in=[order.id for order in nearby_orders],
+            ).values_list('order_id', flat=True)
+        )
+    for order in nearby_orders:
+        order.is_favourite = order.id in favourite_order_ids
+
     # Paginate
     paginator = Paginator(nearby_orders, 20)
     page = request.GET.get('page', 1)
@@ -279,6 +290,41 @@ def search(request):
     }
     template = loader.get_template('navigation/search.html')
     return HttpResponse(template.render(context, request))
+
+
+@login_required
+def toggle_favourite_order(request, order_id):
+    if request.method != 'POST':
+        return HttpResponseForbidden('POST required')
+
+    order = get_object_or_404(Order, pk=order_id)
+    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+    favourite, created = FavouriteOrder.objects.get_or_create(
+        user=request.user,
+        order=order,
+    )
+    if created:
+        messages.success(request, f'{order.product.name} added to your favourites.')
+        is_favourite = True
+    else:
+        favourite.delete()
+        messages.success(request, f'{order.product.name} removed from your favourites.')
+        is_favourite = False
+
+    if is_ajax:
+        return JsonResponse(
+            {
+                'ok': True,
+                'order_id': order.id,
+                'is_favourite': is_favourite,
+                'product_name': order.product.name,
+            }
+        )
+
+    next_url = request.POST.get('next', '').strip()
+    if next_url:
+        return redirect(next_url)
+    return redirect('navigation:productPage', product_slug=order.product.slug)
 
 
 def search_by_postcode(request):

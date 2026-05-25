@@ -4,7 +4,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from account.models import PaymentMethod, Profile
-from common.models import Category, LetPriceBand, Order, OrderBlockedDate, Product
+from common.models import Category, FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, Product
 from mobile_api.models import MobileDevice
 from transaction.models import Transaction, TransactionMessage, TransactionMessageImage
 
@@ -393,6 +393,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     blocked_dates = serializers.SerializerMethodField()
     handover_unavailable_dates = serializers.SerializerMethodField()
     price_bands = LetPriceBandSerializer(many=True, read_only=True)
+    is_favourite = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -432,6 +433,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'create_date',
             'amended',
             'price_bands',
+            'is_favourite',
         )
 
     def get_listing_image_url(self, obj):
@@ -495,6 +497,20 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             for blocked_date in obj.blocked_dates.all()
             if blocked_date.reason == OrderBlockedDate.HANDOVER_UNAVAILABLE
         ]
+
+    def get_is_favourite(self, obj):
+        preset = getattr(obj, 'is_favourite', None)
+        if preset is not None:
+            return bool(preset)
+
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+
+        return FavouriteOrder.objects.filter(
+            user=request.user,
+            order_id=obj.id,
+        ).exists()
 
 
 class OrderAmendSerializer(serializers.ModelSerializer):

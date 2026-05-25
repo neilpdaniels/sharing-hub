@@ -635,7 +635,7 @@ def _nominatim_lookup(query):
                 'addressdetails': 1,
                 'limit': 6,
             },
-            headers={'User-Agent': 'SharingHub/1.0'},
+            headers={'User-Agent': 'rentalution/1.0'},
             timeout=5,
         )
         response.raise_for_status()

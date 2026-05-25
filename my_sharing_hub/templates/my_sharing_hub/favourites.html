@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load common_lib %}
+
+{% block subtitle %}My rentalution{% endblock %}
+{% block title %}Favourites{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <h4 class="mb-2 mb-md-0">Favourite listings</h4>
+  </div>
+
+  {% if favourite_orders %}
+  <div class="row">
+    {% for order in favourite_orders %}
+    <div class="col-md-4 mb-4 js-favourite-card" data-order-id="{{ order.id }}">
+      <div class="card h-100 search-result-card">
+        {% if order.images.first %}
+        <img src="{{ order.images.first.image.url }}" class="card-img-top" style="height:160px; object-fit:cover;" alt="{{ order.product.name }}">
+        {% endif %}
+        <div class="card-body">
+          <h6 class="card-title">{{ order.product.name }}</h6>
+          <p class="card-text text-muted small mb-2">{{ order.product.category_id.title|capfirst }}</p>
+          <p class="card-text mb-1">
+            <span class="search-result-badge {% if order.direction == 'W' %}wanted{% else %}lend{% endif %}">
+              {% if order.direction == 'W' %}Wanted{% else %}To Lend{% endif %}
+            </span>
+            <strong class="ml-2">£{{ order.price|format_price }}</strong>
+          </p>
+          {% if order.description %}
+          <p class="card-text text-muted small mb-0">{{ order.description|truncatechars:110 }}</p>
+          {% endif %}
+        </div>
+        <div class="card-footer">
+          <div class="search-result-actions">
+            <form method="post" action="{% url 'navigation:toggle_favourite_order' order.id %}" class="d-inline-block mr-2 js-favourite-toggle" data-order-id="{{ order.id }}" data-remove-on-unfavourite="true" data-remove-target=".js-favourite-card">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="btn btn-sm btn-danger js-favourite-btn" title="Toggle favourite" aria-label="Toggle favourite">
+                <span class="js-favourite-icon fas fa-heart" aria-hidden="true"></span>
+              </button>
+            </form>
+            <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="btn btn-sm btn-outline-primary">View</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="alert alert-light border mb-0">
+    No favourite listings yet. Save listings from search results or product pages to find them here.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block domready %}
+(function() {
+  function submitFavourite(form) {
+    var button = form.querySelector('.js-favourite-btn');
+    var icon = form.querySelector('.js-favourite-icon');
+    var csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!button || !icon || !csrf) {
+      form.submit();
+      return;
+    }
+
+    button.disabled = true;
+    fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': csrf.value,
+      },
+      body: new URLSearchParams(new FormData(form)),
+    })
+      .then(function(response) {
+        if (!response.ok) throw new Error('Request failed');
+        return response.json();
+      })
+      .then(function(data) {
+        var isFav = !!data.is_favourite;
+        button.classList.toggle('btn-danger', isFav);
+        button.classList.toggle('btn-outline-danger', !isFav);
+        icon.classList.toggle('fas', isFav);
+        icon.classList.toggle('far', !isFav);
+
+        if (!isFav && form.dataset.removeOnUnfavourite === 'true') {
+          var targetSelector = form.dataset.removeTarget || '.js-favourite-card';
+          var removable = form.closest(targetSelector);
+          if (removable) {
+            removable.remove();
+          }
+        }
+      })
+      .catch(function() {
+        form.submit();
+      })
+      .finally(function() {
+        button.disabled = false;
+      });
+  }
+
+  document.querySelectorAll('form.js-favourite-toggle').forEach(function(form) {
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+      submitFavourite(form);
+    });
+  });
+})();
+{% endblock %}

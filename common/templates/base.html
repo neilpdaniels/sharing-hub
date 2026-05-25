@@ -12,10 +12,9 @@
     <title>{% block sitetitle %} {% endblock %}</title>
     <meta name="description" content="">
     <meta name="author" content="">
-    <meta name="theme-color" content="#000000">
     <!-- Mobile Specific Meta Tag-->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-    <meta name="theme-color" content="#1aa3a3">
+    <meta name="theme-color" content="#2EC4B6">
     <!-- Favicon Icons-->
     <link rel="shortcut icon" href="{% static 'assets/images/favicon.ico' %}">
 
@@ -42,207 +41,149 @@
     {% endblock %}
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/main.css' %}">
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/fun.css' %}">
-    <style>
-      .page-title {
-        display: none;
-      }
-      .page-subtitle {
-        display: none;
-      }
-      .page-header-style--1 .container {
-        height: 8px;
-        padding: 0;
-      }
-    </style>
+
 
   </head>
   <body>
-    <header id="site-header" class="fixed">
-      {% block site_search_bar %}
-      <div class="py-1" id="site-search-bar" style="font-size:0.78rem; border-bottom: 1px solid #e9ecef;">
-        <div class="container-fluid">
-          <div class="form-row align-items-center" style="margin: 0 auto;">
-            <div class="col-auto" style="flex: 0 0 auto;">
-              <a href="/"><img src="{% static 'assets/images/logo-sharing-hub.png' %}" alt="sharing-hub logo" style="height:32px;" /></a>
-            </div>
-            <div style="flex: 1 1 auto; display: flex; justify-content: center;">
-              <form method="get" action="{% url 'navigation:search' %}" class="form-row align-items-center" style="flex-wrap: nowrap; gap: 0.25rem;">
-                <div style="flex: 0 1 auto;">
-                  <div class="input-group" style="font-size:0.78rem;">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text py-0 px-2" style="height:24px; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-search" style="font-size:0.7rem;"></i></span>
-                    </div>
-                    <input type="text" name="q" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0; width: 150px;" placeholder="Search by keyword">
-                  </div>
-                </div>
-                <div style="flex: 0 1 auto;">
-                  <div class="input-group" style="font-size:0.78rem;">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text py-0 px-2" id="search-locate-btn" title="Use my location" style="height:24px; cursor:pointer; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; margin-right:0;"><i class="fas fa-map-marker-alt" id="search-locate-icon" style="font-size:0.7rem;"></i></span>
-                    </div>
-                    <input type="text" name="location" id="search-location-input" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; border-top-left-radius:0; border-bottom-left-radius:0; width: 150px;" placeholder="Town or postcode">
-                  </div>
-                </div>
-                <div style="flex: 0 1 auto;">
-                  <select name="distance" style="font-size:0.78rem; height:24px; padding:0 4px; border:1px solid #ced4da; border-radius:4px; background:white; -webkit-appearance:none; -moz-appearance:none; appearance:none; background-image:none; width:60px; text-align:center; cursor:pointer;">
-                    <option value="any">Any</option>
-                    <option value="0">0 km</option>
-                    <option value="2">2 km</option>
-                    <option value="5">5 km</option>
-                    <option value="10" selected>10 km</option>
-                    <option value="15">15 km</option>
-                    <option value="20">20 km</option>
-                    <option value="30">30 km</option>
-                    <option value="50">50 km</option>
-                  </select>
-                </div>
-                <div style="flex: 0 1 auto;">
-                  <select name="category" class="form-control" style="font-size:0.78rem; height:24px; padding:0 6px; width: auto; min-width: 120px;">
-                    <option value="">All categories</option>
-                    {% for cat in top_categories %}
-                    <option value="{{ cat.slug }}">{{ cat.title|capfirst }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div style="flex: 0 1 auto;">
-                  <button type="submit" class="btn btn-primary py-0 px-2" style="font-size:0.78rem; height:24px; line-height:24px;"><i class="fas fa-search"></i></button>
-                </div>
-              </form>
-            </div>
-            <div style="flex: 0 0 auto;">
-              {% if request.user.is_authenticated %}
-              <span style="font-size:0.78rem; color:#4b5563; margin-right:0.45rem;">
-                  Welcome {{ request.user.first_name|default:request.user.username }}
-              </span>
-              <a class="btn-sm btn-extra btn-rounded" href="{% url 'logout' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
-                  Logout
-              </a> 
-              {% else %} 
-              <a class="btn-sm btn-extra btn-rounded" href="{% url 'login' %}?next={{request.path}}" id="Blog" role="button" aria-haspopup="true" aria-expanded="false">
-                  Login
-              </a>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-      </div>
-      {% endblock %}
-      <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg" id="main-nav" style="padding: 0.5rem 0;">
-          <a class="navbar-brand" href="{% url 'navigation:browseCategory' 'metals' %}">
-          </a> 
-          <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#main-header-menu" aria-controls="main-header-menu" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="ti-menu"></span>
-          </button> 
-          {% if request.user.is_authenticated %}
-          <button class="navbar-toggler show-fixed-menu" type="button">
-          <span class="ti-more-alt"></span>
-          </button>
-          {% endif %}
-          <div class="collapse navbar-collapse align-items-center" id="main-header-menu">
-            <ul class="navbar-nav ml-auto order-md-2 align-items-center" id="menu-right">
-              {% if request.user.is_authenticated %}
-              <li class="nav-item ">
-                <a class="nav-link show-fixed-menu" href="#"><i class="ti-more"></i></a>
-              </li>
-              {% endif %}
+  <div id="rh-layout">
 
-            </ul>
-            <!-- end div #menu-right -->
-            <ul class="navbar-nav ml-auto" id="main-menu">
-              <li class="nav-item">
-                <a class="nav-link" href="{% url 'pages:howItWorks' %}">How it works</a>
-              </li>
-              <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="{% url 'navigation:browseCategory' 'gardening' %}" id="Pages" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                Gold
-                </a> 
-                <div class="dropdown-menu" aria-labelledby="Pages">
-                  <a class="dropdown-item" href="{% url 'navigation:browseCategory' 'gardening' %}">Gold Coins</a>
-                  <a class="dropdown-item" href="{% url 'navigation:browseCategory' 'landscaping' %}">Gold Bars</a>
-                </div>
-                <!-- end div .dropdown-menu -->
-              </li>
-              <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="{% url 'navigation:browseCategory' 'landscaping' %}" id="Pages" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                Silver
-                </a> 
-                <div class="dropdown-menu" aria-labelledby="Pages">
-                  <a class="dropdown-item" href="{% url 'navigation:browseCategory' 'wood-and-metal-work' %}">Silver Coins</a>
-                </div>
-                <!-- end div .dropdown-menu -->
-              </li>
-             <!--
-              <li class="nav-item">
-                <a class="nav-link" href="{% url 'navigation:browseCategory' 'watches' %}">Watches</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="{% url 'navigation:browseCategory' 'militaria' %}">Militaria</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="{% url 'navigation:browseCategory' 'stamps' %}">Stamps</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="{% url 'navigation:browseCategory' 'antique-coins' %}">Antique Coins</a>
-              </li>
-              -->
-              {% if request.user.is_authenticated %}
-              <li class="nav-item">
-                <a class="nav-link" href="{% url 'navigation:whats_popular' %}"><i class="fas fa-fire mr-1"></i>What's Popular</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link show-fixed-menu" href="#">My Sharing Hub</a>
-              </li>
-              {% endif %}
-            </ul>
-          </div>
-        </nav>
-        <!-- end div #main-nav -->
-      </div>
-      <!-- end div .container -->
-    </header>
-    <!-- end header #site-header -->
-    <div id="fixed-menu">
-      <div class="author-style--1">
-        <div class="media">
-          <div class="media-body">
-            <h6>Hi {{ user.first_name | title }}!</h6>
-          </div>
+  <!-- ═══════════════════ LEFT SIDEBAR ═══════════════════════════ -->
+  <aside id="rh-sidebar">
+    <div class="rh-sidebar-brand">
+      <a href="/" class="rh-brand-link">
+        <div class="rh-brand-icon">
+          <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="19" cy="19" r="19" fill="#2EC4B6"/>
+            <path d="M19 9c-4.418 0-8 3.582-8 8 0 5.6 8 14 8 14s8-8.4 8-14c0-4.418-3.582-8-8-8zm0 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" fill="white"/>
+          </svg>
         </div>
-      </div>
-      <h5>My sharing-hub</h5>
-      <ul class="">
-        {#<li><a href="{% url 'my_sharing_hub:dashboard'  %}">Dashboard</a></li>#}
-        <li><a href="{% url 'my_sharing_hub:open_orders'  %}">Open orders</a></li>
-        <li><a href="{% url 'my_sharing_hub:open_transactions'  %}">Open transactions</a></li>
-        <li><a href="{% url 'my_sharing_hub:payment_methods'  %}">My payment methods</a></li>
-        <li><a href="{% url 'my_sharing_hub:messages_received'  %}">Messages Received</a></li>
-        <li><a href="{% url 'my_sharing_hub:messages_sent'  %}">Messages Sent</a></li>
-        {#<li><a href="{% url 'my_sharing_hub:pending_actions'  %}">My pending actions</a></li>#}
-        <li><a href="{% url 'my_sharing_hub:closed_orders'  %}">Closed Orders</a></li>
-        <li><a href="{% url 'my_sharing_hub:closed_transactions'  %}">Closed transactions</a></li>
-        <li><a href="{% url 'edit'  %}">Account Profile</a></li>
-        {% if user.is_authenticated %}
-        <li><a href="{% url 'friends:my_friends' %}">Friends</a></li>
-        <li><a href="{% url 'friends:blocked_users' %}">Blocked Users</a></li>
-          {% if user.is_staff %}
-          <li><a href="{% url 'navigation:whats_popular_admin' %}"><i class="fas fa-fire mr-1"></i>What's Popular (Admin)</a></li>
-          {% endif %}
-        {% endif %}
-      </ul>
+        <div>
+          <span class="rh-brand-name">rentalution</span>
+          <span class="rh-brand-tagline"><em>Borrow</em> what you need. <em>Earn</em> from what you own.</span>
+        </div>
+      </a>
     </div>
-    <!-- end div #fixed-menu -->
-    <div id="wrapper">
-        <div class="page-header page-header-style--1">
-            <div class="container">
-                {# cookielaw_banner removed #}
 
-              <h6 class="page-subtitle">{% block subtitle %}{% endblock %}</h6>
-              <h1 class="page-title">{% block title %}{% endblock %}</h1>
-            </div>
-            <!-- end div .container -->
-          </div>
-          <!-- end div .page-header -->
+    <nav class="rh-sidebar-nav">
+      <a href="/" class="rh-nav-link{% if request.path == '/' %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-home rh-nav-icon"></i><span>Home</span>
+      </a>
+      <a href="{% url 'navigation:search' %}" class="rh-nav-link{% if request.resolver_match.namespace == 'navigation' and request.resolver_match.url_name == 'search' %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-th-large rh-nav-icon"></i><span>Browse</span>
+      </a>
+      <a href="#" class="rh-nav-link">
+        <i class="fas fa-tags rh-nav-icon"></i><span>Categories</span>
+      </a>
+      {% if request.user.is_authenticated %}
+      <a href="{% url 'my_sharing_hub:messages_received' %}" class="rh-nav-link{% if '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-comment-dots rh-nav-icon"></i><span>Messages</span>
+      </a>
+      <a href="{% url 'my_sharing_hub:open_transactions' %}" class="rh-nav-link{% if '/open_transactions/' in request.path or '/closed_transactions/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-calendar-check rh-nav-icon"></i><span>Bookings</span>
+      </a>
+      <a href="{% url 'my_sharing_hub:favourites' %}" class="rh-nav-link{% if '/favourites/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="far fa-heart rh-nav-icon"></i><span>Favourites</span>
+      </a>
+      <a href="{% url 'transaction:list_item' %}" class="rh-nav-link{% if '/list_item' in request.path or '/add_order' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-plus-circle rh-nav-icon"></i><span>List an item</span>
+      </a>
+      <a href="{% url 'my_sharing_hub:open_orders' %}" class="rh-nav-link{% if '/open_orders/' in request.path or '/closed_orders/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-list rh-nav-icon"></i><span>My Listings</span>
+      </a>
+      <a href="{% url 'my_sharing_hub:my_details' %}" class="rh-nav-link{% if '/my_details/' in request.path or '/account/edit/' in request.path or '/payment_methods/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-user-circle rh-nav-icon"></i><span>My details</span>
+      </a>
+      <a href="#" class="rh-nav-link">
+        <i class="fas fa-coins rh-nav-icon"></i><span>Earnings</span>
+      </a>
+      {% endif %}
+    </nav>
+
+    {% if request.user.is_authenticated %}
+    <div class="rh-sidebar-promo">
+      <p>Turn your unused items into extra income</p>
+      <a href="{% url 'transaction:list_item' %}" class="rh-promo-btn">List an item</a>
+    </div>
+    {% endif %}
+
+    <div class="rh-sidebar-foot">
+      <a href="{% url 'pages:helpAndSupport' %}" class="rh-nav-link{% if request.resolver_match.namespace == 'pages' and request.resolver_match.url_name == 'helpAndSupport' %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-question-circle rh-nav-icon"></i><span>Help &amp; Support</span>
+      </a>
+      {% if request.user.is_authenticated %}
+      <a href="{% url 'edit' %}" class="rh-nav-link{% if '/account/edit/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-cog rh-nav-icon"></i><span>Settings</span>
+      </a>
+      {% endif %}
+    </div>
+  </aside>
+  <!-- end #rh-sidebar -->
+
+  <!-- ═══════════════════ MAIN COLUMN ════════════════════════════ -->
+  <div id="rh-main">
+
+    <!-- TOP BAR -->
+    <header id="rh-topbar">
+      <button id="rh-sidebar-toggle" class="rh-hamburger" type="button" aria-label="Toggle sidebar">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="rh-topbar-location" id="rh-current-location" title="Click to change location">
+        <i class="fas fa-map-marker-alt rh-loc-pin"></i>
+        <span id="rh-location-text">…</span>
+        <i class="fas fa-chevron-down rh-loc-chevron"></i>
+        <div class="rh-loc-dropdown" id="rh-loc-dropdown">
+          <input type="text" id="rh-loc-edit-input" class="rh-loc-edit-input" placeholder="Enter town or city">
+          <button type="button" class="rh-loc-edit-btn rh-loc-edit-btn--gps" id="rh-loc-gps" title="Detect my location"><i class="fas fa-location-arrow"></i></button>
+          <button type="button" class="rh-loc-edit-btn" id="rh-loc-edit-confirm" title="Use this location"><i class="fas fa-check"></i></button>
+        </div>
+      </div>
+      {% block site_search_bar %}
+      <form method="get" action="{% url 'navigation:search' %}" class="rh-topbar-search" id="rh-topbar-search-form">
+        <span class="rh-ts-icon"><i class="fas fa-search"></i></span>
+        <input type="text" name="q" class="rh-ts-input" placeholder="What do you need?">
+        <input type="hidden" name="location" id="rh-ts-hidden-location">
+        <button type="submit" class="rh-ts-search-btn"><i class="fas fa-search"></i></button>
+      </form>
+      {% endblock %}
+
+      <nav class="rh-topbar-nav d-none d-lg-flex">
+        <a href="{% url 'navigation:search' %}" class="rh-topbar-link">Browse</a>
+        <a href="{% url 'pages:howItWorks' %}" class="rh-topbar-link">How it works</a>
+        <a href="#" class="rh-topbar-link">Safety</a>
+        <a href="{% url 'pages:aboutUs' %}" class="rh-topbar-link">About us</a>
+      </nav>
+
+      <div class="rh-topbar-right">
+        {% if request.user.is_authenticated %}
+        <a href="{% url 'my_sharing_hub:messages_received' %}" class="rh-topbar-icon-btn" title="Messages">
+          <i class="fas fa-comment-dots"></i>
+        </a>
+        <a href="#" class="rh-topbar-icon-btn" title="Notifications">
+          <i class="fas fa-bell"></i>
+        </a>
+        {% if request.user.profile.image %}
+        <a href="{% url 'my_sharing_hub:my_details' %}" title="My details" aria-label="My details">
+          <img src="{{ request.user.profile.image.url }}" class="rh-topbar-avatar" alt="avatar">
+        </a>
+        {% elif request.user.profile.image_generated %}
+        <a href="{% url 'my_sharing_hub:my_details' %}" title="My details" aria-label="My details">
+          <img src="{{ request.user.profile.image_generated.url }}" class="rh-topbar-avatar" alt="avatar">
+        </a>
+        {% else %}
+        <a href="{% url 'my_sharing_hub:my_details' %}" title="My details" aria-label="My details">
+          <span class="rh-topbar-avatar-initials">{{ request.user.first_name|first|default:request.user.username|first|upper }}</span>
+        </a>
+        {% endif %}
+        <span class="rh-topbar-greeting">Hey {{ request.user.first_name|capfirst|default:request.user.username|capfirst }}!</span>
+        <a href="{% url 'logout' %}?next={{ request.path }}" class="rh-topbar-logout">Logout</a>
+        {% else %}
+        <a href="{% url 'login' %}?next={{ request.path }}" class="rh-topbar-login">Login</a>
+        <a href="{% url 'register' %}" class="rh-promo-btn rh-promo-btn--sm">Register</a>
+        {% endif %}
+      </div>
+    </header>
+    <!-- end #rh-topbar -->
+    <div id="wrapper">
       
       <div class="container">
         <div id="txn-live-notice-mount"></div>
@@ -320,92 +261,37 @@
       </div>
 
       <!-- end div .section -->
-      <footer id="footer">
-        <div class="footer-top">
-          <div class="container">
-            <div class="row align-items-center">
-              <div class="col-sm-6">
-                <div class="footer-logo">
-                  <a href="/"><img src="{% static 'assets/images/logo-sharing-hub-dark.png' %}" alt="image" class="img-fluid"></a>
-                </div>
-              </div>
-              <div class="col-sm-6">
-                <div class="footer-social">
-                  <ul>
-                    <li>
-                      <a href="#"><i class="ti-facebook"></i></a>
-                    </li>
-                    <li>
-                      <a href="#"><i class="ti-twitter"></i></a>
-                    </li>
-                    <li>
-                      <a href="#"><i class="ti-linkedin"></i></a>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <!-- end div .row -->
-          </div>
-          <!-- end div .container -->
-        </div>
-        <!-- end div .footer-top -->
-        <div class="footer-middle">
-          <div class="container">
-            <div class="row">
-              <div class="col-lg-4 col-sm-6">
-                <div class="footer-widget">
-                  <h4 class="footer-title">Get to Know Us</h4>
-                  <div class="footer-menu">
-                    <ul>
-                      <li class=""><a href="{% url 'pages:termsAndConditions' %}">Terms and Conditions</a></li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              <div class="col-lg-4 col-sm-6">
-                  <div class="footer-widget">
-                    <h4 class="footer-title">Contact Us</h4>
-                    <div class="footer-menu">
-                      <ul>
-                        <li class="email"><a href="{% url 'pages:helpAndSupport' %}">Help and Support</a></li>
-                        <li class="email"><a href="{% url 'pages:aboutUs' %}">SharingHub Developer Program</a></li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              <div class="col-lg-4 col-sm-6">
-                <div class="footer-widget">
-                  <h4 class="footer-title">Market Information</h4>
-                  <div class="footer-menu">
-                    <ul>
-                      <li class=""><a href="{% url 'pages:howItWorks' %}">How it Works</a></li>
-                      <li class=""><a href="{% url 'pages:transactionGuide' %}">Transaction Workflow</a></li>
-                      <li class=""><a href="{% url 'pages:transactionGuide' %}">FCA Regulated Escrow</a></li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-            <!-- end div .row -->
-          </div>
-          <!-- end div .container -->
-        </div>
-        <!-- end div .footer-middle -->
-        <div class="footer-copyright bg-white">
-          <a class="go_top" href="javascript:;"><i class="ti-angle-up"></i></a>
-          <!-- end of .go_top -->
-          <div class="container">
-            <p class="copyright-text">© Copyright 2018, SharingHub.</p>
-          </div>
-          <!-- end div .container -->
-        </div>
-        <!-- end div .footer-copyright -->
-      </footer>
-      <!-- end tag footer -->
     </div>
     <!-- end div #wrapper -->
+  </div><!-- end #rh-main -->
+</div><!-- end #rh-layout -->
+<footer id="footer">
+  <div class="rh-footer-bar">
+    <div class="rh-footer-bar-brand">
+      <svg width="22" height="22" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="19" cy="19" r="19" fill="rgba(255,255,255,0.25)"/>
+        <path d="M19 9c-4.418 0-8 3.582-8 8 0 5.6 8 14 8 14s8-8.4 8-14c0-4.418-3.582-8-8-8zm0 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" fill="white"/>
+      </svg>
+      <span class="rh-footer-bar-name">rentalution</span>
+    </div>
+    <nav class="rh-footer-bar-links">
+      <a href="{% url 'pages:aboutUs' %}">About</a>
+      <a href="{% url 'pages:howItWorks' %}">How it works</a>
+      <a href="{% url 'pages:helpAndSupport' %}">Help</a>
+      <a href="{% url 'pages:termsAndConditions' %}">Terms</a>
+      <a href="{% url 'pages:privacyPolicy' %}">Privacy</a>
+      <a href="{% url 'pages:cookiePolicy' %}">Cookies</a>
+    </nav>
+    <div class="rh-footer-bar-social">
+      <a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a>
+      <a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
+      <a href="#" title="Twitter / X"><i class="fab fa-twitter"></i></a>
+    </div>
+    <span class="rh-footer-bar-copy">© {% now "Y" %} rentalution</span>
+  </div>
+</footer>
+
+{% rejectable_cookielaw_banner %}
 
 
     {#<script src="{% static 'assets/plugins/jQuery/jquery-3.2.1.min.js' %}"></script>#}
@@ -441,17 +327,203 @@
             }
         });
         $(document).ready(function() {
-            // Dynamically offset #wrapper content below the fixed header
-            function adjustHeaderOffset() {
-                var headerHeight = $('#site-header').outerHeight(true);
-                $('.page-header-style--1').css('padding-top', headerHeight + 'px');
-            }
-            adjustHeaderOffset();
-            $(window).on('resize', adjustHeaderOffset);
-
             {% block domready %}
             {% endblock %}
         });
+    </script>
+    <script>
+    (function() {
+      /* ── Sidebar toggle ── */
+      var toggle = document.getElementById('rh-sidebar-toggle');
+      var sidebar = document.getElementById('rh-sidebar');
+      if (toggle && sidebar) {
+        toggle.addEventListener('click', function() {
+          sidebar.classList.toggle('rh-sidebar--open');
+        });
+        document.addEventListener('click', function(e) {
+          if (sidebar.classList.contains('rh-sidebar--open') &&
+              !sidebar.contains(e.target) &&
+              !toggle.contains(e.target)) {
+            sidebar.classList.remove('rh-sidebar--open');
+          }
+        });
+      }
+
+      /* ── Location pill ── */
+      var CACHE_KEY = 'rh_user_location';
+      var CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+      var FALLBACK_TEXTS = ['Your location', 'Location denied', 'Location unavailable', 'Detecting…', '…', 'Nearby'];
+      function syncLocationToInputs(text) {
+        if (FALLBACK_TEXTS.indexOf(text) !== -1) return; // don't pollute search fields with placeholder strings
+        // Update topbar hidden field so keyword searches carry the location
+        var tsLoc = document.getElementById('rh-ts-hidden-location');
+        if (tsLoc) tsLoc.value = text;
+        // Fill any location input on the page (hero search, search form, etc.)
+        document.querySelectorAll('input[name="location"]').forEach(function(el) {
+          if (el.id !== 'rh-loc-edit-input') el.value = text; // always sync real locations (overwrite stale values too)
+        });
+      }
+
+      function setLocation(text, persist) {
+        var el = document.getElementById('rh-location-text');
+        if (el) el.textContent = text;
+        syncLocationToInputs(text);
+        if (persist !== false) {
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ text: text, ts: Date.now() })); } catch(e) {}
+        }
+      }
+
+      function reverseGeocode(lat, lon) {
+        // BigDataCloud — free, no API key, CORS-safe, built for browser use
+        fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' + lat + '&longitude=' + lon + '&localityLanguage=en')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            var place = d.city || d.locality || d.principalSubdivision || 'Nearby';
+            var countryCode = d.countryCode || '';
+            setLocation(countryCode ? place + ', ' + countryCode : place);
+          })
+          .catch(function() {
+            // Fallback: OpenStreetMap Nominatim
+            fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lon + '&format=json', {
+              headers: { 'Accept-Language': 'en' }
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(d) {
+                var a = d.address || {};
+                var place = a.city || a.town || a.village || a.county || 'Nearby';
+                var countryCode = (a.country_code || '').toUpperCase();
+                setLocation(countryCode ? place + ', ' + countryCode : place);
+              })
+              .catch(function() { setLocation('Your location', false); });
+          });
+      }
+
+      function detectGPS(onDone) {
+        if (!navigator.geolocation) {
+          setLocation('Location unavailable', false);
+          if (onDone) onDone();
+          return;
+        }
+        var el = document.getElementById('rh-location-text');
+        if (el) el.textContent = 'Detecting…';
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+            if (onDone) onDone();
+          },
+          function(err) {
+            var msg = (err && err.code === 1) ? 'Location denied' : 'Your location';
+            setLocation(msg, false); // don't cache fallback — retry next page load
+            if (onDone) onDone();
+          },
+          { timeout: 8000, enableHighAccuracy: false, maximumAge: 300000 }
+        );
+      }
+
+      // Init: use cache (if fresh) or detect via GPS
+      try {
+        var _cached = JSON.parse(localStorage.getItem(CACHE_KEY));
+        // Evict stale entries that contain the verbose UN country name
+        if (_cached && _cached.text && _cached.text.indexOf('Great Britain') !== -1) {
+          localStorage.removeItem(CACHE_KEY);
+          _cached = null;
+        }
+        if (_cached && _cached.text && (Date.now() - _cached.ts) < CACHE_TTL) {
+          setLocation(_cached.text, false); // use cached value, don't re-write
+        } else {
+          detectGPS();
+        }
+      } catch(e) {
+        detectGPS();
+      }
+
+      // Pill click → editable dropdown
+      var locPill     = document.getElementById('rh-current-location');
+      var locDropdown = document.getElementById('rh-loc-dropdown');
+      var locEditInput = document.getElementById('rh-loc-edit-input');
+      var locConfirmBtn = document.getElementById('rh-loc-edit-confirm');
+      var locGpsBtn   = document.getElementById('rh-loc-gps');
+
+      function openLocDropdown() {
+        var cur = document.getElementById('rh-location-text');
+        var curText = cur ? cur.textContent : '';
+        if (locEditInput) locEditInput.value = (curText === '…' || curText === 'Detecting…' || curText === 'Your location' || curText === 'Location denied') ? '' : curText;
+        locDropdown.classList.add('rh-loc-dropdown--open');
+        setTimeout(function() { if (locEditInput) { locEditInput.focus(); locEditInput.select(); } }, 30);
+      }
+      function closeLocDropdown() {
+        if (locDropdown) locDropdown.classList.remove('rh-loc-dropdown--open');
+      }
+      function confirmLocEdit() {
+        var val = locEditInput ? locEditInput.value.trim() : '';
+        if (val) setLocation(val); // user-typed location — persist it
+        closeLocDropdown();
+      }
+
+      if (locPill && locDropdown) {
+        locPill.addEventListener('click', function(e) {
+          if (locDropdown.contains(e.target)) return;
+          locDropdown.classList.contains('rh-loc-dropdown--open') ? closeLocDropdown() : openLocDropdown();
+        });
+        if (locEditInput) {
+          locEditInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); confirmLocEdit(); }
+            if (e.key === 'Escape') closeLocDropdown();
+          });
+        }
+        if (locConfirmBtn) locConfirmBtn.addEventListener('click', confirmLocEdit);
+        if (locGpsBtn) {
+          locGpsBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            detectGPS(function() { closeLocDropdown(); });
+          });
+        }
+        document.addEventListener('click', function(e) {
+          if (locDropdown && locDropdown.classList.contains('rh-loc-dropdown--open') && !locPill.contains(e.target)) {
+            closeLocDropdown();
+          }
+        });
+      }
+    })();
+    </script>
+
+    <script>
+    /* ── Footer hide-on-scroll ── */
+    (function() {
+      var footer = document.getElementById('footer');
+      var main   = document.getElementById('rh-main');
+      if (!footer) return;
+
+      function setOffset() {
+        var h = footer.offsetHeight;
+        if (main) main.style.paddingBottom = h + 'px';
+      }
+      setOffset();
+      window.addEventListener('resize', setOffset, { passive: true });
+
+      var lastY   = window.scrollY;
+      var ticking = false;
+
+      function update() {
+        var y       = window.scrollY;
+        var atTop   = y < 80;
+        var atBottom = (y + window.innerHeight) >= (document.documentElement.scrollHeight - 20);
+        if (atTop || atBottom) {
+          footer.classList.remove('rh-footer--hidden');
+        } else if (y > lastY) {
+          footer.classList.add('rh-footer--hidden');    // scrolling down
+        } else {
+          footer.classList.remove('rh-footer--hidden'); // scrolling up
+        }
+        lastY   = y;
+        ticking = false;
+      }
+
+      window.addEventListener('scroll', function() {
+        if (!ticking) { requestAnimationFrame(update); ticking = true; }
+      }, { passive: true });
+    })();
     </script>
 
     <script>
@@ -550,7 +622,7 @@
             var lat = pos.coords.latitude;
             var lon = pos.coords.longitude;
             fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lon + '&format=json', {
-              headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+              headers: { 'Accept-Language': 'en', 'User-Agent': 'rentalution-search' }
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
@@ -589,7 +661,7 @@
         navigator.geolocation.getCurrentPosition(
           function(pos) {
             fetch('https://nominatim.openstreetmap.org/reverse?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&format=json', {
-              headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+              headers: { 'Accept-Language': 'en', 'User-Agent': 'rentalution-search' }
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {

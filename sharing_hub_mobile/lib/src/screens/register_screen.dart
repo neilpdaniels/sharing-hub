@@ -37,6 +37,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _busy = false;
   int _registrationStep = 0; // 0=details, 1=avatar, 2=verify
+  bool _legalAccepted = false;
   String? _error;
   String? _info;
   String _avatarSeed = '';
@@ -106,7 +107,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final seed = _avatarSeed.isEmpty
         ? (_usernameController.text.trim().isNotEmpty
               ? _usernameController.text.trim()
-              : 'sharing-hub')
+              : 'rentalution')
         : _avatarSeed;
 
     const skinToneHex = {
@@ -456,8 +457,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
               autofillHints: const [AutofillHints.postalCode],
             ),
             const SizedBox(height: 16),
+            CheckboxListTile(
+              value: _legalAccepted,
+              onChanged: (value) {
+                setState(() {
+                  _legalAccepted = value ?? false;
+                });
+              },
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'I agree to the Terms, Privacy Policy, and Cookie Policy.',
+              ),
+              subtitle: const Text(
+                'Under UK GDPR and PECR, we use your data to run your account and service, and ask consent for non-essential cookies where required.',
+              ),
+            ),
+            const SizedBox(height: 6),
             FilledButton.icon(
-              onPressed: _nextStep,
+              onPressed: _legalAccepted
+                  ? _nextStep
+                  : () {
+                      setState(() {
+                        _error =
+                            'Please accept the Terms, Privacy Policy, and Cookie Policy to continue.';
+                      });
+                    },
               icon: const Icon(Icons.arrow_forward),
               label: const Text('Next'),
             ),

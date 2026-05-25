@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/transaction_models.dart';
+import '../theme.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({
@@ -38,10 +39,9 @@ class _InboxScreenState extends State<InboxScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final gradientColors = isDarkMode
-        ? const [Color(0xFF0F1419), Color(0xFF1A2332)]
-        : const [Color(0xFFF8F4EE), Color(0xFFF1FAF8)];
+    final gradientColors = sharingHubBackgroundGradient(
+      Theme.of(context).brightness,
+    );
 
     final receivedMessages = widget.messages
         .where((message) => message.direction == 'received')
@@ -381,7 +381,7 @@ class _MessageDetailScreen extends StatelessWidget {
                 }
               },
               icon: const Icon(Icons.open_in_new),
-              label: const Text('Open transaction'),
+              label: const Text('Open booking'),
             ),
         ],
       ),

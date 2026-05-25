@@ -343,7 +343,7 @@ def send_new_message_push_notification(message_id):
     if message.transaction and message.transaction.order_passive and message.transaction.order_passive.product:
         item_name = message.transaction.order_passive.product.name
     title = item_name or 'New message'
-    body = (message.description or '').strip() or 'You have a new message in Sharing Hub.'
+    body = (message.description or '').strip() or 'You have a new message in rentalution.'
 
     headers = {
         'Content-Type': 'application/json; UTF-8',

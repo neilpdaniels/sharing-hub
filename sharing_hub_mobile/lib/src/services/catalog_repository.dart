@@ -60,6 +60,7 @@ class CatalogRepository {
     required String productSlug,
     String? location,
     int? distanceKm,
+    String? accessToken,
   }) async {
     final params = <String, String>{};
     if (location != null && location.trim().isNotEmpty) {
@@ -71,9 +72,35 @@ class CatalogRepository {
 
     final json = await _apiClient.getJsonObject(
       '/products/$productSlug/',
+      accessToken: accessToken,
       queryParameters: params.isEmpty ? null : params,
     );
     return ProductDetail.fromJson(json);
+  }
+
+  Future<List<OrderSummary>> fetchFavouriteOrders({
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.getJsonList(
+      '/orders/favourites/',
+      accessToken: accessToken,
+    );
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(OrderSummary.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<bool> toggleFavouriteOrder({
+    required String accessToken,
+    required int orderId,
+  }) async {
+    final json = await _apiClient.postJson(
+      '/orders/$orderId/favourite/',
+      const <String, dynamic>{},
+      accessToken: accessToken,
+    );
+    return json['is_favourite'] as bool? ?? false;
   }
 
   Future<List<OrderSummary>> fetchLenderListings({

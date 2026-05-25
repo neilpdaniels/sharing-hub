@@ -7,8 +7,10 @@ class MySharingHubScreen extends StatelessWidget {
     required this.onOpenInbox,
     required this.onOpenMyOrders,
     required this.onOpenMyTransactions,
+    required this.onOpenFavourites,
     required this.onOpenPaymentMethods,
     required this.activeOrdersCount,
+    required this.favouritesCount,
     required this.biometricAvailable,
     required this.biometricEnabled,
     required this.onBiometricToggle,
@@ -18,8 +20,10 @@ class MySharingHubScreen extends StatelessWidget {
   final VoidCallback onOpenInbox;
   final VoidCallback onOpenMyOrders;
   final VoidCallback onOpenMyTransactions;
+  final VoidCallback onOpenFavourites;
   final VoidCallback onOpenPaymentMethods;
   final int activeOrdersCount;
+  final int favouritesCount;
   final bool biometricAvailable;
   final bool biometricEnabled;
   final ValueChanged<bool>? onBiometricToggle;
@@ -27,7 +31,7 @@ class MySharingHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Sharing-Hub')),
+      appBar: AppBar(title: const Text('My rentalution')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -43,8 +47,8 @@ class MySharingHubScreen extends StatelessWidget {
           Card(
             child: ListTile(
               leading: const Icon(Icons.shopping_basket_outlined),
-              title: const Text('My Orders'),
-              subtitle: Text('Active orders: $activeOrdersCount'),
+              title: const Text('My Listings'),
+              subtitle: Text('Active listings: $activeOrdersCount'),
               trailing: const Icon(Icons.chevron_right),
               onTap: onOpenMyOrders,
             ),
@@ -52,10 +56,19 @@ class MySharingHubScreen extends StatelessWidget {
           Card(
             child: ListTile(
               leading: const Icon(Icons.receipt_long_outlined),
-              title: const Text('My Transactions'),
+              title: const Text('My Bookings'),
               subtitle: const Text('Review active and completed rentals'),
               trailing: const Icon(Icons.chevron_right),
               onTap: onOpenMyTransactions,
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.favorite_outline),
+              title: const Text('Favourites'),
+              subtitle: Text('Saved listings: $favouritesCount'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onOpenFavourites,
             ),
           ),
           ListTile(

@@ -78,6 +78,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   bool _authBusy = false;
   bool _transactionBusy = false;
   bool _initializing = true;
+  bool _privacyNoticeAccepted = false;
   bool _hasSavedSession = false;
   bool _deviceBiometricsAvailable = false;
   bool _biometricUnlockEnabled = false;
@@ -91,6 +92,8 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
   Future<void> _restoreSession() async {
     final hasSavedSession = await widget.tokenStore.hasSavedSession();
+    final privacyNoticeAccepted = await widget.tokenStore
+      .isPrivacyNoticeAccepted();
     final deviceBiometricsAvailable = await widget.biometricAuthService
         .isAvailable();
     final biometricUnlockEnabled = await widget.tokenStore
@@ -102,10 +105,21 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
     setState(() {
       _hasSavedSession = hasSavedSession;
+      _privacyNoticeAccepted = privacyNoticeAccepted;
       _deviceBiometricsAvailable = deviceBiometricsAvailable;
       _biometricUnlockEnabled = biometricUnlockEnabled;
       _isDarkMode = isDarkMode;
       _initializing = false;
+    });
+  }
+
+  Future<void> _acceptPrivacyNotice() async {
+    await widget.tokenStore.setPrivacyNoticeAccepted(true);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _privacyNoticeAccepted = true;
     });
   }
 
@@ -307,7 +321,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'Sharing Hub Mobile',
+      title: 'rentalution Mobile',
       theme: sharingHubLightTheme,
       darkTheme: sharingHubDarkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
@@ -322,6 +336,8 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
     }
 
     return HomeScreen(
+      privacyNoticeAccepted: _privacyNoticeAccepted,
+      onAcceptPrivacyNotice: _acceptPrivacyNotice,
       session: _session,
       transactions: _transactions,
       loading: _transactionBusy,

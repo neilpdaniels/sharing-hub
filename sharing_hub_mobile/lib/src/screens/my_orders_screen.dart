@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/order_models.dart';
+import '../theme.dart';
 
 typedef AmendOrderCallback =
     Future<void> Function(OrderSummary order, Map<String, dynamic> fields);
@@ -24,13 +25,12 @@ class MyOrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final gradientColors = isDarkMode
-        ? const [Color(0xFF0F1419), Color(0xFF1A2332)]
-        : const [Color(0xFFF8F4EE), Color(0xFFF1FAF8)];
+    final gradientColors = sharingHubBackgroundGradient(
+      Theme.of(context).brightness,
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Orders')),
+      appBar: AppBar(title: const Text('My Listings')),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -53,7 +53,7 @@ class MyOrdersScreen extends StatelessWidget {
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('No active orders.'),
+                    child: Text('No active listings.'),
                   ),
                 )
               else
@@ -139,9 +139,9 @@ class MyOrdersScreen extends StatelessWidget {
                     final shouldCancel = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('Cancel Order'),
+                        title: const Text('Cancel Listing'),
                         content: const Text(
-                          'Are you sure you want to cancel this order?',
+                          'Are you sure you want to cancel this listing?',
                         ),
                         actions: [
                           TextButton(
@@ -184,7 +184,7 @@ class MyOrdersScreen extends StatelessWidget {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Amend Order'),
+          title: const Text('Amend Listing'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

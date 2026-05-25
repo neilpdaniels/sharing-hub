@@ -1,0 +1,17 @@
+<div id="CookielawBanner" role="region" aria-label="Cookie consent banner">
+  <div class="container py-2">
+    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between">
+      <div class="pr-md-3">
+        <h6 class="mb-1">Your privacy and cookies</h6>
+        <p class="mb-2 mb-md-0">
+          We use strictly necessary cookies to keep rentalution secure and working. We only use non-essential cookies if you consent.
+          See our <a href="{% url 'pages:cookiePolicy' %}">Cookie Policy</a> and <a href="{% url 'pages:privacyPolicy' %}">Privacy Policy</a>.
+        </p>
+      </div>
+      <div class="d-flex align-items-center">
+        <a class="btn btn-sm btn-outline-secondary mr-2" href="javascript:Cookielaw.reject();">Reject non-essential</a>
+        <a class="btn btn-sm btn-primary" href="javascript:Cookielaw.accept();">Accept all</a>
+      </div>
+    </div>
+  </div>
+</div>

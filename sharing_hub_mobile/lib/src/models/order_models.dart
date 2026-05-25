@@ -22,6 +22,7 @@ class OrderSummary {
     required this.deposit,
     required this.deliveryCost,
     required this.priceBands,
+    required this.isFavourite,
     required this.distanceKm,
     required this.maxRentalDays,
     required this.expiryDate,
@@ -52,6 +53,7 @@ class OrderSummary {
   final double deposit;
   final double deliveryCost;
   final List<LetPriceBandSummary> priceBands;
+  final bool isFavourite;
   final double? distanceKm;
   final int maxRentalDays;
   final DateTime? expiryDate;
@@ -98,6 +100,7 @@ class OrderSummary {
           .whereType<Map<String, dynamic>>()
           .map(LetPriceBandSummary.fromJson)
           .toList(growable: false),
+        isFavourite: json['is_favourite'] as bool? ?? false,
       distanceKm:
           _parseDouble(json['distance_km']) ??
           _parseDouble(json['nearest_distance_km']),

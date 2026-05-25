@@ -3,6 +3,8 @@ from . import views
 
 app_name = 'transaction'
 urlpatterns = [
+    path('list_item/',                   views.list_item,            name='list_item'),
+    path('product_search/',              views.product_search_ajax,  name='product_search_ajax'),
     path('add_order/<int:product_id>/' , views.add_order, name='add_order'),
     path('edit_order/<int:order_id>/' , views.edit_order, name='edit_order'),
     path('expire_order/<int:order_id>/' , views.expire_order, name='expire_order'),

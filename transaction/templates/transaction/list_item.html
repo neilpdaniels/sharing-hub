@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}List an item{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-9">
+
+      <h2 class="mb-1" style="color:var(--rh-text);">List an item</h2>
+      <p class="text-muted mb-4" style="font-size:0.95rem;">
+        Search for the item you want to lend. Can't find it?
+        <a href="{% url 'navigation:suggestCategory' %}">Suggest a new product</a>.
+      </p>
+
+      {# ── Search panel ── #}
+      <div class="card mb-4" style="border:1px solid #e0d5c5; border-radius:12px; overflow:hidden;">
+        <div class="card-body" style="background:var(--rh-surface,#F7EBD8); padding:1.25rem 1.5rem;">
+          <div class="row g-2 align-items-end">
+            <div class="col-sm-5">
+              <label class="form-label fw-semibold mb-1" for="li-category" style="font-size:0.85rem;color:#5b4a36;">Category</label>
+              <select id="li-category" class="form-control" style="border-radius:8px;">
+                <option value="">— All categories —</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-7">
+              <label class="form-label fw-semibold mb-1" for="li-search" style="font-size:0.85rem;color:#5b4a36;">Item name</label>
+              <div class="input-group">
+                <span class="input-group-text" style="background:#fff;border-right:none;border-radius:8px 0 0 8px;">
+                  <i class="fas fa-search text-muted" style="font-size:0.85rem;"></i>
+                </span>
+                <input type="text" id="li-search" class="form-control"
+                       placeholder="e.g. drill, ladder, tent…"
+                       autocomplete="off"
+                       style="border-left:none;border-radius:0 8px 8px 0;">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Results area ── #}
+      <div id="li-status" class="text-muted mb-3" style="font-size:0.88rem; min-height:1.5rem;"></div>
+
+      <div id="li-results" class="row g-3"></div>
+
+      {# ── Empty / no-results state ── #}
+      <div id="li-empty" class="text-center py-5" style="display:none;">
+        <i class="fas fa-box-open fa-3x mb-3" style="color:#c7b89a;"></i>
+        <p class="text-muted mb-1">No products matched your search.</p>
+        <a href="{% url 'navigation:suggestCategory' %}" class="btn btn-outline-secondary btn-sm mt-2">
+          <i class="fas fa-plus-circle me-1"></i> Suggest a new product
+        </a>
+      </div>
+
+      {# ── Initial prompt (before any search) ── #}
+      <div id="li-prompt" class="text-center py-5">
+        <i class="fas fa-search fa-3x mb-3" style="color:#c7b89a;"></i>
+        <p class="text-muted">Type a name or pick a category to find your item.</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{# Result card template (cloned by JS) #}
+<template id="li-card-tpl">
+  <div class="col-sm-6 col-lg-4">
+    <a class="li-card text-decoration-none d-block h-100"
+       href="#"
+       style="border:1px solid #e0d5c5; border-radius:12px; overflow:hidden;
+              background:#fff; transition:box-shadow 0.15s, transform 0.15s;
+              color:var(--rh-text);">
+      <div class="li-card-img" style="height:140px; background:#f0e8d8; overflow:hidden; position:relative;">
+        <img src="" alt="" style="width:100%;height:100%;object-fit:cover; display:none;">
+        <div class="li-card-img-placeholder d-flex align-items-center justify-content-center h-100">
+          <i class="fas fa-cube fa-2x" style="color:#c7b89a;"></i>
+        </div>
+      </div>
+      <div class="p-3">
+        <div class="li-card-name fw-semibold mb-1" style="font-size:0.95rem; line-height:1.3;"></div>
+        <div class="li-card-cat text-muted" style="font-size:0.78rem;">
+          <i class="fas fa-tag me-1"></i><span></span>
+        </div>
+      </div>
+    </a>
+  </div>
+</template>
+{% endblock %}
+
+{% block domready %}
+(function () {
+  var ADD_ORDER_URL = '{% url "transaction:add_order" 0 %}'; // 0 replaced below
+  var SEARCH_URL    = '{% url "transaction:product_search_ajax" %}';
+  var $search   = $('#li-search');
+  var $category = $('#li-category');
+  var $results  = $('#li-results');
+  var $status   = $('#li-status');
+  var $empty    = $('#li-empty');
+  var $prompt   = $('#li-prompt');
+  var debounceTimer = null;
+  var lastXhr = null;
+
+  function buildCardUrl(productId) {
+    return ADD_ORDER_URL.replace('/0/', '/' + productId + '/');
+  }
+
+  function renderResults(data) {
+    $results.empty();
+    $empty.hide();
+    $prompt.hide();
+
+    if (!data.results.length) {
+      $status.text('');
+      $empty.show();
+      return;
+    }
+
+    var tpl = document.getElementById('li-card-tpl');
+    data.results.forEach(function (p) {
+      var node = tpl.content.cloneNode(true);
+      var $col  = $(node).find('.col-sm-6');
+      var $card = $col.find('.li-card');
+      var $img  = $col.find('img');
+      var $ph   = $col.find('.li-card-img-placeholder');
+
+      $card.attr('href', buildCardUrl(p.id));
+      $col.find('.li-card-name').text(p.name);
+      $col.find('.li-card-cat span').text(p.category || '');
+
+      if (p.image_url) {
+        $img.attr('src', p.image_url).attr('alt', p.name).show();
+        $ph.hide();
+      }
+
+      // hover effect
+      $card.on('mouseenter', function () {
+        $(this).css({'box-shadow':'0 4px 18px rgba(0,0,0,0.12)', 'transform':'translateY(-2px)'});
+      }).on('mouseleave', function () {
+        $(this).css({'box-shadow':'', 'transform':''});
+      });
+
+      $results.append($col);
+    });
+
+    var n = data.results.length;
+    $status.text(n === 24 ? 'Showing first 24 results — refine your search to narrow down.' : n + ' result' + (n === 1 ? '' : 's'));
+  }
+
+  function doSearch() {
+    var q   = $search.val().trim();
+    var cat = $category.val();
+
+    if (!q && !cat) {
+      $results.empty();
+      $empty.hide();
+      $prompt.show();
+      $status.text('');
+      return;
+    }
+
+    if (lastXhr) { lastXhr.abort(); }
+    $status.html('<i class="fas fa-spinner fa-spin me-1"></i> Searching…');
+
+    lastXhr = $.getJSON(SEARCH_URL, { q: q, category: cat }, function (data) {
+      renderResults(data);
+    }).fail(function (xhr) {
+      if (xhr.statusText !== 'abort') {
+        $status.text('Search failed — please try again.');
+      }
+    });
+  }
+
+  $search.on('input', function () {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(doSearch, 280);
+  });
+
+  $category.on('change', doSearch);
+}());
+{% endblock %}

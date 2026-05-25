@@ -15,13 +15,13 @@ from operator import attrgetter
 from common.decorators import ajax_required
 from django.db.models import Q
 from transaction.tasks import getUserTransactions
-from common.models import Order, OrderImage, OrderBlockedDate, LetPriceBand
+from common.models import FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, OrderImage
 from django.utils import timezone
 from datetime import timedelta
 import calendar
 from datetime import date
 
-from account.models import PaymentMethod
+from account.models import PaymentMethod, Profile
 
 
 @login_required
@@ -29,6 +29,23 @@ def dashboard(request):
     context = {
     }
     return render(request, 'my_sharing_hub/dashboard.html', context)
+
+
+@login_required
+def my_details(request):
+    tab = (request.GET.get('tab') or 'account').strip().lower()
+    if tab not in {'account', 'cards'}:
+        tab = 'account'
+
+    profile = get_object_or_404(Profile, user=request.user)
+    payment_methods = request.user.payment_methods.all()
+
+    context = {
+        'active_tab': tab,
+        'profile': profile,
+        'payment_methods': payment_methods,
+    }
+    return render(request, 'my_sharing_hub/my_details.html', context)
 
 @login_required
 def messages_received(request):    
@@ -95,6 +112,27 @@ def payment_methods(request):
         'payment_methods': user_payment_methods,
     }
     return render(request, 'my_sharing_hub/payment_methods.html', context)
+
+
+@login_required
+def favourites(request):
+    favourites_qs = (
+        FavouriteOrder.objects
+        .filter(user=request.user, order__status=Order.ACTIVE)
+        .select_related('order', 'order__product', 'order__user', 'order__product__category_id')
+        .prefetch_related('order__images')
+    )
+
+    favourite_orders = []
+    for favourite in favourites_qs:
+        order = favourite.order
+        order.is_favourite = True
+        favourite_orders.append(order)
+
+    context = {
+        'favourite_orders': favourite_orders,
+    }
+    return render(request, 'my_sharing_hub/favourites.html', context)
 
 
 @login_required

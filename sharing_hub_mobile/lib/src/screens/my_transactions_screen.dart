@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/transaction_models.dart';
+import '../theme.dart';
 
 class MyTransactionsScreen extends StatelessWidget {
   const MyTransactionsScreen({
@@ -18,13 +19,12 @@ class MyTransactionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final gradientColors = isDarkMode
-        ? const [Color(0xFF0F1419), Color(0xFF1A2332)]
-        : const [Color(0xFFF8F4EE), Color(0xFFF1FAF8)];
+    final gradientColors = sharingHubBackgroundGradient(
+      Theme.of(context).brightness,
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Transactions')),
+      appBar: AppBar(title: const Text('My Bookings')),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -40,7 +40,7 @@ class MyTransactionsScreen extends StatelessWidget {
             children: [
               const SizedBox(height: 12),
               Text(
-                'Transactions',
+                'Bookings',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
@@ -55,7 +55,7 @@ class MyTransactionsScreen extends StatelessWidget {
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('No transactions yet.'),
+                    child: Text('No bookings yet.'),
                   ),
                 )
               else

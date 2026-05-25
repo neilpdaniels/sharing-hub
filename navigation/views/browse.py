@@ -25,7 +25,7 @@ from common.decorators import ajax_required
 from common.geocoding import PostcodeGeocoder
 from common.models import (
     BestPricedForCategory, BestPricedForProduct, Category, CategoryTag,
-    Order, Product, System,
+    FavouriteOrder, Order, Product, System,
 )
 from common.tasks import listEmptyCategories, runStaticMigration
 from transaction.helpers import get_user_feedback_breakdown, get_user_feedback_breakdown_map
@@ -36,6 +36,67 @@ from ..models import SearchHistory
 
 
 logger = logging.getLogger(__name__)
+
+
+def _get_homepage_categories(limit=12):
+    top_category = Category.objects.filter(slug='top').first()
+    if top_category:
+        return list(Category.objects.filter(parent_category=top_category).order_by('title')[:limit])
+    return list(Category.objects.filter(parent_category__isnull=True).exclude(slug='top').order_by('title')[:limit])
+
+
+def _get_homepage_popular_orders(request, limit=8):
+    popular_orders = list(
+        Order.objects.filter(status=Order.ACTIVE, direction=Order.TO_LET)
+        .select_related('product', 'product__category_id', 'user')
+        .prefetch_related('images')
+        .annotate(favourite_count=Count('favourited_by', distinct=True))
+        .order_by('-favourite_count', '-amended')[:limit * 4]
+    )
+
+    if not popular_orders:
+        return []
+
+    home_lat = None
+    home_lon = None
+    if request.user.is_authenticated:
+        try:
+            profile = request.user.profile
+            if profile.latitude and profile.longitude:
+                home_lat = float(profile.latitude)
+                home_lon = float(profile.longitude)
+        except Exception:
+            home_lat = None
+            home_lon = None
+
+    for order in popular_orders:
+        order.home_distance_km = None
+        if (
+            home_lat is not None
+            and home_lon is not None
+            and order.latitude is not None
+            and order.longitude is not None
+        ):
+            try:
+                order.home_distance_km = PostcodeGeocoder.calculate_distance(
+                    home_lat,
+                    home_lon,
+                    float(order.latitude),
+                    float(order.longitude),
+                )
+            except Exception:
+                order.home_distance_km = None
+
+    if home_lat is not None and home_lon is not None:
+        popular_orders.sort(
+            key=lambda item: (
+                item.home_distance_km is None,
+                item.home_distance_km if item.home_distance_km is not None else 10**9,
+                -item.favourite_count,
+            )
+        )
+
+    return popular_orders[:limit]
 
 
 def _build_biscuit(cat):
@@ -521,6 +582,17 @@ def productPage(request, product_slug):
 
     sell_orders = visible_orders
 
+    favourite_order_ids = set()
+    if request.user.is_authenticated:
+        favourite_order_ids = set(
+            FavouriteOrder.objects.filter(
+                user=request.user,
+                order_id__in=[order.id for order in sell_orders],
+            ).values_list('order_id', flat=True)
+        )
+    for order in sell_orders:
+        order.is_favourite = order.id in favourite_order_ids
+
     user_feedback_breakdowns = get_user_feedback_breakdown_map([o.user_id for o in sell_orders])
     for order in sell_orders:
         order.user_feedback_stats = user_feedback_breakdowns.get(order.user_id, {})
@@ -740,6 +812,10 @@ def index(request):
 
         if updateRunning.value == "False":    
             cache.set('navigation_index_context'+latestOrderAmend, context, None) # no expiry
+
+    context = dict(context or {})
+    context['browse_categories'] = _get_homepage_categories(limit=12)
+    context['popular_orders'] = _get_homepage_popular_orders(request, limit=8)
 
     template = loader.get_template('navigation/index.html')
 

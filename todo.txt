@@ -21,7 +21,12 @@ todo:
         - verification before and after
 
     if duration > 5 days need to do address verification
-    and take full deposit amount (maximum deposit size £300?)
+    and te full deposit amount (maximum deposit size £300?)
+
+
+add small avataar top right
+add list my item with autocomplete for category/product
+
 
 
     sharing-hub fees

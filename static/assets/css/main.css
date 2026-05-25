@@ -357,7 +357,7 @@ button:hover,button:focus, .btn:hover,.btn:focus, input:hover,input:focus,select
     background-color: #ef0568 !important;
 }
 .bg-dark {
-    background-color: #0c647b !important;
+  background-color: #1B263B !important;
 }
 /* List Groups */
 .list-group-item {
@@ -2055,7 +2055,7 @@ select.form-control.input-light option {
   padding: 10px 0;
 }
 #site-header #site-search-bar{
-  background-color: #1d7d97;
+  background-color: #2EC4B6;
   -webkit-transition: background-color .4s ease 0s;
   -o-transition: background-color .4s ease 0s;
   transition: background-color .4s ease 0s;
@@ -2368,7 +2368,7 @@ body.menu-fixed-active #fixed-menu{
 .section-header .section-subtitle2 {
   font-size: 24px;
   font-weight: 800;
-  color: #0c647b; 
+  color: #2EC4B6; 
   margin-bottom: 22px;
 }
 .section-header .section-title2 {
@@ -2570,8 +2570,8 @@ body.menu-fixed-active #fixed-menu{
 /* === Page Header === */
 .page-header{
   /*background-image: url(../images/banner/page-header-bg.jpg);*/
-  /*background-color: #1d7d97;*/
-  background-color: #0c647b;
+  /*background-color: #2EC4B6;*/
+  background-color: #1B263B;
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center center;

@@ -23,7 +23,7 @@ from django.views.decorators.csrf import csrf_exempt
 from account.models import PaymentMethod, Profile
 from common.decorators import ajax_required
 from common.helpers import is_profile_kyc_verified
-from common.models import Order, OrderBlockedDate, OrderImage, Product, TransactionFee
+from common.models import Category, Order, OrderBlockedDate, OrderImage, Product, TransactionFee
 from common.security import verify_turnstile_token
 from .forms import (
     LetPriceBandFormSet,
@@ -301,6 +301,55 @@ class OrderFormHandler:
 
 
 
+
+
+@login_required
+def list_item(request):
+    """Step 1: search for the product you want to list, then continue to add_order."""
+    try:
+        root = Category.objects.get(parent_category__isnull=True)
+        categories = Category.objects.filter(parent_category=root).order_by('title')
+    except Category.DoesNotExist:
+        categories = Category.objects.none()
+    return render(request, 'transaction/list_item.html', {'categories': categories})
+
+
+@login_required
+def product_search_ajax(request):
+    """AJAX: search products by name, optionally filtered by category."""
+    q = request.GET.get('q', '').strip()
+    category_id = request.GET.get('category', '').strip()
+
+    qs = Product.objects.select_related('category_id').order_by('name')
+    if q:
+        qs = qs.filter(name__icontains=q)
+    if category_id:
+        try:
+            # include the chosen category AND all its children
+            cat_ids = list(
+                Category.objects.filter(
+                    pk=int(category_id)
+                ).values_list('pk', flat=True)
+            ) + list(
+                Category.objects.filter(
+                    parent_category_id=int(category_id)
+                ).values_list('pk', flat=True)
+            )
+            qs = qs.filter(category_id__in=cat_ids)
+        except (ValueError, TypeError):
+            pass
+
+    results = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'category': p.category_id.title if p.category_id else '',
+            'category_id': p.category_id.id if p.category_id else None,
+            'image_url': p.image.url if p.image else None,
+        }
+        for p in qs[:24]
+    ]
+    return JsonResponse({'results': results})
 
 
 @login_required

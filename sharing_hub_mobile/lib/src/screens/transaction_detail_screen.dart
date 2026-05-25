@@ -942,7 +942,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final detail = _detail;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rental transaction'),
+        title: const Text('Rental booking'),
         actions: [
           IconButton(
             onPressed: _loading || _busy ? null : _refresh,
@@ -953,7 +953,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : detail == null
-              ? Center(child: Text(_error ?? 'Unable to load transaction.'))
+              ? Center(child: Text(_error ?? 'Unable to load booking.'))
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: Column(

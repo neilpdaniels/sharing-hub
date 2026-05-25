@@ -399,6 +399,27 @@ class Order(models.Model):
         updateSummaryPrices.delay(self.pk)
 
 
+class FavouriteOrder(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='favourite_orders',
+    )
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='favourited_by',
+    )
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'order')
+        ordering = ('-created',)
+
+    def __str__(self):
+        return f'{self.user} -> {self.order_id}'
+
+
 class OrderImage(models.Model):
     order = models.ForeignKey(Order, related_name='images', on_delete=models.CASCADE, blank=True, null=True)
     image = models.ImageField(upload_to=RandomFileName('images/orders/'))

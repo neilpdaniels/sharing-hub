@@ -94,7 +94,7 @@ class PostcodeGeocoder:
                     'format': 'json',
                     'limit': 1,
                 },
-                headers={'User-Agent': 'SharingHub/1.0'},
+                headers={'User-Agent': 'rentalution/1.0'},
                 timeout=5,
             )
             if response.status_code == 200:

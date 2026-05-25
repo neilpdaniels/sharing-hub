@@ -15,4 +15,6 @@ urlpatterns = [
     path('site_feedback/', views.site_feedback, name='siteFeedback'),
     path('about_us/', views.about_us, name='aboutUs'),
     path('terms_and_conditions/', views.terms_and_conditions, name='termsAndConditions'),
+    path('privacy_policy/', views.privacy_policy, name='privacyPolicy'),
+    path('cookie_policy/', views.cookie_policy, name='cookiePolicy'),
 ]

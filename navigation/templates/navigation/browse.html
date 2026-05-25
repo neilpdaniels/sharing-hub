@@ -32,7 +32,7 @@
         gap: 6px;
         font-size: 0.9rem;
         color: #47515a;
-        background: #e9f1f3;
+        background: #F7EBD8;
         border: 1px solid #c7d7dc;
         border-radius: 999px;
         padding: 4px 10px;
@@ -50,7 +50,7 @@
     }
 
     .browse-breadcrumb a {
-        color: #1d7d97;
+        color: #2EC4B6;
         font-weight: 600;
     }
 
@@ -138,7 +138,7 @@
         gap: 6px;
         font-size: 0.78rem;
         color: #2f3b46;
-        background: #e9f1f3;
+        background: #F7EBD8;
         border: 1px solid #c7d7dc;
         border-radius: 999px;
         padding: 2px 10px;
@@ -250,13 +250,13 @@
         border-radius: 999px;
         border: 1px solid #bfd2d9;
         background: #f7fbfc;
-        color: #1d7d97;
+        color: #2EC4B6;
         text-decoration: none;
         font-weight: 600;
     }
 
     .admin-quick-actions a:hover {
-        background: #e9f1f3;
+        background: #F7EBD8;
         color: #14586b;
     }
 
@@ -745,7 +745,7 @@
         $('#browse-locate-btn').prop('disabled', true);
         navigator.geolocation.getCurrentPosition(function(pos) {
             fetch('https://nominatim.openstreetmap.org/reverse?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&format=json', {
-                headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'rentalution-search' }
             }).then(function(r) { return r.json(); }).then(function(data) {
                 var a = data.address || {};
                 var place = a.town || a.city || a.village || a.suburb || a.county || '';
@@ -770,7 +770,7 @@
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(function(pos) {
             fetch('https://nominatim.openstreetmap.org/reverse?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&format=json', {
-                headers: { 'Accept-Language': 'en', 'User-Agent': 'sharing-hub-search' }
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'rentalution-search' }
             }).then(function(r) { return r.json(); }).then(function(data) {
                 var a = data.address || {};
                 var place = a.town || a.city || a.village || a.suburb || a.county || '';

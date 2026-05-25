@@ -1,7 +1,6 @@
 from common.models import TransactionFee, TransactionFeeBand
 from transaction.models import Transaction
 from django.db.models import Avg, Count, Q
-import logging
 
 
 def empty_feedback_breakdown():

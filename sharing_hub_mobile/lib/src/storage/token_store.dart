@@ -4,6 +4,7 @@ class TokenStore {
   static const _accessKey = 'auth_access_token';
   static const _refreshKey = 'auth_refresh_token';
   static const _biometricEnabledKey = 'biometric_unlock_enabled';
+  static const _privacyNoticeAcceptedKey = 'privacy_notice_accepted';
 
   Future<void> saveTokens({
     required String accessToken,
@@ -39,6 +40,16 @@ class TokenStore {
   Future<void> setBiometricUnlockEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_biometricEnabledKey, enabled);
+  }
+
+  Future<bool> isPrivacyNoticeAccepted() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_privacyNoticeAcceptedKey) ?? false;
+  }
+
+  Future<void> setPrivacyNoticeAccepted(bool accepted) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_privacyNoticeAcceptedKey, accepted);
   }
 
   Future<void> clear() async {

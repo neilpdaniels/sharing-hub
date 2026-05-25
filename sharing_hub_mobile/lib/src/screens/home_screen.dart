@@ -4,6 +4,8 @@ import '../models/auth_models.dart';
 import '../models/catalog_models.dart';
 import '../models/order_models.dart';
 import '../models/transaction_models.dart';
+import '../config.dart';
+import '../theme.dart';
 import '../services/account_repository.dart';
 import '../services/auth_repository.dart';
 import '../services/catalog_repository.dart';
@@ -11,6 +13,7 @@ import '../services/location_service.dart';
 import '../services/order_repository.dart';
 import '../services/transaction_repository.dart';
 import 'account_details_screen.dart';
+import 'favourites_screen.dart';
 import 'login_screen.dart';
 import 'inbox_screen.dart';
 import 'my_orders_screen.dart';
@@ -25,6 +28,8 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.session,
+    required this.privacyNoticeAccepted,
+    required this.onAcceptPrivacyNotice,
     required this.transactions,
     required this.loading,
     required this.onRefresh,
@@ -48,6 +53,8 @@ class HomeScreen extends StatefulWidget {
     required this.transactionRepository,
   });
 
+  final bool privacyNoticeAccepted;
+  final Future<void> Function() onAcceptPrivacyNotice;
   final AuthSession? session;
   final List<TransactionSummary> transactions;
   final bool loading;
@@ -78,6 +85,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
+  double _navBarOpacity = 1.0;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _searchLocationController =
       TextEditingController();
@@ -88,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ProductSummary> _browseProducts = const [];
   List<ProductSummary> _searchResults = const [];
   List<OrderSummary> _orders = const [];
+  List<OrderSummary> _favouriteOrders = const [];
   List<InboxMessage> _inboxMessages = const [];
 
   String? _selectedCategorySlug;
@@ -100,12 +109,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _browseLoading = false;
   bool _searchLoading = false;
   bool _ordersLoading = false;
+  bool _favouritesLoading = false;
   bool _inboxLoading = false;
   bool _locating = false;
 
   // Detail page navigation state
   String?
-  _detailPageType; // 'product', 'orders', 'transactions', 'inbox', 'account', 'payment'
+  _detailPageType; // 'product', 'orders', 'transactions', 'inbox', 'account', 'payment', 'favourites'
   String? _selectedProductSlug;
   String? _selectedTransactionReference;
 
@@ -190,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SizedBox(
           width: double.infinity,
           child: DropdownButtonFormField<int?>(
-            value: _selectedDistance,
+            initialValue: _selectedDistance,
             isExpanded: true,
             decoration: const InputDecoration(
               contentPadding: EdgeInsets.symmetric(
@@ -475,6 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadCategories();
     if (_isAuthenticated) {
       _loadOrders();
+      _loadFavouriteOrders();
       _loadInbox();
     }
   }
@@ -489,11 +500,14 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       if (_isAuthenticated) {
         _loadOrders();
+        _loadFavouriteOrders();
         _loadInbox();
       } else {
         setState(() {
           _orders = const [];
           _ordersLoading = false;
+          _favouriteOrders = const [];
+          _favouritesLoading = false;
           _inboxMessages = const [];
           _inboxLoading = false;
         });
@@ -644,6 +658,83 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _inboxLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _loadFavouriteOrders() async {
+    final accessToken = widget.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _favouritesLoading = true;
+    });
+    try {
+      final orders = await widget.catalogRepository.fetchFavouriteOrders(
+        accessToken: accessToken,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _favouriteOrders = orders;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _favouritesLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleFavouriteOrder(OrderSummary order) async {
+    final accessToken = widget.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      return;
+    }
+    try {
+      final isFavourite = await widget.catalogRepository.toggleFavouriteOrder(
+        accessToken: accessToken,
+        orderId: order.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (isFavourite) {
+          final exists = _favouriteOrders.any((o) => o.id == order.id);
+          if (!exists) {
+            _favouriteOrders = [order, ..._favouriteOrders];
+          }
+        } else {
+          _favouriteOrders = _favouriteOrders
+              .where((o) => o.id != order.id)
+              .toList(growable: false);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isFavourite
+                ? 'Added to favourites.'
+                : 'Removed from favourites.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -824,6 +915,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _openFavourites() async {
+    final accessToken = widget.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      return;
+    }
+    if (_favouriteOrders.isEmpty && !_favouritesLoading) {
+      await _loadFavouriteOrders();
+    }
+    setState(() {
+      _detailPageType = 'favourites';
+    });
+  }
+
   void _openLoginTabFromDetail() {
     setState(() {
       _detailPageType = null;
@@ -841,6 +945,7 @@ class _HomeScreenState extends State<HomeScreen> {
         await refresh();
       }
       await _loadOrders();
+      await _loadFavouriteOrders();
       await _loadInbox();
     }
   }
@@ -855,9 +960,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.privacyNoticeAccepted) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Privacy notice')),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Before you continue',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'To use rentalution, we process your account details, listings, messages, and booking data. We may also process location data when you choose location-based features.\n\nWe use strictly necessary app storage for login/session security. Website cookies that are not strictly necessary are optional and can be accepted or rejected.',
+                ),
+                const SizedBox(height: 16),
+                const Text('Read our policies:'),
+                const SizedBox(height: 6),
+                SelectableText(
+                  '${AppConfig.websiteBaseUrl}/pages/privacy_policy/',
+                ),
+                SelectableText(
+                  '${AppConfig.websiteBaseUrl}/pages/cookie_policy/',
+                ),
+                SelectableText(
+                  '${AppConfig.websiteBaseUrl}/pages/terms_and_conditions/',
+                ),
+                const Spacer(),
+                FilledButton(
+                  onPressed: () async => widget.onAcceptPrivacyNotice(),
+                  child: const Text('I understand and continue'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final appLogoAsset = widget.isDarkMode
-        ? 'assets/images/logo-sharing-hub-dark.png'
-        : 'assets/images/logo-sharing-hub.png';
+        ? 'assets/images/logo-rentalution-dark.png'
+        : 'assets/images/logo-rentalution.png';
 
     return Scaffold(
       key: _scaffoldKey,
@@ -893,19 +1039,38 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       endDrawer: _showFilterDrawerAction ? _buildHomeFilterDrawer() : null,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: widget.isDarkMode
-                ? const [Color(0xFF0F1419), Color(0xFF1A2332)]
-                : const [Color(0xFFF8F4EE), Color(0xFFF1FAF8)],
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollUpdateNotification) {
+            final delta = notification.scrollDelta ?? 0;
+            final metrics = notification.metrics;
+            final atTop = metrics.pixels <= metrics.minScrollExtent;
+            final atBottom = metrics.pixels >= metrics.maxScrollExtent;
+            if ((atTop || atBottom) && _navBarOpacity != 1.0) {
+              setState(() => _navBarOpacity = 1.0);
+            } else if (delta > 5 && _navBarOpacity != 0.0 && !atTop) {
+              setState(() => _navBarOpacity = 0.0);
+            }
+          }
+          return false;
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: sharingHubBackgroundGradient(
+                widget.isDarkMode ? Brightness.dark : Brightness.light,
+              ),
+            ),
           ),
+          child: _buildBody(),
         ),
-        child: _buildBody(),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AnimatedOpacity(
+        opacity: _navBarOpacity,
+        duration: const Duration(milliseconds: 250),
+        child: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
           setState(() {
@@ -914,6 +1079,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _selectedProductSlug = null;
             _selectedTransactionReference = null;
             _selectedIndex = index;
+            _navBarOpacity = 1.0;
           });
         },
         type: BottomNavigationBarType.fixed,
@@ -925,7 +1091,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.person_outline),
-                  label: 'My Sharing-Hub',
+                  label: 'My rentalution',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.search),
@@ -946,6 +1112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: 'Log in',
                 ),
               ],
+        ),
       ),
     );
   }
@@ -968,6 +1135,8 @@ class _HomeScreenState extends State<HomeScreen> {
           return _buildAccountPage(_closeDetailPage);
         case 'payment':
           return _buildPaymentPage(_closeDetailPage);
+        case 'favourites':
+          return _buildFavouritesPage(_closeDetailPage);
         default:
           return const SizedBox.shrink();
       }
@@ -1020,8 +1189,10 @@ class _HomeScreenState extends State<HomeScreen> {
           onOpenInbox: _openInbox,
           onOpenMyOrders: _openMyOrders,
           onOpenMyTransactions: _openMyTransactions,
+          onOpenFavourites: _openFavourites,
           onOpenPaymentMethods: _openPaymentMethods,
           activeOrdersCount: _orders.length,
+          favouritesCount: _favouriteOrders.length,
           biometricAvailable: widget.biometricAvailable,
           biometricEnabled: widget.biometricEnabled,
           onBiometricToggle: widget.onBiometricToggle == null
@@ -1590,6 +1761,48 @@ class _HomeScreenState extends State<HomeScreen> {
         PaymentMethodsScreen(
           accessToken: accessToken,
           accountRepository: widget.accountRepository,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onClose,
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFavouritesPage(VoidCallback onClose) {
+    return Stack(
+      children: [
+        FavouritesScreen(
+          orders: _favouriteOrders,
+          loading: _favouritesLoading,
+          onRefresh: _loadFavouriteOrders,
+          onToggleFavourite: _toggleFavouriteOrder,
+          onOpenProduct: (slug) async {
+            _closeDetailPage();
+            await _openProduct(slug);
+          },
         ),
         Positioned(
           top: 0,

@@ -17,8 +17,8 @@
     gap: 18px;
     flex-wrap: wrap;
   }
-  .distance-bar label { margin: 0; font-weight: 600; font-size: 0.9rem; color: #1d7d97; white-space: nowrap; }
-  .distance-bar input[type=range] { flex: 1 1 180px; min-width: 120px; accent-color: #1d7d97; }
+  .distance-bar label { margin: 0; font-weight: 600; font-size: 0.9rem; color: #2EC4B6; white-space: nowrap; }
+  .distance-bar input[type=range] { flex: 1 1 180px; min-width: 120px; accent-color: #2EC4B6; }
   #distance-display { font-weight: 700; color: #155f74; min-width: 90px; font-size: 0.95rem; }
 
   .popular-table-wrap { overflow-x: auto; }
@@ -29,7 +29,7 @@
     font-size: 0.9rem;
   }
   .popular-table thead th {
-    background: #1d7d97;
+    background: #2EC4B6;
     color: #fff;
     padding: 10px 14px;
     font-weight: 600;
@@ -49,15 +49,15 @@
   .popular-table tbody td {
     padding: 10px 14px;
     vertical-align: middle;
-    border-top: 1px solid #e9f1f3;
-    border-bottom: 1px solid #e9f1f3;
+    border-top: 1px solid #F7EBD8;
+    border-bottom: 1px solid #F7EBD8;
   }
   .popular-table tbody td:first-child {
-    border-left: 1px solid #e9f1f3;
+    border-left: 1px solid #F7EBD8;
     border-radius: 8px 0 0 8px;
   }
   .popular-table tbody td:last-child {
-    border-right: 1px solid #e9f1f3;
+    border-right: 1px solid #F7EBD8;
     border-radius: 0 8px 8px 0;
   }
   .popular-table .term-cell { font-weight: 600; color: #1d4a5a; }
@@ -65,7 +65,7 @@
   .rank-badge {
     display: inline-block;
     background: #e9f5f8;
-    color: #1d7d97;
+    color: #2EC4B6;
     border-radius: 50%;
     width: 26px; height: 26px;
     line-height: 26px;
@@ -74,7 +74,7 @@
     font-weight: 700;
     margin-right: 6px;
   }
-  .rank-badge.top3 { background: #1d7d97; color: #fff; }
+  .rank-badge.top3 { background: #2EC4B6; color: #fff; }
 
   .count-pill {
     display: inline-block;
@@ -82,7 +82,7 @@
     border-radius: 999px;
     font-size: 0.82rem;
     font-weight: 600;
-    background: #e9f1f3;
+    background: #F7EBD8;
     color: #1d4a5a;
   }
   .count-pill.has-orders { background: #d4f0da; color: #1a6330; }
@@ -102,7 +102,7 @@
   .match-tag.category { background: #f0ebe8; color: #7a4a25; border: 1px solid #d9c5b5; }
   .match-tag:hover { opacity: 0.8; text-decoration: none; }
 
-  .search-link { font-size: 0.8rem; color: #1d7d97; }
+  .search-link { font-size: 0.8rem; color: #2EC4B6; }
 
   .no-location-note {
     background: #fff8e1;
@@ -117,12 +117,12 @@
 
 <div class="container">
 
-  <p style="color:#1d7d97;" class="mb-3">The most-searched items across the platform over the past year, for categories and products we list.</p>
+  <p style="color:#2EC4B6;" class="mb-3">The most-searched items across the platform over the past year, for categories and products we list.</p>
 
   {% if not has_location %}
   <div class="no-location-note">
     <i class="fas fa-map-marker-alt mr-1"></i>
-    Add a postcode to your profile to filter searches and open orders by distance.
+    Add a postcode to your profile to filter searches and open listings by distance.
   </div>
   {% endif %}
 
@@ -146,7 +146,7 @@
         <tr>
           <th colspan="4"></th>
           <th colspan="3" style="text-align:center;">
-            Open orders within…{% if not has_location %} (totals — add postcode for distance){% endif %}
+            Open listings within…{% if not has_location %} (totals — add postcode for distance){% endif %}
           </th>
           <th></th>
         </tr>

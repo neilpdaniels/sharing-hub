@@ -1,44 +1,139 @@
 {% extends "base.html" %}
 
-{% block subtitle %}My SharingHub{% endblock %}
+{% block subtitle %}My rentalution{% endblock %}
 {% block title %}My Payment Methods{% endblock %}
 
 {% block content %}
+<style>
+    .pm-wrap {
+        background: #f7f4ee;
+        border-radius: 22px;
+        padding: 1.25rem;
+    }
+
+    .pm-title {
+        color: #1f3f4b;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+    }
+
+    .pm-card {
+        border: 1px solid #d7ebe7;
+        border-radius: 18px;
+        box-shadow: 0 10px 24px rgba(20, 78, 92, 0.06);
+    }
+
+    .pm-card .card-body {
+        background: #ffffff;
+        border-radius: 18px;
+    }
+
+    .pm-item {
+        border: 1px solid #c8e6e2;
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        background: #f8fcfb;
+    }
+
+    .pm-item--default {
+        background: #eff9f7;
+        border-color: #2EC4B6;
+        box-shadow: inset 0 0 0 1px rgba(46, 196, 182, 0.2);
+    }
+
+    .pm-brand {
+        color: #1f3f4b;
+        font-weight: 700;
+    }
+
+    .pm-default-badge {
+        background: #2EC4B6;
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.18rem 0.55rem;
+        font-size: 0.74rem;
+        font-weight: 700;
+    }
+
+    .btn-pm-outline {
+        color: #2EC4B6;
+        border-color: #2EC4B6;
+    }
+
+    .btn-pm-outline:hover,
+    .btn-pm-outline:focus {
+        color: #fff;
+        background: #2EC4B6;
+        border-color: #2EC4B6;
+    }
+
+    .btn-pm-danger {
+        color: #e53e8e;
+        border-color: #e53e8e;
+        background: #fff;
+    }
+
+    .btn-pm-danger:hover,
+    .btn-pm-danger:focus {
+        color: #fff;
+        background: #e53e8e;
+        border-color: #e53e8e;
+    }
+
+    .pm-note {
+        border: 1px solid #d7ebe7;
+        border-radius: 14px;
+        background: #f7fcfb;
+        color: #38535b;
+    }
+
+    @media (max-width: 767.98px) {
+        .pm-item {
+            display: block !important;
+        }
+
+        .pm-item-actions {
+            margin-top: 0.8rem;
+        }
+    }
+</style>
+
 <div class="container">
     <div class="row">
         <div class="col-lg-8">
-            <h2 class="mb-4">My Payment Methods</h2>
+                        <div class="pm-wrap">
+                        <h2 class="pm-title mb-4">My Payment Methods</h2>
             
             {% if payment_methods %}
-                <div class="card mb-4">
+                                <div class="card pm-card mb-4">
                     <div class="card-body">
                         <h5 class="card-title mb-4">Saved Cards</h5>
                         
                         {% for pm in payment_methods %}
-                        <div class="border rounded p-3 mb-3 d-flex justify-content-between align-items-center {% if pm.is_default %}bg-light border-primary{% endif %}" style="{% if pm.is_default %}border-width: 2px;{% endif %}">
+                                                <div class="pm-item d-flex justify-content-between align-items-center mb-3 {% if pm.is_default %}pm-item--default{% endif %}">
                             <div>
-                                <div class="font-weight-bold">{{ pm.card_brand }} ending {{ pm.card_last4 }}</div>
+                                                                <div class="pm-brand">{{ pm.card_brand }} ending {{ pm.card_last4 }}</div>
                                 <small class="text-muted">
                                     Added {{ pm.created_at|date:"M d, Y" }}
                                     {% if pm.is_default %}
-                                    <span class="badge badge-primary">Default</span>
+                                                                        <span class="pm-default-badge">Default</span>
                                     {% endif %}
                                 </small>
                             </div>
-                            <div>
+                                                        <div class="pm-item-actions">
                                 {% if not pm.is_default %}
                                 <form method="post" class="d-inline">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="set_default">
                                     <input type="hidden" name="payment_method_id" value="{{ pm.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-primary mr-2">Set Default</button>
+                                                                        <button type="submit" class="btn btn-sm btn-pm-outline mr-2">Set Default</button>
                                 </form>
                                 {% endif %}
                                 <form method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this card?');">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="payment_method_id" value="{{ pm.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                                                        <button type="submit" class="btn btn-sm btn-pm-danger">Delete</button>
                                 </form>
                             </div>
                         </div>
@@ -46,22 +141,31 @@
                     </div>
                 </div>
             {% else %}
-                <div class="alert alert-info" role="alert">
+                                <div class="alert pm-note" role="alert">
                     <h5>No payment methods saved</h5>
-                    <p class="mb-0">You haven't added any payment methods yet. When you add a card during the rental process, it will appear here.</p>
+                    <p class="mb-3">You haven't added any payment methods yet. Cards are currently added during an active rental checkout flow.</p>
+                                        <a href="{% url 'my_sharing_hub:open_transactions' %}" class="btn btn-sm btn-pm-outline">Go to Open Bookings</a>
                 </div>
             {% endif %}
+
+                        <div class="alert pm-note" role="alert">
+                <strong>Want to add a new card?</strong>
+                Start from an active rental in
+                <a href="{% url 'my_sharing_hub:open_transactions' %}">Open Bookings</a>
+                and complete the card setup step.
+            </div>
             
-            <div class="card">
+                        <div class="card pm-card">
                 <div class="card-body">
                     <h5 class="card-title">About Your Payment Methods</h5>
                     <ul>
                         <li>Your card details are securely stored with Stripe. We never store your full card numbers.</li>
-                        <li>You can use existing cards during checkout or add new cards.</li>
+                        <li>You can use existing cards during checkout. New cards are added from the booking card-setup flow.</li>
                         <li>Set a card as default to use it automatically for future deposits.</li>
                         <li>Delete a card if you no longer want to use it.</li>
                     </ul>
                 </div>
+            </div>
             </div>
         </div>
     </div>

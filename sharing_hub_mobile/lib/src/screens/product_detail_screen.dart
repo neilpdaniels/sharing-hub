@@ -133,6 +133,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         productSlug: productSlug,
         location: _searchLocation.isEmpty ? null : _searchLocation,
         distanceKm: _distanceKmFilter,
+        accessToken: widget.accessToken,
       );
       if (!mounted) {
         return;
@@ -281,6 +282,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          order.isFavourite
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                        ),
+                        color: order.isFavourite
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
+                        tooltip: order.isFavourite
+                            ? 'Remove favourite'
+                            : 'Save favourite',
+                        onPressed: () => _toggleFavouriteOrder(order),
+                      ),
                       Text(
                         '${order.currencySymbol}${order.price.toStringAsFixed(2)} / day',
                       ),
@@ -298,6 +314,43 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _toggleFavouriteOrder(OrderSummary order) async {
+    final accessToken = widget.accessToken;
+    final catalogRepository = widget.catalogRepository;
+    if (catalogRepository == null) {
+      return;
+    }
+    if (accessToken == null || accessToken.isEmpty) {
+      widget.onRequireLogin?.call();
+      return;
+    }
+
+    try {
+      final isFavourite = await catalogRepository.toggleFavouriteOrder(
+        accessToken: accessToken,
+        orderId: order.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isFavourite ? 'Added to favourites.' : 'Removed from favourites.',
+          ),
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   Widget _productMetaCard(ProductDetail product) {
@@ -794,7 +847,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               '${order.lender.rating.toStringAsFixed(1)} / 5',
                             ),
                             _metaRow(
-                              'Successful transactions',
+                              'Successful bookings',
                               order.lender.successfulTxns.toString(),
                             ),
                             _metaRow(
@@ -1441,7 +1494,7 @@ class _LenderDetailScreen extends StatelessWidget {
                   ),
                   _metaRow(
                     context,
-                    'Successful transactions',
+                    'Successful bookings',
                     lender.successfulTxns.toString(),
                   ),
                   _metaRow(

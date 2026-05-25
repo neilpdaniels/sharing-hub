@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}My details{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <h4 class="mb-2 mb-md-0">My details</h4>
+  </div>
+
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'account' %}active{% endif %}" href="{% url 'my_sharing_hub:my_details' %}?tab=account">My account details</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'cards' %}active{% endif %}" href="{% url 'my_sharing_hub:my_details' %}?tab=cards">My cards</a>
+    </li>
+  </ul>
+
+  {% if active_tab == 'account' %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6 mb-2"><strong>Name:</strong> {{ request.user.first_name }} {{ request.user.last_name }}</div>
+        <div class="col-md-6 mb-2"><strong>Username:</strong> {{ request.user.username }}</div>
+        <div class="col-md-6 mb-2"><strong>Email:</strong> {{ request.user.email }}</div>
+        <div class="col-md-6 mb-2"><strong>Mobile:</strong> {{ profile.mobile_number|default:'-' }}</div>
+        <div class="col-md-6 mb-2"><strong>Postcode:</strong> {{ profile.postcode|default:'-' }}</div>
+        <div class="col-md-6 mb-2"><strong>Town:</strong> {{ profile.town|default:'-' }}</div>
+      </div>
+      <div class="mt-3">
+        <a href="{% url 'edit' %}" class="btn btn-primary">Edit my details</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if active_tab == 'cards' %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      {% if payment_methods %}
+      <div class="list-group list-group-flush">
+        {% for pm in payment_methods %}
+        <div class="list-group-item px-0 d-flex align-items-center justify-content-between">
+          <div>
+            <strong>{{ pm.card_brand|default:'Card' }} ending {{ pm.card_last4 }}</strong>
+            <div class="text-muted small">Expires {{ pm.card_exp_month }}/{{ pm.card_exp_year }}</div>
+          </div>
+          {% if pm.is_default %}
+          <span class="badge badge-success">Default</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">No cards saved yet.</p>
+      {% endif %}
+      <div class="mt-3">
+        <a href="{% url 'my_sharing_hub:payment_methods' %}" class="btn btn-outline-primary">Manage cards</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block domready %}
+{% endblock %}

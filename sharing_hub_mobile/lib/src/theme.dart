@@ -1,22 +1,56 @@
 import 'package:flutter/material.dart';
 
+class SharingHubPalette {
+  static const brandTeal = Color(0xFF2EC4B6);
+  static const accentCoral = Color(0xFFF05C2A);
+
+  static const lightBackground = Color(0xFFF7F4EE);
+  static const lightBackgroundAlt = Color(0xFFEEF8F6);
+  static const lightSurface = Color(0xFFFFFFFF);
+  static const lightSurfaceSoft = Color(0xFFF7FCFB);
+  static const lightBorder = Color(0xFFD7EBE7);
+  static const lightText = Color(0xFF1F3F4B);
+  static const lightTextMuted = Color(0xFF56707A);
+
+  static const darkBackground = Color(0xFF0F1F26);
+  static const darkBackgroundAlt = Color(0xFF1B343D);
+  static const darkSurface = Color(0xFF1F3B44);
+  static const darkSurfaceSoft = Color(0xFF294B55);
+  static const darkBorder = Color(0xFF2F5661);
+  static const darkText = Color(0xFFE8F3F1);
+  static const darkTextMuted = Color(0xFFA5C0C7);
+}
+
+List<Color> sharingHubBackgroundGradient(Brightness brightness) {
+  if (brightness == Brightness.dark) {
+    return const [
+      SharingHubPalette.darkBackground,
+      SharingHubPalette.darkBackgroundAlt,
+    ];
+  }
+  return const [
+    SharingHubPalette.lightBackground,
+    SharingHubPalette.lightBackgroundAlt,
+  ];
+}
+
 final ThemeData sharingHubLightTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.light,
-  primaryColor: const Color(0xFF0E9F9A),
+  primaryColor: SharingHubPalette.brandTeal,
   colorScheme: ColorScheme.fromSwatch(brightness: Brightness.light).copyWith(
-    primary: const Color(0xFF0E9F9A),
-    secondary: const Color(0xFFE07A2F),
-    surface: const Color(0xFFF8F4EE),
+    primary: SharingHubPalette.brandTeal,
+    secondary: SharingHubPalette.accentCoral,
+    surface: SharingHubPalette.lightSurface,
   ),
-  scaffoldBackgroundColor: const Color(0xFFF8F4EE),
+  scaffoldBackgroundColor: SharingHubPalette.lightBackground,
   fontFamily: 'Nunito',
   appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFFF8F4EE),
+    backgroundColor: SharingHubPalette.lightBackground,
     elevation: 0,
-    iconTheme: IconThemeData(color: Color(0xFF0E9F9A)),
+    iconTheme: IconThemeData(color: SharingHubPalette.brandTeal),
     titleTextStyle: TextStyle(
-      color: Color(0xFF222B3A),
+      color: SharingHubPalette.lightText,
       fontWeight: FontWeight.bold,
       fontSize: 22,
       fontFamily: 'Nunito',
@@ -25,24 +59,24 @@ final ThemeData sharingHubLightTheme = ThemeData(
   inputDecorationTheme: InputDecorationTheme(
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Color(0xFFB7D3CF)),
+      borderSide: const BorderSide(color: SharingHubPalette.lightBorder),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Color(0xFFB7D3CF)),
+      borderSide: const BorderSide(color: SharingHubPalette.lightBorder),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Color(0xFFE07A2F), width: 2),
+      borderSide: const BorderSide(color: SharingHubPalette.brandTeal, width: 2),
     ),
     filled: true,
-    fillColor: const Color(0xFFFFFCF7),
+    fillColor: const Color(0xFFFCFFFE),
     contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-    hintStyle: const TextStyle(color: Color(0xFF222B3A)),
+    hintStyle: const TextStyle(color: SharingHubPalette.lightTextMuted),
   ),
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ElevatedButton.styleFrom(
-      backgroundColor: const Color(0xFF0E9F9A),
+      backgroundColor: SharingHubPalette.brandTeal,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       textStyle: const TextStyle(
@@ -55,60 +89,60 @@ final ThemeData sharingHubLightTheme = ThemeData(
   ),
   textTheme: const TextTheme(
     headlineLarge: TextStyle(
-      color: Color(0xFF222B3A),
+      color: SharingHubPalette.lightText,
       fontWeight: FontWeight.bold,
       fontSize: 34,
       fontFamily: 'Nunito',
     ),
     headlineMedium: TextStyle(
-      color: Color(0xFF222B3A),
+      color: SharingHubPalette.lightText,
       fontWeight: FontWeight.bold,
       fontSize: 28,
       fontFamily: 'Nunito',
     ),
     titleLarge: TextStyle(
-      color: Color(0xFF222B3A),
+      color: SharingHubPalette.lightText,
       fontWeight: FontWeight.w800,
       fontSize: 22,
       fontFamily: 'Nunito',
     ),
     titleMedium: TextStyle(
-      color: Color(0xFF22313F),
+      color: SharingHubPalette.lightText,
       fontWeight: FontWeight.w700,
       fontSize: 17,
       fontFamily: 'Nunito',
     ),
     bodyLarge: TextStyle(
-      color: Color(0xFF222B3A),
+      color: SharingHubPalette.lightText,
       fontSize: 18,
       fontFamily: 'Nunito',
     ),
     bodyMedium: TextStyle(
-      color: Color(0xFF222B3A),
+      color: SharingHubPalette.lightText,
       fontSize: 15,
       height: 1.35,
       fontFamily: 'Nunito',
     ),
     bodySmall: TextStyle(
-      color: Color(0xFF51606F),
+      color: SharingHubPalette.lightTextMuted,
       fontSize: 13,
       height: 1.25,
       fontFamily: 'Nunito',
     ),
     labelLarge: TextStyle(
-      color: Color(0xFFE07A2F),
+      color: SharingHubPalette.accentCoral,
       fontWeight: FontWeight.bold,
       fontSize: 16,
       fontFamily: 'Nunito',
     ),
   ),
   cardTheme: CardThemeData(
-    color: const Color(0xFFFFFCF7),
+    color: SharingHubPalette.lightSurface,
     elevation: 0,
     margin: const EdgeInsets.symmetric(vertical: 8),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: Color(0xFFE4DDD4)),
+      side: const BorderSide(color: SharingHubPalette.lightBorder),
     ),
   ),
   listTileTheme: const ListTileThemeData(
@@ -117,16 +151,16 @@ final ThemeData sharingHubLightTheme = ThemeData(
     horizontalTitleGap: 12,
   ),
   chipTheme: ChipThemeData(
-    backgroundColor: const Color(0xFFE7F3F1),
-    selectedColor: const Color(0xFFCFE8E4),
+    backgroundColor: SharingHubPalette.lightSurfaceSoft,
+    selectedColor: const Color(0xFFDDF3EE),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-    labelStyle: const TextStyle(color: Color(0xFF222B3A), fontFamily: 'Nunito'),
-    side: const BorderSide(color: Color(0xFFB7D3CF)),
+    labelStyle: const TextStyle(color: SharingHubPalette.lightText, fontFamily: 'Nunito'),
+    side: const BorderSide(color: SharingHubPalette.lightBorder),
   ),
   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-    backgroundColor: Color(0xFFFFFCF7),
-    selectedItemColor: Color(0xFF0E9F9A),
-    unselectedItemColor: Color(0xFF6D6D6D),
+    backgroundColor: SharingHubPalette.lightSurface,
+    selectedItemColor: SharingHubPalette.brandTeal,
+    unselectedItemColor: SharingHubPalette.lightTextMuted,
     showUnselectedLabels: true,
     selectedLabelStyle: TextStyle(fontWeight: FontWeight.w700),
     type: BottomNavigationBarType.fixed,
@@ -136,20 +170,20 @@ final ThemeData sharingHubLightTheme = ThemeData(
 final ThemeData sharingHubDarkTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.dark,
-  primaryColor: const Color(0xFF0E9F9A),
+  primaryColor: SharingHubPalette.brandTeal,
   colorScheme: ColorScheme.fromSwatch(brightness: Brightness.dark).copyWith(
-    primary: const Color(0xFF0E9F9A),
-    secondary: const Color(0xFFE07A2F),
-    surface: const Color(0xFF1A2332),
+    primary: SharingHubPalette.brandTeal,
+    secondary: SharingHubPalette.accentCoral,
+    surface: SharingHubPalette.darkSurface,
   ),
-  scaffoldBackgroundColor: const Color(0xFF0F1419),
+  scaffoldBackgroundColor: SharingHubPalette.darkBackground,
   fontFamily: 'Nunito',
   appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF1A2332),
+    backgroundColor: SharingHubPalette.darkBackground,
     elevation: 0,
-    iconTheme: IconThemeData(color: Color(0xFF0E9F9A)),
+    iconTheme: IconThemeData(color: SharingHubPalette.brandTeal),
     titleTextStyle: TextStyle(
-      color: Color(0xFFF8F4EE),
+      color: SharingHubPalette.darkText,
       fontWeight: FontWeight.bold,
       fontSize: 22,
       fontFamily: 'Nunito',
@@ -158,24 +192,24 @@ final ThemeData sharingHubDarkTheme = ThemeData(
   inputDecorationTheme: InputDecorationTheme(
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Color(0xFF2E4A5C)),
+      borderSide: const BorderSide(color: SharingHubPalette.darkBorder),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Color(0xFF2E4A5C)),
+      borderSide: const BorderSide(color: SharingHubPalette.darkBorder),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: Color(0xFFE07A2F), width: 2),
+      borderSide: const BorderSide(color: SharingHubPalette.brandTeal, width: 2),
     ),
     filled: true,
-    fillColor: const Color(0xFF1A2332),
+    fillColor: SharingHubPalette.darkSurface,
     contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-    hintStyle: const TextStyle(color: Color(0xFF9CADB8)),
+    hintStyle: const TextStyle(color: SharingHubPalette.darkTextMuted),
   ),
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ElevatedButton.styleFrom(
-      backgroundColor: const Color(0xFF0E9F9A),
+      backgroundColor: SharingHubPalette.brandTeal,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       textStyle: const TextStyle(
@@ -188,60 +222,60 @@ final ThemeData sharingHubDarkTheme = ThemeData(
   ),
   textTheme: const TextTheme(
     headlineLarge: TextStyle(
-      color: Color(0xFFF8F4EE),
+      color: SharingHubPalette.darkText,
       fontWeight: FontWeight.bold,
       fontSize: 34,
       fontFamily: 'Nunito',
     ),
     headlineMedium: TextStyle(
-      color: Color(0xFFF8F4EE),
+      color: SharingHubPalette.darkText,
       fontWeight: FontWeight.bold,
       fontSize: 28,
       fontFamily: 'Nunito',
     ),
     titleLarge: TextStyle(
-      color: Color(0xFFF8F4EE),
+      color: SharingHubPalette.darkText,
       fontWeight: FontWeight.w800,
       fontSize: 22,
       fontFamily: 'Nunito',
     ),
     titleMedium: TextStyle(
-      color: Color(0xFFE0E8EF),
+      color: SharingHubPalette.darkText,
       fontWeight: FontWeight.w700,
       fontSize: 17,
       fontFamily: 'Nunito',
     ),
     bodyLarge: TextStyle(
-      color: Color(0xFFE0E8EF),
+      color: SharingHubPalette.darkText,
       fontSize: 18,
       fontFamily: 'Nunito',
     ),
     bodyMedium: TextStyle(
-      color: Color(0xFFC5D3DB),
+      color: SharingHubPalette.darkText,
       fontSize: 15,
       height: 1.35,
       fontFamily: 'Nunito',
     ),
     bodySmall: TextStyle(
-      color: Color(0xFF9CADB8),
+      color: SharingHubPalette.darkTextMuted,
       fontSize: 13,
       height: 1.25,
       fontFamily: 'Nunito',
     ),
     labelLarge: TextStyle(
-      color: Color(0xFFE07A2F),
+      color: SharingHubPalette.accentCoral,
       fontWeight: FontWeight.bold,
       fontSize: 16,
       fontFamily: 'Nunito',
     ),
   ),
   cardTheme: CardThemeData(
-    color: const Color(0xFF1A2332),
+    color: SharingHubPalette.darkSurface,
     elevation: 0,
     margin: const EdgeInsets.symmetric(vertical: 8),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: Color(0xFF2E4A5C)),
+      side: const BorderSide(color: SharingHubPalette.darkBorder),
     ),
   ),
   listTileTheme: const ListTileThemeData(
@@ -250,16 +284,16 @@ final ThemeData sharingHubDarkTheme = ThemeData(
     horizontalTitleGap: 12,
   ),
   chipTheme: ChipThemeData(
-    backgroundColor: const Color(0xFF2E4A5C),
-    selectedColor: const Color(0xFF3D5E75),
+    backgroundColor: SharingHubPalette.darkSurface,
+    selectedColor: SharingHubPalette.darkSurfaceSoft,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-    labelStyle: const TextStyle(color: Color(0xFFE0E8EF), fontFamily: 'Nunito'),
-    side: const BorderSide(color: Color(0xFF3D5E75)),
+    labelStyle: const TextStyle(color: SharingHubPalette.darkText, fontFamily: 'Nunito'),
+    side: const BorderSide(color: SharingHubPalette.darkBorder),
   ),
   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-    backgroundColor: Color(0xFF1A2332),
-    selectedItemColor: Color(0xFF0E9F9A),
-    unselectedItemColor: Color(0xFF6D7D8A),
+    backgroundColor: SharingHubPalette.darkSurface,
+    selectedItemColor: SharingHubPalette.brandTeal,
+    unselectedItemColor: SharingHubPalette.darkTextMuted,
     showUnselectedLabels: true,
     selectedLabelStyle: TextStyle(fontWeight: FontWeight.w700),
     type: BottomNavigationBarType.fixed,

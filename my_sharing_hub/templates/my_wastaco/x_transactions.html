@@ -2,8 +2,8 @@
 {% load thumbnail %}
 {% load common_lib %}
 
-{% block subtitle %}My SharingHub{% endblock %}
-{% block title %}{{ type | title}} transactions{% endblock %}
+{% block subtitle %}My rentalution{% endblock %}
+{% block title %}{{ type | title}} bookings{% endblock %}
 
 {% block content %}
 
@@ -31,7 +31,7 @@
     white-space: nowrap;
     font-size: 0.95rem;
 }
-/* Compact action buttons for transaction tables */
+/* Compact action buttons for booking tables */
 .txn-action-btn {
     padding: 0.18rem 0.45rem !important;
     font-size: 0.82rem !important;
@@ -144,7 +144,7 @@
             </div>
             <div class="col-lg-9 col-md-8 mb-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h5 class="mb-0">Transactions for {{ selected_day_label }}</h5>
+                    <h5 class="mb-0">Bookings for {{ selected_day_label }}</h5>
                     <a class="btn btn-sm btn-outline-secondary" href="?view=calendar&month={{ calendar_month_key }}">Clear filter</a>
                 </div>
                 {% if transactions|length > 0 %}
@@ -208,7 +208,7 @@
                                 {% if transaction.unread_message_count > 0 %}
                                     <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
                                 {% endif %}
-                                <a class="btn txn-action-btn btn-outline-secondary" title="open transaction" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
+                                <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
                             </div>
                         </td>
                         </tr>
@@ -219,7 +219,7 @@
                 </div>
                 {% include "pagination.html" with page=transactions urlencode=urlencode %}
                 {% else %}
-                <div class="alert alert-light border">No transactions match {{ selected_day_label }}.</div>
+                <div class="alert alert-light border">No bookings match {{ selected_day_label }}.</div>
                 {% endif %}
             </div>
         </div>
@@ -284,7 +284,7 @@
                             {% if transaction.unread_message_count > 0 %}
                                 <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
                             {% endif %}
-                            <a class="btn txn-action-btn btn-outline-secondary" title="open transaction" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
+                            <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
                         </div>
                     </td>
                     </tr>
@@ -295,7 +295,7 @@
             </div>
             {% include "pagination.html" with page=transactions urlencode=urlencode %}
             {% else %}
-            <br /><h4>You have no {{ type }} transactions</h4>
+            <br /><h4>You have no {{ type }} bookings</h4>
             {% endif %}
         {% endif %}
 

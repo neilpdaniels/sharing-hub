@@ -2,7 +2,7 @@ from django.utils.text import slugify
 import logging 
 
 def initialise_top_categories():
-    """Initialize top-level categories for the sharing hub."""
+    """Initialize top-level categories for the rentalution."""
     from common.models import Category
 
     # Create 'top' root category

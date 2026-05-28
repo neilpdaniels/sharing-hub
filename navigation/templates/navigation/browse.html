@@ -265,6 +265,7 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 1.5rem;
         width: 100%;
+        align-items: stretch;
     }
 
     @media (max-width: 767.98px) {
@@ -280,12 +281,62 @@
     }
 
     .product-list-style .product-card {
+        display: flex;
+        flex-direction: column;
         height: 100%;
+    }
+
+    .product-list-style .product-card > .media {
+        flex: 1 1 auto;
+        align-items: stretch;
+        margin-bottom: 0;
+    }
+
+    .product-list-style .product-card .card-footer {
+        margin-top: auto;
+    }
+
+    .product-list-style .product-card .card-footer .row {
+        flex-wrap: nowrap;
+        margin-left: -4px;
+        margin-right: -4px;
+    }
+
+    .product-list-style .product-card .card-footer .row > .col {
+        padding-left: 4px;
+        padding-right: 4px;
+        min-width: 0;
+    }
+
+    .product-list-style .product-card .card-footer .product-price {
+        width: 100%;
+        min-height: 36px;
+        padding: 7px 9px;
+        border-radius: 10px;
+        font-size: 0.86rem;
+        line-height: 1.1;
+        text-align: center;
+    }
+
+    .product-list-style .product-card .card-footer .product-price.product-price-nowrap {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .browse-main-container {
         width: 100%;
-        padding: 0 1rem;
+        padding: 0;
+    }
+
+    .browse-page-container {
+        max-width: 1380px;
+    }
+
+    @media (min-width: 1600px) {
+        .browse-page-container {
+            max-width: 1500px;
+        }
     }
 
     .browse-scroll-loading {
@@ -306,7 +357,7 @@
     }
 </style>
 
-<div class="container-fluid px-3 px-xl-4">
+<div class="container browse-page-container py-3">
     <hr class="browse-page-separator">
         {% if category.image %}
             {% thumbnail category.image "200" format="PNG" as im %}
@@ -318,7 +369,7 @@
     {% if category.virtual_depth %}
     <div class="row">
         <div class="col-lg-12">
-            <div class="container-fluid">  
+            <div class="container px-0">  
                 <h4>Best priced orders in category</h4>
                 <div class="row">
                         <div class="col-lg-12">
@@ -351,7 +402,7 @@
                 {% if virtual_offers or virtual_bids %}
                 <div class="row">
                     <div id="bids" class="col-lg-6">
-                        <div class="container">
+                        <div class="px-0">
                             <table class="table table-smallpadding">
                                 <thead>
                                     <th colspan="2"><span class=" font-weight-bold">Best Bids (immediate sale price)</span></th>
@@ -369,7 +420,7 @@
                     </div>
                     
                     <div id="offers" class="col-lg-6">
-                        <div class="container">
+                        <div class="px-0">
                             <table class="table table-smallpadding">
                                 <thead>
                                     <th colspan="2"><span class=" font-weight-bold">Best Offers (immediate purchase price)</span></th>
@@ -400,7 +451,7 @@
     <div class="row">
         <div class="col-lg-12">
       <!-- end div .slider-area -->
-            <div class="container-fluid">  
+            <div class="container px-0">  
                 <div class="row align-items-center gutters-5">
                     {% for category in categories %}
                         {% include "navigation/category_view.html" with category=category %}
@@ -416,7 +467,7 @@
     <div class="w-100">
         {% if True %}
         <form action="." method="get" id="browse-filter-form">
-            <div class="container-fluid browse-main-container">
+            <div class="browse-main-container">
                     <div class="browse-meta-bar">
                         {% if biscuit %}
                         <nav aria-label="Breadcrumb">

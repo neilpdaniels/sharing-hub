@@ -164,6 +164,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SharingHubPalette.accentCoral,
+                  ),
                   onPressed: widget.busy ? null : _submit,
                   child: widget.busy
                       ? const SizedBox(

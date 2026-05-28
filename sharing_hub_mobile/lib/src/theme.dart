@@ -67,7 +67,10 @@ final ThemeData sharingHubLightTheme = ThemeData(
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: SharingHubPalette.brandTeal, width: 2),
+      borderSide: const BorderSide(
+        color: SharingHubPalette.brandTeal,
+        width: 2,
+      ),
     ),
     filled: true,
     fillColor: const Color(0xFFFCFFFE),
@@ -130,7 +133,7 @@ final ThemeData sharingHubLightTheme = ThemeData(
       fontFamily: 'Nunito',
     ),
     labelLarge: TextStyle(
-      color: SharingHubPalette.accentCoral,
+      color: SharingHubPalette.lightText,
       fontWeight: FontWeight.bold,
       fontSize: 16,
       fontFamily: 'Nunito',
@@ -154,7 +157,10 @@ final ThemeData sharingHubLightTheme = ThemeData(
     backgroundColor: SharingHubPalette.lightSurfaceSoft,
     selectedColor: const Color(0xFFDDF3EE),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-    labelStyle: const TextStyle(color: SharingHubPalette.lightText, fontFamily: 'Nunito'),
+    labelStyle: const TextStyle(
+      color: SharingHubPalette.lightText,
+      fontFamily: 'Nunito',
+    ),
     side: const BorderSide(color: SharingHubPalette.lightBorder),
   ),
   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
@@ -200,7 +206,10 @@ final ThemeData sharingHubDarkTheme = ThemeData(
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
-      borderSide: const BorderSide(color: SharingHubPalette.brandTeal, width: 2),
+      borderSide: const BorderSide(
+        color: SharingHubPalette.brandTeal,
+        width: 2,
+      ),
     ),
     filled: true,
     fillColor: SharingHubPalette.darkSurface,
@@ -263,7 +272,7 @@ final ThemeData sharingHubDarkTheme = ThemeData(
       fontFamily: 'Nunito',
     ),
     labelLarge: TextStyle(
-      color: SharingHubPalette.accentCoral,
+      color: SharingHubPalette.darkText,
       fontWeight: FontWeight.bold,
       fontSize: 16,
       fontFamily: 'Nunito',
@@ -287,7 +296,10 @@ final ThemeData sharingHubDarkTheme = ThemeData(
     backgroundColor: SharingHubPalette.darkSurface,
     selectedColor: SharingHubPalette.darkSurfaceSoft,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-    labelStyle: const TextStyle(color: SharingHubPalette.darkText, fontFamily: 'Nunito'),
+    labelStyle: const TextStyle(
+      color: SharingHubPalette.darkText,
+      fontFamily: 'Nunito',
+    ),
     side: const BorderSide(color: SharingHubPalette.darkBorder),
   ),
   bottomNavigationBarTheme: const BottomNavigationBarThemeData(

@@ -8,21 +8,67 @@
 {% block content %}
 
 <style>
-.txn-compact-table {
-    table-layout: fixed;
-    width: 100%;
+.txn-list {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.8rem;
 }
-.txn-compact-table th,
-.txn-compact-table td {
-    padding: 0.55rem 0.5rem;
-    vertical-align: top;
+
+.txn-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.6rem;
+    background: #fff;
+    padding: 0.8rem;
 }
-.txn-compact-table .txn-col-parties { width: 26%; }
-.txn-compact-table .txn-col-item { width: 10%; }
-.txn-compact-table .txn-col-terms { width: 17%; }
-.txn-compact-table .txn-col-status { width: 28%; }
-.txn-compact-table .txn-col-updated { width: 10%; }
-.txn-compact-table .txn-col-actions { width: 9%; }
+
+.txn-item-main {
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: 1.8fr 0.9fr 1.2fr 1.4fr;
+}
+
+.txn-item-section {
+    min-width: 0;
+}
+
+.txn-item-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    margin-bottom: 0.18rem;
+}
+
+.txn-item-value {
+    font-size: 0.95rem;
+    color: #1f2937;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.txn-item-meta {
+    margin-top: 0.65rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid #eef2f7;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.txn-item-updated {
+    font-size: 0.82rem;
+    color: #6b7280;
+}
+
+.txn-item-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+}
+
 .txn-status-pill {
     display: inline-block;
     max-width: 100%;
@@ -49,12 +95,7 @@
     font-size: 1em;
     margin-right: 0.25em;
 }
-.txn-lowercase {
-    text-transform: lowercase;
-}
-.txn-compact-table thead th {
-    text-transform: lowercase !important;
-}
+
 .txn-role-dot {
     display: inline-block;
     width: 8px;
@@ -72,6 +113,22 @@
 .txn-role-dot-pending {
     background: #dc2626;
 }
+
+@media (max-width: 991.98px) {
+    .txn-item-main {
+        grid-template-columns: 1fr;
+    }
+
+    .txn-item-meta {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 1399.98px) {
+    .txn-item-main {
+        grid-template-columns: 1fr 1fr;
+    }
+}
 </style>
 
 <div class="container">
@@ -80,10 +137,10 @@
         {% if type == 'open' %}
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
-                <a class="nav-link {% if active_view != 'calendar' %}active{% endif %}" href="?view=list">List</a>
+                <a class="nav-link {% if active_view == 'calendar' %}active{% endif %}" href="?view=calendar&month={{ calendar_month_key }}">Calendar</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {% if active_view == 'calendar' %}active{% endif %}" href="?view=calendar&month={{ calendar_month_key }}">Calendar</a>
+                <a class="nav-link {% if active_view != 'calendar' %}active{% endif %}" href="?view=list">List</a>
             </li>
         </ul>
         {% endif %}
@@ -150,74 +207,84 @@
                 {% if transactions|length > 0 %}
                 <div class="card border-0 shadow-sm mb-3">
                     <div class="card-body p-0">
-                    <table class="table table-hover mb-0 txn-compact-table txn-lowercase">
-                        <thead>
-                            <th class="txn-col-parties">parties</th>
-                            <th class="txn-col-item">item</th>
-                            <th class="txn-col-terms">terms</th>
-                            <th class="txn-col-status">status</th>
-                            <th class="txn-col-updated">updated</th>
-                            <th class="text-center txn-col-actions">actions</th>
-                        </thead>
-                        <tbody>
-                        {% for transaction in transactions %}
-                        <tr>
-                        <td class="small">
-                            {% with lender=transaction.user_passive borrower=transaction.user_aggressive %}
-                                {% if request.user == transaction.user_passive and request.user == transaction.user_aggressive %}
-                                    <span class="txn-role-dot" style="background:linear-gradient(135deg,#22c55e 49%,#3b82f6 51%);"></span>
-                                {% elif request.user == transaction.user_passive %}
-                                    <span class="txn-role-dot txn-role-dot-lending"></span>
-                                {% elif request.user == transaction.user_aggressive %}
-                                    <span class="txn-role-dot txn-role-dot-borrowing"></span>
-                                {% endif %}
-                                {% if transaction.requires_my_action %}
-                                    <span class="txn-role-dot txn-role-dot-pending" title="awaiting your action"></span>
-                                {% endif %}
-                                {% if request.user == transaction.user_passive %}
-                                    <span>You are lending to <span class="font-weight-bold">{{ borrower.get_full_name|default:borrower.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ borrower.username }}">{{ borrower.username }}</a>]</span>
-                                    {% include "user_profile_modal_only.html" with user=borrower %}
-                                {% elif request.user == transaction.user_aggressive %}
-                                    <span>You are borrowing from <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ lender.username }}">{{ lender.username }}</a>]</span>
-                                    {% include "user_profile_modal_only.html" with user=lender %}
-                                {% else %}
-                                    <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
-                                    <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
-                                    <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
-                                    <span>{{ borrower.get_full_name|default:borrower.username }}</span>
-                                {% endif %}
-                            {% endwith %}
-                        </td>
-                        <td>
-                            <a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a>
-                            <!-- Removed order reference -->
-                        </td>
-                        <td class="small">
-                            <div>£{{ transaction.price|format_price }} each</div>
-                            <div class="small text-muted">Qty {{ transaction.quantity }}</div>
-                            {% if transaction.rental_start_date %}
-                            <div class="small mt-1"><strong>Rental:</strong> {{ transaction.rental_start_date|date:"M d" }}{% if transaction.rental_end_date %} - {{ transaction.rental_end_date|date:"M d, Y" }}{% else %}, {{ transaction.rental_start_date|date:"Y" }}{% endif %}</div>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <span class="badge badge-light border txn-status-pill" title="{{ transaction.get_status_display_verbose }}">{{ transaction.get_status_display_verbose }}</span>
-                        </td>
-                        <td>{{ transaction.amended|date:"M d, Y" }}</td>
-                        <td class="text-right">
-                            <div class="d-flex flex-row align-items-center" style="gap:0.15em;">
-                                {% if transaction.unread_message_count > 0 %}
-                                    <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
-                                {% endif %}
-                                <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
+                    <div class="txn-list">
+                    {% for transaction in transactions %}
+                        <article class="txn-item">
+                            <div class="txn-item-main">
+                                <div class="txn-item-section">
+                                    <span class="txn-item-label">Parties</span>
+                                    <div class="txn-item-value">
+                                        {% with lender=transaction.user_passive borrower=transaction.user_aggressive %}
+                                            {% if request.user == transaction.user_passive and request.user == transaction.user_aggressive %}
+                                                <span class="txn-role-dot" style="background:linear-gradient(135deg,#22c55e 49%,#3b82f6 51%);"></span>
+                                            {% elif request.user == transaction.user_passive %}
+                                                <span class="txn-role-dot txn-role-dot-lending"></span>
+                                            {% elif request.user == transaction.user_aggressive %}
+                                                <span class="txn-role-dot txn-role-dot-borrowing"></span>
+                                            {% endif %}
+                                            {% if transaction.requires_my_action %}
+                                                <span class="txn-role-dot txn-role-dot-pending" title="awaiting your action"></span>
+                                            {% endif %}
+
+                                            {% if request.user == transaction.user_passive %}
+                                                <span>You are lending to <span class="font-weight-bold">{{ borrower.get_full_name|default:borrower.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ borrower.username }}">{{ borrower.username }}</a>]</span>
+                                                {% include "user_profile_modal_only.html" with user=borrower %}
+                                            {% elif request.user == transaction.user_aggressive %}
+                                                <span>You are borrowing from <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ lender.username }}">{{ lender.username }}</a>]</span>
+                                                {% include "user_profile_modal_only.html" with user=lender %}
+                                            {% else %}
+                                                <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
+                                                <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
+                                                <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
+                                                <span>{{ borrower.get_full_name|default:borrower.username }}</span>
+                                            {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </div>
+
+                                <div class="txn-item-section">
+                                    <span class="txn-item-label">Item</span>
+                                    <div class="txn-item-value">
+                                        <a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a>
+                                    </div>
+                                </div>
+
+                                <div class="txn-item-section">
+                                    <span class="txn-item-label">Terms</span>
+                                    <div class="txn-item-value">
+                                        <div>£{{ transaction.price|format_price }} each</div>
+                                        <div class="small text-muted">Qty {{ transaction.quantity }}</div>
+                                        {% if transaction.rental_start_date %}
+                                        <div class="small mt-1"><strong>Rental:</strong> {{ transaction.rental_start_date|date:"M d" }}{% if transaction.rental_end_date %} - {{ transaction.rental_end_date|date:"M d, Y" }}{% else %}, {{ transaction.rental_start_date|date:"Y" }}{% endif %}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="txn-item-section">
+                                    <span class="txn-item-label">Status</span>
+                                    <div class="txn-item-value">
+                                        <span class="badge badge-light border txn-status-pill" title="{{ transaction.get_status_display_verbose }}">{{ transaction.get_status_display_verbose }}</span>
+                                    </div>
+                                </div>
                             </div>
-                        </td>
-                        </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
+
+                            <div class="txn-item-meta">
+                                <span class="txn-item-updated">Updated {{ transaction.amended|date:"M d, Y" }}</span>
+                                <div class="txn-item-actions">
+                                    {% if transaction.unread_message_count > 0 %}
+                                        <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
+                                    {% endif %}
+                                    <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
+                                </div>
+                            </div>
+                        </article>
+                    {% endfor %}
+                    </div>
                     </div>
                 </div>
+                {% if transactions.has_other_pages %}
                 {% include "pagination.html" with page=transactions urlencode=urlencode %}
+                {% endif %}
                 {% else %}
                 <div class="alert alert-light border">No bookings match {{ selected_day_label }}.</div>
                 {% endif %}
@@ -227,73 +294,84 @@
             {% if transactions|length > 0 %}
             <div class="card border-0 shadow-sm mb-3">
                 <div class="card-body p-0">
-                <table class="table table-hover mb-0 txn-compact-table txn-lowercase">
-                    <thead>
-                        <th class="txn-col-parties">parties</th>
-                        <th class="txn-col-item">item</th>
-                        <th class="txn-col-terms">terms</th>
-                        <th class="txn-col-status">status</th>
-                        <th class="txn-col-updated">updated</th>
-                        <th class="text-center txn-col-actions">actions</th>
-                    </thead>
-                    <tbody>
-                    {% for transaction in transactions %}
-                    <tr>
-                    <td class="small">
-                        {% with lender=transaction.user_passive borrower=transaction.user_aggressive %}
-                            {% if request.user == transaction.user_passive and request.user == transaction.user_aggressive %}
-                                <span class="txn-role-dot" style="background:linear-gradient(135deg,#22c55e 49%,#3b82f6 51%);"></span>
-                            {% elif request.user == transaction.user_passive %}
-                                <span class="txn-role-dot txn-role-dot-lending"></span>
-                            {% elif request.user == transaction.user_aggressive %}
-                                <span class="txn-role-dot txn-role-dot-borrowing"></span>
-                            {% endif %}
-                            {% if transaction.requires_my_action %}
-                                <span class="txn-role-dot txn-role-dot-pending" title="awaiting your action"></span>
-                            {% endif %}
-                            {% if request.user == transaction.user_passive %}
-                                <span>You are lending to <span class="font-weight-bold">{{ borrower.get_full_name|default:borrower.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ borrower.username }}">{{ borrower.username }}</a>]</span>
-                                {% include "user_profile_modal_only.html" with user=borrower %}
-                            {% elif request.user == transaction.user_aggressive %}
-                                <span>You are borrowing from <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ lender.username }}">{{ lender.username }}</a>]</span>
-                                {% include "user_profile_modal_only.html" with user=lender %}
-                            {% else %}
-                                <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
-                                <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
-                                <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
-                                <span>{{ borrower.get_full_name|default:borrower.username }}</span>
-                            {% endif %}
-                        {% endwith %}
-                    </td>
-                    <td>
-                        <a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a>
-                    </td>
-                    <td class="small">
-                        <div>£{{ transaction.price|format_price }} each</div>
-                        <div class="small text-muted">Qty {{ transaction.quantity }}</div>
-                        {% if transaction.rental_start_date %}
-                        <div class="small mt-1"><strong>Rental:</strong> {{ transaction.rental_start_date|date:"M d" }}{% if transaction.rental_end_date %} - {{ transaction.rental_end_date|date:"M d, Y" }}{% else %}, {{ transaction.rental_start_date|date:"Y" }}{% endif %}</div>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <span class="badge badge-light border txn-status-pill" title="{{ transaction.get_status_display_verbose }}">{{ transaction.get_status_display_verbose }}</span>
-                    </td>
-                    <td>{{ transaction.amended|date:"M d, Y" }}</td>
-                    <td class="text-right">
-                        <div class="d-flex flex-row align-items-center" style="gap:0.15em;">
-                            {% if transaction.unread_message_count > 0 %}
-                                <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
-                            {% endif %}
-                            <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
+                <div class="txn-list">
+                {% for transaction in transactions %}
+                    <article class="txn-item">
+                        <div class="txn-item-main">
+                            <div class="txn-item-section">
+                                <span class="txn-item-label">Parties</span>
+                                <div class="txn-item-value">
+                                    {% with lender=transaction.user_passive borrower=transaction.user_aggressive %}
+                                        {% if request.user == transaction.user_passive and request.user == transaction.user_aggressive %}
+                                            <span class="txn-role-dot" style="background:linear-gradient(135deg,#22c55e 49%,#3b82f6 51%);"></span>
+                                        {% elif request.user == transaction.user_passive %}
+                                            <span class="txn-role-dot txn-role-dot-lending"></span>
+                                        {% elif request.user == transaction.user_aggressive %}
+                                            <span class="txn-role-dot txn-role-dot-borrowing"></span>
+                                        {% endif %}
+                                        {% if transaction.requires_my_action %}
+                                            <span class="txn-role-dot txn-role-dot-pending" title="awaiting your action"></span>
+                                        {% endif %}
+
+                                        {% if request.user == transaction.user_passive %}
+                                            <span>You are lending to <span class="font-weight-bold">{{ borrower.get_full_name|default:borrower.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ borrower.username }}">{{ borrower.username }}</a>]</span>
+                                            {% include "user_profile_modal_only.html" with user=borrower %}
+                                        {% elif request.user == transaction.user_aggressive %}
+                                            <span>You are borrowing from <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span> [<a href="javascript:void(0)" data-toggle="modal" data-target="#{{ lender.username }}">{{ lender.username }}</a>]</span>
+                                            {% include "user_profile_modal_only.html" with user=lender %}
+                                        {% else %}
+                                            <span class="font-weight-bold">{{ lender.get_full_name|default:lender.username }}</span>
+                                            <span class="text-muted" style="font-size:0.85em;">(Lender)</span>
+                                            <span class="mx-1" style="vertical-align:middle;"><i class="fas fa-arrow-right"></i></span>
+                                            <span>{{ borrower.get_full_name|default:borrower.username }}</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </div>
+                            </div>
+
+                            <div class="txn-item-section">
+                                <span class="txn-item-label">Item</span>
+                                <div class="txn-item-value">
+                                    <a href="{% url 'navigation:productPage' transaction.order_passive.product.slug %}">{{ transaction.order_passive.product.name }}</a>
+                                </div>
+                            </div>
+
+                            <div class="txn-item-section">
+                                <span class="txn-item-label">Terms</span>
+                                <div class="txn-item-value">
+                                    <div>£{{ transaction.price|format_price }} each</div>
+                                    <div class="small text-muted">Qty {{ transaction.quantity }}</div>
+                                    {% if transaction.rental_start_date %}
+                                    <div class="small mt-1"><strong>Rental:</strong> {{ transaction.rental_start_date|date:"M d" }}{% if transaction.rental_end_date %} - {{ transaction.rental_end_date|date:"M d, Y" }}{% else %}, {{ transaction.rental_start_date|date:"Y" }}{% endif %}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="txn-item-section">
+                                <span class="txn-item-label">Status</span>
+                                <div class="txn-item-value">
+                                    <span class="badge badge-light border txn-status-pill" title="{{ transaction.get_status_display_verbose }}">{{ transaction.get_status_display_verbose }}</span>
+                                </div>
+                            </div>
                         </div>
-                    </td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
+
+                        <div class="txn-item-meta">
+                            <span class="txn-item-updated">Updated {{ transaction.amended|date:"M d, Y" }}</span>
+                            <div class="txn-item-actions">
+                                {% if transaction.unread_message_count > 0 %}
+                                    <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
+                                {% endif %}
+                                <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
+                            </div>
+                        </div>
+                    </article>
+                {% endfor %}
+                </div>
                 </div>
             </div>
+            {% if transactions.has_other_pages %}
             {% include "pagination.html" with page=transactions urlencode=urlencode %}
+            {% endif %}
             {% else %}
             <br /><h4>You have no {{ type }} bookings</h4>
             {% endif %}

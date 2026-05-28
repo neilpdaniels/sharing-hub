@@ -5,6 +5,87 @@
 {% block title %}{{ type|title }} Listings{% endblock %}
 
 {% block content %}
+<style>
+.order-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.order-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.6rem;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.order-item-main {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: 1.3fr 1.2fr 0.9fr 0.9fr 1fr;
+}
+
+.order-item-section {
+  min-width: 0;
+}
+
+.order-item-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin-bottom: 0.18rem;
+}
+
+.order-item-value {
+  font-size: 0.95rem;
+  color: #1f2937;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.order-item-meta {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #eef2f7;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.order-item-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.order-item-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+@media (max-width: 1399.98px) {
+  .order-item-main {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .order-item-main {
+    grid-template-columns: 1fr;
+  }
+
+  .order-item-meta {
+    flex-wrap: wrap;
+  }
+}
+</style>
+
 <div class="container py-3">
   <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
     <h4 class="mb-2 mb-md-0">
@@ -20,54 +101,63 @@
   </div>
 
   {% if orders.object_list %}
+  {% if orders.has_other_pages %}
   {% include "pagination.html" with page=orders %}
+  {% endif %}
 
-  <div class="table-responsive">
-    <table class="table table-sm table-hover">
-      <thead>
-        <tr>
-          <th>Ref</th>
-          <th>Item</th>
-          <th>Price/day</th>
-          <th>Deposit</th>
-          <th>Status</th>
-          <th>Bookings</th>
-          <th>Amended</th>
-          <th>Expires</th>
-          <th class="text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for order in orders %}
-        <tr>
-          <td>{{ order.order_reference }}</td>
-          <td>
+  <div class="order-list">
+    {% for order in orders %}
+    <article class="order-item">
+      <div class="order-item-main">
+        <div class="order-item-section">
+          <span class="order-item-label">Reference</span>
+          <div class="order-item-value">{{ order.order_reference }}</div>
+        </div>
+
+        <div class="order-item-section">
+          <span class="order-item-label">Item</span>
+          <div class="order-item-value">
             <a href="{% url 'navigation:productPage' order.product.slug %}">{{ order.product.name }}</a>
-          </td>
-          <td>
-            {% if order.price %}£{{ order.price|format_price }}{% else %}-{% endif %}
-          </td>
-          <td>
-            {% if order.deposit is not None %}£{{ order.deposit|format_price }}{% else %}-{% endif %}
-          </td>
-          <td>{{ order.get_status_display }}</td>
-          <td>
-            {{ orderTransactions|get_item:order.id|length|default:0 }}
-          </td>
-          <td>{{ order.amended|date:"Y-m-d H:i" }}</td>
-          <td>{{ order.expiry_date|date:"Y-m-d H:i" }}</td>
-          <td class="text-right">
-            {% if type == 'open' %}
-            <a class="btn btn-sm btn-outline-primary" href="{% url 'transaction:edit_order' order.id %}">Amend</a>
-            <a class="btn btn-sm btn-outline-danger" href="{% url 'transaction:expire_order' order.id %}">Cancel</a>
-            {% else %}
-            <a class="btn btn-sm btn-primary" href="{% url 'my_sharing_hub:copy_order_as_new' order.id %}">Copy as new</a>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+          </div>
+        </div>
+
+        <div class="order-item-section">
+          <span class="order-item-label">Price / Day</span>
+          <div class="order-item-value">{% if order.price %}£{{ order.price|format_price }}{% else %}-{% endif %}</div>
+        </div>
+
+        <div class="order-item-section">
+          <span class="order-item-label">Deposit</span>
+          <div class="order-item-value">{% if order.deposit is not None %}£{{ order.deposit|format_price }}{% else %}-{% endif %}</div>
+        </div>
+
+        <div class="order-item-section">
+          <span class="order-item-label">Status</span>
+          <div class="order-item-value">{{ order.get_status_display }}</div>
+        </div>
+
+        <div class="order-item-section">
+          <span class="order-item-label">Bookings</span>
+          <div class="order-item-value">{{ orderTransactions|get_item:order.id|length|default:0 }}</div>
+        </div>
+      </div>
+
+      <div class="order-item-meta">
+        <div class="order-item-dates">
+          <span>Amended {{ order.amended|date:"Y-m-d H:i" }}</span>
+          <span>Expires {{ order.expiry_date|date:"Y-m-d H:i" }}</span>
+        </div>
+        <div class="order-item-actions">
+          {% if type == 'open' %}
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'transaction:edit_order' order.id %}">Amend</a>
+          <a class="btn btn-sm btn-outline-danger" href="{% url 'transaction:expire_order' order.id %}">Cancel</a>
+          {% else %}
+          <a class="btn btn-sm btn-primary" href="{% url 'my_sharing_hub:copy_order_as_new' order.id %}">Copy as new</a>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
   </div>
   {% else %}
   <div class="alert alert-light border">

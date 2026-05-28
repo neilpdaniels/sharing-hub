@@ -18,13 +18,13 @@
     <div class="row align-items-center">
     <div class="col">
         {% if best_offers and best_offers|index:forloop.counter0 != '-' %}
-        <a class="product-price product-price-cta" href="{% url 'navigation:productPage' product.slug %}">Borrow for £{{ best_offers|index:forloop.counter0|format_price }}/day</a>
+        <a class="product-price product-price-cta product-price-nowrap" href="{% url 'navigation:productPage' product.slug %}">Borrow for £{{ best_offers|index:forloop.counter0|format_price }}/day</a>
         {% else %}
-        <span class="product-price product-price-muted" style="background:#edf1f2 !important; color:#8b98a0 !important;">None available</span>
+        <span class="product-price product-price-muted product-price-nowrap">Not available now</span>
         {% endif %}
     </div>
     <div class="col">
-        <a class="product-price product-price-cta" href="{% url 'transaction:add_order' product.id %}">Lend your item</a>
+        <a class="product-price product-price-cta product-price-nowrap" href="{% url 'transaction:add_order' product.id %}">Lend your item</a>
     </div>
     </div>
 </div>

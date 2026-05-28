@@ -11,6 +11,7 @@
 
 {% block content %}
 <div class="rh-hero">
+  <div class="container">
   <div class="rh-hero-inner">
     <div class="rh-hero-text">
       <h1 class="rh-hero-headline">Everything you need,<br><span class="rh-hero-accent">from people nearby.</span></h1>
@@ -27,7 +28,9 @@
       </form>
     </div>
   </div>
+  </div>
 </div>
+<div class="w-100"></div>
 <div class="container py-3">
     <style>
         .rh-home-section-title {
@@ -57,9 +60,9 @@
             transform: translateY(-2px);
         }
         .rh-cat-icon-wrap {
-            width: 68px;
-            height: 68px;
-            border-radius: 18px;
+            width: 136px;
+            height: 136px;
+            border-radius: 24px;
             border: 1px solid #dce8e5;
             background: #f2f8f7;
             display: flex;
@@ -80,8 +83,8 @@
             display: block;
         }
         .rh-cat-fallback-icon {
-            width: 34px;
-            height: 34px;
+            width: 68px;
+            height: 68px;
             object-fit: contain;
             display: block;
             opacity: 0.9;
@@ -140,14 +143,20 @@
         @media (max-width: 1199px) {
             .rh-cat-links { grid-template-columns: repeat(6, minmax(0, 1fr)); }
             .rh-popular-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .rh-cat-icon-wrap { width: 112px; height: 112px; }
+            .rh-cat-fallback-icon { width: 56px; height: 56px; }
         }
         @media (max-width: 991px) {
             .rh-cat-links { grid-template-columns: repeat(4, minmax(0, 1fr)); }
             .rh-popular-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .rh-cat-icon-wrap { width: 96px; height: 96px; border-radius: 20px; }
+            .rh-cat-fallback-icon { width: 48px; height: 48px; }
         }
         @media (max-width: 575px) {
             .rh-cat-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .rh-popular-grid { grid-template-columns: 1fr; }
+            .rh-cat-icon-wrap { width: 84px; height: 84px; border-radius: 18px; }
+            .rh-cat-fallback-icon { width: 42px; height: 42px; }
         }
     </style>
 
@@ -228,158 +237,221 @@
         {% endfor %}
     </div>
 </div>
-<div class="container">
-    <div class="row">
-        <div class="section bg-light">
-            <div class="container">
-                <div class="row align-items-center">
-                <div class="col-md-6 order-md-2">
-                    <img src="assets/images/about/img-01.png" alt="">
-                </div>
-                <div class="col-md-12 order-md-1">
-                    <div class="featured-content">
+<div class="w-100"></div>
+
+<style>
+    .rh-lower-section {
+        padding: 2.5rem 0 1.5rem;
+    }
+    .rh-why-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        align-items: start;
+        margin-bottom: 2.5rem;
+    }
+    .rh-why-text h3 {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #132644;
+        margin-bottom: 1rem;
+    }
+    .rh-why-text p {
+        color: #3d5166;
+        line-height: 1.75;
+        margin-bottom: 0.8rem;
+        font-size: 0.96rem;
+    }
+    .rh-why-pills {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    .rh-why-pill {
+        background: #f4f8f7;
+        border: 1px solid #dde8e5;
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    .rh-why-pill-icon {
+        font-size: 1.3rem;
+        color: #0f9f97;
+    }
+    .rh-why-pill-title {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #132644;
+    }
+    .rh-why-pill-body {
+        font-size: 0.82rem;
+        color: #4a6070;
+        line-height: 1.5;
+    }
+    .rh-qa-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.2rem;
+        margin-bottom: 2.5rem;
+    }
+    .rh-qa-card {
+        background: #fff;
+        border: 1px solid #e2eae7;
+        border-radius: 12px;
+        padding: 1.1rem 1.2rem;
+    }
+    .rh-qa-card h4 {
+        font-size: 0.96rem;
+        font-weight: 700;
+        color: #132644;
+        margin-bottom: 0.5rem;
+    }
+    .rh-qa-card p {
+        font-size: 0.875rem;
+        color: #4a6070;
+        line-height: 1.6;
+        margin: 0;
+    }
+    .rh-fees-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    .rh-fee-card {
+        background: #f4f8f7;
+        border: 1px solid #dde8e5;
+        border-radius: 14px;
+        padding: 1.1rem 1rem;
+        text-align: center;
+    }
+    .rh-fee-card h3 {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f9f97;
+        margin-bottom: 0.5rem;
+    }
+    .rh-fee-card p {
+        font-size: 0.83rem;
+        color: #4a6070;
+        line-height: 1.55;
+        margin: 0;
+    }
+    .rh-cta-banner {
+        background: linear-gradient(130deg, #132644 0%, #1b4068 100%);
+        border-radius: 18px;
+        padding: 2rem 2.5rem;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .rh-cta-banner h4 {
+        color: #fff;
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
+    @media (max-width: 991px) {
+        .rh-why-grid { grid-template-columns: 1fr; }
+        .rh-fees-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 767px) {
+        .rh-qa-grid { grid-template-columns: 1fr; }
+        .rh-why-pills { grid-template-columns: 1fr; }
+        .rh-fees-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 575px) {
+        .rh-fees-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="container rh-lower-section">
+
+    <div class="rh-why-grid">
+        <div class="rh-why-text">
+            <h3>Why rentalution exists</h3>
+            <p>Borrowing from your neighbours is better for your wallet and better for the planet — but it's always been too hard to organise. rentalution connects people who need things with people who own them, nearby.</p>
+            <p>Every rental is covered by our structured transaction process: deposit holds, condition verification and a clear dispute path — so both sides are always protected.</p>
+            <p>We charge a small transparent fee on completed rentals. Registration and listing are always free.</p>
+        </div>
+        <div class="rh-why-pills">
+            <div class="rh-why-pill">
+                <span class="rh-why-pill-icon"><i class="fas fa-handshake"></i></span>
+                <div class="rh-why-pill-title">Borrow anything</div>
+                <div class="rh-why-pill-body">Find almost any item you need from people nearby, for a fraction of the cost of buying.</div>
+            </div>
+            <div class="rh-why-pill">
+                <span class="rh-why-pill-icon"><i class="fas fa-coins"></i></span>
+                <div class="rh-why-pill-title">Earn from what you own</div>
+                <div class="rh-why-pill-body">List items you already own and earn from them while they sit unused.</div>
+            </div>
+            <div class="rh-why-pill">
+                <span class="rh-why-pill-icon"><i class="fas fa-shield-alt"></i></span>
+                <div class="rh-why-pill-title">Protected transactions</div>
+                <div class="rh-why-pill-body">Deposit holds, condition evidence and a clear returns process protect both sides.</div>
+            </div>
+            <div class="rh-why-pill">
+                <span class="rh-why-pill-icon"><i class="fas fa-leaf"></i></span>
+                <div class="rh-why-pill-title">Better for the planet</div>
+                <div class="rh-why-pill-body">Sharing reduces production and waste — the most sustainable item is one already made.</div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="rh-home-section-title mb-3">Common questions</h2>
+    <div class="rh-qa-grid">
+        <div class="rh-qa-card">
+            <h4>Who am I renting from?</h4>
+            <p>You rent directly from other users nearby. rentalution matches you and handles the transaction structure — we're not the owner or the borrower.</p>
+        </div>
+        <div class="rh-qa-card">
+            <h4>Is my deposit safe?</h4>
+            <p>Deposits are held as card authorisation holds and are only released once both sides confirm the return. Nothing is charged unfairly.</p>
+        </div>
+        <div class="rh-qa-card">
+            <h4>What if something goes wrong?</h4>
+            <p>Our structured returns process includes condition video evidence and a dispute path. Both lender and borrower are protected throughout.</p>
+        </div>
+        <div class="rh-qa-card">
+            <h4>What does rentalution charge?</h4>
+            <p>Registration and listing are free. rentalution charges a small percentage fee only on completed rentals — full details are in Fees &amp; Charges.</p>
+        </div>
+    </div>
+
+    <h2 class="rh-home-section-title mb-3">Transparent pricing</h2>
+    <div class="rh-fees-grid">
+        <div class="rh-fee-card">
+            <h3>Free</h3>
+            <p>Accounts are free. Listing items and placing rental enquiries are always free.</p>
+        </div>
+        <div class="rh-fee-card">
+            <h3>Platform fee</h3>
+            <p>A small percentage fee is charged on completed rentals only. No charge if a rental doesn't happen.</p>
+        </div>
+        <div class="rh-fee-card">
+            <h3>Deposit hold</h3>
+            <p>A card authorisation hold covers the deposit. Funds are never moved unless a dispute is resolved in the lender's favour.</p>
+        </div>
+        <div class="rh-fee-card">
+            <h3>No hidden fees</h3>
+            <p>All fees are shown before you confirm. Lenders and borrowers both see a full cost breakdown at agreement.</p>
+        </div>
+    </div>
+
+    <div class="rh-cta-banner">
+        <h4>Registration is free. Listing is free. Start today.</h4>
+        <a href="{% url "register" %}" class="btn btn-primary px-4">Register</a>
+    </div>
+
+    {# legacy columns below retained for structural compatibility — hidden visually #}
+    <div style="display:none">
+        <div class="featured-content">
                     <h3>Why rentalution exists</h3>
-                    <p>Of the few ways to own precious metals (Physical, ETFs, Registered ownership), Physical ownership has many <a href='{% url 'pages:physicalOwnershipGuide' %}'>advantages</a>.
-                        rentalution exists to increase the efficiency of dealing in physically delivered coins and bars, with an aim of cutting out the middle men and so reducing the spread
-                    between the buying and selling prices.  Our aim is to be the cheapest place to safely buy, and the most rewarding place to safely sell. </p>
-                    <p>We also look to capture and display other prices that are avaliable through other vendors, to provide a single, transparent view of available prices. We have 
-                        no affiliation to these, and earn no commission.</p>
-                    <p>Any transactions agreed over rentalution will transact over <a href="https://www.transpact.com/">Transpact</a>, an FCA registered escrow service, who in turn will appoint an independant arbitrator,
-                        should it be needed
-                    </p>
-                    </div>
-                </div>
-                </div>
-                <!-- end div .row -->
-            </div>
-        <!-- end div .container -->
-        </div>
-
-
-        <div class="col-lg-6    ">
-            <div class="service text-center">
-                <div class="service-icon">
-                {% if gold.image %}
-                {% thumbnail gold.image "120" format="PNG" as im %}
-                <img src="{{ im.url }}" alt="">
-                {% endthumbnail %}
-                {% endif %}
-                </div>
-                <!-- end div .service -->
-            </div>
-        </div> 
-
-        <div class="banner-grid col-sm-12 text-center">
-            <div class="banner-body justify-content-center">
-            <h4>Registration is free, Placing orders is free.</h4>
-            <a href="{% url "register" %}" class="btn btn-primary ">Register</a>
-        <!-- end div .banner-grid -->
-            </div>
-        </div>
-        
-            <div class="section-header text-center">
-                <div class="row justify-content-center">
-                    <div class="col-md-10">
-                    <h6 class="section-subtitle2">Q&A</h6>
-                    <h4 class="section-title2">Who is Buying / Selling?</h4>
-                    <p class="section-subtext">Within the internal marketplace you'll be buing from, or selling to, other users of rentalution.  rentalution does also make markets, we'll do so using our own inventory with a primary intention of increasing liquidity.</p>
-                    </div>
-                </div>
-                <!-- end div .row -->
-                <div class="row justify-content-center">
-                    <div class="col-md-10">
-                    <h4 class="section-title2">Is rentalution safe?</h4>
-                    <p class="section-subtext">rentalution is a matching service and is not involved in the settlement of transactions/ payment of monies.  We have integrated our transactions with an FCA approved Escrow service, and no money is released by them until the item has been verified by the buyer.  Please see our guides for more information about the transaction workflow and recommended verification steps.</p>
-                    </div>
-                </div>
-                <!-- end div .row -->
-                <div class="row justify-content-center">
-                    <div class="col-md-10">
-                    <h4 class="section-title2">Is rentalution the best price?</h4>
-                    <p class="section-subtext">In addition to our internal market, we also quote the prices from leading external websites, where they make their prices available for scraping.  We have no affiliation to them, the intention is to make prices fully transparent.</p>
-                    </div>
-                </div>
-                <!-- end div .row -->
-                <div class="row justify-content-center">
-                    <div class="col-md-10">
-                    <h4 class="section-title2">Is VAT inclusive in the prices?</h4>
-                    <p class="section-subtext">VAT is either inclusive, or not attracted.  Gold has no VAT applicable, whereas order in other metals will be priced with any applicable VAT.  Private sellers are unlikely to be VAT registered unless they deal in larger quanties.</a></p>
-                    </div>
-                </div>
-                <!-- end div .row -->
-                <div class="row justify-content-center">
-                    <div class="col-md-10">
-                    <h4 class="section-title2">Are all products Certified and provided in tamper-proof casing?</h4>
-                    <p class="section-subtext">No, although we would suggest that those new to investing in physical metals buy pre-certified items (in tamper proof casing) else complete full verification with a local expert.  We only list products certified by ANACS, ICG, NGC or PCGS.</a></p>
-                    </div>
-                </div>
-                <!-- end div .row -->
-            </div>
-
-            <div class="col-lg-6 col-md-6">
-                <div class="blog-grid">
-                    <div class="blog-thumb">
-                    <img src="assets/images/blog/img-02.jpg" alt=""> 
-                    </div>
-                    <!-- end div .blog-thumb -->
-                    <div class="blog-body">
-                    <h4>Buying through rentalution</h4>
-                    <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore</p>
-                    <a href="{% url 'pages:buyersGuide' %}" class="btn btn-primary">Read More</a>
-                    </div>
-                </div>
-                <!-- end div .blog-grid -->
-            </div>
-            
-            <div class="col-lg-6 col-md-6">
-                <div class="blog-grid">
-                    <div class="blog-thumb">
-                    <img src="assets/images/blog/img-02.jpg" alt=""> 
-                    </div>
-                    <!-- end div .blog-thumb -->
-                    <div class="blog-body">
-                    <h4>Selling through rentalution</h4>
-                    <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore</p>
-                    <a href="{% url 'pages:sellersGuide' %}" class="btn btn-primary">Read More</a>
-                    </div>
-                </div>
-                <!-- end div .blog-grid -->
-            </div>
-                
-
-
-            <div class="col-lg-3 col-sm-6">
-                    <div class="service text-center">
-                        <h3 class="service-title">Free</h3>
-                        <p>Accounts are free, and it's free to place and amend orders.</p>
-                        <!-- end div .service -->
-                    </div>
-                    </div>
-                    
-            <div class="col-lg-3 col-sm-6">
-                    <div class="service text-center">
-                        <h3 class="service-title">rentalution Fee</h3>
-                        <p>rentalution charges a small fee on all transactions. Currently this is set at 0.25%, so only 25p for every £100 transacted. A minimum charge of 25p applies per transaction</p>
-                        <!-- end div .service -->
-                    </div>
-            </div>
-            <div class="col-lg-3 col-sm-6">
-                    <div class="service text-center">
-                        <h3 class="service-title">Delivery Fee</h3>
-                        <p>Delivery is mandated via insured Royal Mail special delivery.  The current fee structure is as <a href='#'>here</a></p>
-                        <!-- end div .service -->
-                    </div>
-                    </div>
-            <div class="col-lg-3 col-sm-6">
-                    <div class="service text-center">
-                        <h3 class="service-title">Escrow Costs</h3>
-                        <p>To ensure both buyer and seller protection we use a named escrow service, which is FCA regulated.  
-                            The escrow costs can be found <a href="#">here</a> and will (for most transactions) cost considerably less than Paypal.  
-                        The escrow service is integrated into rentalution, but the fees will be split for complete transparency</p>
-                        <!-- end div .service -->
-                    </div>
+                    <p></p>
                     </div>
     </div>
+
 </div>
 {% endblock %}
 {% block domready %}

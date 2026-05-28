@@ -971,6 +971,87 @@
         min-width: 180px;
         font-weight: 500;
     }
+
+    .transaction-messages .messages-page-header {
+        margin-bottom: 0.4rem !important;
+    }
+
+    .transaction-messages .messages-page-title {
+        font-size: 1.02rem;
+        line-height: 1.2;
+    }
+
+    .transaction-messages .messages-list {
+        gap: 0.45rem;
+    }
+
+    .transaction-messages .message-card {
+        padding: 0.46rem 0.56rem;
+        gap: 0.45rem;
+        border-radius: 9px;
+    }
+
+    .transaction-messages .message-card-main {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+    }
+
+    .transaction-messages .message-card-icon-wrap {
+        width: 24px;
+    }
+
+    .transaction-messages .message-open-btn {
+        font-size: 0.92rem;
+    }
+
+    .transaction-messages .message-card-topline {
+        margin-left: auto;
+        flex: 0 0 auto;
+        gap: 0.35rem;
+    }
+
+    .transaction-messages .message-card-subject {
+        display: none;
+    }
+
+    .transaction-messages .message-card-time {
+        font-size: 0.72rem;
+        white-space: nowrap;
+    }
+
+    .transaction-messages .message-card-meta {
+        margin-top: 0;
+        gap: 0.28rem;
+        font-size: 0.78rem;
+        flex: 1 1 auto;
+        min-width: 0;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .transaction-messages .message-read-badge {
+        padding: 0.05rem 0.3rem;
+        font-size: 0.64rem;
+    }
+
+    .transaction-messages .message-card-hint {
+        font-size: 0.68rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .transaction-messages .message-card {
+            padding: 0.42rem 0.5rem;
+            gap: 0.42rem;
+        }
+
+        .transaction-messages .message-card-meta {
+            font-size: 0.74rem;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -1152,57 +1233,103 @@ if (messageForm) {
 }
 
 const expandMessageUrl = "{% url 'my_sharing_hub:expand_message' %}";
-document.querySelectorAll('[id^="expand_message_"]').forEach((button) => {
+
+const setMessageAsRead = (messageRef) => {
+    const row = document.getElementById(`message_row_${messageRef}`);
+    if (row) {
+        row.classList.remove('is-unread');
+        row.classList.add('is-read');
+    }
+
+    const triggerButton = document.getElementById(`expand_message_${messageRef}`);
+    if (triggerButton) {
+        triggerButton.classList.remove('is-unread');
+        triggerButton.classList.add('is-read');
+        const icon = triggerButton.querySelector('.fa');
+        if (icon) {
+            icon.classList.remove('fa-envelope');
+            icon.classList.add('fa-envelope-open-o');
+        }
+    }
+
+    const statusBadge = document.getElementById(`message_status_${messageRef}`);
+    if (statusBadge) {
+        statusBadge.textContent = 'Read';
+        statusBadge.classList.remove('is-unread');
+        statusBadge.classList.add('is-read');
+    }
+};
+
+const openMessageModal = (messageRef) => {
+    fetch(`${expandMessageUrl}?message_id=${encodeURIComponent(messageRef)}`, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error('Unable to fetch message');
+            }
+            return response.json();
+        })
+        .then((data) => {
+            setMessageAsRead(messageRef);
+
+            const bodyNode = document.getElementById('messageModalContent');
+            if (bodyNode) {
+                bodyNode.textContent = data.body || '';
+                bodyNode.style.wordWrap = 'break-word';
+            }
+
+            const titleNode = document.getElementById('messageModalLabel');
+            if (titleNode) titleNode.textContent = data.subject || '';
+
+            const fromNode = document.getElementById('messageModalFrom');
+            if (fromNode) fromNode.textContent = data.from || '';
+
+            const toNode = document.getElementById('messageModalTo');
+            if (toNode) toNode.textContent = data.to || '';
+
+            const dateNode = document.getElementById('messageModalDateTime');
+            if (dateNode) dateNode.textContent = data.created || '';
+
+            if (window.jQuery && jQuery('#messageModal').length) {
+                jQuery('#messageModal').modal('show');
+            }
+        })
+        .catch(() => {
+            // Keep failure silent in UI.
+        });
+};
+
+document.querySelectorAll('.transaction-messages [id^="expand_message_"]').forEach((button) => {
     button.addEventListener('click', (event) => {
         event.preventDefault();
         const messageRef = button.id.replace('expand_message_', '');
+        openMessageModal(messageRef);
+    });
+});
 
-        fetch(`${expandMessageUrl}?message_id=${encodeURIComponent(messageRef)}`, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                button.classList.remove('is-unread');
-                button.classList.add('is-read');
-                const icon = button.querySelector('.fa');
-                if (icon) {
-                    icon.classList.remove('fa-envelope');
-                    icon.classList.add('fa-envelope-open');
-                }
+document.querySelectorAll('.transaction-messages .message-row[data-message-id]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+        if (event.target.closest('a, button, input, textarea, select, label')) {
+            return;
+        }
+        const messageRef = row.getAttribute('data-message-id');
+        if (messageRef) {
+            openMessageModal(messageRef);
+        }
+    });
 
-                const readBy = document.getElementById(`${messageRef}_read_by`);
-                if (readBy) {
-                    readBy.textContent = 'True';
-                    readBy.removeAttribute('style');
-                }
-
-                const bodyNode = document.getElementById('messageModalContent');
-                if (bodyNode) {
-                    bodyNode.textContent = data.body || '';
-                    bodyNode.style.wordWrap = 'break-word';
-                }
-
-                const titleNode = document.getElementById('messageModalLabel');
-                if (titleNode) titleNode.textContent = data.subject || '';
-
-                const fromNode = document.getElementById('messageModalFrom');
-                if (fromNode) fromNode.textContent = data.from || '';
-
-                const toNode = document.getElementById('messageModalTo');
-                if (toNode) toNode.textContent = data.to || '';
-
-                const dateNode = document.getElementById('messageModalDateTime');
-                if (dateNode) dateNode.textContent = data.created || '';
-
-                if (window.jQuery && jQuery('#messageModal').length) {
-                    jQuery('#messageModal').modal('show');
-                }
-            })
-            .catch(() => {
-                // Keep failure silent in UI; table remains usable.
-            });
+    row.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        event.preventDefault();
+        const messageRef = row.getAttribute('data-message-id');
+        if (messageRef) {
+            openMessageModal(messageRef);
+        }
     });
 });
 

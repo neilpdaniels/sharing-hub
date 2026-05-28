@@ -1,6 +1,20 @@
 todo: 
 
 
+broken links / missing pages audit (2026-05-26)
+
+1) Safety page created and wired: pages/safety/. TODO: replace placeholder text with full safety policy content and links.
+2) Notifications page created and wired: my_sharing_hub/notifications/. TODO: implement real notification feed, unread state, and notification actions.
+3) Missing social destinations in footer: Facebook, Instagram, Twitter/X all point to # in common/templates/base.html (footer). Add real profile URLs.
+4) Broken AJAX endpoint in product page: {% url "quotes:refresh_request" %} in navigation/templates/navigation/productPage.html has no registered quotes namespace/route. Add the route or replace/remove this call.
+
+
+1) check out the colours on teh search page (/navigation/search)- tehy dont match the site. fix
+2) Why does only the "Home" pill on the menu highlight when selected - can the others do it too?
+3) when clicking on my avataar on teh home page take "my details"
+4) have  a my details option on the main (left) toolbar when logged in that has multiple tabs: my cards / my accound details (these pages already ezist independently)
+    
+    
     casual loan
         -> simple contract
         -> no deposit held

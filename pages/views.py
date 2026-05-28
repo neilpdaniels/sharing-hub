@@ -5,6 +5,10 @@ def how_it_works(request):
     return render(request, 'pages/how_it_works.html')
 
 
+def safety(request):
+    return render(request, 'pages/safety.html')
+
+
 def fees_and_charges(request):
     return render(request, 'pages/fees_and_charges.html')
 

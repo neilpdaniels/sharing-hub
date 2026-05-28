@@ -32,6 +32,14 @@
         <li>You can also clear cookies from your browser settings at any time.</li>
       </ul>
 
+      <div class="mt-4 p-3 border rounded bg-white">
+        <h5 class="mb-2">Reset cookie choice</h5>
+        <p class="mb-3 text-muted">
+          If you want to review your consent again, reset your cookie choice and we will show the banner on the next page load.
+        </p>
+        <button type="button" class="btn btn-outline-primary" id="cookie-consent-reset-btn">Reset cookie choice</button>
+      </div>
+
       <h4>How Long Cookies Last</h4>
       <p>
         Some cookies are session-based and expire when your browser closes. Others are persistent and remain for a set period unless deleted.
@@ -46,5 +54,18 @@
 </div>
 {% endblock %}
 
+{% block pageJavascript %}
+<script>
+  function resetCookielawConsent() {
+    document.cookie = 'cookielaw_accepted=; Max-Age=0; path=/';
+    document.cookie = 'cookielaw_accepted=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    window.location.reload();
+  }
+</script>
+{% endblock %}
+
 {% block domready %}
+$('#cookie-consent-reset-btn').on('click', function() {
+  resetCookielawConsent();
+});
 {% endblock %}

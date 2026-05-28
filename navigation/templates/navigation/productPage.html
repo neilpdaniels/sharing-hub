@@ -53,11 +53,54 @@
         position: relative;
         z-index: 1;
       }
+      .pp-map-legend {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 2;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #d7e1e6;
+        border-radius: 10px;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.1);
+        padding: 8px 10px;
+        min-width: 170px;
+      }
+      .pp-map-legend-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #2f3b46;
+        margin-bottom: 4px;
+      }
+      .pp-map-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        color: #4d5b66;
+        line-height: 1.2;
+      }
+      .pp-map-legend-item + .pp-map-legend-item {
+        margin-top: 3px;
+      }
+      .pp-map-legend-pin {
+        font-size: 0.9rem;
+        width: 12px;
+        text-align: center;
+        flex-shrink: 0;
+      }
       #pp-map .leaflet-pane,
       #pp-map .leaflet-top,
       #pp-map .leaflet-bottom,
       #pp-map .leaflet-control {
         z-index: 1 !important;
+      }
+      @media (max-width: 575.98px) {
+        .pp-map-legend {
+          top: 8px;
+          right: 8px;
+          padding: 6px 8px;
+          min-width: 152px;
+        }
       }
       .pp-order-card {
         border: 1px solid #dde4e8;
@@ -443,6 +486,21 @@
                   <div id="pp-map-selected-details"></div>
                 </div>
               </div>
+                <div class="pp-map-legend" aria-label="Map pin legend">
+                  <div class="pp-map-legend-title">Pin legend</div>
+                  <div class="pp-map-legend-item">
+                    <span class="pp-map-legend-pin fas fa-map-marker-alt" style="color:#1FB6B2;"></span>
+                    <span>Standard listing</span>
+                  </div>
+                  <div class="pp-map-legend-item">
+                    <span class="pp-map-legend-pin fas fa-map-marker-alt" style="color:#FF6B57;"></span>
+                    <span>Friends (mates rates)</span>
+                  </div>
+                  <div class="pp-map-legend-item">
+                    <span class="pp-map-legend-pin fas fa-map-marker-alt" style="color:#FFD166;"></span>
+                    <span>Free for friends</span>
+                  </div>
+                </div>
             </div>
 
             {# Hidden order data for map popups #}
@@ -714,25 +772,26 @@
     });
     ensureTileFallback();
 
-    var goldIcon = L.divIcon({
+    var turquoiseIcon = L.divIcon({
       className: '',
-      html: '<div style="width:16px;height:16px;background:gold;border:2px solid #b8860b;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
-      iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -12]
+      html: '<i class="fas fa-map-marker-alt" style="color:#1FB6B2;font-size:24px;line-height:24px;text-shadow:0 1px 3px rgba(0,0,0,0.35);"></i>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 22],
+      popupAnchor: [0, -20]
     });
-    var blueIcon = L.divIcon({
+    var coralIcon = L.divIcon({
       className: '',
-      html: '<div style="width:16px;height:16px;background:#0083ff;border:2px solid #005bb5;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
-      iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -12]
+      html: '<i class="fas fa-map-marker-alt" style="color:#FF6B57;font-size:24px;line-height:24px;text-shadow:0 1px 3px rgba(0,0,0,0.35);"></i>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 22],
+      popupAnchor: [0, -20]
     });
-    var greenIcon = L.divIcon({
+    var yellowIcon = L.divIcon({
       className: '',
-      html: '<div style="width:16px;height:16px;background:#28a745;border:2px solid #19692c;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
-      iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -12]
-    });
-    var redIcon = L.divIcon({
-      className: '',
-      html: '<div style="width:16px;height:16px;background:#dc3545;border:2px solid #921925;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
-      iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -12]
+      html: '<i class="fas fa-map-marker-alt" style="color:#FFD166;font-size:24px;line-height:24px;text-shadow:0 1px 3px rgba(0,0,0,0.35);"></i>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 22],
+      popupAnchor: [0, -20]
     });
 
     var bounds = [];
@@ -807,10 +866,9 @@
         + (actions ? '<div style="margin-top:6px;">' + actions + '</div>' : '')
         + '</div></div>';
 
-      var markerIcon = o.available === false ? redIcon
-        : (o.isFriend && o.matesRates) ? goldIcon
-        : o.available === true ? greenIcon
-        : blueIcon;
+      var markerIcon = (o.isFriend && o.freeForFriends) ? yellowIcon
+        : (o.isFriend && o.matesRates) ? coralIcon
+        : turquoiseIcon;
       var marker = L.marker([o.lat, o.lng], { icon: markerIcon }).addTo(ppMap);
       marker.bindPopup(popup, { maxWidth: 320, autoClose: false, closeOnClick: false });
       marker.openPopup();

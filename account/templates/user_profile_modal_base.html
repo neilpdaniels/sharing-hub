@@ -129,6 +129,12 @@
                 {% endif %}
             </div>
             <div class="modal-footer">
+                {% if request.user.is_authenticated and request.user != user %}
+                <form method="post" action="{% url 'friends:add_friend_user' user.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary">Add as friend</button>
+                </form>
+                {% endif %}
                 <a href="{% url 'navigation:user_listings' user.username %}" class="btn btn-outline-primary">View open listings</a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             </div>

@@ -124,7 +124,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return widget.session != null && token != null && token.isNotEmpty;
   }
 
-  int get _searchTabIndex => _isAuthenticated ? 2 : 1;
+  int get _browseTabIndex => 1;
+
+  int get _searchTabIndex => _isAuthenticated ? 3 : 2;
+
+  int get _loginTabIndex => 3;
 
   bool get _showFilterDrawerAction {
     if (_detailPageType != null) {
@@ -133,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_selectedIndex == _searchTabIndex) {
       return true;
     }
-    return _selectedIndex == 0 && _selectedCategorySlug != null;
+    return _selectedIndex == _browseTabIndex && _selectedCategorySlug != null;
   }
 
   void _openFilterMenu() {
@@ -158,6 +162,14 @@ class _HomeScreenState extends State<HomeScreen> {
           Text('Sort/Filter'),
         ],
       ),
+    );
+  }
+
+  BottomNavigationBarItem _navItem(IconData icon, String label, bool selected) {
+    final color = selected ? SharingHubPalette.accentCoral : null;
+    return BottomNavigationBarItem(
+      icon: Icon(icon, color: color),
+      label: label,
     );
   }
 
@@ -724,9 +736,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isFavourite
-                ? 'Added to favourites.'
-                : 'Removed from favourites.',
+            isFavourite ? 'Added to favourites.' : 'Removed from favourites.',
           ),
         ),
       );
@@ -933,7 +943,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _detailPageType = null;
       _selectedProductSlug = null;
       _selectedTransactionReference = null;
-      _selectedIndex = 2;
+      _selectedIndex = _loginTabIndex;
     });
   }
 
@@ -1002,13 +1012,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final appLogoAsset = widget.isDarkMode
-        ? 'assets/images/logo-rentalution-dark.png'
+        o yeah?? 'assets/images/logo-rentalution-dark.png'
         : 'assets/images/logo-rentalution.png';
 
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: Image.asset(appLogoAsset, height: 48, fit: BoxFit.contain),
+        title: Image.asset(
+          appLogoAsset,
+          height: 48,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
         actions: [
           IconButton(
             onPressed: _categoriesLoading || widget.loading
@@ -1071,47 +1086,43 @@ class _HomeScreenState extends State<HomeScreen> {
         opacity: _navBarOpacity,
         duration: const Duration(milliseconds: 250),
         child: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            // Always dismiss detail overlays before switching tabs.
-            _detailPageType = null;
-            _selectedProductSlug = null;
-            _selectedTransactionReference = null;
-            _selectedIndex = index;
-            _navBarOpacity = 1.0;
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        items: _isAuthenticated
-            ? const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.explore_outlined),
-                  label: 'Browse',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person_outline),
-                  label: 'My rentalution',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.search),
-                  label: 'Search',
-                ),
-              ]
-            : const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.explore_outlined),
-                  label: 'Browse',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.search),
-                  label: 'Search',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.login),
-                  label: 'Log in',
-                ),
-              ],
+          currentIndex: _selectedIndex,
+          onTap: (index) {
+            setState(() {
+              // Always dismiss detail overlays before switching tabs.
+              _detailPageType = null;
+              _selectedProductSlug = null;
+              _selectedTransactionReference = null;
+              _selectedIndex = index;
+              _navBarOpacity = 1.0;
+            });
+          },
+          type: BottomNavigationBarType.fixed,
+          items: _isAuthenticated
+              ? [
+                  _navItem(Icons.home_outlined, 'Home', _selectedIndex == 0),
+                  _navItem(
+                    Icons.explore_outlined,
+                    'Browse',
+                    _selectedIndex == 1,
+                  ),
+                  _navItem(
+                    Icons.person_outline,
+                    'My rentalution',
+                    _selectedIndex == 2,
+                  ),
+                  _navItem(Icons.search, 'Search', _selectedIndex == 3),
+                ]
+              : [
+                  _navItem(Icons.home_outlined, 'Home', _selectedIndex == 0),
+                  _navItem(
+                    Icons.explore_outlined,
+                    'Browse',
+                    _selectedIndex == 1,
+                  ),
+                  _navItem(Icons.search, 'Search', _selectedIndex == 2),
+                  _navItem(Icons.login, 'Log in', _selectedIndex == 3),
+                ],
         ),
       ),
     );
@@ -1146,10 +1157,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!_isAuthenticated) {
       switch (_selectedIndex) {
         case 0:
-          return _buildBrowse();
+          return _buildHomeLanding();
         case 1:
-          return _buildSearch();
+          return _buildBrowse();
         case 2:
+          return _buildSearch();
+        case 3:
           final onLogin = widget.onLogin;
           if (onLogin == null) {
             return const SizedBox.shrink();
@@ -1176,14 +1189,16 @@ class _HomeScreenState extends State<HomeScreen> {
             onLogin: onLogin,
           );
         default:
-          return _buildBrowse();
+          return _buildHomeLanding();
       }
     }
 
     switch (_selectedIndex) {
       case 0:
-        return _buildBrowse();
+        return _buildHomeLanding();
       case 1:
+        return _buildBrowse();
+      case 2:
         return MySharingHubScreen(
           onAccountAmend: _openAccountDetails,
           onOpenInbox: _openInbox,
@@ -1201,7 +1216,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   widget.onBiometricToggle!(enabled);
                 },
         );
-      case 2:
+      case 3:
         return _buildSearch();
       default:
         return const SizedBox.shrink();
@@ -1210,64 +1225,220 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBrowse() {
     if (_selectedCategorySlug == null) {
-      return _buildCategoryGrid();
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sectionTitle('Browse categories'),
+            const SizedBox(height: 10),
+            _buildCategoryCardsWrap(),
+          ],
+        ),
+      );
     }
     return _buildCategoryProducts();
   }
 
-  Widget _buildCategoryGrid() {
+  Widget _buildHomeLanding() {
     if (_categoriesLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    return GridView.builder(
+
+    final textTheme = Theme.of(context).textTheme;
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 200,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: _categories.length,
-      itemBuilder: (context, index) {
-        final cat = _categories[index];
-        return GestureDetector(
-          onTap: () => _loadBrowseProducts(cat.slug),
-          child: Card(
-            elevation: 3,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _categoryThumb(cat.imageUrl),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    cat.title,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                if (cat.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Text(
-                      _stripHtmlTags(cat.description),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionTitle('Why rentalution exists'),
+          const SizedBox(height: 8),
+          Text(
+            'Borrowing from your neighbours is better for your wallet and better for the planet. rentalution connects people who need things with people who own them, nearby.',
+            style: textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Every rental follows a structured process with deposit holds, condition verification, and a clear dispute path so both sides are protected.',
+            style: textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          _buildHomePill(
+            icon: Icons.handshake_outlined,
+            title: 'Borrow what you need',
+            body:
+                'Find almost any item you need from people nearby for a fraction of buying new.',
+          ),
+          _buildHomePill(
+            icon: Icons.savings_outlined,
+            title: 'Earn from what you own',
+            body:
+                'List items you already own and earn while they would otherwise sit unused.',
+          ),
+          _buildHomePill(
+            icon: Icons.verified_user_outlined,
+            title: 'Protected transactions',
+            body:
+                'Deposit holds, condition evidence and a clear returns flow protect lenders and borrowers.',
+          ),
+          _buildHomePill(
+            icon: Icons.eco_outlined,
+            title: 'Better for the planet',
+            body:
+                'Sharing reduces production and waste. The most sustainable item is one already made.',
+          ),
+          const SizedBox(height: 18),
+          _sectionTitle('Common questions'),
+          const SizedBox(height: 8),
+          _buildFaqCard(
+            question: 'Who am I renting from?',
+            answer:
+                'You rent directly from other users nearby. rentalution matches you and handles the transaction structure.',
+          ),
+          _buildFaqCard(
+            question: 'Is my deposit safe?',
+            answer:
+                'Deposits are held as card authorisation holds and are released once both sides confirm return.',
+          ),
+          _buildFaqCard(
+            question: 'What if something goes wrong?',
+            answer:
+                'The returns process supports condition evidence and includes a dispute path for fair resolution.',
+          ),
+          _buildFaqCard(
+            question: 'What does rentalution charge?',
+            answer:
+                'Registration and listing are free. A small percentage fee is charged only on completed rentals.',
+          ),
+          const SizedBox(height: 18),
+          _sectionTitle('Transparent pricing'),
+          const SizedBox(height: 8),
+          _buildFeeCard(
+            title: 'Free',
+            body:
+                'Accounts are free. Listing items and sending rental enquiries are always free.',
+          ),
+          _buildFeeCard(
+            title: 'Platform fee',
+            body:
+                'A small percentage fee is charged on completed rentals only.',
+          ),
+          _buildFeeCard(
+            title: 'Deposit hold',
+            body:
+                'Deposits are card authorisation holds and are not captured unless needed for dispute resolution.',
+          ),
+          _buildFeeCard(
+            title: 'No hidden fees',
+            body:
+                'Both sides see the full cost breakdown before confirming a rental.',
+          ),
+          const SizedBox(height: 18),
+          _sectionTitle('Browse categories'),
+          const SizedBox(height: 10),
+          _buildCategoryCardsWrap(),
+          const SizedBox(height: 22),
+          Center(
+            child: Image.asset(
+              'assets/images/footer-icon.png',
+              width: 56,
+              height: 56,
+              filterQuality: FilterQuality.high,
             ),
           ),
-        );
-      },
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomePill({
+    required IconData icon,
+    required String title,
+    required String body,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: Icon(icon, color: SharingHubPalette.brandTeal),
+        title: Text(title),
+        subtitle: Text(body),
+      ),
+    );
+  }
+
+  Widget _buildFaqCard({required String question, required String answer}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(question, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(answer, style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeeCard({required String title, required String body}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(body),
+      ),
+    );
+  }
+
+  Widget _buildCategoryCardsWrap() {
+    if (_categories.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No categories available yet.'),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: _categories
+          .map((cat) {
+            return SizedBox(
+              width: 170,
+              child: GestureDetector(
+                onTap: () => _loadBrowseProducts(cat.slug),
+                child: Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _categoryThumb(cat.imageUrl),
+                        const SizedBox(height: 8),
+                        Text(
+                          cat.title,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          })
+          .toList(growable: false),
     );
   }
 
@@ -1385,6 +1556,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: SharingHubPalette.accentCoral,
+                ),
                 onPressed: _searchLoading ? null : _searchProducts,
                 icon: _searchLoading
                     ? const SizedBox(
@@ -1436,14 +1610,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _sectionTitle(String text) {
     return Text(text, style: Theme.of(context).textTheme.titleLarge);
-  }
-
-  String _stripHtmlTags(String htmlString) {
-    final regex = RegExp(r'<[^>]*>');
-    return htmlString
-        .replaceAll(regex, '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
   }
 
   Widget _categoryThumb(String imageUrl) {

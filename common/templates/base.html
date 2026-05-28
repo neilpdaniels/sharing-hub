@@ -18,9 +18,8 @@
     <!-- Favicon Icons-->
     <link rel="shortcut icon" href="{% static 'assets/images/favicon.ico' %}">
 
-    <!-- Poppins Google Font -->
-    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700,900" rel="stylesheet">
+    <!-- Brand Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <!-- Bootstrap Css -->
     <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/bootstrap/css/bootstrap.min.css' %}">
     <link rel="stylesheet" media="screen" href="{% static 'assets/plugins/OwlCarousel2/owl.carousel.min.css' %}">
@@ -51,16 +50,11 @@
   <aside id="rh-sidebar">
     <div class="rh-sidebar-brand">
       <a href="/" class="rh-brand-link">
-        <div class="rh-brand-icon">
-          <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="19" cy="19" r="19" fill="#2EC4B6"/>
-            <path d="M19 9c-4.418 0-8 3.582-8 8 0 5.6 8 14 8 14s8-8.4 8-14c0-4.418-3.582-8-8-8zm0 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" fill="white"/>
-          </svg>
-        </div>
-        <div>
-          <span class="rh-brand-name">rentalution</span>
-          <span class="rh-brand-tagline"><em>Borrow</em> what you need. <em>Earn</em> from what you own.</span>
-        </div>
+        <img
+          src="{% static 'assets/images/logo-rentalution.png' %}"
+          alt="rentalution"
+          class="rh-sidebar-brand-logo"
+        >
       </a>
     </div>
 
@@ -68,33 +62,88 @@
       <a href="/" class="rh-nav-link{% if request.path == '/' %} rh-nav-link--active{% endif %}">
         <i class="fas fa-home rh-nav-icon"></i><span>Home</span>
       </a>
-      <a href="{% url 'navigation:search' %}" class="rh-nav-link{% if request.resolver_match.namespace == 'navigation' and request.resolver_match.url_name == 'search' %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-th-large rh-nav-icon"></i><span>Browse</span>
-      </a>
-      <a href="#" class="rh-nav-link">
-        <i class="fas fa-tags rh-nav-icon"></i><span>Categories</span>
-      </a>
+      <details class="rh-nav-group" open>
+        <summary class="rh-nav-link rh-nav-toggle{% if request.resolver_match.namespace == 'navigation' and request.resolver_match.url_name == 'browseCategory' or request.resolver_match.namespace == 'navigation' and request.resolver_match.url_name == 'search' %} rh-nav-link--active{% endif %}">
+          <span class="rh-nav-toggle-main">
+            <i class="fas fa-th-large rh-nav-icon"></i><span>Browse</span>
+          </span>
+          <i class="fas fa-chevron-down rh-nav-caret" aria-hidden="true"></i>
+        </summary>
+        <div class="rh-nav-submenu">
+          {% for cat in top_categories %}
+          <a href="{% url 'navigation:browseCategory' cat.slug %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'navigation' and request.resolver_match.url_name == 'browseCategory' and request.resolver_match.kwargs.cat_slug == cat.slug %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-tag"></i></span>
+            <span>{{ cat.title|capfirst }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </details>
       {% if request.user.is_authenticated %}
       <a href="{% url 'my_sharing_hub:messages_received' %}" class="rh-nav-link{% if '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path %} rh-nav-link--active{% endif %}">
         <i class="fas fa-comment-dots rh-nav-icon"></i><span>Messages</span>
+        {% if unread_message_count > 0 %}
+        <span class="rh-nav-count" title="{{ unread_message_count }} unread message{{ unread_message_count|pluralize }}">{{ unread_message_count }}</span>
+        {% endif %}
       </a>
-      <a href="{% url 'my_sharing_hub:open_transactions' %}" class="rh-nav-link{% if '/open_transactions/' in request.path or '/closed_transactions/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-calendar-check rh-nav-icon"></i><span>Bookings</span>
+      <a href="{% url 'my_sharing_hub:notifications' %}" class="rh-nav-link{% if '/notifications/' in request.path %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-bell rh-nav-icon"></i><span>Notifications</span>
       </a>
-      <a href="{% url 'my_sharing_hub:favourites' %}" class="rh-nav-link{% if '/favourites/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="far fa-heart rh-nav-icon"></i><span>Favourites</span>
-      </a>
+      <details class="rh-nav-group" {% if request.resolver_match.namespace == 'my_sharing_hub' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %}open{% endif %}>
+        <summary class="rh-nav-link rh-nav-toggle{% if request.resolver_match.namespace == 'my_sharing_hub' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %} rh-nav-link--active{% endif %}">
+          <span class="rh-nav-toggle-main">
+            <i class="fas fa-user-circle rh-nav-icon"></i><span>My account</span>
+          </span>
+          <i class="fas fa-chevron-down rh-nav-caret" aria-hidden="true"></i>
+        </summary>
+        <div class="rh-nav-submenu">
+          <a href="{% url 'my_sharing_hub:open_transactions' %}" class="rh-nav-sublink{% if '/open_transactions/' in request.path or '/closed_transactions/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-calendar-check"></i></span>
+            <span>Bookings</span>
+            {% if txn_notice_count > 0 %}
+            <span class="rh-nav-count rh-nav-count--attention" title="{{ txn_notice_count }} booking action{{ txn_notice_count|pluralize }} pending">{{ txn_notice_count }}</span>
+            {% endif %}
+          </a>
+          <a href="{% url 'my_sharing_hub:favourites' %}" class="rh-nav-sublink{% if '/favourites/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="far fa-heart"></i></span>
+            <span>Favourites</span>
+          </a>
+          <a href="{% url 'my_sharing_hub:open_orders' %}" class="rh-nav-sublink{% if '/open_orders/' in request.path or '/closed_orders/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-list"></i></span>
+            <span>My listings</span>
+          </a>
+          <a href="{% url 'my_sharing_hub:earnings' %}" class="rh-nav-sublink{% if '/earnings/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-coins"></i></span>
+            <span>Earnings</span>
+          </a>
+          <a href="{% url 'friends:my_friends' %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'friends' and request.resolver_match.url_name == 'my_friends' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-user-friends"></i></span>
+            <span>Friends</span>
+          </a>
+          <a href="{% url 'friends:blocked_users' %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'friends' and request.resolver_match.url_name == 'blocked_users' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-user-slash"></i></span>
+            <span>Blocked users</span>
+          </a>
+          <a href="{% url 'my_sharing_hub:my_details' %}" class="rh-nav-sublink{% if '/my_details/' in request.path or '/account/edit/' in request.path or '/payment_methods/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-id-card"></i></span>
+            <span>My details</span>
+          </a>
+          <a href="{% url 'edit' %}" class="rh-nav-sublink{% if '/account/edit/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-cog"></i></span>
+            <span>Settings</span>
+          </a>
+        </div>
+      </details>
       <a href="{% url 'transaction:list_item' %}" class="rh-nav-link{% if '/list_item' in request.path or '/add_order' in request.path %} rh-nav-link--active{% endif %}">
         <i class="fas fa-plus-circle rh-nav-icon"></i><span>List an item</span>
       </a>
-      <a href="{% url 'my_sharing_hub:open_orders' %}" class="rh-nav-link{% if '/open_orders/' in request.path or '/closed_orders/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-list rh-nav-icon"></i><span>My Listings</span>
+      {% endif %}
+
+      {% if not request.user.is_authenticated %}
+      <a href="{% url 'login' %}?next={{ request.path }}" class="rh-nav-link rh-nav-mobile-auth{% if request.path == '/accounts/login/' %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-sign-in-alt rh-nav-icon"></i><span>Sign in</span>
       </a>
-      <a href="{% url 'my_sharing_hub:my_details' %}" class="rh-nav-link{% if '/my_details/' in request.path or '/account/edit/' in request.path or '/payment_methods/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-user-circle rh-nav-icon"></i><span>My details</span>
-      </a>
-      <a href="#" class="rh-nav-link">
-        <i class="fas fa-coins rh-nav-icon"></i><span>Earnings</span>
+      <a href="{% url 'register' %}" class="rh-nav-link rh-nav-mobile-auth{% if request.path == '/register/' %} rh-nav-link--active{% endif %}">
+        <i class="fas fa-user-plus rh-nav-icon"></i><span>Register</span>
       </a>
       {% endif %}
     </nav>
@@ -110,11 +159,6 @@
       <a href="{% url 'pages:helpAndSupport' %}" class="rh-nav-link{% if request.resolver_match.namespace == 'pages' and request.resolver_match.url_name == 'helpAndSupport' %} rh-nav-link--active{% endif %}">
         <i class="fas fa-question-circle rh-nav-icon"></i><span>Help &amp; Support</span>
       </a>
-      {% if request.user.is_authenticated %}
-      <a href="{% url 'edit' %}" class="rh-nav-link{% if '/account/edit/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-cog rh-nav-icon"></i><span>Settings</span>
-      </a>
-      {% endif %}
     </div>
   </aside>
   <!-- end #rh-sidebar -->
@@ -149,8 +193,6 @@
       <nav class="rh-topbar-nav d-none d-lg-flex">
         <a href="{% url 'navigation:search' %}" class="rh-topbar-link">Browse</a>
         <a href="{% url 'pages:howItWorks' %}" class="rh-topbar-link">How it works</a>
-        <a href="#" class="rh-topbar-link">Safety</a>
-        <a href="{% url 'pages:aboutUs' %}" class="rh-topbar-link">About us</a>
       </nav>
 
       <div class="rh-topbar-right">
@@ -158,7 +200,7 @@
         <a href="{% url 'my_sharing_hub:messages_received' %}" class="rh-topbar-icon-btn" title="Messages">
           <i class="fas fa-comment-dots"></i>
         </a>
-        <a href="#" class="rh-topbar-icon-btn" title="Notifications">
+        <a href="{% url 'my_sharing_hub:notifications' %}" class="rh-topbar-icon-btn" title="Notifications">
           <i class="fas fa-bell"></i>
         </a>
         {% if request.user.profile.image %}
@@ -183,31 +225,28 @@
       </div>
     </header>
     <!-- end #rh-topbar -->
+
+    {% if request.path == '/' %}
+    <div class="rh-mobile-brand" aria-label="Site logo">
+      <a href="/" class="rh-mobile-brand-link">
+        <img
+          src="{% static 'assets/images/logo-rentalution.png' %}"
+          alt="rentalution"
+          class="rh-mobile-brand-logo"
+        >
+      </a>
+    </div>
+    {% endif %}
+
     <div id="wrapper">
       
       <div class="container">
         <div id="txn-live-notice-mount"></div>
         {% if request.user.is_authenticated and txn_login_notice %}
-        <div id="txn-login-notice" class="alert alert-dismissible fade show mt-2" role="alert">
-          <strong>Pending transactions:</strong>
-          {{ txn_notice_count }} item{{ txn_notice_count|pluralize }} need{{ txn_notice_count|pluralize:"s," }} your attention.
-          {% if txn_notice_items %}
-          <div class="mt-2 small">
-            {% for txn in txn_notice_items %}
-            <a class="txn-notice-item d-block mb-1" href="{% url 'transaction:view_transaction' txn.transaction_reference %}">
-              <span><strong>{{ txn.product_name }}</strong></span>
-              <span class="mx-1">|</span>
-              <span>{{ txn.date_label }}</span>
-              <span class="mx-1">|</span>
-              <span>Action: {{ txn.action_label }}</span>
-            </a>
-            {% endfor %}
-          </div>
-          {% endif %}
-          <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-            <span aria-hidden="true">&times;</span>
-          </button>
-        </div>
+        <a id="txn-login-notice" class="alert fade show mt-2 d-block" role="alert" href="{% url 'my_sharing_hub:notifications' %}">
+          <strong>Notifications:</strong>
+          {{ txn_notice_count }} notification{{ txn_notice_count|pluralize }}.
+        </a>
         {% endif %}
 
         {# Display django.contrib.messages as Bootstrap alerts #}
@@ -217,28 +256,17 @@
             animation: slideDown 0.3s ease-out;
           }
           #txn-login-notice {
+            display: block;
             transition: opacity 0.5s ease;
             background: #ffffff;
             border: 1px solid #0f8b8d;
             color: #0f8b8d;
             box-shadow: 0 1px 4px rgba(15, 139, 141, 0.12);
-          }
-          #txn-login-notice .close {
-            color: #0f8b8d;
-            opacity: 0.7;
-          }
-          #txn-login-notice .close:hover {
-            opacity: 1;
-          }
-          #txn-login-notice .txn-notice-item {
-            color: #0f8b8d;
             text-decoration: none;
-            border-radius: 6px;
-            padding: 0.28rem 0.35rem;
-            transition: background-color 0.2s ease;
           }
-          #txn-login-notice .txn-notice-item:hover {
+          #txn-login-notice:hover {
             background: #e9f8f8;
+            color: #0f8b8d;
             text-decoration: none;
           }
           @keyframes slideDown {
@@ -268,11 +296,11 @@
 <footer id="footer">
   <div class="rh-footer-bar">
     <div class="rh-footer-bar-brand">
-      <svg width="22" height="22" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <circle cx="19" cy="19" r="19" fill="rgba(255,255,255,0.25)"/>
-        <path d="M19 9c-4.418 0-8 3.582-8 8 0 5.6 8 14 8 14s8-8.4 8-14c0-4.418-3.582-8-8-8zm0 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" fill="white"/>
-      </svg>
-      <span class="rh-footer-bar-name">rentalution</span>
+      <img
+        src="{% static 'assets/images/footer-brand-rentalution.png' %}"
+        alt="rentalution"
+        class="rh-footer-brand-logo"
+      >
     </div>
     <nav class="rh-footer-bar-links">
       <a href="{% url 'pages:aboutUs' %}">About</a>
@@ -336,17 +364,65 @@
       /* ── Sidebar toggle ── */
       var toggle = document.getElementById('rh-sidebar-toggle');
       var sidebar = document.getElementById('rh-sidebar');
-      if (toggle && sidebar) {
+      var layout = document.getElementById('rh-layout');
+      var SIDEBAR_COLLAPSE_KEY = 'rh_sidebar_collapsed';
+
+      function isSmallScreen() {
+        return window.matchMedia('(max-width: 991.98px)').matches;
+      }
+
+      function isMediumScreen() {
+        return window.matchMedia('(min-width: 992px) and (max-width: 1199.98px)').matches;
+      }
+
+      function getStoredSidebarCollapsed() {
+        try {
+          return localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1';
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function setStoredSidebarCollapsed(collapsed) {
+        try {
+          localStorage.setItem(SIDEBAR_COLLAPSE_KEY, collapsed ? '1' : '0');
+        } catch (e) {}
+      }
+
+      function applySidebarState() {
+        if (isMediumScreen()) {
+          layout.classList.toggle('rh-sidebar-collapsed', getStoredSidebarCollapsed());
+        } else {
+          layout.classList.remove('rh-sidebar-collapsed');
+        }
+
+        if (!isSmallScreen()) {
+          sidebar.classList.remove('rh-sidebar--open');
+        }
+      }
+
+      if (toggle && sidebar && layout) {
+        applySidebarState();
+
         toggle.addEventListener('click', function() {
-          sidebar.classList.toggle('rh-sidebar--open');
+          if (isSmallScreen()) {
+            sidebar.classList.toggle('rh-sidebar--open');
+          } else if (isMediumScreen()) {
+            var collapsed = !layout.classList.contains('rh-sidebar-collapsed');
+            layout.classList.toggle('rh-sidebar-collapsed', collapsed);
+            setStoredSidebarCollapsed(collapsed);
+          }
         });
+
         document.addEventListener('click', function(e) {
-          if (sidebar.classList.contains('rh-sidebar--open') &&
+          if (isSmallScreen() && sidebar.classList.contains('rh-sidebar--open') &&
               !sidebar.contains(e.target) &&
               !toggle.contains(e.target)) {
             sidebar.classList.remove('rh-sidebar--open');
           }
         });
+
+        window.addEventListener('resize', applySidebarState);
       }
 
       /* ── Location pill ── */

@@ -46,7 +46,7 @@ a:hover,a:focus{
 }
 /* === Typography === */
 h1,h2,h3,h4,h5,h6{
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Manrope', sans-serif;
 } 
 
 h1 small,
@@ -371,7 +371,7 @@ button:hover,button:focus, .btn:hover,.btn:focus, input:hover,input:focus,select
     text-letter-spacing: .025em;
     text-decoration: none;
 	font-weight: 600;
-	font-family: 'Nunito', sans-serif;
+	font-family: 'Manrope', sans-serif;
 }
 
 .list-group-item i {
@@ -1288,7 +1288,7 @@ td.best_orders {
 .btn-only-color{
   color: #f44336;
   font-weight: 700;
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Manrope', sans-serif;
   -webkit-transition: .5s;
   transition: .5s; 
 }
@@ -1402,7 +1402,7 @@ select.form-control:not([size]):not([multiple]) {
   text-transform: uppercase;
   cursor: pointer;
   font-weight: 700;
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Manrope', sans-serif;
       line-height: 25px;
 }
 
@@ -2074,7 +2074,7 @@ select.form-control.input-light option {
   padding: 10px 20px;
   -webkit-transition: .5s;
   transition: .5s;
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Manrope', sans-serif;
 }
 #main-nav .navbar-nav .active > .nav-link, #main-nav .navbar-nav .nav-link:hover{
   color: #8ba6ad;
@@ -2715,7 +2715,7 @@ body.menu-fixed-active #fixed-menu{
   color: #16334e;
 }
 .product-tags{
-    font-family: 'Nunito', sans-serif;
+    font-family: 'Manrope', sans-serif;
 }
 .product-tags a{
   background: #16334e;
@@ -2739,7 +2739,7 @@ body.menu-fixed-active #fixed-menu{
     font-weight: 600;
     -webkit-border-radius: 100px;
     border-radius: 100px;
-	   font-family: 'Nunito', sans-serif;
+	   font-family: 'Manrope', sans-serif;
 }
 .product-card .product-sale i{
   padding-right: 5px;

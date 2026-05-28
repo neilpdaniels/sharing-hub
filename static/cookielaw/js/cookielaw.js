@@ -25,6 +25,10 @@ var Cookielaw = {
     this.createCookie('cookielaw_accepted', cookieValue, 10 * 365, secure);
   },
 
+  clearCookielawCookie: function () {
+    document.cookie = 'cookielaw_accepted=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+  },
+
   hideCookielawBanner: function () {
     document.getElementById('CookielawBanner').remove();
   },
@@ -37,5 +41,10 @@ var Cookielaw = {
   reject: function () {
     this.setCookielawCookie(this.REJECTED);
     this.hideCookielawBanner();
+  },
+
+  reset: function () {
+    this.clearCookielawCookie();
+    window.location.reload();
   }
 };

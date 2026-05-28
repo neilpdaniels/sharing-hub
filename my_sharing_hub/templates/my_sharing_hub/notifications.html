@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block subtitle %}My rentalution{% endblock %}
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<style>
+    .notif-wrap {
+        background: linear-gradient(180deg, #f8fbfd 0%, #f4f8f9 100%);
+        border: 1px solid #dcebef;
+        border-radius: 22px;
+        padding: 1.1rem;
+    }
+
+    .notif-title {
+        color: #1f3f4b;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        margin-bottom: 0.3rem;
+    }
+
+    .notif-subtitle {
+        color: #547079;
+        margin-bottom: 1rem;
+    }
+
+    .notif-count {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.9rem;
+        color: #415f68;
+        background: #edf8f6;
+        border: 1px solid #cde7e2;
+        border-radius: 999px;
+        padding: 4px 11px;
+        margin-bottom: 0.95rem;
+    }
+
+    .notif-card {
+        border: 1px solid #d7ebe7;
+        border-radius: 16px;
+        box-shadow: 0 8px 20px rgba(20, 78, 92, 0.06);
+        overflow: hidden;
+        margin-bottom: 0.9rem;
+    }
+
+    .notif-card .card-body {
+        background: #fff;
+    }
+
+    .notif-thumb,
+    .notif-thumb-fallback {
+        width: 84px;
+        height: 64px;
+        border-radius: 10px;
+        flex-shrink: 0;
+    }
+
+    .notif-thumb {
+        object-fit: cover;
+        display: block;
+    }
+
+    .notif-thumb-fallback {
+        background: #eef3f5;
+        color: #97a9b2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .notif-item-title {
+        color: #1f3f4b;
+        font-weight: 700;
+        margin-bottom: 0.22rem;
+    }
+
+    .notif-meta {
+        color: #67808a;
+        font-size: 0.88rem;
+        margin-bottom: 0.35rem;
+    }
+
+    .notif-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 0.2rem 0.6rem;
+        background: #fff2eb;
+        color: #9a3f1f;
+        border: 1px solid #ffd3c0;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .notif-empty {
+        border: 1px dashed #cfe5e0;
+        border-radius: 16px;
+        background: #f7fcfb;
+        color: #53707a;
+    }
+</style>
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+            <div class="notif-wrap">
+                <h2 class="notif-title">Notifications</h2>
+                <p class="notif-subtitle">Open booking alerts that currently require your action.</p>
+
+                <div class="notif-count">
+                    <span class="fas fa-bell"></span>
+                    <span>{{ open_count }} open alert{{ open_count|pluralize }}</span>
+                </div>
+
+                {% if notifications_open %}
+                    {% for item in notifications_open %}
+                    <article class="card notif-card">
+                        <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between" style="gap:0.9rem;">
+                            <div class="d-flex align-items-center" style="gap:0.8rem; min-width:0;">
+                                {% if item.image_url %}
+                                <img src="{{ item.image_url }}" alt="{{ item.product_name }}" class="notif-thumb">
+                                {% else %}
+                                <div class="notif-thumb-fallback"><span class="fas fa-image"></span></div>
+                                {% endif %}
+
+                                <div style="min-width:0;">
+                                    <div class="notif-item-title">{{ item.product_name }}</div>
+                                    <div class="notif-meta">{{ item.date_label }} · Ref {{ item.transaction_reference }}</div>
+                                    <span class="notif-action"><span class="fas fa-exclamation-circle"></span>{{ item.action_label }}</span>
+                                </div>
+                            </div>
+
+                            <a href="{% url 'transaction:view_transaction' item.transaction_reference %}" class="btn btn-sm btn-primary" style="white-space:nowrap;">Open</a>
+                        </div>
+                    </article>
+                    {% endfor %}
+                {% else %}
+                <div class="alert notif-empty mb-0" role="alert">
+                    No open notifications right now.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block domready %}
+{% endblock %}

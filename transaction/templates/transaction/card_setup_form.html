@@ -1,6 +1,18 @@
 <!-- Card Setup Form Include -->
 {% load static %}
 
+<style>
+    .card-setup-submit {
+        width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        line-height: 1.2;
+        text-align: center;
+        padding: 0.6rem 0.75rem;
+    }
+</style>
+
 {% if can_setup_deposit_card %}
 <div class="card mb-3">
     <div class="card-body">
@@ -51,7 +63,7 @@
                         </select>
                     </div>
                     <small class="form-text text-muted mb-3">Manage your cards in <a href="{% url 'my_sharing_hub:payment_methods' %}">My Payment Methods</a>.</small>
-                    <button type="submit" class="btn btn-primary btn-block">Use Selected Card & Run Test Hold</button>
+                    <button type="submit" class="btn btn-primary btn-block card-setup-submit">Use Selected Card</button>
                 </form>
             </div>
             
@@ -73,7 +85,7 @@
                 <div id="card-errors" class="text-danger mt-2" style="display:none;"></div>
             </div>
             <small class="form-text text-muted mb-3">Your card will be saved for future transactions. Manage your cards in <a href="{% url 'my_sharing_hub:payment_methods' %}">My Payment Methods</a>.</small>
-            <button id="submit-btn" class="btn btn-primary btn-block" type="submit">Save Card & Run £0.30 Test Hold</button>
+            <button id="submit-btn" class="btn btn-primary btn-block card-setup-submit" type="submit">Save Card & Run £0.30 Hold</button>
         </form>
         
         <script src="https://js.stripe.com/v3/"></script>

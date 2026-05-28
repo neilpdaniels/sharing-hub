@@ -6,6 +6,7 @@ from django.utils import timezone
 def get_transaction_notification_payload(user, session=None):
     if not user or not user.is_authenticated:
         return {
+            'unread_message_count': 0,
             'unseen_txn_count': 0,
             'unseen_txn_items': [],
             'txn_login_notice': False,
@@ -13,7 +14,7 @@ def get_transaction_notification_payload(user, session=None):
             'txn_notice_items': [],
         }
 
-    from transaction.models import Transaction
+    from transaction.models import Transaction, TransactionMessage
 
     show_login_notice = bool(session.pop('show_txn_login_notice', False)) if session is not None else False
     today = timezone.localdate()
@@ -124,7 +125,13 @@ def get_transaction_notification_payload(user, session=None):
             'action_label': action_label,
         })
 
+    unread_message_count = TransactionMessage.objects.filter(
+        user_to=user,
+        read_by_user_to=False,
+    ).count()
+
     return {
+        'unread_message_count': unread_message_count,
         'unseen_txn_count': unseen_count,
         'unseen_txn_items': unseen_items,
         'txn_login_notice': show_login_notice and bool(txn_notice_items),

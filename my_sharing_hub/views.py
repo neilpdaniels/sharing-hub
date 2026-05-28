@@ -3,17 +3,18 @@ from django.urls import reverse
 from django.http import HttpResponse, JsonResponse
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
+import json
 # from .models import Profile
 from django.contrib import messages
 import logging
 from datetime import datetime
 from django.core.paginator import Paginator, EmptyPage,\
                         PageNotAnInteger
-from transaction.models import Transaction, TransactionMessage
+from transaction.models import Transaction, TransactionMessage, TransactionCharge
 from itertools import chain
 from operator import attrgetter
 from common.decorators import ajax_required
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from transaction.tasks import getUserTransactions
 from common.models import FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, OrderImage
 from django.utils import timezone
@@ -22,6 +23,85 @@ import calendar
 from datetime import date
 
 from account.models import PaymentMethod, Profile
+from sharing_hub.context_processors import get_transaction_notification_payload
+
+
+def _format_rental_window(transaction):
+    if not transaction:
+        return ''
+
+    start = transaction.rental_start_date
+    end = transaction.rental_end_date
+    if start and end:
+        return f"{start.strftime('%d %b')} - {end.strftime('%d %b %Y')}"
+    if start:
+        return f"from {start.strftime('%d %b %Y')}"
+    if end:
+        return f"until {end.strftime('%d %b %Y')}"
+    return ''
+
+
+def _friendly_message_title(message):
+    transaction = message.transaction
+    product_name = ''
+    if transaction and transaction.order_passive and transaction.order_passive.product:
+        product_name = transaction.order_passive.product.name
+
+    rental_window = _format_rental_window(transaction)
+
+    if product_name and rental_window:
+        return f"Rental: {product_name} ({rental_window})"
+    if product_name:
+        return f"Rental: {product_name}"
+    if rental_window:
+        return f"Rental ({rental_window})"
+    return (message.subject or 'Message').strip() or 'Message'
+
+
+def _message_order_thumbnail_url(message):
+    transaction = message.transaction
+    if not transaction or not transaction.order_passive:
+        return ''
+
+    order = transaction.order_passive
+    order_images = list(order.images.all())
+    if order_images:
+        preferred = next((img for img in order_images if img.is_main and img.active), None)
+        if not preferred:
+            preferred = next((img for img in order_images if img.first_image and img.active), None)
+        if not preferred:
+            preferred = next((img for img in order_images if img.active), None)
+        if not preferred:
+            preferred = order_images[0]
+        return preferred.image.url if preferred and preferred.image else ''
+
+    if order.product and order.product.image:
+        return order.product.image.url
+    return ''
+
+
+def _transaction_notification_image_url(txn):
+    order = getattr(txn, 'order_passive', None)
+    if order:
+        order_images = list(order.images.all())
+        if order_images:
+            preferred = next((img for img in order_images if img.is_main and img.active), None)
+            if not preferred:
+                preferred = next((img for img in order_images if img.first_image and img.active), None)
+            if not preferred:
+                preferred = next((img for img in order_images if img.active), None)
+            if not preferred:
+                preferred = order_images[0]
+            if preferred and preferred.image:
+                return preferred.image.url
+
+    if getattr(txn, 'product', None) and getattr(txn.product, 'image', None):
+        return txn.product.image.url
+
+    if order and getattr(order, 'product', None) and getattr(order.product, 'image', None):
+        return order.product.image.url
+
+    return ''
 
 
 @login_required
@@ -51,14 +131,19 @@ def my_details(request):
 def messages_received(request):    
     user = request.user
     # object_from_list = user.message_user_from.filter()
-    object_to_list = user.message_user_to.filter()
+    object_to_list = user.message_user_to.select_related(
+        'transaction',
+        'transaction__order_passive__product',
+        'user_from',
+        'user_to',
+    ).prefetch_related(
+        'transaction__order_passive__images',
+    ).order_by('read_by_user_to', '-created')
     # object_list =  sorted(
     # (chain(object_from_list, object_to_list)),
     # key=attrgetter('created'), reverse=True)
 
-    object_list = sorted(sorted((object_to_list),
-    key=attrgetter('created'),reverse=True),
-    key=attrgetter('read_by_user_to'))
+    object_list = object_to_list
 
     paginator = Paginator(object_list, 10) # per page
     page = request.GET.get('page')
@@ -68,9 +153,15 @@ def messages_received(request):
         messages_ = paginator.page(1)
     except EmptyPage:
         messages_ = paginator.page(paginator.num_pages)
+
+    for message in messages_:
+        message.display_subject = _friendly_message_title(message)
+        message.order_thumbnail_url = _message_order_thumbnail_url(message)
+
     context = {
         'messages_': messages_,
         'type' : 'received',
+        'unread_received_count': user.message_user_to.filter(read_by_user_to=False).count(),
     }
     return render(request, 'my_sharing_hub/x_messages.html', context)
 
@@ -138,15 +229,20 @@ def favourites(request):
 @login_required
 def messages_sent(request):    
     user = request.user
-    object_from_list = user.message_user_from.filter()
+    object_from_list = user.message_user_from.select_related(
+        'transaction',
+        'transaction__order_passive__product',
+        'user_from',
+        'user_to',
+    ).prefetch_related(
+        'transaction__order_passive__images',
+    ).order_by('read_by_user_to', '-created')
     # object_to_list = user.message_user_to.filter()
     # object_list =  sorted(
     # (chain(object_from_list, object_to_list)),
     # key=attrgetter('created'), reverse=True)
 
-    object_list = sorted(sorted((object_from_list),
-    key=attrgetter('created'),reverse=True),
-    key=attrgetter('read_by_user_to'))
+    object_list = object_from_list
 
     paginator = Paginator(object_list, 10) # per page
     page = request.GET.get('page')
@@ -156,11 +252,28 @@ def messages_sent(request):
         messages_ = paginator.page(1)
     except EmptyPage:
         messages_ = paginator.page(paginator.num_pages)
+
+    for message in messages_:
+        message.display_subject = _friendly_message_title(message)
+        message.order_thumbnail_url = _message_order_thumbnail_url(message)
+
     context = {
         'messages_': messages_,
         'type' : 'sent',
+        'unread_received_count': 0,
     }
     return render(request, 'my_sharing_hub/x_messages.html', context)
+
+
+@login_required
+def mark_all_messages_read(request):
+    if request.method == 'POST':
+        request.user.message_user_to.filter(read_by_user_to=False).update(read_by_user_to=True)
+
+    next_url = (request.POST.get('next') or '').strip()
+    if next_url.startswith('/'):
+        return redirect(next_url)
+    return redirect('my_sharing_hub:messages_received')
 
 
 def _decorate_inbox_message(message, user):
@@ -212,6 +325,146 @@ def pending_actions(request):
     context = {
     }
     return render(request, 'my_sharing_hub/pending_actions.html', context)
+
+
+@login_required
+def notifications(request):
+    payload = get_transaction_notification_payload(request.user, request.session)
+    raw_items = payload.get('txn_notice_items', [])
+    refs = [item.get('transaction_reference') for item in raw_items if item.get('transaction_reference')]
+
+    transactions_by_ref = {}
+    if refs:
+        txns = (
+            Transaction.objects
+            .filter(transaction_reference__in=refs)
+            .select_related('product', 'order_passive__product', 'user_passive', 'user_aggressive')
+            .prefetch_related('order_passive__images')
+        )
+        transactions_by_ref = {txn.transaction_reference: txn for txn in txns}
+
+    notifications_open = []
+    for item in raw_items:
+        ref = item.get('transaction_reference')
+        txn = transactions_by_ref.get(ref)
+        notifications_open.append({
+            'transaction_reference': ref,
+            'product_name': item.get('product_name', 'Rental item'),
+            'date_label': item.get('date_label', 'Dates not set'),
+            'action_label': item.get('action_label', 'Action required'),
+            'image_url': _transaction_notification_image_url(txn) if txn else '',
+        })
+
+    context = {
+        'notifications_open': notifications_open,
+        'open_count': len(notifications_open),
+    }
+    return render(request, 'my_sharing_hub/notifications.html', context)
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _earning_date_for_transaction(txn):
+    return txn.rental_end_date or txn.rental_start_date or txn.amended or txn.created
+
+
+def _is_realized_for_lender(txn):
+    return txn.payment_status == Transaction.PAYMENT_CAPTURED_PLACEHOLDER or txn.payment_collected_placeholder
+
+
+@login_required
+def earnings(request):
+    start_date = _parse_date((request.GET.get('start_date') or '').strip())
+    end_date = _parse_date((request.GET.get('end_date') or '').strip())
+
+    if start_date and end_date and start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    lender_transactions = (
+        Transaction.objects
+        .filter(user_passive=request.user)
+        .exclude(transaction_status=Transaction.CANCEL_ACCEPTED)
+        .prefetch_related(
+            Prefetch(
+                'transactioncharge_set',
+                queryset=TransactionCharge.objects.filter(user_to_pay=request.user),
+            )
+        )
+    )
+
+    realized_rows = []
+    pending_rows = []
+
+    for txn in lender_transactions:
+        fee_total = sum((charge.price or 0) for charge in txn.transactioncharge_set.all())
+        gross_amount = txn.price or 0
+        net_amount = gross_amount - fee_total
+        earning_date = _earning_date_for_transaction(txn)
+
+        if _is_realized_for_lender(txn):
+            realized_rows.append({
+                'txn': txn,
+                'date': earning_date,
+                'gross': gross_amount,
+                'fees': fee_total,
+                'net': net_amount,
+            })
+        elif txn.payment_status == Transaction.PAYMENT_PENDING and gross_amount > 0:
+            pending_rows.append({
+                'txn': txn,
+                'date': earning_date,
+                'gross': gross_amount,
+            })
+
+    realized_rows.sort(key=lambda item: (item['date'] or date.min, item['txn'].id))
+    pending_rows.sort(key=lambda item: (item['date'] or date.min, item['txn'].id), reverse=True)
+
+    filtered_realized = realized_rows
+    if start_date:
+        filtered_realized = [item for item in filtered_realized if item['date'] and item['date'] >= start_date]
+    if end_date:
+        filtered_realized = [item for item in filtered_realized if item['date'] and item['date'] <= end_date]
+
+    monthly_net = {}
+    for item in filtered_realized:
+        if not item['date']:
+            continue
+        month_key = item['date'].replace(day=1)
+        monthly_net[month_key] = monthly_net.get(month_key, 0) + item['net']
+
+    chart_labels = []
+    chart_values = []
+    running_total = 0
+    for month_key in sorted(monthly_net.keys()):
+        running_total += monthly_net[month_key]
+        chart_labels.append(month_key.strftime('%b %Y'))
+        chart_values.append(round(running_total, 2))
+
+    pending_total = sum(item['gross'] for item in pending_rows)
+    filtered_gross_total = sum(item['gross'] for item in filtered_realized)
+    filtered_fee_total = sum(item['fees'] for item in filtered_realized)
+    filtered_net_total = sum(item['net'] for item in filtered_realized)
+
+    context = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'realized_count': len(filtered_realized),
+        'filtered_gross_total': filtered_gross_total,
+        'filtered_fee_total': filtered_fee_total,
+        'filtered_net_total': filtered_net_total,
+        'pending_total': pending_total,
+        'pending_rows': pending_rows,
+        'chart_labels_json': json.dumps(chart_labels),
+        'chart_values_json': json.dumps(chart_values),
+    }
+    return render(request, 'my_sharing_hub/earnings.html', context)
 
 @login_required
 def open_orders(request):
@@ -381,9 +634,9 @@ def open_transactions(request):
     (chain(object_pass_list, object_agg_list)),
     key=attrgetter('amended'), reverse=True)
 
-    active_view = request.GET.get('view', 'list')
+    active_view = request.GET.get('view', 'calendar')
     if active_view not in ('list', 'calendar'):
-        active_view = 'list'
+        active_view = 'calendar'
 
     month_param = (request.GET.get('month') or '').strip()
     day_param = (request.GET.get('day') or '').strip()
@@ -540,14 +793,19 @@ def closed_transactions(request):
 @ajax_required
 def expand_message(request):
     message_id = request.GET.get('message_id', None)
-    message = get_object_or_404(TransactionMessage, id=message_id)
+    message = get_object_or_404(
+        TransactionMessage.objects.select_related('transaction', 'transaction__order_passive__product', 'user_from', 'user_to'),
+        id=message_id,
+    )
     if request.user == message.user_to and message.read_by_user_to == False:
         message.read_by_user_to = True
         message.save()
+    friendly_title = _friendly_message_title(message)
     content = {
         'from': 'System' if message.is_system_generated else message.user_from.username,
         'to' : message.user_to.username,
-        'subject': message.subject,
+        'subject': friendly_title,
+        'title': friendly_title,
         'body' : message.description,
         'created' : message.created.strftime("%Y-%m-%d %H:%M"),
     }

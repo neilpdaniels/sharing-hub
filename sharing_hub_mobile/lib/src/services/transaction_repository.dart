@@ -1,27 +1,43 @@
 import 'dart:io';
 
+import '../models/account_models.dart';
 import '../models/transaction_models.dart';
 import 'api_client.dart';
 
 class TransactionRepository {
-  TransactionRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  TransactionRepository({required ApiClient apiClient})
+    : _apiClient = apiClient;
 
   final ApiClient _apiClient;
 
   Future<List<TransactionSummary>> fetchTransactions({
     required String accessToken,
   }) async {
-    final json = await _apiClient.getJsonList('/transactions/', accessToken: accessToken);
+    final json = await _apiClient.getJsonList(
+      '/transactions/',
+      accessToken: accessToken,
+    );
     return json
         .whereType<Map<String, dynamic>>()
         .map(TransactionSummary.fromJson)
         .toList(growable: false);
   }
 
-  Future<List<InboxMessage>> fetchInbox({
+  Future<TransactionNotificationPayload> fetchTransactionNotifications({
     required String accessToken,
   }) async {
-    final json = await _apiClient.getJsonList('/messages/inbox/', accessToken: accessToken);
+    final json = await _apiClient.getJsonObject(
+      '/notifications/transactions/',
+      accessToken: accessToken,
+    );
+    return TransactionNotificationPayload.fromJson(json);
+  }
+
+  Future<List<InboxMessage>> fetchInbox({required String accessToken}) async {
+    final json = await _apiClient.getJsonList(
+      '/messages/inbox/',
+      accessToken: accessToken,
+    );
     return json
         .whereType<Map<String, dynamic>>()
         .map(InboxMessage.fromJson)
@@ -39,7 +55,8 @@ class TransactionRepository {
       'order_reference': orderReference,
       if (enquiryMessage != null && enquiryMessage.isNotEmpty)
         'enquiry_message': enquiryMessage,
-      if (rentalStartDate != null) 'rental_start_date': _formatDate(rentalStartDate),
+      if (rentalStartDate != null)
+        'rental_start_date': _formatDate(rentalStartDate),
       if (rentalEndDate != null) 'rental_end_date': _formatDate(rentalEndDate),
     };
     final json = await _apiClient.postJson(
@@ -61,14 +78,42 @@ class TransactionRepository {
     required String action,
     Map<String, dynamic> fields = const {},
   }) {
-    return _apiClient.postJson(
+    return _apiClient.postJson('/transactions/$transactionReference/actions/', {
+      'action': action,
+      ...fields,
+    }, accessToken: accessToken);
+  }
+
+  Future<Map<String, dynamic>> performActionWithFiles({
+    required String accessToken,
+    required String transactionReference,
+    required String action,
+    Map<String, dynamic> fields = const {},
+    List<File> videoFiles = const [],
+  }) {
+    return _apiClient.postMultipart(
       '/transactions/$transactionReference/actions/',
-      {
+      accessToken: accessToken,
+      fields: {
         'action': action,
-        ...fields,
+        ...fields.map((key, value) => MapEntry(key, value.toString())),
       },
+      videoFiles: videoFiles,
+    );
+  }
+
+  Future<List<PaymentMethodSummary>> fetchPaymentMethods({
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.getJsonList(
+      '/payment-methods/',
       accessToken: accessToken,
     );
+
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(PaymentMethodSummary.fromJson)
+        .toList(growable: false);
   }
 
   Future<TransactionDetail> fetchTransactionDetail({

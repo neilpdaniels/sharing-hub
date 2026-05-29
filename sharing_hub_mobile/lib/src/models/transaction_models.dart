@@ -141,6 +141,13 @@ class TransactionDetail extends TransactionSummary {
   final bool meIsLender;
   final bool meIsRenter;
 
+  bool get canSubmitVideoEvidence {
+    return (status == 'RAGR' && meIsLender) ||
+        ((status == 'RDAYAWV' || status == 'RONG' || status == 'RRTDAYAWV') &&
+            meIsRenter) ||
+        (status == 'RRTDAYAWV' && meIsLender);
+  }
+
   factory TransactionDetail.fromJson(Map<String, dynamic> json) {
     return TransactionDetail(
       reference: json['transaction_reference'] as String? ?? '',
@@ -248,6 +255,49 @@ class TransactionMessageAttachment {
       imageUrl: json['image_url'] as String? ?? '',
       videoUrl: json['video_url'] as String? ?? '',
       uploadedAt: TransactionSummary._parseDate(json['uploaded_at'] as String?),
+    );
+  }
+}
+
+class TransactionNotificationItem {
+  TransactionNotificationItem({
+    required this.transactionReference,
+    required this.productName,
+    required this.dateLabel,
+    required this.actionLabel,
+  });
+
+  final String transactionReference;
+  final String productName;
+  final String dateLabel;
+  final String actionLabel;
+
+  factory TransactionNotificationItem.fromJson(Map<String, dynamic> json) {
+    return TransactionNotificationItem(
+      transactionReference: json['transaction_reference'] as String? ?? '',
+      productName: json['product_name'] as String? ?? 'Rental item',
+      dateLabel: json['date_label'] as String? ?? 'Dates not set',
+      actionLabel: json['action_label'] as String? ?? 'Action required',
+    );
+  }
+}
+
+class TransactionNotificationPayload {
+  TransactionNotificationPayload({
+    required this.noticeCount,
+    required this.noticeItems,
+  });
+
+  final int noticeCount;
+  final List<TransactionNotificationItem> noticeItems;
+
+  factory TransactionNotificationPayload.fromJson(Map<String, dynamic> json) {
+    return TransactionNotificationPayload(
+      noticeCount: (json['txn_notice_count'] as num?)?.toInt() ?? 0,
+      noticeItems: (json['txn_notice_items'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TransactionNotificationItem.fromJson)
+          .toList(growable: false),
     );
   }
 }

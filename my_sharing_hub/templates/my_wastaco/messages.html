@@ -251,6 +251,96 @@
         max-height: 55vh;
         overflow-y: auto;
     }
+
+    .transaction-messages--compact .messages-page-header {
+        display: none;
+    }
+
+    .transaction-messages--compact .messages-list {
+        gap: 0.22rem;
+    }
+
+    .transaction-messages--compact .message-card {
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        gap: 0.32rem;
+        padding: 0.28rem 0.42rem;
+        border-radius: 8px;
+        min-height: 40px;
+    }
+
+    .transaction-messages--compact .message-card-icon-wrap {
+        width: 22px;
+    }
+
+    .transaction-messages--compact .message-open-btn {
+        font-size: 0.9rem;
+    }
+
+    .transaction-messages--compact .message-card-main {
+        display: flex;
+        align-items: center;
+        gap: 0.28rem;
+        min-width: 0;
+    }
+
+    .transaction-messages--compact .message-card-topline {
+        order: 2;
+        margin-left: auto;
+        align-items: center;
+    }
+
+    .transaction-messages--compact .message-card-subject {
+        display: none;
+    }
+
+    .transaction-messages--compact .message-card-time {
+        font-size: 0.73rem;
+        color: #5f7287;
+    }
+
+    .transaction-messages--compact .message-card-meta {
+        order: 1;
+        margin-top: 0;
+        gap: 0.22rem;
+        font-size: 0.74rem;
+        flex-wrap: nowrap;
+        overflow: hidden;
+        line-height: 1.1;
+    }
+
+    .transaction-messages--compact .message-card-from-label {
+        flex: 0 0 auto;
+    }
+
+    .transaction-messages--compact .message-read-badge {
+        padding: 0.02rem 0.22rem;
+        font-size: 0.58rem;
+        line-height: 1.05;
+    }
+
+    .transaction-messages--compact .message-card-hint {
+        font-size: 0.62rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .transaction-messages--compact .message-card {
+            grid-template-columns: 22px minmax(0, 1fr) auto;
+            padding: 0.26rem 0.38rem;
+            min-height: 38px;
+        }
+
+        .transaction-messages--compact .message-card-hint {
+            display: flex;
+        }
+
+        .transaction-messages--compact .message-card-meta {
+            font-size: 0.7rem;
+        }
+
+        .transaction-messages--compact .message-card-time {
+            font-size: 0.66rem;
+        }
+    }
 </style>
 
 

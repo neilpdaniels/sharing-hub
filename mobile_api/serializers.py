@@ -368,7 +368,7 @@ class TransactionActionSerializer(serializers.Serializer):
     cardholder_name = serializers.CharField(required=False, allow_blank=True)
     card_brand = serializers.CharField(required=False, allow_blank=True)
     card_last4 = serializers.CharField(required=False, allow_blank=True)
-    payment_method_id = serializers.IntegerField(required=False)
+    payment_method_id = serializers.CharField(required=False, allow_blank=True)
     setup_intent_id = serializers.CharField(required=False, allow_blank=True)
 
 

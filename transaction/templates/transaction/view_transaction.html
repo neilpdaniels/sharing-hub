@@ -149,6 +149,24 @@
                                 </tr>
                             </thead>
                             <tbody>
+                                {% if transaction.transaction_status == transaction.CANCEL_REQUESTED %}
+                                <tr class="table-warning">
+                                    <td><span class="workflow-step-circle">!</span></td>
+                                    <td>Cancellation requested</td>
+                                    <td>System</td>
+                                    <td><small>{{ transaction.amended|date:"M d, Y" }}</small></td>
+                                    <td><span class="badge badge-warning">Awaiting cancellation outcome</span></td>
+                                </tr>
+                                {% elif transaction.transaction_status == transaction.CANCEL_ACCEPTED %}
+                                <tr class="table-warning">
+                                    <td><span class="workflow-step-circle">!</span></td>
+                                    <td>Rental cancelled</td>
+                                    <td>System</td>
+                                    <td><small>{{ transaction.amended|date:"M d, Y" }}</small></td>
+                                    <td><span class="badge badge-warning">Cancelled</span></td>
+                                </tr>
+                                {% endif %}
+
                                 <tr class="{% if transaction.transaction_status == transaction.RENTAL_ENQUIRY and is_lender %}table-danger{% elif step >= 1 %}table-success{% endif %}">
                                     <td><span class="workflow-step-circle">1</span></td>
                                     <td>Rental discussion</td>
@@ -231,9 +249,17 @@
                                     </td>
                                 </tr>
                                 {% endif %}
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}table-success{% endif %}">
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}table-success{% endif %}">
                                     <td><span class="workflow-step-circle">5</span></td>
-                                    <td>Rental initiated</td>
+                                    <td>
+                                        Rental handover
+                                        <div><small class="text-muted d-block">Follow these steps:</small></div>
+                                        <ul class="text-muted small mb-0 pl-3">
+                                            <li>Lender uploads checkout video evidence.</li>
+                                            <li>Borrower confirms it, or submits a response.</li>
+                                            <li>Borrower shares the rental PIN with the lender.</li>
+                                        </ul>
+                                    </td>
                                     <td>Lender</td>
                                     <td>
                                         {% if transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
@@ -247,6 +273,8 @@
                                     <td>
                                         {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}
                                             <span class="badge badge-danger">Pending (my action)</span>
+                                        {% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION %}
+                                            <span class="badge badge-info">In progress</span>
                                         {% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
                                             <span class="badge badge-success">Completed</span>
                                         {% else %}
@@ -254,12 +282,25 @@
                                         {% endif %}
                                     </td>
                                 </tr>
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and is_renter %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}table-success{% endif %}">
+                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and is_lender or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}table-success{% endif %}">
                                     <td><span class="workflow-step-circle">6</span></td>
-                                    <td>Rental returned</td>
-                                    <td>Borrower</td>
                                     <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                        Return and deposit wrap-up
+                                        <div><small class="text-muted d-block">Follow these steps:</small></div>
+                                        <ul class="text-muted small mb-0 pl-3">
+                                            <li>Borrower uploads return video evidence.</li>
+                                            <li>Lender confirms it, or submits a response.</li>
+                                            <li>Lender proposes the deposit return amount.</li>
+                                            <li>Borrower accepts it, or contests it.</li>
+                                            <li>If needed, this can go back and forth up to 5 times before dispute escalation.</li>
+                                            <li>Lender shares the return PIN with the borrower.</li>
+                                        </ul>
+                                    </td>
+                                    <td>Both</td>
+                                    <td>
+                                        {% if transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED %}
+                                            <small>{{ transaction.amended|date:"M d, Y" }}</small>
+                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.MEDIATION_REQUIRED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
                                             <small>{{ transaction.rental_end_date|date:"M d, Y" }}</small>
                                         {% elif transaction.rental_end_date %}
                                             <small>Earliest start: {{ transaction.rental_end_date|date:"M d, Y" }}</small>
@@ -268,32 +309,41 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and is_renter %}
+                                        {% if transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and is_lender or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}
                                             <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+                                            <span class="badge badge-info">In progress</span>
+                                        {% elif transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED %}
                                             <span class="badge badge-success">Completed</span>
+                                        {% elif transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
+                                            <span class="badge badge-warning">Escalated to dispute</span>
                                         {% else %}
                                             <span class="badge badge-secondary">Pending</span>
                                         {% endif %}
                                     </td>
                                 </tr>
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING and is_lender %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}table-success{% endif %}">
+                                <tr class="{% if feedback_stage and not feedback_left_by_me %}table-danger{% elif feedback_both_complete or missing_rental_voided and feedback_left_by_me %}table-success{% endif %}">
                                     <td><span class="workflow-step-circle">7</span></td>
-                                    <td>Deposit outcome finalised</td>
-                                    <td>Lender</td>
                                     <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                        Final feedback
+                                        <div><small class="text-muted d-block">Each person leaves:</small></div>
+                                        <ul class="text-muted small mb-0 pl-3">
+                                            <li>Star ratings</li>
+                                            <li>A short written comment</li>
+                                        </ul>
+                                    </td>
+                                    <td>Both</td>
+                                    <td>
+                                        {% if feedback_stage or missing_rental_voided and feedback_left_by_me %}
                                             <small>{{ transaction.amended|date:"M d, Y" }}</small>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING %}
-                                            <small>Due now (post-return)</small>
                                         {% else %}
                                             <small class="text-muted">TBC</small>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING and is_lender %}
+                                        {% if feedback_stage and not feedback_left_by_me %}
                                             <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
+                                        {% elif feedback_both_complete or missing_rental_voided and feedback_left_by_me %}
                                             <span class="badge badge-success">Completed</span>
                                         {% else %}
                                             <span class="badge badge-secondary">Pending</span>
@@ -367,7 +417,7 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Messages</h5>
-                    <div class="transaction-messages">
+                    <div class="transaction-messages transaction-messages--compact">
                         {% include "my_sharing_hub/messages.html" with messages_=messages_ %}
                     </div>
                 </div>
@@ -619,6 +669,9 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Submit Checkout Evidence (Lender)</h5>
+                    <div class="alert alert-info py-2 mb-3" role="alert">
+                        Video evidence is easiest to record and upload using our Android/iOS app.
+                    </div>
                     {% if rental_start_blocked_by_missing_card %}
                     <div class="alert alert-warning mb-3" role="alert">
                         Rental is due to begin but cannot be started yet because the borrower has not completed payment card setup.
@@ -632,8 +685,8 @@
                             <input id="id_checkout_video_url" class="form-control" type="url" name="checkout_video_url" placeholder="https://...">
                         </div>
                         <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" value="1" id="id_payment_collected_placeholder" name="payment_collected_placeholder">
-                            <label class="form-check-label" for="id_payment_collected_placeholder">Payment collected (placeholder)</label>
+                            <input type="hidden" name="payment_collected_placeholder" value="1">
+                            <span class="text-muted small">Payment is collected automatically when the rental starts.</span>
                         </div>
                         <div class="form-group mb-2">
                             <label for="id_payment_placeholder_notes">Payment notes</label>
@@ -717,10 +770,33 @@
             </div>
             {% endif %}
 
+            {% if is_renter and transaction.transaction_status == transaction.RENTAL_ENQUIRY or is_renter and transaction.transaction_status == transaction.RENTAL_AGREED %}
+            {% if transaction.rental_start_date and today > transaction.rental_start_date and not transaction.checkout_handover_verified_at %}
+            <div class="card mb-3 border-warning">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Report Missing Rental (Borrower)</h5>
+                    <p class="text-muted mb-2">If rental start date has passed and no handover happened, you can void this transaction and open review.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="report_missing_rental">
+                        <div class="form-group mb-2">
+                            <label for="id_missing_rental_reason">Reason</label>
+                            <textarea id="id_missing_rental_reason" class="form-control" name="missing_rental_reason" rows="2" placeholder="Explain what happened"></textarea>
+                        </div>
+                        <button class="btn btn-outline-warning btn-block" type="submit">Report Missing Rental</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+            {% endif %}
+
             {% if is_renter and transaction.transaction_status == transaction.RENTAL_ONGOING or is_renter and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Return Day Evidence (Borrower)</h5>
+                    <div class="alert alert-info py-2 mb-3" role="alert">
+                        Video evidence is easiest to record and upload using our Android/iOS app.
+                    </div>
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_return_borrower_evidence">
@@ -738,6 +814,9 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Review Return Evidence (Lender)</h5>
+                    <div class="alert alert-info py-2 mb-3" role="alert">
+                        Video evidence is easiest to record and upload using our Android/iOS app.
+                    </div>
                     <p class="text-muted mb-2">Confirm you agree with borrower evidence, or provide your own counter-evidence.</p>
                     <form method="post" class="mb-2">
                         {% csrf_token %}
@@ -786,6 +865,26 @@
                     </form>
                 </div>
             </div>
+            {% endif %}
+
+            {% if is_lender and transaction.transaction_status == transaction.RENTAL_ONGOING or is_lender and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            {% if transaction.rental_end_date and today > transaction.rental_end_date %}
+            <div class="card mb-3 border-warning">
+                <div class="card-body">
+                    <h5 class="card-title">Action: Report Missing Return (Lender)</h5>
+                    <p class="text-muted mb-2">If return date has passed and no return was completed, raise missing return for dispute review.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="report_missing_return">
+                        <div class="form-group mb-2">
+                            <label for="id_missing_return_reason">Reason</label>
+                            <textarea id="id_missing_return_reason" class="form-control" name="missing_return_reason" rows="2" placeholder="Explain what happened"></textarea>
+                        </div>
+                        <button class="btn btn-outline-warning btn-block" type="submit">Report Missing Return</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
 
             {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}

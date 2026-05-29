@@ -11,6 +11,20 @@
         text-align: center;
         padding: 0.6rem 0.75rem;
     }
+
+    .card-setup-stripe-element {
+        min-height: 58px;
+        padding: 0.72rem 0.75rem;
+        display: flex;
+        align-items: center;
+    }
+
+    @media (max-width: 575.98px) {
+        .card-setup-stripe-element {
+            min-height: 62px;
+            padding: 0.78rem 0.7rem;
+        }
+    }
 </style>
 
 {% if can_setup_deposit_card %}
@@ -81,7 +95,12 @@
             
             <div class="form-group mb-3">
                 <label for="card-element">Card Details</label>
-                <div id="card-element" class="form-control" style="height: 40px; padding-top: 10px;"></div>
+                <div id="card-element" class="form-control card-setup-stripe-element"></div>
+                <small class="form-text text-muted">Postcode is entered separately to keep card fields readable on mobile.</small>
+            </div>
+            <div class="form-group mb-3">
+                <label for="billing_postcode">Billing postcode</label>
+                <input type="text" id="billing_postcode" class="form-control" placeholder="e.g. SW1A 1AA" autocomplete="postal-code" inputmode="text">
                 <div id="card-errors" class="text-danger mt-2" style="display:none;"></div>
             </div>
             <small class="form-text text-muted mb-3">Your card will be saved for future transactions. Manage your cards in <a href="{% url 'my_sharing_hub:payment_methods' %}">My Payment Methods</a>.</small>
@@ -92,8 +111,24 @@
         <script>
         (function() {
             const stripe = Stripe('{{ stripe_publishable_key }}');
+            const cardStyle = {
+                base: {
+                    fontSize: window.matchMedia('(max-width: 575.98px)').matches ? '18px' : '16px',
+                    color: '#0f172a',
+                    '::placeholder': {
+                        color: '#6b7280',
+                    },
+                },
+                invalid: {
+                    color: '#dc2626',
+                },
+            };
+
             const elements = stripe.elements();
-            const cardElement = elements.create('card');
+            const cardElement = elements.create('card', {
+                style: cardStyle,
+                hidePostalCode: true,
+            });
             cardElement.mount('#card-element');
             
             cardElement.addEventListener('change', function(event) {
@@ -111,6 +146,7 @@
                 event.preventDefault();
                 
                 const submitBtn = document.getElementById('submit-btn');
+                const billingPostcode = (document.getElementById('billing_postcode')?.value || '').trim();
                 submitBtn.disabled = true;
                 submitBtn.textContent = 'Processing...';
                 
@@ -122,7 +158,11 @@
                         {
                             payment_method: {
                                 card: cardElement,
-                                billing_details: {}
+                                billing_details: {
+                                    address: {
+                                        postal_code: billingPostcode,
+                                    },
+                                }
                             }
                         }
                     );

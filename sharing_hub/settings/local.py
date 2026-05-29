@@ -34,7 +34,7 @@ DEBUG_TOOLBAR_PANELS = [
     'debug_toolbar.panels.sql.SQLPanel',
     'debug_toolbar.panels.staticfiles.StaticFilesPanel',
     'debug_toolbar.panels.templates.TemplatesPanel',
-    'debug_toolbar.panels.cache.CachePanel',
+    # Disabled due occasional recursive wrapping in local debug sessions.
     'debug_toolbar.panels.signals.SignalsPanel',
     'debug_toolbar.panels.logging.LoggingPanel',
     'debug_toolbar.panels.redirects.RedirectsPanel',
@@ -51,7 +51,12 @@ LOGGING = {
     'disable_existing_loggers': False,
     "root": {
         "level": "INFO"
-    }
+    },
+    "loggers": {
+        "template_timings_panel.panels.TemplateTimings": {
+            "level": "WARNING",
+        },
+    },
 }
 
 ENVIRONMENT_NAME = 'dev server'

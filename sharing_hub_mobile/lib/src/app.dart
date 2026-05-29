@@ -83,6 +83,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   bool _deviceBiometricsAvailable = false;
   bool _biometricUnlockEnabled = false;
   bool _isDarkMode = false;
+  bool _showingTxnNotices = false;
 
   @override
   void initState() {
@@ -93,7 +94,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   Future<void> _restoreSession() async {
     final hasSavedSession = await widget.tokenStore.hasSavedSession();
     final privacyNoticeAccepted = await widget.tokenStore
-      .isPrivacyNoticeAccepted();
+        .isPrivacyNoticeAccepted();
     final deviceBiometricsAvailable = await widget.biometricAuthService
         .isAvailable();
     final biometricUnlockEnabled = await widget.tokenStore
@@ -139,6 +140,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
         accessToken: session.accessToken,
       );
       await _loadTransactions();
+      await _showTransactionNotices(session.accessToken);
     }
   }
 
@@ -168,6 +170,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
         accessToken: session.accessToken,
       );
       await _loadTransactions();
+      await _showTransactionNotices(session.accessToken);
     } finally {
       if (mounted) {
         setState(() {
@@ -193,6 +196,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       accessToken: session.accessToken,
     );
     await _loadTransactions();
+    await _showTransactionNotices(session.accessToken);
   }
 
   Future<void> _loadTransactions() async {
@@ -227,6 +231,32 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
   Future<void> _logout() async {
     final existingSession = _session;
+    final context = _navigatorKey.currentContext;
+    if (context != null) {
+      final shouldLogout = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Log out?'),
+            content: const Text('Do you want to log out of the app now?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Log out'),
+              ),
+            ],
+          );
+        },
+      );
+      if (shouldLogout != true) {
+        return;
+      }
+    }
+
     if (existingSession != null) {
       await widget.pushNotificationService.unregisterForSession(
         accessToken: existingSession.accessToken,
@@ -254,6 +284,80 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
     setState(() {
       _biometricUnlockEnabled = enabled;
     });
+  }
+
+  Future<void> _showTransactionNotices(String accessToken) async {
+    if (_showingTxnNotices) {
+      return;
+    }
+
+    _showingTxnNotices = true;
+    try {
+      final payload = await widget.transactionRepository
+          .fetchTransactionNotifications(accessToken: accessToken);
+      if (!mounted || payload.noticeCount <= 0) {
+        return;
+      }
+
+      final context = _navigatorKey.currentContext;
+      if (context == null) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('New booking alert'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${payload.noticeCount} booking alert${payload.noticeCount == 1 ? '' : 's'} need your attention.',
+                    ),
+                    const SizedBox(height: 12),
+                    ...payload.noticeItems.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(
+                            Icons.notifications_active_outlined,
+                          ),
+                          title: Text(item.productName),
+                          subtitle: Text(
+                            '${item.dateLabel}\n${item.actionLabel}',
+                          ),
+                          isThreeLine: true,
+                          onTap: () => Navigator.pop(dialogContext),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Later'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('View bookings'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      _showingTxnNotices = false;
+    }
   }
 
   Future<void> _toggleDarkMode(bool isDark) async {

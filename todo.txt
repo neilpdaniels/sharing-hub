@@ -1,5 +1,51 @@
 todo: 
 
+transaction workflow follow-up (post-wiring, 2026-05-28)
+
+1) dispute engine not implemented yet (manual status transitions only):
+    - add formal dispute case model with reason codes, evidence bundles, SLA timers, owner, and outcome states.
+    - link dispute cases to transactions and mirror to admin moderation UI.
+
+2) deposit proposal cycle hard-cap now enforced at 5 iterations, but needs fuller UX + audit:
+    - add explicit iteration counter field in DB instead of message-derived count.
+    - add visible iteration progress meter in web/mobile (x/5) with final warning banner.
+
+3) missing return flow now opens dispute, but needs deep handling:
+    - define deadline windows and grace period policy.
+    - add lender evidence checklist for missing return filing.
+    - define borrower rebuttal window and auto-escalation timings.
+
+4) missing rental flow now voids transaction + borrower-only feedback, but needs formal policy:
+    - confirm if lender can submit rebuttal evidence before/after void.
+    - define if financial penalties/fees apply on voided starts.
+    - make one-sided feedback explicitly visible as one-sided in profile aggregates.
+
+5) feedback completion logic still binary for normal transactions:
+    - add explicit workflow state for one-sided feedback (missing rental cases) vs mutual feedback complete.
+    - decide whether one-sided feedback can auto-close as completed state or remain cancelled-with-feedback.
+
+6) evidence capture UX:
+    - website now advises app capture, but still URL-based in forms; add direct upload parity where needed.
+    - standardize evidence metadata (captured_at, device, checksum, uploader_role) for dispute reliability.
+
+7) transaction timeline coherence:
+    - centralize step/substep derivation server-side (single source of truth) and expose to web + mobile.
+    - remove duplicated step logic currently split across template logic, helper functions, and mobile UI code.
+
+8) notifications:
+    - add push/email notifications for each major workflow transition and dispute escalation.
+    - include reminder nudges for pending actions (contract confirmation, return verification, feedback).
+
+9) tests to add:
+    - web + mobile API tests for missing_return and missing_rental actions with date gating.
+    - tests for deposit iteration limit (<=5 proposals) and auto-escalation on post-limit contest.
+    - tests for borrower-only feedback path on missing-rental voided transactions.
+
+10) web/mobile parity audit for shared UX:
+    - identify components, labels/text, and step flows that differ between main site and mobile app.
+    - define shared source-of-truth patterns (copy, state-to-step mapping, action labels) and apply across both platforms.
+    - prioritize high-impact mismatches in transaction flow first, then expand to account/profile and navigation surfaces.
+
 
 broken links / missing pages audit (2026-05-26)
 

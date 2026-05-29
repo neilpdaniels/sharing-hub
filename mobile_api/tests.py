@@ -2,11 +2,13 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from common.models import Category, Order, Product
+from transaction.models import Transaction, TransactionMessage
 
 
 class LenderListingsViewTests(TestCase):
@@ -237,3 +239,203 @@ class PendingReservationReleaseTests(TestCase):
             },
         )
         self.assertEqual(create_after_release.status_code, 201)
+
+
+class TransactionActionWorkflowTests(TestCase):
+    def setUp(self):
+        self.category = Category.objects.create(title='Power Tools')
+        self.product = Product.objects.create(category_id=self.category, name='Router')
+        self.lender = User.objects.create_user(
+            username='api-lender',
+            email='api-lender@example.com',
+            password='x',
+        )
+        self.renter = User.objects.create_user(
+            username='api-renter',
+            email='api-renter@example.com',
+            password='x',
+        )
+        self.order = Order.objects.create(
+            product=self.product,
+            user=self.lender,
+            direction=Order.TO_LET,
+            expiry_date=timezone.now() + timedelta(days=30),
+            status=Order.ACTIVE,
+            price=18,
+            deposit=120,
+            postcode='SW1A1AA',
+        )
+
+    def _create_txn(self, *, status, start_offset_days, end_offset_days):
+        return Transaction.objects.create(
+            user_passive=self.lender,
+            user_aggressive=self.renter,
+            order_passive=self.order,
+            product=self.product,
+            transaction_status=status,
+            prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+            rental_start_date=timezone.now().date() + timedelta(days=start_offset_days),
+            rental_end_date=timezone.now().date() + timedelta(days=end_offset_days),
+            price=18,
+            deposit=120,
+            current_spot_value=120,
+            price_as_pct_spot_value=15,
+        )
+
+    def test_mobile_report_missing_rental_and_feedback_path(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_AGREED,
+            start_offset_days=-2,
+            end_offset_days=2,
+        )
+
+        self.client.force_login(self.renter)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'report_missing_rental',
+                'reason': 'Lender never arrived.',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.CANCEL_ACCEPTED)
+        self.assertIn('[MISSING_RENTAL_VOIDED]', txn.deposit_resolution_notes)
+
+        feedback = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'submit_feedback',
+                'communication_rating': 4,
+                'delivery_return_rating': 1,
+                'overall_rating': 2,
+                'feedback_comment': 'No handover happened.',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(feedback.status_code, 200)
+
+    def test_mobile_report_missing_return_escalates_dispute(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_ONGOING,
+            start_offset_days=-8,
+            end_offset_days=-1,
+        )
+
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'report_missing_return',
+                'reason': 'Borrower did not return item.',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.DISPUTE_REQUESTED)
+
+    def test_mobile_deposit_iteration_cap_blocks_lender_and_auto_escalates_renter_contest(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+            start_offset_days=-12,
+            end_offset_days=-5,
+        )
+
+        for idx in range(5):
+            TransactionMessage.objects.create(
+                user_from=self.lender,
+                user_to=self.renter,
+                transaction=txn,
+                subject=f'Deposit return proposal {txn.transaction_reference}',
+                description=f'Iteration {idx + 1}',
+                is_system_generated=True,
+            )
+
+        self.client.force_login(self.lender)
+        blocked = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'propose_deposit_return',
+                'deposit_proposed_return_amount': 60,
+                'deposit_resolution_notes': 'Sixth attempt',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(blocked.status_code, 400)
+
+        self.client.force_login(self.renter)
+        escalated = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'contest_deposit_return',
+                'deposit_resolution_notes': 'Still contested after max attempts',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(escalated.status_code, 200)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.DISPUTE_REQUESTED)
+
+    @patch('mobile_api.views.async_confirm_card_setup.delay')
+    def test_mobile_confirm_stripe_card_queues_async_confirmation(self, mock_async_confirm):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_AGREED,
+            start_offset_days=2,
+            end_offset_days=5,
+        )
+
+        self.client.force_login(self.renter)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'confirm_stripe_card',
+                'payment_method_id': 'pm_test_123',
+                'setup_intent_id': 'seti_test_123',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        txn.refresh_from_db()
+        self.assertEqual(txn.stripe_payment_method_id, 'pm_test_123')
+        self.assertEqual(txn.stripe_setup_intent_id, 'seti_test_123')
+        mock_async_confirm.assert_called_once_with(
+            transaction_id=txn.id,
+            setup_intent_id='seti_test_123',
+            payment_method_id='pm_test_123',
+        )
+
+    def test_mobile_initiate_rental_accepts_multipart_video_upload(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_AGREED,
+            start_offset_days=0,
+            end_offset_days=3,
+        )
+        txn.deposit_card_setup_status = Transaction.CARD_READY
+        txn.deposit_test_hold_status = Transaction.TEST_HOLD_SUCCESS
+        txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
+
+        video_file = SimpleUploadedFile(
+            'handover.mp4',
+            b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom',
+            content_type='video/mp4',
+        )
+
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'initiate_rental',
+                'videos': video_file,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.RENTAL_DAY_AWAITING_VERIFICATION)
+        self.assertTrue(bool(txn.checkout_condition_video_url))

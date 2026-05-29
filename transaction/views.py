@@ -49,6 +49,7 @@ from .models import (
 from .stripe_connect import stripe_connect_service
 from .tasks import (
     async_collect_deposit_hold,
+    async_confirm_card_setup,
     async_setup_deposit_card_and_test_hold,
 )
 
@@ -793,6 +794,16 @@ def view_transaction(request, transaction_reference=None):
         except (TypeError, ValueError):
             return None
 
+    def _deposit_proposal_iterations(transaction):
+        # Count lender proposal messages as proposal iterations without requiring schema changes.
+        return transaction.transactionmessage_set.filter(
+            subject__startswith='Deposit return proposal',
+            user_from=transaction.user_passive,
+        ).count()
+
+    def _is_missing_rental_voided(transaction):
+        return '[MISSING_RENTAL_VOIDED]' in (transaction.deposit_resolution_notes or '')
+
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
 
@@ -934,6 +945,72 @@ Transaction Ref: {txn.transaction_reference}"""
             )
             messages.info(request, 'Rental agreement rejected and the lender has been notified.')
 
+        elif action == 'report_missing_rental' and is_renter and txn.transaction_status in (
+            txn.RENTAL_ENQUIRY,
+            txn.RENTAL_AGREED,
+        ):
+            if not txn.rental_start_date or timezone.now().date() <= txn.rental_start_date:
+                messages.error(request, 'Missing rental can only be reported after the rental start date has passed.')
+            elif txn.checkout_handover_verified_at:
+                messages.error(request, 'Rental handover is already verified, so missing rental cannot be reported.')
+            else:
+                reason = (request.POST.get('missing_rental_reason') or '').strip()
+                marker = '[MISSING_RENTAL_VOIDED]'
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.CANCEL_ACCEPTED
+                txn.transaction_status_raised_by = request.user
+                txn.deposit_status = txn.DEPOSIT_MEDIATION
+                txn.deposit_resolution_notes = f'{marker} Borrower reported missing rental. {reason}'.strip()
+                txn.save(update_fields=[
+                    'prev_transaction_status',
+                    'transaction_status',
+                    'transaction_status_raised_by',
+                    'deposit_status',
+                    'deposit_resolution_notes',
+                    'amended',
+                ])
+                _release_transaction_dates(txn)
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=txn.user_passive,
+                    transaction=txn,
+                    subject=f'Missing rental reported {txn.transaction_reference}',
+                    description='Borrower reported missing rental after rental start date. Transaction voided; dispute/admin review required.',
+                    include_admin=True,
+                    is_system_generated=True,
+                )
+                messages.warning(request, 'Missing rental reported. Transaction voided and routed to dispute review. Borrower can now leave final feedback.')
+
+        elif action == 'report_missing_return' and is_lender and txn.transaction_status in (
+            txn.RENTAL_ONGOING,
+            txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+        ):
+            if not txn.rental_end_date or timezone.now().date() <= txn.rental_end_date:
+                messages.error(request, 'Missing return can only be reported after the rental return date has passed.')
+            else:
+                reason = (request.POST.get('missing_return_reason') or '').strip()
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.DISPUTE_REQUESTED
+                txn.deposit_status = txn.DEPOSIT_MEDIATION
+                txn.deposit_resolution_notes = f'Lender reported missing return. {reason}'.strip()
+                txn.save(update_fields=[
+                    'prev_transaction_status',
+                    'transaction_status',
+                    'deposit_status',
+                    'deposit_resolution_notes',
+                    'amended',
+                ])
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=txn.user_aggressive,
+                    transaction=txn,
+                    subject=f'Missing return reported {txn.transaction_reference}',
+                    description='Lender reported missing return after return date. Dispute workflow has been opened for admin review.',
+                    include_admin=True,
+                    is_system_generated=True,
+                )
+                messages.warning(request, 'Missing return reported and dispute review opened.')
+
         elif action == 'add_deposit_card' and is_renter and txn.transaction_status in card_setup_allowed_statuses:
             cardholder_name = (request.POST.get('deposit_cardholder_name') or '').strip()
             card_brand = (request.POST.get('deposit_card_brand') or '').strip()
@@ -989,8 +1066,8 @@ Transaction Ref: {txn.transaction_reference}"""
             elif not payment_method_id:
                 messages.error(request, 'Card details were not submitted successfully. Please try again.')
             else:
-                # Mark as processing and persist submitted Stripe references.
-                # Webhook handler will finalize verification status.
+                # Mark as processing and kick off confirmation immediately.
+                # Webhooks can still reconcile later, but local/test flows should not stall waiting for one.
                 txn.deposit_card_setup_status = txn.CARD_NONE
                 txn.deposit_test_hold_status = txn.TEST_HOLD_NOT_RUN
                 txn.stripe_setup_intent_id = setup_intent_id
@@ -1002,6 +1079,11 @@ Transaction Ref: {txn.transaction_reference}"""
                     'stripe_payment_method_id',
                     'amended',
                 ])
+                async_confirm_card_setup.delay(
+                    transaction_id=txn.id,
+                    setup_intent_id=setup_intent_id,
+                    payment_method_id=payment_method_id,
+                )
 
         elif action == 'collect_deposit' and is_lender and txn.transaction_status in (
             txn.RENTAL_AGREED, 
@@ -1126,9 +1208,8 @@ Transaction Ref: {txn.transaction_reference}"""
             if checkout_video:
                 txn.product_status = txn.CHECKOUT_VIDEO_ADDED
 
-            payment_collected = bool(request.POST.get('payment_collected_placeholder'))
-            txn.payment_collected_placeholder = payment_collected
-            txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER if payment_collected else txn.PAYMENT_PENDING
+            txn.payment_collected_placeholder = True
+            txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER
             txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if txn.deposit_collected_placeholder else txn.DEPOSIT_PENDING
             txn.payment_placeholder_notes = request.POST.get('payment_placeholder_notes', '').strip()
             txn.save()
@@ -1356,6 +1437,7 @@ Transaction Ref: {txn.transaction_reference}"""
         ):
             proposed_amount = _parse_deposit_amount(request.POST.get('deposit_proposed_return_amount'))
             resolution_notes = (request.POST.get('deposit_resolution_notes') or '').strip()
+            proposal_iterations = _deposit_proposal_iterations(txn)
 
             if proposed_amount is None:
                 messages.error(request, 'Please enter a valid deposit return amount.')
@@ -1363,6 +1445,8 @@ Transaction Ref: {txn.transaction_reference}"""
                 messages.error(request, 'Deposit return amount cannot be negative.')
             elif proposed_amount > txn.deposit:
                 messages.error(request, 'Deposit return amount cannot exceed the original deposit.')
+            elif proposal_iterations >= 5:
+                messages.error(request, 'Maximum deposit proposal iterations reached (5). Please raise a dispute to continue.')
             else:
                 previous_status = txn.transaction_status
                 txn.prev_transaction_status = txn.transaction_status
@@ -1402,7 +1486,14 @@ Transaction Ref: {txn.transaction_reference}"""
                     description=description,
                     is_system_generated=True,
                 )
-                messages.success(request, f'Deposit proposal sent: £{proposed_amount:.2f}.')
+                new_iteration_count = proposal_iterations + 1
+                if new_iteration_count == 5:
+                    messages.warning(
+                        request,
+                        f'Deposit proposal sent: £{proposed_amount:.2f}. This is iteration 5/5 (final warning before dispute escalation).',
+                    )
+                else:
+                    messages.success(request, f'Deposit proposal sent: £{proposed_amount:.2f}. Iteration {new_iteration_count}/5.')
 
         elif action == 'agree_deposit_return' and is_renter and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
             proposed_amount = txn.deposit_proposed_return_amount
@@ -1439,10 +1530,35 @@ Transaction Ref: {txn.transaction_reference}"""
 
         elif action == 'contest_deposit_return' and is_renter and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
             contest_notes = (request.POST.get('deposit_resolution_notes') or '').strip()
+            proposal_iterations = _deposit_proposal_iterations(txn)
             if txn.deposit_proposed_by_lender_at is None:
                 messages.error(request, 'There is no lender proposal to contest yet.')
             elif not contest_notes:
                 messages.error(request, 'Please add a reason for contesting the proposal.')
+            elif proposal_iterations >= 5:
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.DISPUTE_REQUESTED
+                txn.deposit_status = txn.DEPOSIT_MEDIATION
+                txn.deposit_proposal_contested_at = timezone.now()
+                txn.deposit_resolution_notes = contest_notes
+                txn.save(update_fields=[
+                    'prev_transaction_status',
+                    'transaction_status',
+                    'deposit_status',
+                    'deposit_proposal_contested_at',
+                    'deposit_resolution_notes',
+                    'amended',
+                ])
+                TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=txn.user_passive,
+                    transaction=txn,
+                    subject=f'Deposit dispute auto-escalated {txn.transaction_reference}',
+                    description='Max proposal iterations reached (5). Deposit dispute was automatically escalated to admin review.',
+                    include_admin=True,
+                    is_system_generated=True,
+                )
+                messages.warning(request, 'Max proposal iterations reached. Dispute has been escalated to admin.')
             else:
                 txn.prev_transaction_status = txn.transaction_status
                 txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_CONTESTED
@@ -1551,11 +1667,20 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.RENTAL_RETURNED_DEPOSIT_RETURNED,
             txn.AWAITING_FEEDBACK,
             txn.RENTAL_PROCESS_COMPLETED,
+        ) or (
+            action == 'submit_feedback'
+            and is_renter
+            and txn.transaction_status == txn.CANCEL_ACCEPTED
+            and _is_missing_rental_voided(txn)
         ):
             communication_rating = request.POST.get('communication_rating', '').strip()
             delivery_return_rating = request.POST.get('delivery_return_rating', '').strip()
             overall_rating = request.POST.get('overall_rating', '').strip()
             feedback_comment = (request.POST.get('feedback_comment') or '').strip()
+
+            if txn.transaction_status == txn.CANCEL_ACCEPTED and _is_missing_rental_voided(txn) and not is_renter:
+                messages.error(request, 'Only the borrower can leave feedback for a voided missing-rental transaction.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
             try:
                 communication_rating = int(communication_rating)
@@ -1608,14 +1733,17 @@ Transaction Ref: {txn.transaction_reference}"""
                 left_for=request.user,
             ).exists()
 
-            txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.AWAITING_FEEDBACK
-            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'amended'])
-
-            if other_feedback_exists:
-                messages.success(request, 'Feedback submitted. Both parties have now completed feedback, and the transaction is closed.')
+            if txn.transaction_status == txn.CANCEL_ACCEPTED and _is_missing_rental_voided(txn):
+                messages.success(request, 'Feedback submitted for missing-rental report.')
             else:
-                messages.success(request, 'Feedback submitted. Waiting for the other party to submit feedback.')
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.AWAITING_FEEDBACK
+                txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'amended'])
+
+                if other_feedback_exists:
+                    messages.success(request, 'Feedback submitted. Both parties have now completed feedback, and the transaction is closed.')
+                else:
+                    messages.success(request, 'Feedback submitted. Waiting for the other party to submit feedback.')
 
         else:
             messages.error(request, 'That action is not available for the current state.')
@@ -1693,12 +1821,16 @@ Transaction Ref: {txn.transaction_reference}"""
     checkout_pin_available = bool(txn.checkout_handover_pin)
     deposit_funds_held = _is_deposit_funds_held(txn)
 
+    missing_rental_voided = _is_missing_rental_voided(txn)
+
     feedback_statuses = (
         txn.RENTAL_RETURNED_DEPOSIT_RETURNED,
         txn.AWAITING_FEEDBACK,
         txn.RENTAL_PROCESS_COMPLETED,
     )
-    feedback_stage = txn.transaction_status in feedback_statuses
+    feedback_stage = txn.transaction_status in feedback_statuses or (
+        missing_rental_voided and txn.transaction_status == txn.CANCEL_ACCEPTED and is_renter
+    )
     feedback_left_by_me = TransactionFeedback.objects.filter(
         transaction=txn,
         left_by=request.user,
@@ -1765,6 +1897,7 @@ Transaction Ref: {txn.transaction_reference}"""
         'feedback_both_complete': feedback_both_complete,
         'feedback_from_lender': feedback_from_lender,
         'feedback_from_renter': feedback_from_renter,
+        'missing_rental_voided': missing_rental_voided,
         'lender_feedback_stats': lender_feedback_stats,
         'renter_feedback_stats': renter_feedback_stats,
         'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),

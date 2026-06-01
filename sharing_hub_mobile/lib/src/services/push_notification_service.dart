@@ -4,8 +4,69 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+
+class NotificationPreferences {
+  const NotificationPreferences({
+    required this.transactionEnquiry,
+    required this.transactionMessages,
+    required this.inAppAlerts,
+  });
+
+  final bool transactionEnquiry;
+  final bool transactionMessages;
+  final bool inAppAlerts;
+
+  static const defaults = NotificationPreferences(
+    transactionEnquiry: true,
+    transactionMessages: true,
+    inAppAlerts: true,
+  );
+
+  Map<String, dynamic> toJson() {
+    return {
+      'notify_transaction_enquiry': transactionEnquiry,
+      'notify_transaction_messages': transactionMessages,
+      'notify_in_app_alerts': inAppAlerts,
+    };
+  }
+
+  factory NotificationPreferences.fromJson(Map<String, dynamic> json) {
+    return NotificationPreferences(
+      transactionEnquiry: json['notify_transaction_enquiry'] as bool? ?? true,
+      transactionMessages: json['notify_transaction_messages'] as bool? ?? true,
+      inAppAlerts: json['notify_in_app_alerts'] as bool? ?? true,
+    );
+  }
+
+  NotificationPreferences copyWith({
+    bool? transactionEnquiry,
+    bool? transactionMessages,
+    bool? inAppAlerts,
+  }) {
+    return NotificationPreferences(
+      transactionEnquiry: transactionEnquiry ?? this.transactionEnquiry,
+      transactionMessages: transactionMessages ?? this.transactionMessages,
+      inAppAlerts: inAppAlerts ?? this.inAppAlerts,
+    );
+  }
+}
+
+class ForegroundPushAlert {
+  const ForegroundPushAlert({
+    required this.title,
+    required this.body,
+    required this.notificationType,
+    required this.transactionReference,
+  });
+
+  final String title;
+  final String body;
+  final String notificationType;
+  final String transactionReference;
+}
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -27,6 +88,12 @@ class PushNotificationService {
   bool _initialized = false;
   String? _lastRegisteredToken;
   String? _accessToken;
+  NotificationPreferences _preferences = NotificationPreferences.defaults;
+  Future<void> Function(ForegroundPushAlert alert)? _foregroundAlertHandler;
+
+  static const _prefTxnEnquiryKey = 'notify_transaction_enquiry';
+  static const _prefTxnMessagesKey = 'notify_transaction_messages';
+  static const _prefInAppAlertsKey = 'notify_in_app_alerts';
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -67,6 +134,13 @@ class PushNotificationService {
     await messaging.requestPermission(alert: true, badge: true, sound: true);
 
     FirebaseMessaging.onMessage.listen((message) async {
+      final notificationType = _notificationType(message);
+      final preferences = await getPreferences();
+
+      if (!_isNotificationEnabled(preferences, notificationType)) {
+        return;
+      }
+
       final notification = message.notification;
       if (notification == null) {
         return;
@@ -87,6 +161,21 @@ class PushNotificationService {
           iOS: DarwinNotificationDetails(),
         ),
       );
+
+      if (preferences.inAppAlerts) {
+        final handler = _foregroundAlertHandler;
+        if (handler != null) {
+          await handler(
+            ForegroundPushAlert(
+              title: notification.title ?? 'New alert',
+              body: notification.body ?? 'You have a new notification.',
+              notificationType: notificationType,
+              transactionReference:
+                  message.data['transaction_reference'] as String? ?? '',
+            ),
+          );
+        }
+      }
     });
 
     messaging.onTokenRefresh.listen((token) {
@@ -103,6 +192,18 @@ class PushNotificationService {
   Future<void> syncForSession({required String accessToken}) async {
     await initialize();
     _accessToken = accessToken;
+    await _hydratePreferencesFromLocal();
+
+    try {
+      final serverPreferences = await _apiClient.getJsonObject(
+        '/notifications/preferences/',
+        accessToken: accessToken,
+      );
+      _preferences = NotificationPreferences.fromJson(serverPreferences);
+      await _persistPreferencesLocal(_preferences);
+    } catch (_) {
+      // Keep local preferences when server settings are unavailable.
+    }
 
     if (!_initialized) {
       return;
@@ -146,6 +247,7 @@ class PushNotificationService {
       await _apiClient.postJson('/devices/register/', {
         'token': token,
         'platform': platform,
+        ..._preferences.toJson(),
       }, accessToken: accessToken);
       _lastRegisteredToken = token;
     } catch (error) {
@@ -164,5 +266,89 @@ class PushNotificationService {
       return 'ios';
     }
     return 'other';
+  }
+
+  Future<NotificationPreferences> getPreferences() async {
+    await _hydratePreferencesFromLocal();
+    return _preferences;
+  }
+
+  Future<NotificationPreferences> updatePreferences({
+    required NotificationPreferences preferences,
+    String? accessToken,
+  }) async {
+    _preferences = preferences;
+    await _persistPreferencesLocal(preferences);
+
+    final token = accessToken ?? _accessToken;
+    if (token != null && token.isNotEmpty) {
+      try {
+        final response = await _apiClient.patchJson(
+          '/notifications/preferences/',
+          preferences.toJson(),
+          accessToken: token,
+        );
+        _preferences = NotificationPreferences.fromJson(response);
+        await _persistPreferencesLocal(_preferences);
+      } catch (error) {
+        debugPrint('Failed to sync notification preferences: $error');
+      }
+    }
+
+    final refreshedToken = _lastRegisteredToken;
+    if (token != null &&
+        token.isNotEmpty &&
+        refreshedToken != null &&
+        refreshedToken.isNotEmpty) {
+      await _registerToken(accessToken: token, token: refreshedToken);
+    }
+
+    return _preferences;
+  }
+
+  void setForegroundAlertHandler(
+    Future<void> Function(ForegroundPushAlert alert)? handler,
+  ) {
+    _foregroundAlertHandler = handler;
+  }
+
+  String _notificationType(RemoteMessage message) {
+    final value = message.data['notification_type'] ?? message.data['type'];
+    return (value as String? ?? '').trim().toLowerCase();
+  }
+
+  bool _isNotificationEnabled(
+    NotificationPreferences preferences,
+    String notificationType,
+  ) {
+    if (notificationType == 'transaction_enquiry') {
+      return preferences.transactionEnquiry;
+    }
+    if (notificationType == 'transaction_message') {
+      return preferences.transactionMessages;
+    }
+    return true;
+  }
+
+  Future<void> _hydratePreferencesFromLocal() async {
+    final prefs = await SharedPreferences.getInstance();
+    _preferences = NotificationPreferences(
+      transactionEnquiry:
+          prefs.getBool(_prefTxnEnquiryKey) ?? _preferences.transactionEnquiry,
+      transactionMessages:
+          prefs.getBool(_prefTxnMessagesKey) ??
+          _preferences.transactionMessages,
+      inAppAlerts:
+          prefs.getBool(_prefInAppAlertsKey) ?? _preferences.inAppAlerts,
+    );
+  }
+
+  Future<void> _persistPreferencesLocal(
+    NotificationPreferences preferences,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefTxnEnquiryKey, preferences.transactionEnquiry);
+    await prefs.setBool(_prefTxnMessagesKey, preferences.transactionMessages);
+    await prefs.setBool(_prefInAppAlertsKey, preferences.inAppAlerts);
   }
 }

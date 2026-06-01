@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../models/order_models.dart';
 import 'api_client.dart';
 
@@ -41,6 +43,34 @@ class OrderRepository {
       '/orders/$orderId/amend/',
       fields,
       accessToken: accessToken,
+    );
+    return OrderSummary.fromJson(json);
+  }
+
+  Future<OrderSummary> createOrder({
+    required String accessToken,
+    required Map<String, dynamic> fields,
+  }) async {
+    final json = await _apiClient.postJson(
+      '/orders/create/',
+      fields,
+      accessToken: accessToken,
+    );
+    return OrderSummary.fromJson(json);
+  }
+
+  Future<OrderSummary> uploadOrderImages({
+    required String accessToken,
+    required int orderId,
+    required List<File> imageFiles,
+  }) async {
+    if (imageFiles.isEmpty) {
+      throw ApiException('No images selected for upload.');
+    }
+    final json = await _apiClient.postMultipart(
+      '/orders/$orderId/images/',
+      accessToken: accessToken,
+      imageFiles: imageFiles,
     );
     return OrderSummary.fromJson(json);
   }

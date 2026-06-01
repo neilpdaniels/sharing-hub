@@ -12,6 +12,7 @@ import '../services/catalog_repository.dart';
 import '../services/location_service.dart';
 import '../services/order_repository.dart';
 import '../services/transaction_repository.dart';
+import '../services/push_notification_service.dart';
 import 'account_details_screen.dart';
 import 'favourites_screen.dart';
 import 'login_screen.dart';
@@ -19,10 +20,13 @@ import 'inbox_screen.dart';
 import 'my_orders_screen.dart';
 import 'my_sharing_hub_screen.dart';
 import 'my_transactions_screen.dart';
+import 'notification_settings_screen.dart';
 import 'payment_methods_screen.dart';
 import 'product_detail_screen.dart';
+import 'listing_form_screen.dart';
 import 'register_screen.dart';
 import 'transaction_detail_screen.dart';
+import '../widgets/rentalution_app_bar_logo.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -51,6 +55,8 @@ class HomeScreen extends StatefulWidget {
     required this.orderRepository,
     required this.catalogRepository,
     required this.transactionRepository,
+    required this.notificationPreferences,
+    required this.onUpdateNotificationPreferences,
   });
 
   final bool privacyNoticeAccepted;
@@ -77,6 +83,9 @@ class HomeScreen extends StatefulWidget {
   final OrderRepository orderRepository;
   final CatalogRepository catalogRepository;
   final TransactionRepository transactionRepository;
+  final NotificationPreferences notificationPreferences;
+  final Future<void> Function(NotificationPreferences preferences)?
+  onUpdateNotificationPreferences;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -91,6 +100,9 @@ class _HomeScreenState extends State<HomeScreen> {
       TextEditingController();
   final TextEditingController _browseLocationController =
       TextEditingController();
+  String? _browseLocationQueryOverride;
+  String? _searchLocationQueryOverride;
+  bool _initialLocationResolved = false;
 
   List<CategorySummary> _categories = const [];
   List<ProductSummary> _browseProducts = const [];
@@ -115,9 +127,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Detail page navigation state
   String?
-  _detailPageType; // 'product', 'orders', 'transactions', 'inbox', 'account', 'payment', 'favourites'
+  _detailPageType; // 'product', 'orders', 'transactions', 'inbox', 'account', 'payment', 'favourites', 'notification-settings'
   String? _selectedProductSlug;
   String? _selectedTransactionReference;
+  int? _postLoginReturnIndex;
+  String? _postLoginReturnDetailPageType;
+  String? _postLoginReturnProductSlug;
+  String? _postLoginReturnTransactionReference;
 
   bool get _isAuthenticated {
     final token = widget.accessToken;
@@ -130,6 +146,70 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int get _loginTabIndex => 3;
 
+  int _mapTabIndexAfterLogin(int index) {
+    if (index == 2) {
+      return 3;
+    }
+    if (index == _loginTabIndex) {
+      return 0;
+    }
+    return index;
+  }
+
+  void _rememberPostLoginDestination() {
+    if (_isAuthenticated) {
+      return;
+    }
+    _postLoginReturnIndex = _selectedIndex;
+    _postLoginReturnDetailPageType = _detailPageType;
+    _postLoginReturnProductSlug = _selectedProductSlug;
+    _postLoginReturnTransactionReference = _selectedTransactionReference;
+  }
+
+  void _clearPostLoginDestination() {
+    _postLoginReturnIndex = null;
+    _postLoginReturnDetailPageType = null;
+    _postLoginReturnProductSlug = null;
+    _postLoginReturnTransactionReference = null;
+  }
+
+  bool _restorePostLoginDestination() {
+    final hasDestination =
+        _postLoginReturnIndex != null ||
+        _postLoginReturnDetailPageType != null ||
+        _postLoginReturnProductSlug != null ||
+        _postLoginReturnTransactionReference != null;
+    if (!hasDestination) {
+      return false;
+    }
+
+    final rawIndex = _postLoginReturnIndex;
+    _selectedIndex = rawIndex == null ? 0 : _mapTabIndexAfterLogin(rawIndex);
+    _detailPageType = _postLoginReturnDetailPageType;
+    _selectedProductSlug = _postLoginReturnProductSlug;
+    _selectedTransactionReference = _postLoginReturnTransactionReference;
+    _clearPostLoginDestination();
+    return true;
+  }
+
+  bool _restorePreLoginDestination() {
+    final hasDestination =
+        _postLoginReturnIndex != null ||
+        _postLoginReturnDetailPageType != null ||
+        _postLoginReturnProductSlug != null ||
+        _postLoginReturnTransactionReference != null;
+    if (!hasDestination) {
+      return false;
+    }
+
+    _selectedIndex = _postLoginReturnIndex ?? 0;
+    _detailPageType = _postLoginReturnDetailPageType;
+    _selectedProductSlug = _postLoginReturnProductSlug;
+    _selectedTransactionReference = _postLoginReturnTransactionReference;
+    _clearPostLoginDestination();
+    return true;
+  }
+
   bool get _showFilterDrawerAction {
     if (_detailPageType != null) {
       return false;
@@ -138,31 +218,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return true;
     }
     return _selectedIndex == _browseTabIndex && _selectedCategorySlug != null;
-  }
-
-  void _openFilterMenu() {
-    _scaffoldKey.currentState?.openEndDrawer();
-  }
-
-  Widget _buildQuickFilterButtons() {
-    const compactPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
-    return OutlinedButton(
-      onPressed: _openFilterMenu,
-      style: OutlinedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        padding: compactPadding,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.tune, size: 14),
-          SizedBox(width: 4),
-          Text('Sort/Filter'),
-        ],
-      ),
-    );
   }
 
   BottomNavigationBarItem _navItem(IconData icon, String label, bool selected) {
@@ -250,6 +305,17 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Any';
     }
     return '$value km';
+  }
+
+  String _browseDistanceHeading(String locationLabel) {
+    if (locationLabel.isEmpty) {
+      return 'Location is not set';
+    }
+    final distance = _selectedDistance;
+    if (distance == null) {
+      return 'Browsing within any distance of $locationLabel';
+    }
+    return 'Browsing within ${distance}km of $locationLabel';
   }
 
   Future<void> _applyHomeFilters() async {
@@ -391,6 +457,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   isDense: true,
                 ),
                 onSubmitted: (_) => _applyHomeFilters(),
+                onChanged: (_) {
+                  _browseLocationQueryOverride = null;
+                },
               ),
             ],
             const SizedBox(height: 4),
@@ -495,6 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    _resolveInitialLocation();
     if (_isAuthenticated) {
       _loadOrders();
       _loadFavouriteOrders();
@@ -508,9 +578,18 @@ class _HomeScreenState extends State<HomeScreen> {
     final wasAuthenticated = oldWidget.session != null;
     if (wasAuthenticated != _isAuthenticated) {
       setState(() {
-        _selectedIndex = 0;
+        if (_isAuthenticated) {
+          final restored = _restorePostLoginDestination();
+          if (!restored) {
+            _selectedIndex = 0;
+          }
+        } else {
+          _selectedIndex = 0;
+          _clearPostLoginDestination();
+        }
       });
       if (_isAuthenticated) {
+        _resolveInitialLocation(force: true);
         _loadOrders();
         _loadFavouriteOrders();
         _loadInbox();
@@ -522,6 +601,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _favouritesLoading = false;
           _inboxMessages = const [];
           _inboxLoading = false;
+          _searchLocationController.clear();
+          _browseLocationController.clear();
+          _searchLocationQueryOverride = null;
+          _browseLocationQueryOverride = null;
+          _initialLocationResolved = false;
         });
       }
     }
@@ -578,7 +662,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final products = await widget.catalogRepository.fetchCategoryProducts(
         categorySlug: categorySlug,
-        location: _browseLocationController.text.trim(),
+        location: _effectiveBrowseLocation(),
         distanceKm: _selectedDistance,
         sortBy: _backendSortValue(_browseSortBy),
         includeZeroListings: _includeZeroListings,
@@ -765,7 +849,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final results = await widget.catalogRepository.searchProducts(
         query: query,
-        location: _searchLocationController.text.trim(),
+        location: _effectiveSearchLocation(),
         categorySlug: _selectedCategorySlug,
         distanceKm: _selectedDistance,
         sortBy: _backendSortValue(_searchSortBy),
@@ -792,38 +876,97 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _useCurrentLocation() async {
+  String _effectiveBrowseLocation() {
+    final override = _browseLocationQueryOverride;
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    return _browseLocationController.text.trim();
+  }
+
+  String _effectiveSearchLocation() {
+    final override = _searchLocationQueryOverride;
+    if (override != null && override.isNotEmpty) {
+      return override;
+    }
+    return _searchLocationController.text.trim();
+  }
+
+  Future<void> _resolveInitialLocation({bool force = false}) async {
+    if (_initialLocationResolved && !force) {
+      return;
+    }
+
+    final accessToken = widget.accessToken;
+    if (accessToken != null && accessToken.isNotEmpty) {
+      try {
+        final account = await widget.accountRepository.fetchAccountDetails(
+          accessToken: accessToken,
+        );
+        if (!mounted) {
+          return;
+        }
+
+        final postcode = account.postcode.trim();
+        if (postcode.isNotEmpty) {
+          setState(() {
+            _browseLocationController.text = postcode;
+            _searchLocationController.text = postcode;
+            _browseLocationQueryOverride = null;
+            _searchLocationQueryOverride = null;
+          });
+        }
+      } catch (_) {
+        // Profile location fallback is best-effort only.
+      }
+    }
+
+    await _useCurrentLocation(silent: true, triggerRefresh: false);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _initialLocationResolved = true;
+    });
+  }
+
+  Future<void> _useCurrentLocation({
+    bool silent = false,
+    bool triggerRefresh = true,
+  }) async {
     setState(() {
       _locating = true;
     });
 
     try {
-      final locationLabel = await LocationService.getCurrentLocationLabel();
+      final selection = await LocationService.getCurrentLocationSelection();
       if (!mounted) {
         return;
       }
       setState(() {
-        _searchLocationController.text = locationLabel;
-        _browseLocationController.text = locationLabel;
+        _searchLocationController.text = selection.displayLabel;
+        _browseLocationController.text = selection.displayLabel;
+        _searchLocationQueryOverride = selection.searchQuery;
+        _browseLocationQueryOverride = selection.searchQuery;
         _browseSortBy = 'nearest';
         _searchSortBy = 'nearest';
       });
-      if (_selectedCategorySlug != null) {
+
+      if (triggerRefresh && _selectedCategorySlug != null) {
         await _loadBrowseProducts(_selectedCategorySlug!);
       }
-      if (_searchController.text.trim().isNotEmpty) {
+      if (triggerRefresh && _searchController.text.trim().isNotEmpty) {
         await _searchProducts();
       }
-      if (!mounted) {
+
+      if (!mounted || silent) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location applied to browse and search results.'),
-        ),
+        SnackBar(content: Text('Location set to ${selection.displayLabel}.')),
       );
     } catch (e) {
-      if (mounted) {
+      if (mounted && !silent) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -877,6 +1020,34 @@ class _HomeScreenState extends State<HomeScreen> {
       _detailPageType = 'orders';
     });
     await _loadOrders();
+  }
+
+  Future<void> _openListMyItem() async {
+    await _openListMyItemWithPrefill();
+  }
+
+  Future<void> _openListMyItemWithPrefill({
+    int? initialProductId,
+    String? initialProductName,
+  }) async {
+    final accessToken = widget.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      return;
+    }
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ListingFormScreen(
+          accessToken: accessToken,
+          orderRepository: widget.orderRepository,
+          catalogRepository: widget.catalogRepository,
+          initialProductId: initialProductId,
+          initialProductName: initialProductName,
+        ),
+      ),
+    );
+    if (created == true) {
+      await _loadOrders();
+    }
   }
 
   Future<void> _openMyTransactions() async {
@@ -938,7 +1109,14 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _openNotificationSettings() async {
+    setState(() {
+      _detailPageType = 'notification-settings';
+    });
+  }
+
   void _openLoginTabFromDetail() {
+    _rememberPostLoginDestination();
     setState(() {
       _detailPageType = null;
       _selectedProductSlug = null;
@@ -966,6 +1144,127 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedProductSlug = null;
       _selectedTransactionReference = null;
     });
+  }
+
+  Future<void> _confirmLogout() async {
+    final onLogout = widget.onLogout;
+    if (onLogout == null) {
+      return;
+    }
+
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Log out?'),
+          content: const Text('Do you want to log out of the app now?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Log out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout == true) {
+      await onLogout();
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    final scaffoldState = _scaffoldKey.currentState;
+    if (scaffoldState?.isEndDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+      return false;
+    }
+
+    if (_detailPageType != null) {
+      _closeDetailPage();
+      return false;
+    }
+
+    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null) {
+      setState(() {
+        _selectedCategorySlug = null;
+        _browseProducts = const [];
+      });
+      return false;
+    }
+
+    if (!_isAuthenticated && _selectedIndex == _loginTabIndex) {
+      setState(() {
+        final restored = _restorePreLoginDestination();
+        if (!restored) {
+          _selectedIndex = 0;
+        }
+      });
+      return false;
+    }
+
+    if (_selectedIndex != 0) {
+      setState(() {
+        _selectedIndex = 0;
+        _navBarOpacity = 1.0;
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  bool _canPopCurrentPage() {
+    final scaffoldState = _scaffoldKey.currentState;
+    if (scaffoldState?.isEndDrawerOpen ?? false) return true;
+    if (_detailPageType != null) return true;
+    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null)
+      return true;
+    if (!_isAuthenticated && _selectedIndex == _loginTabIndex) return true;
+    if (_selectedIndex != 0) return true;
+    return false;
+  }
+
+  void _handleBackPress() {
+    final scaffoldState = _scaffoldKey.currentState;
+    if (scaffoldState?.isEndDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    if (_detailPageType != null) {
+      _closeDetailPage();
+      return;
+    }
+
+    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null) {
+      setState(() {
+        _selectedCategorySlug = null;
+        _browseProducts = const [];
+      });
+      return;
+    }
+
+    if (!_isAuthenticated && _selectedIndex == _loginTabIndex) {
+      setState(() {
+        final restored = _restorePreLoginDestination();
+        if (!restored) {
+          _selectedIndex = 0;
+        }
+      });
+      return;
+    }
+
+    if (_selectedIndex != 0) {
+      setState(() {
+        _selectedIndex = 0;
+        _navBarOpacity = 1.0;
+      });
+    }
   }
 
   @override
@@ -1012,117 +1311,126 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final appLogoAsset = widget.isDarkMode
-        o yeah?? 'assets/images/logo-rentalution-dark.png'
+        ? 'assets/images/logo-rentalution-dark.png'
         : 'assets/images/logo-rentalution.png';
 
-    return Scaffold(
-      key: _scaffoldKey,
-      appBar: AppBar(
-        title: Image.asset(
-          appLogoAsset,
-          height: 48,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
+    return PopScope(
+      canPop: _canPopCurrentPage(),
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          return;
+        }
+        _handleBackPress();
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        appBar: AppBar(
+          title: RentalutionAppBarLogo(assetPath: appLogoAsset),
+          actions: [
+            IconButton(
+              onPressed: _categoriesLoading || widget.loading
+                  ? null
+                  : _handleRefresh,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+            ),
+            IconButton(
+              onPressed: widget.onThemeToggle == null
+                  ? null
+                  : () => widget.onThemeToggle!(!widget.isDarkMode),
+              icon: Icon(
+                widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+              ),
+              tooltip: widget.isDarkMode ? 'Light mode' : 'Dark mode',
+            ),
+            if (_showFilterDrawerAction)
+              IconButton(
+                onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                icon: const Icon(Icons.tune),
+                tooltip: 'Filters',
+              ),
+            if (_isAuthenticated)
+              IconButton(
+                onPressed: _confirmLogout,
+                icon: const Icon(Icons.logout),
+                tooltip: 'Sign out',
+              ),
+          ],
         ),
-        actions: [
-          IconButton(
-            onPressed: _categoriesLoading || widget.loading
-                ? null
-                : _handleRefresh,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            onPressed: widget.onThemeToggle == null
-                ? null
-                : () => widget.onThemeToggle!(!widget.isDarkMode),
-            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-            tooltip: widget.isDarkMode ? 'Light mode' : 'Dark mode',
-          ),
-          if (_showFilterDrawerAction)
-            IconButton(
-              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-              icon: const Icon(Icons.tune),
-              tooltip: 'Filters',
-            ),
-          if (_isAuthenticated)
-            IconButton(
-              onPressed: widget.onLogout,
-              icon: const Icon(Icons.logout),
-              tooltip: 'Sign out',
-            ),
-        ],
-      ),
-      endDrawer: _showFilterDrawerAction ? _buildHomeFilterDrawer() : null,
-      body: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is ScrollUpdateNotification) {
-            final delta = notification.scrollDelta ?? 0;
-            final metrics = notification.metrics;
-            final atTop = metrics.pixels <= metrics.minScrollExtent;
-            final atBottom = metrics.pixels >= metrics.maxScrollExtent;
-            if ((atTop || atBottom) && _navBarOpacity != 1.0) {
-              setState(() => _navBarOpacity = 1.0);
-            } else if (delta > 5 && _navBarOpacity != 0.0 && !atTop) {
-              setState(() => _navBarOpacity = 0.0);
+        endDrawer: _showFilterDrawerAction ? _buildHomeFilterDrawer() : null,
+        body: NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification is ScrollUpdateNotification) {
+              final delta = notification.scrollDelta ?? 0;
+              final metrics = notification.metrics;
+              final atTop = metrics.pixels <= metrics.minScrollExtent;
+              final atBottom = metrics.pixels >= metrics.maxScrollExtent;
+              if ((atTop || atBottom) && _navBarOpacity != 1.0) {
+                setState(() => _navBarOpacity = 1.0);
+              } else if (delta > 5 && _navBarOpacity != 0.0 && !atTop) {
+                setState(() => _navBarOpacity = 0.0);
+              }
             }
-          }
-          return false;
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: sharingHubBackgroundGradient(
-                widget.isDarkMode ? Brightness.dark : Brightness.light,
+            return false;
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: sharingHubBackgroundGradient(
+                  widget.isDarkMode ? Brightness.dark : Brightness.light,
+                ),
               ),
             ),
+            child: _buildBody(),
           ),
-          child: _buildBody(),
         ),
-      ),
-      bottomNavigationBar: AnimatedOpacity(
-        opacity: _navBarOpacity,
-        duration: const Duration(milliseconds: 250),
-        child: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: (index) {
-            setState(() {
-              // Always dismiss detail overlays before switching tabs.
-              _detailPageType = null;
-              _selectedProductSlug = null;
-              _selectedTransactionReference = null;
-              _selectedIndex = index;
-              _navBarOpacity = 1.0;
-            });
-          },
-          type: BottomNavigationBarType.fixed,
-          items: _isAuthenticated
-              ? [
-                  _navItem(Icons.home_outlined, 'Home', _selectedIndex == 0),
-                  _navItem(
-                    Icons.explore_outlined,
-                    'Browse',
-                    _selectedIndex == 1,
-                  ),
-                  _navItem(
-                    Icons.person_outline,
-                    'My rentalution',
-                    _selectedIndex == 2,
-                  ),
-                  _navItem(Icons.search, 'Search', _selectedIndex == 3),
-                ]
-              : [
-                  _navItem(Icons.home_outlined, 'Home', _selectedIndex == 0),
-                  _navItem(
-                    Icons.explore_outlined,
-                    'Browse',
-                    _selectedIndex == 1,
-                  ),
-                  _navItem(Icons.search, 'Search', _selectedIndex == 2),
-                  _navItem(Icons.login, 'Log in', _selectedIndex == 3),
-                ],
+        bottomNavigationBar: AnimatedOpacity(
+          opacity: _navBarOpacity,
+          duration: const Duration(milliseconds: 250),
+          child: BottomNavigationBar(
+            currentIndex: _selectedIndex,
+            onTap: (index) {
+              setState(() {
+                if (!_isAuthenticated && index == _loginTabIndex) {
+                  _rememberPostLoginDestination();
+                }
+                // Always dismiss detail overlays before switching tabs.
+                _detailPageType = null;
+                _selectedProductSlug = null;
+                _selectedTransactionReference = null;
+                _selectedIndex = index;
+                _navBarOpacity = 1.0;
+              });
+            },
+            type: BottomNavigationBarType.fixed,
+            items: _isAuthenticated
+                ? [
+                    _navItem(Icons.home_outlined, 'Home', _selectedIndex == 0),
+                    _navItem(
+                      Icons.explore_outlined,
+                      'Browse',
+                      _selectedIndex == 1,
+                    ),
+                    _navItem(
+                      Icons.person_outline,
+                      'My rentalution',
+                      _selectedIndex == 2,
+                    ),
+                    _navItem(Icons.search, 'Search', _selectedIndex == 3),
+                  ]
+                : [
+                    _navItem(Icons.home_outlined, 'Home', _selectedIndex == 0),
+                    _navItem(
+                      Icons.explore_outlined,
+                      'Browse',
+                      _selectedIndex == 1,
+                    ),
+                    _navItem(Icons.search, 'Search', _selectedIndex == 2),
+                    _navItem(Icons.login, 'Log in', _selectedIndex == 3),
+                  ],
+          ),
         ),
       ),
     );
@@ -1148,6 +1456,8 @@ class _HomeScreenState extends State<HomeScreen> {
           return _buildPaymentPage(_closeDetailPage);
         case 'favourites':
           return _buildFavouritesPage(_closeDetailPage);
+        case 'notification-settings':
+          return _buildNotificationSettingsPage(_closeDetailPage);
         default:
           return const SizedBox.shrink();
       }
@@ -1172,7 +1482,10 @@ class _HomeScreenState extends State<HomeScreen> {
             embedded: true,
             onClose: () {
               setState(() {
-                _selectedIndex = 0;
+                final restored = _restorePreLoginDestination();
+                if (!restored) {
+                  _selectedIndex = 0;
+                }
               });
             },
             showBiometricLogin: widget.showBiometricLogin,
@@ -1203,9 +1516,11 @@ class _HomeScreenState extends State<HomeScreen> {
           onAccountAmend: _openAccountDetails,
           onOpenInbox: _openInbox,
           onOpenMyOrders: _openMyOrders,
+          onOpenListMyItem: _openListMyItem,
           onOpenMyTransactions: _openMyTransactions,
           onOpenFavourites: _openFavourites,
           onOpenPaymentMethods: _openPaymentMethods,
+          onOpenNotificationSettings: _openNotificationSettings,
           activeOrdersCount: _orders.length,
           favouritesCount: _favouriteOrders.length,
           biometricAvailable: widget.biometricAvailable,
@@ -1223,13 +1538,60 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Widget _buildNotificationSettingsPage(VoidCallback onClose) {
+    final onUpdateNotificationPreferences =
+        widget.onUpdateNotificationPreferences;
+    if (onUpdateNotificationPreferences == null) {
+      return const SizedBox.shrink();
+    }
+
+    return NotificationSettingsScreen(
+      initialPreferences: widget.notificationPreferences,
+      onSave: onUpdateNotificationPreferences,
+      onBack: onClose,
+    );
+  }
+
   Widget _buildBrowse() {
+    final locationLabel = _browseLocationController.text.trim();
+
     if (_selectedCategorySlug == null) {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_browseDistanceHeading(locationLabel)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _locating ? null : _useCurrentLocation,
+                            icon: const Icon(Icons.my_location),
+                            label: const Text('Use my location'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _scaffoldKey.currentState?.openEndDrawer(),
+                          icon: const Icon(Icons.tune),
+                          label: const Text('Filters'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
             _sectionTitle('Browse categories'),
             const SizedBox(height: 10),
             _buildCategoryCardsWrap(),
@@ -1405,40 +1767,61 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: _categories
-          .map((cat) {
-            return SizedBox(
-              width: 170,
-              child: GestureDetector(
-                onTap: () => _loadBrowseProducts(cat.slug),
-                child: Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _categoryThumb(cat.imageUrl),
-                        const SizedBox(height: 8),
-                        Text(
-                          cat.title,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                      ],
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+
+        // Determine number of columns based on screen width
+        int columns;
+        if (screenWidth < 900) {
+          columns = 2; // 2 columns on phones and small tablets
+        } else {
+          columns = 3; // 3 columns on larger tablets/screens
+        }
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.0,
+          ),
+          itemCount: _categories.length,
+          itemBuilder: (context, index) {
+            final cat = _categories[index];
+            return GestureDetector(
+              onTap: () => _loadBrowseProducts(cat.slug),
+              child: Card(
+                color: const Color(0xFF2EC4B6),
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Expanded(child: _categoryThumb(cat.imageUrl)),
+                      const SizedBox(height: 8),
+                      Text(
+                        cat.title,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ],
                   ),
                 ),
               ),
             );
-          })
-          .toList(growable: false),
+          },
+        );
+      },
     );
   }
 
@@ -1446,9 +1829,35 @@ class _HomeScreenState extends State<HomeScreen> {
     final selectedCat = _categories
         .where((c) => c.slug == _selectedCategorySlug)
         .firstOrNull;
+    final locationLabel = _browseLocationController.text.trim();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(child: Text(_browseDistanceHeading(locationLabel))),
+                  IconButton(
+                    onPressed: _locating ? null : _useCurrentLocation,
+                    icon: const Icon(Icons.my_location),
+                    tooltip: 'Use my location',
+                  ),
+                  IconButton(
+                    onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                    icon: const Icon(Icons.tune),
+                    tooltip: 'Filters',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
           child: TextButton.icon(
@@ -1467,7 +1876,6 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: _sectionTitle(selectedCat?.title ?? 'Items listed'),
               ),
-              _buildQuickFilterButtons(),
             ],
           ),
         ),
@@ -1511,11 +1919,6 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _sectionTitle('Search items listed'),
           const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _buildQuickFilterButtons(),
-          ),
-          const SizedBox(height: 10),
           TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
@@ -1548,6 +1951,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
             onSubmitted: (_) => _searchProducts(),
+            onChanged: (_) {
+              _searchLocationQueryOverride = null;
+            },
           ),
           const SizedBox(height: 10),
           _buildSearchDistanceFilters(),
@@ -1621,20 +2027,23 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        imageUrl,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return const Icon(
-            Icons.category_outlined,
-            size: 48,
-            color: Color(0xFF2E7D6B),
-          );
-        },
+      child: Container(
+        color: isDarkMode ? Colors.black : Colors.grey[200],
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(
+              Icons.category_outlined,
+              size: 48,
+              color: Color(0xFF2E7D6B),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1682,8 +2091,12 @@ class _HomeScreenState extends State<HomeScreen> {
           catalogRepository: widget.catalogRepository,
           transactionRepository: widget.transactionRepository,
           accessToken: widget.accessToken,
-          searchLocation: _searchLocationController.text.trim(),
+          searchLocation: _effectiveSearchLocation(),
           initialDistanceKm: _selectedDistance,
+          onOpenListMyItem: (product) => _openListMyItemWithPrefill(
+            initialProductId: product.id,
+            initialProductName: product.name,
+          ),
           onRequireLogin: _openLoginTabFromDetail,
         ),
         Positioned(

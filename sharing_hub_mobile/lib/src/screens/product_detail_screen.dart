@@ -20,6 +20,7 @@ class ProductDetailScreen extends StatefulWidget {
     this.accessToken,
     this.searchLocation,
     this.initialDistanceKm,
+    this.onOpenListMyItem,
     this.onRequireLogin,
   });
 
@@ -29,6 +30,7 @@ class ProductDetailScreen extends StatefulWidget {
   final String? accessToken;
   final String? searchLocation;
   final int? initialDistanceKm;
+  final Future<void> Function(ProductDetail product)? onOpenListMyItem;
   final VoidCallback? onRequireLogin;
 
   @override
@@ -54,51 +56,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _noDepositOnly = false;
   bool _deliveryOnly = false;
 
-  void _openFilterMenu() {
-    _scaffoldKey.currentState?.openEndDrawer();
-  }
-
-  Widget _buildQuickFilterButtons() {
-    const compactPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
-    return Wrap(
-      spacing: 6,
-      children: [
-        OutlinedButton(
-          onPressed: _openFilterMenu,
-          style: OutlinedButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: compactPadding,
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.sort, size: 14),
-              SizedBox(width: 4),
-              Text('Sort'),
-            ],
-          ),
-        ),
-        OutlinedButton(
-          onPressed: _openFilterMenu,
-          style: OutlinedButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: compactPadding,
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.filter_alt_outlined, size: 14),
-              SizedBox(width: 4),
-              Text('Filter'),
-            ],
-          ),
-        ),
-      ],
-    );
+  bool get _isAuthenticated {
+    final token = widget.accessToken;
+    return token != null && token.isNotEmpty;
   }
 
   @override
@@ -213,16 +173,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           const SizedBox(height: 14),
           _productMetaCard(product),
           const SizedBox(height: 14),
+          if (_isAuthenticated && widget.onOpenListMyItem != null) ...[
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  await widget.onOpenListMyItem!.call(product);
+                },
+                icon: const Icon(Icons.add_box_outlined),
+                label: const Text('List my item'),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (product.description.isNotEmpty) Text(product.description),
           const SizedBox(height: 18),
           Text(
             'Active listings (${product.activeOrders.length})',
             style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _buildQuickFilterButtons(),
           ),
           const SizedBox(height: 8),
           _listingControls(),

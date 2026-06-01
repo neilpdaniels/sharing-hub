@@ -6,9 +6,11 @@ class MySharingHubScreen extends StatelessWidget {
     required this.onAccountAmend,
     required this.onOpenInbox,
     required this.onOpenMyOrders,
+    required this.onOpenListMyItem,
     required this.onOpenMyTransactions,
     required this.onOpenFavourites,
     required this.onOpenPaymentMethods,
+    required this.onOpenNotificationSettings,
     required this.activeOrdersCount,
     required this.favouritesCount,
     required this.biometricAvailable,
@@ -19,9 +21,11 @@ class MySharingHubScreen extends StatelessWidget {
   final VoidCallback onAccountAmend;
   final VoidCallback onOpenInbox;
   final VoidCallback onOpenMyOrders;
+  final VoidCallback onOpenListMyItem;
   final VoidCallback onOpenMyTransactions;
   final VoidCallback onOpenFavourites;
   final VoidCallback onOpenPaymentMethods;
+  final VoidCallback onOpenNotificationSettings;
   final int activeOrdersCount;
   final int favouritesCount;
   final bool biometricAvailable;
@@ -42,6 +46,15 @@ class MySharingHubScreen extends StatelessWidget {
               subtitle: const Text('All sent and received messages'),
               trailing: const Icon(Icons.chevron_right),
               onTap: onOpenInbox,
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.add_business_outlined),
+              title: const Text('List my item'),
+              subtitle: const Text('Create a new listing'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onOpenListMyItem,
             ),
           ),
           Card(
@@ -96,9 +109,9 @@ class MySharingHubScreen extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.notifications_active_outlined),
-            title: const Text('Pending Actions'),
-            subtitle: const Text('Coming soon'),
-            enabled: false,
+            title: const Text('Notification Settings'),
+            subtitle: const Text('Choose which alerts to receive'),
+            onTap: onOpenNotificationSettings,
           ),
         ],
       ),

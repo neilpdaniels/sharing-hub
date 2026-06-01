@@ -116,6 +116,18 @@ class TransactionRepository {
         .toList(growable: false);
   }
 
+  Future<StripeSetupIntentSession> createStripeSetupIntent({
+    required String accessToken,
+    required String transactionReference,
+  }) async {
+    final json = await performAction(
+      accessToken: accessToken,
+      transactionReference: transactionReference,
+      action: 'create_stripe_setup_intent',
+    );
+    return StripeSetupIntentSession.fromJson(json);
+  }
+
   Future<TransactionDetail> fetchTransactionDetail({
     required String accessToken,
     required String transactionReference,

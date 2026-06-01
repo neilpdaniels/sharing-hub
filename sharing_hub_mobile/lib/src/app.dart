@@ -82,13 +82,26 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
   bool _hasSavedSession = false;
   bool _deviceBiometricsAvailable = false;
   bool _biometricUnlockEnabled = false;
+  bool _biometricPreferenceSet = false;
   bool _isDarkMode = false;
   bool _showingTxnNotices = false;
+  bool _showingForegroundAlert = false;
+  NotificationPreferences _notificationPreferences =
+      NotificationPreferences.defaults;
 
   @override
   void initState() {
     super.initState();
+    widget.pushNotificationService.setForegroundAlertHandler(
+      _handleForegroundPushAlert,
+    );
     _restoreSession();
+  }
+
+  @override
+  void dispose() {
+    widget.pushNotificationService.setForegroundAlertHandler(null);
+    super.dispose();
   }
 
   Future<void> _restoreSession() async {
@@ -99,6 +112,8 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
         .isAvailable();
     final biometricUnlockEnabled = await widget.tokenStore
         .isBiometricUnlockEnabled();
+    final biometricPreferenceSet = await widget.tokenStore
+        .isBiometricUnlockPreferenceSet();
     final isDarkMode = await _themeService.isDarkMode();
     if (!mounted) {
       return;
@@ -109,8 +124,53 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       _privacyNoticeAccepted = privacyNoticeAccepted;
       _deviceBiometricsAvailable = deviceBiometricsAvailable;
       _biometricUnlockEnabled = biometricUnlockEnabled;
+      _biometricPreferenceSet = biometricPreferenceSet;
       _isDarkMode = isDarkMode;
       _initializing = false;
+    });
+  }
+
+  Future<void> _maybePromptEnableBiometricAfterLogin() async {
+    if (!mounted || !_deviceBiometricsAvailable || _biometricPreferenceSet) {
+      return;
+    }
+
+    final context = _navigatorKey.currentContext;
+    if (context == null) {
+      return;
+    }
+
+    final enableBiometric = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Enable biometric unlock?'),
+          content: const Text(
+            'Would you like to use Face ID or fingerprint to sign in next time?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Enable'),
+            ),
+          ],
+        );
+      },
+    );
+
+    final enabled = enableBiometric == true;
+    await widget.tokenStore.setBiometricUnlockEnabled(enabled);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _biometricUnlockEnabled = enabled;
+      _biometricPreferenceSet = true;
     });
   }
 
@@ -139,6 +199,8 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       await widget.pushNotificationService.syncForSession(
         accessToken: session.accessToken,
       );
+      _notificationPreferences = await widget.pushNotificationService
+          .getPreferences();
       await _loadTransactions();
       await _showTransactionNotices(session.accessToken);
     }
@@ -166,9 +228,13 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       _deviceBiometricsAvailable = await widget.biometricAuthService
           .isAvailable();
 
+      await _maybePromptEnableBiometricAfterLogin();
+
       await widget.pushNotificationService.syncForSession(
         accessToken: session.accessToken,
       );
+      _notificationPreferences = await widget.pushNotificationService
+          .getPreferences();
       await _loadTransactions();
       await _showTransactionNotices(session.accessToken);
     } finally {
@@ -192,9 +258,12 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
     _deviceBiometricsAvailable = await widget.biometricAuthService
         .isAvailable();
+    await _maybePromptEnableBiometricAfterLogin();
     await widget.pushNotificationService.syncForSession(
       accessToken: session.accessToken,
     );
+    _notificationPreferences = await widget.pushNotificationService
+        .getPreferences();
     await _loadTransactions();
     await _showTransactionNotices(session.accessToken);
   }
@@ -231,38 +300,17 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
   Future<void> _logout() async {
     final existingSession = _session;
-    final context = _navigatorKey.currentContext;
-    if (context != null) {
-      final shouldLogout = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('Log out?'),
-            content: const Text('Do you want to log out of the app now?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Log out'),
-              ),
-            ],
-          );
-        },
-      );
-      if (shouldLogout != true) {
-        return;
-      }
-    }
+    final preserveSessionForBiometric =
+        _biometricUnlockEnabled && _hasSavedSession;
 
     if (existingSession != null) {
       await widget.pushNotificationService.unregisterForSession(
         accessToken: existingSession.accessToken,
       );
     }
-    await widget.authRepository.logout();
+    if (!preserveSessionForBiometric) {
+      await widget.authRepository.logout();
+    }
     if (!mounted) {
       return;
     }
@@ -270,10 +318,70 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
     setState(() {
       _session = null;
       _transactions = const [];
-      _hasSavedSession = false;
-      _deviceBiometricsAvailable = false;
-      _biometricUnlockEnabled = false;
+      _hasSavedSession = preserveSessionForBiometric;
+      _deviceBiometricsAvailable = preserveSessionForBiometric
+          ? _deviceBiometricsAvailable
+          : false;
+      _notificationPreferences = NotificationPreferences.defaults;
     });
+  }
+
+  Future<void> _updateNotificationPreferences(
+    NotificationPreferences preferences,
+  ) async {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+
+    final saved = await widget.pushNotificationService.updatePreferences(
+      preferences: preferences,
+      accessToken: session.accessToken,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _notificationPreferences = saved;
+    });
+  }
+
+  Future<void> _handleForegroundPushAlert(ForegroundPushAlert alert) async {
+    if (_showingForegroundAlert || !mounted) {
+      return;
+    }
+
+    _showingForegroundAlert = true;
+    try {
+      final context = _navigatorKey.currentContext;
+      if (context == null) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(
+              alert.notificationType == 'transaction_enquiry'
+                  ? 'New transaction enquiry'
+                  : alert.title,
+            ),
+            content: Text(alert.body),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      _showingForegroundAlert = false;
+    }
   }
 
   Future<void> _setBiometricUnlockEnabled(bool enabled) async {
@@ -283,6 +391,7 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
     }
     setState(() {
       _biometricUnlockEnabled = enabled;
+      _biometricPreferenceSet = true;
     });
   }
 
@@ -299,13 +408,13 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
         return;
       }
 
-      final context = _navigatorKey.currentContext;
-      if (context == null) {
+      final navigator = _navigatorKey.currentState;
+      if (navigator == null || !navigator.mounted) {
         return;
       }
 
       await showDialog<void>(
-        context: context,
+        context: navigator.context,
         barrierDismissible: true,
         builder: (dialogContext) {
           return AlertDialog(
@@ -436,7 +545,36 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
 
   Widget _buildHome() {
     if (_initializing) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: const Color(0xFF2EC4B6), // Teal background
+        body: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Center(
+                child: Image.asset(
+                  'assets/images/app_icon_1024.png',
+                  width: 280,
+                  height: 280,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 60),
+              child: SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(
+                  strokeWidth: 5,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.9),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     return HomeScreen(
@@ -472,6 +610,8 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
       orderRepository: widget.orderRepository,
       catalogRepository: widget.catalogRepository,
       transactionRepository: widget.transactionRepository,
+      notificationPreferences: _notificationPreferences,
+      onUpdateNotificationPreferences: _updateNotificationPreferences,
     );
   }
 }

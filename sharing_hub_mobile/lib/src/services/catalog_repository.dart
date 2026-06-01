@@ -119,6 +119,7 @@ class CatalogRepository {
     String? categorySlug,
     int? distanceKm,
     String? sortBy,
+    bool includeZeroListings = false,
   }) async {
     final params = <String, String>{'q': query};
 
@@ -133,6 +134,9 @@ class CatalogRepository {
     }
     if (sortBy != null && sortBy.isNotEmpty) {
       params['sort_by'] = sortBy;
+    }
+    if (includeZeroListings) {
+      params['include_zero_listings'] = 'true';
     }
 
     final json = await _apiClient.getJsonList(

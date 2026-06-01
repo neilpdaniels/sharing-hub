@@ -105,6 +105,9 @@ class TransactionDetail extends TransactionSummary {
     required this.depositProposedReturnAmount,
     required this.depositProposedByLenderAt,
     required this.depositProposalContestedAt,
+    required this.depositProposalIterationCount,
+    required this.depositProposalIterationLimit,
+    required this.depositProposalWarningMessage,
     required this.depositResolutionNotes,
     required this.listingImageUrl,
     required this.listingImageUrls,
@@ -135,6 +138,9 @@ class TransactionDetail extends TransactionSummary {
   final double depositProposedReturnAmount;
   final DateTime? depositProposedByLenderAt;
   final DateTime? depositProposalContestedAt;
+  final int depositProposalIterationCount;
+  final int depositProposalIterationLimit;
+  final String depositProposalWarningMessage;
   final String depositResolutionNotes;
   final String listingImageUrl;
   final List<String> listingImageUrls;
@@ -223,6 +229,12 @@ class TransactionDetail extends TransactionSummary {
       depositProposalContestedAt: TransactionSummary._parseDate(
         json['deposit_proposal_contested_at'] as String?,
       ),
+      depositProposalIterationCount:
+          (json['deposit_proposal_iteration_count'] as num?)?.toInt() ?? 0,
+      depositProposalIterationLimit:
+          (json['deposit_proposal_iteration_limit'] as num?)?.toInt() ?? 5,
+      depositProposalWarningMessage:
+          json['deposit_proposal_warning_message'] as String? ?? '',
       depositResolutionNotes: json['deposit_resolution_notes'] as String? ?? '',
       listingImageUrl: json['listing_image_url'] as String? ?? '',
       listingImageUrls:
@@ -298,6 +310,26 @@ class TransactionNotificationPayload {
           .whereType<Map<String, dynamic>>()
           .map(TransactionNotificationItem.fromJson)
           .toList(growable: false),
+    );
+  }
+}
+
+class StripeSetupIntentSession {
+  StripeSetupIntentSession({
+    required this.provider,
+    required this.setupIntentId,
+    required this.clientSecret,
+  });
+
+  final String provider;
+  final String setupIntentId;
+  final String clientSecret;
+
+  factory StripeSetupIntentSession.fromJson(Map<String, dynamic> json) {
+    return StripeSetupIntentSession(
+      provider: json['provider'] as String? ?? '',
+      setupIntentId: json['setup_intent_id'] as String? ?? '',
+      clientSecret: json['client_secret'] as String? ?? '',
     );
   }
 }

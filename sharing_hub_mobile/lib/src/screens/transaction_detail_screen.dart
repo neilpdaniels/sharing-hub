@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:image_picker/image_picker.dart';
 
+import '../config.dart';
 import '../models/account_models.dart';
 import '../models/transaction_models.dart';
 import '../services/transaction_repository.dart';
@@ -40,18 +43,59 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  Timer? _livePollTimer;
+  String _lastLiveSignature = '';
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    _startLivePolling();
   }
 
   @override
   void dispose() {
+    _livePollTimer?.cancel();
     _messageController.dispose();
     _pinController.dispose();
     super.dispose();
+  }
+
+  void _startLivePolling() {
+    _livePollTimer?.cancel();
+    final pollSeconds = AppConfig.transactionLivePollSeconds < 1
+        ? 1
+        : AppConfig.transactionLivePollSeconds;
+    _livePollTimer = Timer.periodic(Duration(seconds: pollSeconds), (_) {
+      if (!mounted || _loading || _busy) {
+        return;
+      }
+      _refreshSilently();
+    });
+  }
+
+  String _buildLiveSignature({
+    required TransactionDetail detail,
+    required List<TransactionMessage> messages,
+    required TransactionCodes codes,
+  }) {
+    final latestMessage = messages.isEmpty ? null : messages.first;
+    final latestMessageStamp = latestMessage == null
+        ? ''
+        : '${latestMessage.id}:${latestMessage.created?.toIso8601String() ?? ''}';
+
+    return [
+      detail.reference,
+      detail.status,
+      detail.paymentStatus,
+      detail.depositStatus,
+      detail.productStatus,
+      detail.updatedAt?.toIso8601String() ?? '',
+      messages.length.toString(),
+      latestMessageStamp,
+      codes.checkoutPin,
+      codes.returnPin,
+    ].join('|');
   }
 
   Future<void> _refresh() async {
@@ -81,6 +125,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         _detail = detail;
         _messages = messages;
         _codes = codes;
+        _lastLiveSignature = _buildLiveSignature(
+          detail: detail,
+          messages: messages,
+          codes: codes,
+        );
         if (!canSubmitVideoEvidence) {
           _evidenceVideoFile = null;
           _evidenceVideoUrl = null;
@@ -99,6 +148,50 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           _loading = false;
         });
       }
+    }
+  }
+
+  Future<void> _refreshSilently() async {
+    try {
+      final detail = await widget.repository.fetchTransactionDetail(
+        accessToken: widget.accessToken,
+        transactionReference: widget.transactionReference,
+      );
+      final messages = await widget.repository.fetchMessages(
+        accessToken: widget.accessToken,
+        transactionReference: widget.transactionReference,
+      );
+      final codes = await widget.repository.fetchCodes(
+        accessToken: widget.accessToken,
+        transactionReference: widget.transactionReference,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final signature = _buildLiveSignature(
+        detail: detail,
+        messages: messages,
+        codes: codes,
+      );
+      if (signature == _lastLiveSignature) {
+        return;
+      }
+
+      final canSubmitVideoEvidence = detail.canSubmitVideoEvidence;
+      setState(() {
+        _detail = detail;
+        _messages = messages;
+        _codes = codes;
+        _lastLiveSignature = signature;
+        if (!canSubmitVideoEvidence) {
+          _evidenceVideoFile = null;
+          _evidenceVideoUrl = null;
+        }
+      });
+    } catch (_) {
+      // Keep polling quiet; user can still manually refresh via actions.
     }
   }
 
@@ -517,6 +610,104 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return days;
   }
 
+  bool _showDepositProposalProgress(TransactionDetail detail) {
+    return detail.status == 'RRTDPEND' ||
+        detail.status == 'RRTDCON' ||
+        detail.status == 'DREQ';
+  }
+
+  int _depositProposalIterationCount(TransactionDetail detail) {
+    final count = detail.depositProposalIterationCount;
+    return count < 0 ? 0 : count;
+  }
+
+  int _depositProposalIterationLimit(TransactionDetail detail) {
+    final limit = detail.depositProposalIterationLimit;
+    return limit < 1 ? 5 : limit;
+  }
+
+  String _depositProposalWarningText(TransactionDetail detail) {
+    final serializerWarning = detail.depositProposalWarningMessage.trim();
+    if (serializerWarning.isNotEmpty) {
+      return serializerWarning;
+    }
+    final count = _depositProposalIterationCount(detail);
+    final limit = _depositProposalIterationLimit(detail);
+    if (count < 3) {
+      return '';
+    }
+    return 'Iteration $count/$limit: if you do not reach agreement, this will be escalated to a dispute and may incur a fee.';
+  }
+
+  Widget _depositProposalProgressCard(TransactionDetail detail) {
+    final count = _depositProposalIterationCount(detail);
+    final limit = _depositProposalIterationLimit(detail);
+    final warningText = _depositProposalWarningText(detail);
+    final progress = (count / limit).clamp(0.0, 1.0);
+    final progressColor = count >= limit
+        ? Colors.red.shade700
+        : count >= 3
+        ? Colors.orange.shade700
+        : const Color(0xFF2E7D6B);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Deposit proposal progress',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Iteration: $count/$limit',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                minHeight: 10,
+                value: progress,
+                color: progressColor,
+                backgroundColor: Colors.grey.shade300,
+              ),
+            ),
+            if (warningText.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: count >= limit
+                      ? Colors.red.shade50
+                      : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: count >= limit
+                        ? Colors.red.shade200
+                        : Colors.orange.shade300,
+                  ),
+                ),
+                child: Text(
+                  warningText,
+                  style: TextStyle(
+                    color: count >= limit
+                        ? Colors.red.shade800
+                        : Colors.orange.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _summaryItem(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -811,6 +1002,194 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     cardBrandController.dispose();
     cardLast4Controller.dispose();
     return result;
+  }
+
+  Future<stripe.PaymentMethodParams?>
+  _promptForStripePaymentMethodParams() async {
+    final cardholderNameController = TextEditingController();
+    var cardComplete = false;
+    String? inlineError;
+
+    final params = await showDialog<stripe.PaymentMethodParams>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogBuildContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add deposit card (Stripe)'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: cardholderNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Cardholder name (optional)',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    stripe.CardField(
+                      enablePostalCode: true,
+                      onCardChanged: (card) {
+                        setDialogState(() {
+                          cardComplete = card?.complete ?? false;
+                          if (cardComplete) {
+                            inlineError = null;
+                          }
+                        });
+                      },
+                    ),
+                    if (inlineError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        inlineError!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (!cardComplete) {
+                      setDialogState(() {
+                        inlineError = 'Please enter complete card details.';
+                      });
+                      return;
+                    }
+
+                    final name = cardholderNameController.text.trim();
+                    Navigator.pop(
+                      dialogContext,
+                      stripe.PaymentMethodParams.card(
+                        paymentMethodData: stripe.PaymentMethodData(
+                          billingDetails: stripe.BillingDetails(
+                            name: name.isEmpty ? null : name,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Confirm card'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    cardholderNameController.dispose();
+    return params;
+  }
+
+  Future<void> _setupDepositCardWithStripe() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      final publishableKey = AppConfig.stripePublishableKey.trim();
+      if (publishableKey.isEmpty) {
+        throw Exception(
+          'Stripe publishable key is not configured for mobile. Provide STRIPE_PUBLISHABLE_KEY.',
+        );
+      }
+
+      final session = await widget.repository.createStripeSetupIntent(
+        accessToken: widget.accessToken,
+        transactionReference: widget.transactionReference,
+      );
+
+      if (session.provider.toLowerCase() != 'stripe') {
+        if (session.provider.toLowerCase() == 'placeholder') {
+          final fields = await _promptForCardDetails();
+          if (fields == null) {
+            return;
+          }
+          await widget.repository.performAction(
+            accessToken: widget.accessToken,
+            transactionReference: widget.transactionReference,
+            action: 'add_deposit_card',
+            fields: fields,
+          );
+          await _refresh();
+          if (!mounted) {
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Stripe is unavailable for this environment. Manual card setup submitted instead.',
+              ),
+            ),
+          );
+          return;
+        }
+        throw Exception(
+          'Native Stripe entry is unavailable in ${session.provider.isEmpty ? 'current' : session.provider} mode.',
+        );
+      }
+      if (session.clientSecret.trim().isEmpty) {
+        throw Exception('Stripe setup session is missing client secret.');
+      }
+
+      stripe.Stripe.publishableKey = publishableKey;
+      await stripe.Stripe.instance.applySettings();
+
+      final paymentMethodParams = await _promptForStripePaymentMethodParams();
+      if (paymentMethodParams == null) {
+        return;
+      }
+
+      final setupIntent = await stripe.Stripe.instance.confirmSetupIntent(
+        paymentIntentClientSecret: session.clientSecret,
+        params: paymentMethodParams,
+      );
+
+      final paymentMethodId = setupIntent.paymentMethodId.trim();
+      final setupIntentId = setupIntent.id.trim();
+      if (paymentMethodId.isEmpty) {
+        throw Exception('Stripe did not return a payment method id.');
+      }
+
+      await widget.repository.performAction(
+        accessToken: widget.accessToken,
+        transactionReference: widget.transactionReference,
+        action: 'confirm_stripe_card',
+        fields: {
+          'payment_method_id': paymentMethodId,
+          if (setupIntentId.isNotEmpty) 'setup_intent_id': setupIntentId,
+        },
+      );
+
+      await _refresh();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Deposit card setup submitted.')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
   }
 
   Future<PaymentMethodSummary?> _promptForExistingPaymentMethod() async {
@@ -1229,6 +1608,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _summaryCard(detail),
+                  if (_showDepositProposalProgress(detail)) ...[
+                    const SizedBox(height: 16),
+                    _depositProposalProgressCard(detail),
+                  ],
                   const SizedBox(height: 16),
                   _workflowCard(detail),
                   const SizedBox(height: 16),
@@ -1354,7 +1737,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         detail.meIsRenter &&
         (detail.status == 'RENQ' || detail.status == 'RAGR') &&
         detail.depositCardSetupStatus != 'READY';
+    final nativeStripeConfigured = AppConfig.stripePublishableKey
+        .trim()
+        .isNotEmpty;
     final canSubmitVideoEvidence = detail.canSubmitVideoEvidence;
+    final proposalIterationCount = _depositProposalIterationCount(detail);
+    final proposalIterationLimit = _depositProposalIterationLimit(detail);
+    final proposalMaxReached = proposalIterationCount >= proposalIterationLimit;
 
     if (detail.status == 'RAGR' && contractRemaining != null) {
       actions.add(
@@ -1507,14 +1896,26 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
       actions.add(const SizedBox(height: 8));
       actions.add(
-        _actionButton('Add Deposit Card', () async {
-          final fields = await _promptForCardDetails();
-          if (fields == null) {
-            return;
-          }
-          await _performAction('add_deposit_card', fields: fields);
-        }),
+        nativeStripeConfigured
+            ? _actionButton(
+                'Add Deposit Card (Stripe)',
+                _setupDepositCardWithStripe,
+              )
+            : _actionButton('Add Deposit Card', () async {
+                final fields = await _promptForCardDetails();
+                if (fields == null) {
+                  return;
+                }
+                await _performAction('add_deposit_card', fields: fields);
+              }),
       );
+      if (nativeStripeConfigured) {
+        actions.add(
+          const Text(
+            'Secure Stripe card entry is enabled on this mobile build.',
+          ),
+        );
+      }
       actions.add(
         _actionButton('Use Existing Saved Card', () async {
           final method = await _promptForExistingPaymentMethod();
@@ -1666,27 +2067,43 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
 
     if (detail.status == 'RRTDPEND' && detail.meIsLender) {
-      actions.add(
-        _actionButton('Propose Deposit Return', () async {
-          final fields = await _promptForDepositProposal(detail);
-          if (fields == null) {
-            return;
-          }
-          await _performAction('propose_deposit_return', fields: fields);
-        }),
-      );
+      if (proposalMaxReached) {
+        actions.add(
+          const Text(
+            'Maximum proposal iterations reached (5/5). Raise dispute to continue; dispute handling may incur a fee.',
+          ),
+        );
+      } else {
+        actions.add(
+          _actionButton('Propose Deposit Return', () async {
+            final fields = await _promptForDepositProposal(detail);
+            if (fields == null) {
+              return;
+            }
+            await _performAction('propose_deposit_return', fields: fields);
+          }),
+        );
+      }
     }
 
     if (detail.status == 'RRTDCON' && detail.meIsLender) {
-      actions.add(
-        _actionButton('Update Deposit Proposal', () async {
-          final fields = await _promptForDepositProposal(detail);
-          if (fields == null) {
-            return;
-          }
-          await _performAction('propose_deposit_return', fields: fields);
-        }),
-      );
+      if (proposalMaxReached) {
+        actions.add(
+          const Text(
+            'Maximum proposal iterations reached (5/5). Raise dispute to continue; dispute handling may incur a fee.',
+          ),
+        );
+      } else {
+        actions.add(
+          _actionButton('Update Deposit Proposal', () async {
+            final fields = await _promptForDepositProposal(detail);
+            if (fields == null) {
+              return;
+            }
+            await _performAction('propose_deposit_return', fields: fields);
+          }),
+        );
+      }
       actions.add(
         _actionButton(
           'Secure Dispute Funds',

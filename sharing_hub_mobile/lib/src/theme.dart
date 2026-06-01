@@ -140,7 +140,7 @@ final ThemeData sharingHubLightTheme = ThemeData(
     ),
   ),
   cardTheme: CardThemeData(
-    color: SharingHubPalette.lightSurface,
+    color: SharingHubPalette.brandTeal,
     elevation: 0,
     margin: const EdgeInsets.symmetric(vertical: 8),
     shape: RoundedRectangleBorder(
@@ -279,7 +279,7 @@ final ThemeData sharingHubDarkTheme = ThemeData(
     ),
   ),
   cardTheme: CardThemeData(
-    color: SharingHubPalette.darkSurface,
+    color: SharingHubPalette.brandTeal,
     elevation: 0,
     margin: const EdgeInsets.symmetric(vertical: 8),
     shape: RoundedRectangleBorder(

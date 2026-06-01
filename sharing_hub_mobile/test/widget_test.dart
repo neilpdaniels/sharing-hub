@@ -14,7 +14,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Sharing Hub'), findsOneWidget);
+    expect(find.text('Email or username'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
   });
 }

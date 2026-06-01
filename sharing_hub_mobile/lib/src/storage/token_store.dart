@@ -4,6 +4,7 @@ class TokenStore {
   static const _accessKey = 'auth_access_token';
   static const _refreshKey = 'auth_refresh_token';
   static const _biometricEnabledKey = 'biometric_unlock_enabled';
+  static const _biometricPreferenceSetKey = 'biometric_unlock_preference_set';
   static const _privacyNoticeAcceptedKey = 'privacy_notice_accepted';
 
   Future<void> saveTokens({
@@ -29,7 +30,10 @@ class TokenStore {
     final prefs = await SharedPreferences.getInstance();
     final access = prefs.getString(_accessKey);
     final refresh = prefs.getString(_refreshKey);
-    return access != null && access.isNotEmpty && refresh != null && refresh.isNotEmpty;
+    return access != null &&
+        access.isNotEmpty &&
+        refresh != null &&
+        refresh.isNotEmpty;
   }
 
   Future<bool> isBiometricUnlockEnabled() async {
@@ -37,9 +41,15 @@ class TokenStore {
     return prefs.getBool(_biometricEnabledKey) ?? false;
   }
 
+  Future<bool> isBiometricUnlockPreferenceSet() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_biometricPreferenceSetKey) ?? false;
+  }
+
   Future<void> setBiometricUnlockEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_biometricEnabledKey, enabled);
+    await prefs.setBool(_biometricPreferenceSetKey, true);
   }
 
   Future<bool> isPrivacyNoticeAccepted() async {

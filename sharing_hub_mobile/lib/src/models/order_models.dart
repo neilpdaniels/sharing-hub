@@ -15,12 +15,19 @@ class OrderSummary {
     required this.currency,
     required this.description,
     required this.postcode,
+    required this.radiusKm,
     required this.latitude,
     required this.longitude,
     required this.letVisibility,
     required this.collectionPolicy,
     required this.deposit,
+    required this.matesRates,
+    required this.matesDeposit,
     required this.deliveryCost,
+    required this.deliveryWithinKm,
+    required this.deliveryCostPerKm,
+    required this.collectionDetails,
+    required this.additionalComments,
     required this.priceBands,
     required this.isFavourite,
     required this.distanceKm,
@@ -46,12 +53,19 @@ class OrderSummary {
   final String currency;
   final String description;
   final String postcode;
+  final int radiusKm;
   final double? latitude;
   final double? longitude;
   final String letVisibility;
   final String collectionPolicy;
   final double deposit;
+  final double matesRates;
+  final double matesDeposit;
   final double deliveryCost;
+  final int? deliveryWithinKm;
+  final double? deliveryCostPerKm;
+  final String collectionDetails;
+  final String additionalComments;
   final List<LetPriceBandSummary> priceBands;
   final bool isFavourite;
   final double? distanceKm;
@@ -90,17 +104,24 @@ class OrderSummary {
       currency: json['currency'] as String? ?? 'GBP',
       description: json['description'] as String? ?? '',
       postcode: json['postcode'] as String? ?? '',
+      radiusKm: json['radius_km'] as int? ?? 10,
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
       letVisibility: json['let_visibility'] as String? ?? '',
       collectionPolicy: json['collection_policy'] as String? ?? '',
       deposit: (json['deposit'] as num?)?.toDouble() ?? 0,
+      matesRates: (json['mates_rates'] as num?)?.toDouble() ?? 0,
+      matesDeposit: (json['mates_deposit'] as num?)?.toDouble() ?? 0,
       deliveryCost: (json['delivery_cost'] as num?)?.toDouble() ?? 0,
+      deliveryWithinKm: json['delivery_within_km'] as int?,
+      deliveryCostPerKm: _parseDouble(json['delivery_cost_per_km']),
+      collectionDetails: json['collection_details'] as String? ?? '',
+      additionalComments: json['additional_comments'] as String? ?? '',
       priceBands: (json['price_bands'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(LetPriceBandSummary.fromJson)
           .toList(growable: false),
-        isFavourite: json['is_favourite'] as bool? ?? false,
+      isFavourite: json['is_favourite'] as bool? ?? false,
       distanceKm:
           _parseDouble(json['distance_km']) ??
           _parseDouble(json['nearest_distance_km']),

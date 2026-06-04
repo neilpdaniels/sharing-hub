@@ -61,7 +61,29 @@
           <div class="card-body">
             {% bootstrap_field order_form.collection_policy %}
             <div id="delivery-cost-row">
-              {% bootstrap_field order_form.delivery_cost %}
+              {% bootstrap_field order_form.delivery_within_km %}
+              <div class="form-group">
+                <label class="d-block font-weight-bold mb-2">Delivery pricing mode</label>
+                <div class="custom-control custom-radio custom-control-inline">
+                  <input class="custom-control-input" type="radio" name="delivery_pricing_mode" id="id_delivery_pricing_mode_per_km" value="per_km">
+                  <label class="custom-control-label" for="id_delivery_pricing_mode_per_km">Price per km</label>
+                </div>
+                <div class="custom-control custom-radio custom-control-inline">
+                  <input class="custom-control-input" type="radio" name="delivery_pricing_mode" id="id_delivery_pricing_mode_flat" value="flat">
+                  <label class="custom-control-label" for="id_delivery_pricing_mode_flat">Flat delivery fee</label>
+                </div>
+              </div>
+
+              <div class="form-group" id="delivery-amount-row">
+                <label for="id_delivery_amount" class="font-weight-bold">Delivery amount (£)</label>
+                <input id="id_delivery_amount" type="number" class="form-control" min="0" step="0.01" placeholder="0.00" inputmode="decimal">
+                <small id="id_delivery_amount_help" class="form-text text-muted">Enter the amount for the selected delivery pricing mode.</small>
+              </div>
+
+              <div style="display:none;">
+                {% bootstrap_field order_form.delivery_cost_per_km %}
+                {% bootstrap_field order_form.delivery_cost %}
+              </div>
             </div>
             {% bootstrap_field order_form.collection_details %}
           </div>
@@ -287,11 +309,81 @@ function toggleDeliveryCost() {
   var val = $('#id_collection_policy').val();
   if (val === 'WD' || val === 'EI') {
     $('#delivery-cost-row').show();
+    syncDeliveryPricingFields();
   } else {
     $('#delivery-cost-row').hide();
+    $('#id_delivery_within_km').val('');
+    $('#id_delivery_cost_per_km').val('');
     $('#id_delivery_cost').val('');
+    $('#id_delivery_amount').val('');
+    $('#id_delivery_pricing_mode_per_km').prop('checked', false);
+    $('#id_delivery_pricing_mode_flat').prop('checked', false);
   }
 }
+
+function currentDeliveryPricingMode() {
+  if ($('#id_delivery_pricing_mode_per_km').is(':checked')) {
+    return 'per_km';
+  }
+  return 'flat';
+}
+
+function setDeliveryAmountHelp(mode) {
+  if (mode === 'per_km') {
+    $('#id_delivery_amount_help').text('Enter the delivery price per km (£).');
+    return;
+  }
+  $('#id_delivery_amount_help').text('Enter a single flat delivery fee (£).');
+}
+
+function syncDeliveryPricingFields() {
+  var mode = currentDeliveryPricingMode();
+  var amount = $('#id_delivery_amount').val();
+  if (mode === 'per_km') {
+    $('#id_delivery_cost_per_km').val(amount);
+    $('#id_delivery_cost').val('');
+  } else {
+    $('#id_delivery_cost').val(amount);
+    $('#id_delivery_cost_per_km').val('');
+  }
+  setDeliveryAmountHelp(mode);
+}
+
+function setDeliveryModeAndAmount(mode) {
+  var useMode = mode === 'per_km' ? 'per_km' : 'flat';
+  $('#id_delivery_pricing_mode_per_km').prop('checked', useMode === 'per_km');
+  $('#id_delivery_pricing_mode_flat').prop('checked', useMode === 'flat');
+
+  var amount = useMode === 'per_km'
+    ? ($('#id_delivery_cost_per_km').val() || '')
+    : ($('#id_delivery_cost').val() || '');
+  $('#id_delivery_amount').val(amount);
+  setDeliveryAmountHelp(useMode);
+}
+
+function initDeliveryPricingMode() {
+  var perKmVal = parseFloat($('#id_delivery_cost_per_km').val() || '0');
+  var flatVal = parseFloat($('#id_delivery_cost').val() || '0');
+  if (!isNaN(perKmVal) && perKmVal > 0) {
+    setDeliveryModeAndAmount('per_km');
+    return;
+  }
+  if (!isNaN(flatVal) && flatVal > 0) {
+    setDeliveryModeAndAmount('flat');
+    return;
+  }
+  setDeliveryModeAndAmount('flat');
+}
+
+$('input[name="delivery_pricing_mode"]').on('change', function() {
+  var selected = $(this).val();
+  setDeliveryModeAndAmount(selected);
+  syncDeliveryPricingFields();
+});
+
+$('#id_delivery_amount').on('input', syncDeliveryPricingFields);
+
+initDeliveryPricingMode();
 $('#id_collection_policy').on('change', toggleDeliveryCost);
 toggleDeliveryCost();
 
@@ -373,6 +465,7 @@ $('#drop-zone').on('dragover dragenter', function(e) {
 
 // Validate at least one photo before submit
 $('#add-order-form').on('submit', function(e) {
+  syncDeliveryPricingFields();
   var count = $('#order_image_id').val().trim().split(/\s+/).filter(Boolean).length;
   if (count === 0) {
     e.preventDefault();

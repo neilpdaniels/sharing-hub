@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from common.models import Category, Order, Product
-from transaction.models import Transaction, TransactionMessage
+from transaction.models import Transaction
 
 
 class LenderListingsViewTests(TestCase):
@@ -161,6 +161,85 @@ class ProductDetailDistanceFilterTests(TestCase):
         self.assertEqual(payload['active_orders'][0]['id'], near_order.id)
         self.assertEqual(payload['active_orders'][0]['distance_km'], 3.2)
 
+    @patch('mobile_api.views.PostcodeGeocoder.calculate_distance')
+    @patch('mobile_api.views.PostcodeGeocoder.geocode_location')
+    def test_product_detail_accepts_coordinate_location_without_geocoding(
+        self,
+        mock_geocode_location,
+        mock_calculate_distance,
+    ):
+        order = self._create_order(
+            price=25,
+            postcode='SW1A1AA',
+            amended_offset_hours=2,
+        )
+        Order.objects.filter(pk=order.pk).update(latitude=51.500000, longitude=-0.100000)
+
+        mock_calculate_distance.return_value = 1.1
+
+        response = self.client.get(
+            reverse('mobile_api:products_detail', kwargs={'product_slug': self.product.slug}),
+            {'location': '51.500000, -0.100000', 'distance': '10'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['active_order_count'], 1)
+        self.assertEqual(payload['active_orders'][0]['id'], order.id)
+        self.assertEqual(payload['active_orders'][0]['distance_km'], 1.1)
+        mock_geocode_location.assert_not_called()
+
+
+class OrderCreateApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='listing-owner',
+            email='listing-owner@example.com',
+            password='x',
+        )
+        self.category = Category.objects.create(title='Garden')
+        self.product = Product.objects.create(
+            category_id=self.category,
+            name='Lawn Mower',
+        )
+
+    def test_create_listing_via_mobile_api(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('mobile_api:orders_create'),
+            {
+                'product_id': self.product.id,
+                'expiry_date': '2026-12-31',
+                'price': 18.5,
+                'radius_km': 12,
+                'postcode': 'SW1A1AA',
+                'collection_policy': Order.MUST_COLLECT,
+                'let_visibility': Order.FRIENDS_AND_PUBLIC,
+                'description': 'Reliable mower in excellent condition.',
+                'additional_comments': 'Please message before collection.',
+                'max_rental_days': 5,
+                'price_bands': [
+                    {'duration_days': 3, 'price_per_day': 20},
+                    {'duration_days': 7, 'price_per_day': 17},
+                ],
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        created_order = Order.objects.get(id=payload['id'])
+
+        self.assertEqual(created_order.user_id, self.user.id)
+        self.assertEqual(created_order.product_id, self.product.id)
+        self.assertEqual(created_order.status, Order.ACTIVE)
+        self.assertEqual(created_order.direction, Order.TO_LET)
+        self.assertEqual(created_order.price, 18.5)
+        self.assertEqual(created_order.radius_km, 12)
+        self.assertEqual(created_order.max_rental_days, 5)
+        self.assertEqual(created_order.price_bands.count(), 2)
+
 
 class PendingReservationReleaseTests(TestCase):
     def setUp(self):
@@ -240,7 +319,6 @@ class PendingReservationReleaseTests(TestCase):
         )
         self.assertEqual(create_after_release.status_code, 201)
 
-
 class TransactionActionWorkflowTests(TestCase):
     def setUp(self):
         self.category = Category.objects.create(title='Power Tools')
@@ -316,6 +394,9 @@ class TransactionActionWorkflowTests(TestCase):
             content_type='application/json',
         )
         self.assertEqual(feedback.status_code, 200)
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.FEEDBACK_ONE_SIDED)
+        self.assertIsNotNone(txn.feedback_window_expires_at)
 
     def test_mobile_report_missing_return_escalates_dispute(self):
         txn = self._create_txn(
@@ -345,15 +426,8 @@ class TransactionActionWorkflowTests(TestCase):
             end_offset_days=-5,
         )
 
-        for idx in range(5):
-            TransactionMessage.objects.create(
-                user_from=self.lender,
-                user_to=self.renter,
-                transaction=txn,
-                subject=f'Deposit return proposal {txn.transaction_reference}',
-                description=f'Iteration {idx + 1}',
-                is_system_generated=True,
-            )
+        txn.deposit_proposal_iteration_count = 5
+        txn.save(update_fields=['deposit_proposal_iteration_count', 'amended'])
 
         self.client.force_login(self.lender)
         blocked = self.client.post(
@@ -439,3 +513,61 @@ class TransactionActionWorkflowTests(TestCase):
         txn.refresh_from_db()
         self.assertEqual(txn.transaction_status, Transaction.RENTAL_DAY_AWAITING_VERIFICATION)
         self.assertTrue(bool(txn.checkout_condition_video_url))
+
+    @patch('mobile_api.views.stripe_connect_service.create_setup_intent')
+    def test_mobile_create_stripe_setup_intent_returns_session_payload(self, mock_create_setup_intent):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_AGREED,
+            start_offset_days=2,
+            end_offset_days=5,
+        )
+        mock_create_setup_intent.return_value = {
+            'ok': True,
+            'provider': 'placeholder',
+            'setup_intent_id': 'seti_mobile_123',
+            'client_secret': 'seti_mobile_123_secret',
+        }
+
+        self.client.force_login(self.renter)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'create_stripe_setup_intent',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get('setup_intent_id'), 'seti_mobile_123')
+        self.assertEqual(payload.get('client_secret'), 'seti_mobile_123_secret')
+        self.assertEqual(payload.get('provider'), 'placeholder')
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.stripe_setup_intent_id, 'seti_mobile_123')
+        mock_create_setup_intent.assert_called_once_with(transaction=txn)
+
+    @patch('mobile_api.views.stripe_connect_service.create_setup_intent')
+    def test_mobile_create_stripe_setup_intent_propagates_provider_error(self, mock_create_setup_intent):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_AGREED,
+            start_offset_days=2,
+            end_offset_days=5,
+        )
+        mock_create_setup_intent.return_value = {
+            'ok': False,
+            'error': 'Setup intent unavailable',
+        }
+
+        self.client.force_login(self.renter)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {
+                'action': 'create_stripe_setup_intent',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Setup intent unavailable', str(response.json()))
+        mock_create_setup_intent.assert_called_once_with(transaction=txn)

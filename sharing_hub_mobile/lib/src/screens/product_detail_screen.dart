@@ -189,7 +189,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           if (product.description.isNotEmpty) Text(product.description),
           const SizedBox(height: 18),
           Text(
-            'Active listings (${product.activeOrders.length})',
+            'Active listings (${visibleOrders.length})',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),

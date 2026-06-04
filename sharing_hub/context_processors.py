@@ -12,6 +12,8 @@ def get_transaction_notification_payload(user, session=None):
             'txn_login_notice': False,
             'txn_notice_count': 0,
             'txn_notice_items': [],
+            'txn_enquiry_notice_count': 0,
+            'txn_enquiry_notice_items': [],
         }
 
     from transaction.models import Transaction, TransactionMessage
@@ -123,7 +125,12 @@ def get_transaction_notification_payload(user, session=None):
             'product_name': _product_name(txn),
             'date_label': _date_label(txn),
             'action_label': action_label,
+            'notice_type': 'transaction_enquiry' if txn.transaction_status == txn.RENTAL_ENQUIRY else 'transaction_update',
         })
+
+    txn_enquiry_notice_items = [
+        item for item in txn_notice_items if item.get('notice_type') == 'transaction_enquiry'
+    ]
 
     unread_message_count = TransactionMessage.objects.filter(
         user_to=user,
@@ -137,6 +144,8 @@ def get_transaction_notification_payload(user, session=None):
         'txn_login_notice': show_login_notice and bool(txn_notice_items),
         'txn_notice_count': len(txn_notice_items),
         'txn_notice_items': txn_notice_items,
+        'txn_enquiry_notice_count': len(txn_enquiry_notice_items),
+        'txn_enquiry_notice_items': txn_enquiry_notice_items,
     }
 
 def from_settings(request):

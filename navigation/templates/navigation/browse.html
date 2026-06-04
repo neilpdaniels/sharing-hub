@@ -355,6 +355,51 @@
         box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
         pointer-events: none;
     }
+
+    .browse-popular-section {
+        margin: 1.5rem 0 1.8rem;
+    }
+
+    .browse-popular-section .rh-popular-carousel-track {
+        grid-auto-columns: calc((100% - 2rem) / 3);
+        gap: 0.8rem;
+    }
+
+    .browse-popular-section .rh-popular-card {
+        border-radius: 12px;
+    }
+
+    .browse-popular-section .rh-popular-thumb {
+        height: 128px;
+    }
+
+    .browse-popular-section .rh-popular-body {
+        padding: 0.75rem;
+    }
+
+    .browse-popular-section .rh-popular-name {
+        font-size: 0.9rem;
+    }
+
+    .browse-popular-section .rh-popular-price {
+        font-size: 0.92rem;
+    }
+
+    .browse-popular-section .rh-home-section-title {
+        font-size: 1.3rem;
+    }
+
+    @media (max-width: 991px) {
+        .browse-popular-section .rh-popular-carousel-track {
+            grid-auto-columns: 78%;
+        }
+    }
+
+    @media (max-width: 575px) {
+        .browse-popular-section .rh-popular-carousel-track {
+            grid-auto-columns: 86%;
+        }
+    }
 </style>
 
 <div class="container browse-page-container py-3">
@@ -506,14 +551,55 @@
                         {% endwith %}
                     </div>
 
-                    {% if category.description %}
-                    <div class="browse-category-description">
-                        {{ category.description|safe }}
-                    </div>
-                    {% endif %}
+    {% if category.description %}
+    <div class="browse-category-description">
+        {{ category.description|safe }}
+    </div>
+    {% endif %}
 
-                    {% if request.user.is_staff %}
-                    <div class="admin-quick-actions">
+    {% if browse_popular_orders %}
+    <div class="browse-popular-section">
+        <div class="d-flex align-items-center justify-content-between">
+            <h2 class="rh-home-section-title mb-0">Popular near you</h2>
+        </div>
+        <div class="rh-popular-carousel mt-3">
+            <div class="rh-popular-carousel-viewport" id="rh-popular-carousel-browse">
+                <div class="rh-popular-carousel-track">
+                    {% for order in browse_popular_orders %}
+                        <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="text-decoration-none">
+                            <article class="rh-popular-card">
+                                {% if order.images.first %}
+                                    <img class="rh-popular-thumb" src="{{ order.images.first.image.url }}" alt="{{ order.product.name }}">
+                                {% elif order.product.image %}
+                                    <img class="rh-popular-thumb" src="{{ order.product.image.url }}" alt="{{ order.product.name }}">
+                                {% else %}
+                                    <div class="rh-popular-thumb d-flex align-items-center justify-content-center">
+                                        <i class="fas fa-image text-muted"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="rh-popular-body">
+                                    <div class="rh-popular-name">{{ order.product.name }}</div>
+                                    <div class="rh-popular-meta">{{ order.product.category_id.title }}</div>
+                                    <div class="rh-popular-price">£{{ order.price|format_price }} / day</div>
+                                    <div class="rh-popular-distance">
+                                        {% if order.home_distance_km != None %}
+                                            {{ order.home_distance_km|floatformat:1 }} km away
+                                        {% else %}
+                                            Local listing
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </article>
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if request.user.is_staff %}
+    <div class="admin-quick-actions">
                         <a href="{% url 'admin:common_category_change' category.id %}">Edit category and tags</a>
                         <a href="{% url 'admin:common_category_add' %}?parent_category={{ category.id }}">Add child category</a>
                         <a href="{% url 'admin:common_product_add' %}?category_id={{ category.id }}">Add product in this category</a>

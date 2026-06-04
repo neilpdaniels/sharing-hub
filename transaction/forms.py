@@ -42,6 +42,8 @@ class OrderAddForm(forms.ModelForm):
             'mates_deposit',
             'collection_policy',
             'delivery_cost',
+            'delivery_within_km',
+            'delivery_cost_per_km',
             'collection_details',
             'max_rental_days',
             'description',
@@ -58,7 +60,9 @@ class OrderAddForm(forms.ModelForm):
             'mates_rates': 'Mates rates — price per day (£)',
             'mates_deposit': 'Mates deposit (£)',
             'collection_policy': 'Collection / delivery',
-            'delivery_cost': 'Delivery cost (£)',
+            'delivery_cost': 'Flat delivery fee (£)',
+            'delivery_within_km': 'I would deliver up to (km as the crow flies)',
+            'delivery_cost_per_km': 'Price per km (£)',
             'collection_details': 'Details',
             'max_rental_days': 'Maximum rental duration (days)',
         }
@@ -67,7 +71,56 @@ class OrderAddForm(forms.ModelForm):
             'longitude': forms.HiddenInput(),
             'collection_details': forms.TextInput(attrs={'placeholder': 'e.g. available for collection Mon–Fri 9am–5pm'}),
             'max_rental_days': forms.NumberInput(attrs={'min': 1, 'placeholder': '7'}),
+            'delivery_within_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 1000, 'placeholder': '10'}),
+            'delivery_cost_per_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01, 'placeholder': '0.00'}),
+            'delivery_cost': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01, 'placeholder': '0.00'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['delivery_within_km'].help_text = 'Delivery is charged per km up to this distance.'
+        self.fields['delivery_cost_per_km'].help_text = 'Delivery cost per km (£) within this range.'
+        self.fields['delivery_cost'].help_text = 'Flat delivery fee (£) when delivery distance is beyond this range.'
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        collection_policy = cleaned_data.get('collection_policy')
+        radius_km = cleaned_data.get('radius_km')
+        delivery_within_km = cleaned_data.get('delivery_within_km')
+        delivery_cost_per_km = cleaned_data.get('delivery_cost_per_km') or 0
+        delivery_cost = cleaned_data.get('delivery_cost') or 0
+
+        if collection_policy == Order.MUST_COLLECT:
+            cleaned_data['delivery_within_km'] = None
+            cleaned_data['delivery_cost_per_km'] = None
+            cleaned_data['delivery_cost'] = None
+            return cleaned_data
+
+        # Delivery pricing must use a single pricing mode.
+        if delivery_cost_per_km > 0 and delivery_cost > 0:
+            raise forms.ValidationError(
+                'Choose one delivery pricing mode only: either price per km or flat delivery fee.'
+            )
+
+        if delivery_cost_per_km > 0 and not delivery_within_km:
+            self.add_error(
+                'delivery_within_km',
+                'Delivery up to (km) is required when using price per km.',
+            )
+
+        if (
+            collection_policy == Order.WILL_DELIVER
+            and delivery_within_km
+            and radius_km
+            and delivery_within_km > radius_km
+        ):
+            self.add_error(
+                'delivery_within_km',
+                'Delivery distance cannot be greater than Maximum let radius when lender will deliver.',
+            )
+
+        return cleaned_data
 
 
 class LetPriceBandForm(forms.ModelForm):

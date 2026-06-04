@@ -19,6 +19,14 @@ app.conf.beat_schedule  = {
         'task': 'transaction.tasks.expireOrders',
         'schedule' : crontab(minute="*") # 5 # seconds - must be an integer
     },
+    'auto-close-feedback-windows': {
+        'task': 'transaction.tasks.auto_close_feedback_windows',
+        'schedule': crontab(minute='15', hour='*'),
+    },
+    'send-pending-action-reminders': {
+        'task': 'transaction.tasks.send_pending_action_reminders',
+        'schedule': crontab(minute='5', hour='*'),
+    },
     # 'add-task-kitco-gold-am': {
     #     'task': 'reference_price.tasks.scrapeKitcoGoldPrice',
     #     'schedule': crontab(minute='35,45,59', hour='10', day_of_week='0-6'),

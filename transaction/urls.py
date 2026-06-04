@@ -11,6 +11,7 @@ urlpatterns = [
     path('hit_order/<int:order_id>/' , views.hit_order, name='hit_order'),
     path('get_fee/', views.get_fee, name='get_fee'),
     path('view_transaction/<str:transaction_reference>/' , views.view_transaction, name='view_transaction'),
+    path('view_transaction/<str:transaction_reference>/live-state/' , views.transaction_live_state_json, name='transaction_live_state_json'),
     path('view_transaction/<str:transaction_reference>/card-setup-status/' , views.card_setup_status, name='card_setup_status'),
     path('order_image_upload/', views.OrderImageUpload.as_view(), name='order_image_upload'),
     path('remove_order_image/' , views.remove_order_image, name='remove_order_image'),

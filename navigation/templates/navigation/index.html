@@ -42,7 +42,7 @@
         .rh-cat-links {
             display: grid;
             grid-template-columns: repeat(8, minmax(0, 1fr));
-            gap: 0.8rem;
+            gap: 1rem;
             margin-bottom: 2rem;
         }
         .rh-cat-link {
@@ -96,9 +96,23 @@
             text-align: center;
             line-height: 1.2;
         }
-        .rh-popular-grid {
+        .rh-popular-carousel {
+            position: relative;
+        }
+        .rh-popular-carousel-viewport {
+            overflow-x: auto;
+            scroll-snap-type: x proximity;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .rh-popular-carousel-viewport::-webkit-scrollbar {
+            display: none;
+        }
+        .rh-popular-carousel-track {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-auto-flow: column;
+            grid-auto-columns: calc((100% - 2rem) / 3);
             gap: 1rem;
         }
         .rh-popular-card {
@@ -108,9 +122,10 @@
             background: #fff;
             box-shadow: 0 6px 18px rgba(24, 34, 56, 0.05);
             height: 100%;
+            scroll-snap-align: start;
         }
         .rh-popular-thumb {
-            height: 170px;
+            height: 160px;
             width: 100%;
             object-fit: cover;
             display: block;
@@ -142,19 +157,19 @@
         }
         @media (max-width: 1199px) {
             .rh-cat-links { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-            .rh-popular-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .rh-popular-carousel-track { grid-auto-columns: calc((100% - 1rem) / 2); }
             .rh-cat-icon-wrap { width: 112px; height: 112px; }
             .rh-cat-fallback-icon { width: 56px; height: 56px; }
         }
         @media (max-width: 991px) {
             .rh-cat-links { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-            .rh-popular-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .rh-popular-carousel-track { grid-auto-columns: 82%; }
             .rh-cat-icon-wrap { width: 96px; height: 96px; border-radius: 20px; }
             .rh-cat-fallback-icon { width: 48px; height: 48px; }
         }
         @media (max-width: 575px) {
             .rh-cat-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .rh-popular-grid { grid-template-columns: 1fr; }
+            .rh-popular-carousel-track { grid-auto-columns: 88%; }
             .rh-cat-icon-wrap { width: 84px; height: 84px; border-radius: 18px; }
             .rh-cat-fallback-icon { width: 42px; height: 42px; }
         }
@@ -205,36 +220,40 @@
         <h2 class="rh-home-section-title mb-0">Popular near you</h2>
         <a href="{% url 'navigation:search' %}" class="font-weight-bold" style="color: var(--rh-primary);">View all</a>
     </div>
-    <div class="rh-popular-grid mt-3 mb-3">
-        {% for order in popular_orders %}
-            <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="text-decoration-none">
-                <article class="rh-popular-card">
-                    {% if order.images.first %}
-                        <img class="rh-popular-thumb" src="{{ order.images.first.image.url }}" alt="{{ order.product.name }}">
-                    {% elif order.product.image %}
-                        <img class="rh-popular-thumb" src="{{ order.product.image.url }}" alt="{{ order.product.name }}">
-                    {% else %}
-                        <div class="rh-popular-thumb d-flex align-items-center justify-content-center">
-                            <i class="fas fa-image text-muted"></i>
-                        </div>
-                    {% endif %}
-                    <div class="rh-popular-body">
-                        <div class="rh-popular-name">{{ order.product.name }}</div>
-                        <div class="rh-popular-meta">{{ order.product.category_id.title }}</div>
-                        <div class="rh-popular-price">£{{ order.price|format_price }} / day</div>
-                        <div class="rh-popular-distance">
-                            {% if order.home_distance_km != None %}
-                                {{ order.home_distance_km|floatformat:1 }} km away
+    <div class="rh-popular-carousel mt-3 mb-3">
+        <div class="rh-popular-carousel-viewport" id="rh-popular-carousel-home">
+            <div class="rh-popular-carousel-track">
+                {% for order in popular_orders %}
+                    <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="text-decoration-none">
+                        <article class="rh-popular-card">
+                            {% if order.images.first %}
+                                <img class="rh-popular-thumb" src="{{ order.images.first.image.url }}" alt="{{ order.product.name }}">
+                            {% elif order.product.image %}
+                                <img class="rh-popular-thumb" src="{{ order.product.image.url }}" alt="{{ order.product.name }}">
                             {% else %}
-                                Local listing
+                                <div class="rh-popular-thumb d-flex align-items-center justify-content-center">
+                                    <i class="fas fa-image text-muted"></i>
+                                </div>
                             {% endif %}
-                        </div>
-                    </div>
-                </article>
-            </a>
-        {% empty %}
-            <div class="alert alert-light border mb-0">No active listings yet.</div>
-        {% endfor %}
+                            <div class="rh-popular-body">
+                                <div class="rh-popular-name">{{ order.product.name }}</div>
+                                <div class="rh-popular-meta">{{ order.product.category_id.title }}</div>
+                                <div class="rh-popular-price">£{{ order.price|format_price }} / day</div>
+                                <div class="rh-popular-distance">
+                                    {% if order.home_distance_km != None %}
+                                        {{ order.home_distance_km|floatformat:1 }} km away
+                                    {% else %}
+                                        Local listing
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </article>
+                    </a>
+                {% empty %}
+                    <div class="alert alert-light border mb-0">No active listings yet.</div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 </div>
 <div class="w-100"></div>

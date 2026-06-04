@@ -2,6 +2,11 @@ class TransactionSummary {
   TransactionSummary({
     required this.reference,
     required this.status,
+    required this.workflowStage,
+    required this.workflowStageLabel,
+    required this.workflowTimeline,
+    required this.workflowPayload,
+    required this.feedbackLeftByMe,
     required this.paymentStatus,
     required this.depositStatus,
     required this.itemName,
@@ -20,6 +25,11 @@ class TransactionSummary {
 
   final String reference;
   final String status;
+  final int workflowStage;
+  final String workflowStageLabel;
+  final List<WorkflowStep> workflowTimeline;
+  final WorkflowPayload workflowPayload;
+  final bool feedbackLeftByMe;
   final String paymentStatus;
   final String depositStatus;
   final String itemName;
@@ -36,9 +46,22 @@ class TransactionSummary {
   final DateTime? updatedAt;
 
   factory TransactionSummary.fromJson(Map<String, dynamic> json) {
+    final workflowPayload = WorkflowPayload.fromJson(
+      json['workflow_payload'] as Map<String, dynamic>? ??
+          <String, dynamic>{
+            'current_stage': (json['workflow_stage'] as num?)?.toInt() ?? 1,
+            'current_label': json['workflow_stage_label'] as String? ?? '',
+            'timeline': json['workflow_timeline'] as List<dynamic>? ?? const [],
+          },
+    );
     return TransactionSummary(
       reference: json['transaction_reference'] as String? ?? '',
       status: json['transaction_status'] as String? ?? '',
+      workflowStage: (json['workflow_stage'] as num?)?.toInt() ?? 1,
+      workflowStageLabel: json['workflow_stage_label'] as String? ?? '',
+      workflowTimeline: workflowPayload.timeline,
+      workflowPayload: workflowPayload,
+      feedbackLeftByMe: json['feedback_left_by_me'] as bool? ?? false,
       paymentStatus: json['payment_status'] as String? ?? '',
       depositStatus: json['deposit_status'] as String? ?? '',
       itemName: json['item_name'] as String? ?? '',
@@ -68,6 +91,11 @@ class TransactionDetail extends TransactionSummary {
   TransactionDetail({
     required super.reference,
     required super.status,
+    required super.workflowStage,
+    required super.workflowStageLabel,
+    required super.workflowTimeline,
+    required super.workflowPayload,
+    required super.feedbackLeftByMe,
     required super.paymentStatus,
     required super.depositStatus,
     required super.itemName,
@@ -155,6 +183,14 @@ class TransactionDetail extends TransactionSummary {
   }
 
   factory TransactionDetail.fromJson(Map<String, dynamic> json) {
+    final workflowPayload = WorkflowPayload.fromJson(
+      json['workflow_payload'] as Map<String, dynamic>? ??
+          <String, dynamic>{
+            'current_stage': (json['workflow_stage'] as num?)?.toInt() ?? 1,
+            'current_label': json['workflow_stage_label'] as String? ?? '',
+            'timeline': json['workflow_timeline'] as List<dynamic>? ?? const [],
+          },
+    );
     return TransactionDetail(
       reference: json['transaction_reference'] as String? ?? '',
       status: json['transaction_status'] as String? ?? '',
@@ -168,6 +204,11 @@ class TransactionDetail extends TransactionSummary {
       deposit: (json['deposit'] as num?)?.toDouble() ?? 0,
       friendDeposit: (json['friend_deposit'] as num?)?.toDouble() ?? 0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+      workflowStage: (json['workflow_stage'] as num?)?.toInt() ?? 1,
+      workflowStageLabel: json['workflow_stage_label'] as String? ?? '',
+      workflowTimeline: workflowPayload.timeline,
+      workflowPayload: workflowPayload,
+      feedbackLeftByMe: json['feedback_left_by_me'] as bool? ?? false,
       rentalStartDate: TransactionSummary._parseDate(
         json['rental_start_date'] as String?,
       ),
@@ -244,6 +285,52 @@ class TransactionDetail extends TransactionSummary {
               .toList(growable: false),
       meIsLender: json['me_is_lender'] as bool? ?? false,
       meIsRenter: json['me_is_renter'] as bool? ?? false,
+    );
+  }
+}
+
+class WorkflowPayload {
+  WorkflowPayload({
+    required this.currentStage,
+    required this.currentLabel,
+    required this.timeline,
+  });
+
+  final int currentStage;
+  final String currentLabel;
+  final List<WorkflowStep> timeline;
+
+  factory WorkflowPayload.fromJson(Map<String, dynamic> json) {
+    return WorkflowPayload(
+      currentStage: (json['current_stage'] as num?)?.toInt() ?? 1,
+      currentLabel: json['current_label'] as String? ?? '',
+      timeline: (json['timeline'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(WorkflowStep.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class WorkflowStep {
+  WorkflowStep({
+    required this.step,
+    required this.label,
+    required this.current,
+    required this.done,
+  });
+
+  final int step;
+  final String label;
+  final bool current;
+  final bool done;
+
+  factory WorkflowStep.fromJson(Map<String, dynamic> json) {
+    return WorkflowStep(
+      step: (json['step'] as num?)?.toInt() ?? 0,
+      label: json['label'] as String? ?? '',
+      current: json['current'] as bool? ?? false,
+      done: json['done'] as bool? ?? false,
     );
   }
 }

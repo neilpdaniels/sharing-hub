@@ -54,8 +54,8 @@
 
                 <p class="mb-1 text-muted small">
                   <span class="fas fa-box-open mr-1"></span><strong>Delivery/Collection:</strong> {{ order.get_collection_policy_display }}
-                  {% if order.delivery_cost %}
-                  <small>(Delivery: £{{ order.delivery_cost|format_price }})</small>
+                  {% if order.get_delivery_price_summary %}
+                  <small>({{ order.get_delivery_price_summary }})</small>
                   {% endif %}
                   {% if order.max_rental_days %}
                   • Max {{ order.max_rental_days }} day{{ order.max_rental_days|pluralize }}

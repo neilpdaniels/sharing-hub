@@ -40,6 +40,8 @@
     {% endblock %}
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/main.css' %}">
     <link rel="stylesheet" media="screen" href="{% static 'assets/css/fun.css' %}">
+    {% block styles %}
+    {% endblock %}
 
 
   </head>
@@ -280,6 +282,29 @@
         </div>
         {% endif %}
 
+        {% if request.user.is_authenticated %}
+        <div class="modal fade" id="txnLiveEnquiryModal" tabindex="-1" role="dialog" aria-labelledby="txnLiveEnquiryModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="txnLiveEnquiryModalLabel">New transaction enquiry</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+              <div class="modal-body">
+                <p class="mb-2" id="txn-live-enquiry-summary"></p>
+                <div class="list-group" id="txn-live-enquiry-items"></div>
+              </div>
+              <div class="modal-footer">
+                <a class="btn btn-primary" href="{% url 'my_sharing_hub:notifications' %}">View all alerts</a>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
         {# Display django.contrib.messages as Bootstrap alerts #}
         {% bootstrap_messages %}
         <style>
@@ -316,7 +341,9 @@
         <script>
           document.addEventListener('DOMContentLoaded', function() {
             if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
+              {% if txn_enquiry_notice_count %}
               window.jQuery('#txnLoginNoticeModal').modal('show');
+              {% endif %}
             }
           });
         </script>
@@ -648,6 +675,11 @@
       var noticeEndpoint = "{% url 'transaction_notifications_json' %}";
       var liveNoticeMount = document.getElementById('txn-live-notice-mount');
       var previousSignature = null;
+      var previousEnquirySignature = JSON.stringify([
+        {% for item in txn_enquiry_notice_items %}
+        "{{ item.transaction_reference|escapejs }}"{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      ]);
 
       function escapeHtml(value) {
         return String(value || '')
@@ -701,6 +733,36 @@
         liveNoticeMount.innerHTML = buildNoticeHtml(payload);
       }
 
+      function getEnquiryItems(payload) {
+        var items = payload.txn_notice_items || [];
+        return items.filter(function(item) {
+          return item.notice_type === 'transaction_enquiry';
+        });
+      }
+
+      function showLiveEnquiryModal(enquiryItems) {
+        if (!window.jQuery || typeof window.jQuery.fn.modal !== 'function') {
+          return;
+        }
+        var summary = document.getElementById('txn-live-enquiry-summary');
+        var list = document.getElementById('txn-live-enquiry-items');
+        if (!summary || !list) {
+          return;
+        }
+
+        summary.textContent = enquiryItems.length + ' new enquir' + (enquiryItems.length === 1 ? 'y needs' : 'ies need') + ' your response.';
+        list.innerHTML = enquiryItems.map(function(txn) {
+          return '<a href="/transaction/view_transaction/' +
+            encodeURIComponent(txn.transaction_reference) +
+            '/" class="list-group-item list-group-item-action d-flex justify-content-between align-items-start flex-column flex-md-row">' +
+            '<div><strong>' + escapeHtml(txn.product_name) + '</strong><div class="small text-muted">' + escapeHtml(txn.date_label) + '</div></div>' +
+            '<span class="badge badge-info mt-2 mt-md-0">Respond to enquiry</span>' +
+            '</a>';
+        }).join('');
+
+        window.jQuery('#txnLiveEnquiryModal').modal('show');
+      }
+
       function pollTransactionNotices() {
         fetch(noticeEndpoint, {
           credentials: 'same-origin',
@@ -714,9 +776,32 @@
         })
         .then(function(payload) {
           var signature = JSON.stringify(payload.txn_notice_items || []);
+          var enquiryItems = getEnquiryItems(payload);
+          var enquirySignature = JSON.stringify(enquiryItems.map(function(item) {
+            return item.transaction_reference;
+          }));
+
           if (signature !== previousSignature) {
             renderLiveNotice(payload);
             previousSignature = signature;
+          }
+
+          if (enquirySignature !== previousEnquirySignature) {
+            var oldRefs = {};
+            try {
+              JSON.parse(previousEnquirySignature || '[]').forEach(function(ref) {
+                oldRefs[String(ref)] = true;
+              });
+            } catch (e) {}
+
+            var newEnquiries = enquiryItems.filter(function(item) {
+              return !oldRefs[String(item.transaction_reference)];
+            });
+
+            if (newEnquiries.length) {
+              showLiveEnquiryModal(newEnquiries);
+            }
+            previousEnquirySignature = enquirySignature;
           }
         })
         .catch(function() {});

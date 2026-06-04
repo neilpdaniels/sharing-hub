@@ -86,7 +86,7 @@
             {% endif %}
             <div>
                 <span class="fas fa-truck mr-1"></span>{{ order.get_collection_policy_display }}
-                {% if order.delivery_cost %}&nbsp;· delivery £{{ order.delivery_cost|format_price }}{% endif %}
+                {% if order.get_delivery_price_summary %}&nbsp;· {{ order.get_delivery_price_summary }}{% endif %}
             </div>
             {% if display_deposit %}
             <div><span class="fas fa-shield-alt mr-1"></span>£{{ display_deposit|format_price }} refundable deposit</div>

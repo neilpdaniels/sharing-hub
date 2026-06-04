@@ -1,3 +1,5 @@
+from datetime import datetime, time as dt_time
+
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
@@ -6,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from account.models import PaymentMethod, Profile
 from common.models import Category, FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, Product
 from mobile_api.models import MobileDevice
-from transaction.models import Transaction, TransactionMessage, TransactionMessageImage
+from transaction.models import Transaction, TransactionFeedback, TransactionMessage, TransactionMessageImage
 
 
 class UserSummarySerializer(serializers.Serializer):
@@ -38,10 +40,19 @@ class MobileDeviceRegisterSerializer(serializers.Serializer):
     )
     device_id = serializers.CharField(max_length=120, required=False, allow_blank=True)
     app_version = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    notify_transaction_enquiry = serializers.BooleanField(required=False, default=True)
+    notify_transaction_messages = serializers.BooleanField(required=False, default=True)
+    notify_in_app_alerts = serializers.BooleanField(required=False, default=True)
 
 
 class MobileDeviceUnregisterSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+
+class MobileNotificationPreferencesSerializer(serializers.Serializer):
+    notify_transaction_enquiry = serializers.BooleanField(required=False)
+    notify_transaction_messages = serializers.BooleanField(required=False)
+    notify_in_app_alerts = serializers.BooleanField(required=False)
 
 
 class MobileTokenObtainSerializer(serializers.Serializer):
@@ -86,6 +97,11 @@ class TransactionListSerializer(serializers.ModelSerializer):
     item_name = serializers.CharField(source='product.name', read_only=True, allow_blank=True)
     counterparty_name = serializers.SerializerMethodField()
     parties_summary = serializers.SerializerMethodField()
+    workflow_stage = serializers.SerializerMethodField()
+    workflow_stage_label = serializers.SerializerMethodField()
+    workflow_timeline = serializers.SerializerMethodField()
+    workflow_payload = serializers.SerializerMethodField()
+    feedback_left_by_me = serializers.SerializerMethodField()
 
     def get_counterparty_name(self, obj):
         request = self.context.get('request')
@@ -106,6 +122,27 @@ class TransactionListSerializer(serializers.ModelSerializer):
             return f'You are borrowing from {counterparty}'
         return f'You are lending to {counterparty}'
 
+    def get_workflow_stage(self, obj):
+        return obj.get_workflow_stage_number()
+
+    def get_workflow_stage_label(self, obj):
+        return obj.get_workflow_stage_label()
+
+    def get_workflow_timeline(self, obj):
+        return obj.get_workflow_timeline()
+
+    def get_workflow_payload(self, obj):
+        return obj.get_workflow_payload()
+
+    def get_feedback_left_by_me(self, obj):
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+        return TransactionFeedback.objects.filter(
+            transaction=obj,
+            left_by=request.user,
+        ).exists()
+
     class Meta:
         model = Transaction
         fields = (
@@ -116,6 +153,11 @@ class TransactionListSerializer(serializers.ModelSerializer):
             'item_name',
             'counterparty_name',
             'parties_summary',
+            'workflow_stage',
+            'workflow_stage_label',
+            'workflow_timeline',
+            'workflow_payload',
+            'feedback_left_by_me',
             'price',
             'friend_price',
             'deposit',
@@ -123,6 +165,11 @@ class TransactionListSerializer(serializers.ModelSerializer):
             'quantity',
             'rental_start_date',
             'rental_end_date',
+            'delivery_distance_km',
+            'delivery_cost',
+            'rentalution_fee',
+            'payment_collection_requested_at',
+            'payment_collection_reference',
             'passive_user_id',
             'aggressive_user_id',
             'order_id',
@@ -155,6 +202,9 @@ class TransactionDetailSerializer(TransactionListSerializer):
     deposit_proposed_return_amount = serializers.FloatField()
     deposit_proposed_by_lender_at = serializers.DateTimeField(allow_null=True)
     deposit_proposal_contested_at = serializers.DateTimeField(allow_null=True)
+    deposit_proposal_iteration_count = serializers.IntegerField()
+    deposit_proposal_iteration_limit = serializers.SerializerMethodField()
+    deposit_proposal_warning_message = serializers.SerializerMethodField()
     deposit_resolution_notes = serializers.CharField(allow_blank=True)
     listing_image_url = serializers.SerializerMethodField()
     listing_image_urls = serializers.SerializerMethodField()
@@ -186,11 +236,29 @@ class TransactionDetailSerializer(TransactionListSerializer):
             'deposit_proposed_return_amount',
             'deposit_proposed_by_lender_at',
             'deposit_proposal_contested_at',
+            'deposit_proposal_iteration_count',
+            'deposit_proposal_iteration_limit',
+            'deposit_proposal_warning_message',
             'deposit_resolution_notes',
+            'delivery_distance_km',
+            'delivery_cost',
+            'rentalution_fee',
             'listing_image_url',
             'listing_image_urls',
             'me_is_lender',
             'me_is_renter',
+        )
+
+    def get_deposit_proposal_iteration_limit(self, obj):
+        return 5
+
+    def get_deposit_proposal_warning_message(self, obj):
+        count = max(0, min(5, int(getattr(obj, 'deposit_proposal_iteration_count', 0) or 0)))
+        if count < 3:
+            return ''
+        return (
+            f'Iteration {count}/5: if you do not reach agreement, this will be escalated to a dispute '
+            'and may incur a fee.'
         )
 
     def get_listing_image_url(self, obj):
@@ -427,6 +495,8 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'let_visibility',
             'collection_policy',
             'delivery_cost',
+            'delivery_within_km',
+            'delivery_cost_per_km',
             'collection_details',
             'max_rental_days',
             'expiry_date',
@@ -532,10 +602,121 @@ class OrderAmendSerializer(serializers.ModelSerializer):
             'mates_deposit',
             'collection_policy',
             'delivery_cost',
+            'delivery_within_km',
+            'delivery_cost_per_km',
             'collection_details',
             'max_rental_days',
             'expiry_date',
         )
+
+
+class OrderCreateSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(write_only=True)
+    expiry_date = serializers.DateField(write_only=True)
+    price_bands = LetPriceBandSerializer(many=True, required=False)
+
+    class Meta:
+        model = Order
+        fields = (
+            'product_id',
+            'expiry_date',
+            'price',
+            'radius_km',
+            'deposit',
+            'mates_rates',
+            'mates_deposit',
+            'collection_policy',
+            'delivery_cost',
+            'delivery_within_km',
+            'delivery_cost_per_km',
+            'collection_details',
+            'max_rental_days',
+            'description',
+            'additional_comments',
+            'postcode',
+            'latitude',
+            'longitude',
+            'let_visibility',
+            'price_bands',
+        )
+
+    def validate(self, attrs):
+        collection_policy = attrs.get('collection_policy', Order.MUST_COLLECT)
+        radius_km = attrs.get('radius_km')
+        delivery_within_km = attrs.get('delivery_within_km')
+        delivery_cost_per_km = attrs.get('delivery_cost_per_km') or 0
+        delivery_cost = attrs.get('delivery_cost') or 0
+
+        if collection_policy == Order.MUST_COLLECT:
+            attrs['delivery_within_km'] = None
+            attrs['delivery_cost_per_km'] = None
+            attrs['delivery_cost'] = None
+        else:
+            if delivery_cost_per_km > 0 and delivery_cost > 0:
+                raise serializers.ValidationError(
+                    'Choose one delivery pricing mode only: either price per km or flat delivery fee.'
+                )
+
+            if delivery_cost_per_km > 0 and not delivery_within_km:
+                raise serializers.ValidationError(
+                    {'delivery_within_km': 'Delivery up to (km) is required when using price per km.'}
+                )
+
+            if (
+                collection_policy == Order.WILL_DELIVER
+                and delivery_within_km
+                and radius_km
+                and delivery_within_km > radius_km
+            ):
+                raise serializers.ValidationError(
+                    {
+                        'delivery_within_km': (
+                            'Delivery distance cannot be greater than Maximum let radius when lender will deliver.'
+                        )
+                    }
+                )
+
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            raise serializers.ValidationError('Authenticated user is required.')
+
+        product_id = validated_data.pop('product_id')
+        expiry_date = validated_data.pop('expiry_date')
+        price_bands = validated_data.pop('price_bands', [])
+
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist as exc:
+            raise serializers.ValidationError({'product_id': 'Invalid product id.'}) from exc
+
+        order = Order(
+            product=product,
+            user=request.user,
+            direction=Order.TO_LET,
+            quantity=1,
+            status=Order.ACTIVE,
+            expiry_date=datetime.combine(expiry_date, dt_time(23, 59, 59)),
+            **validated_data,
+        )
+        order.save()
+
+        for band in price_bands:
+            duration_days = int(band.get('duration_days') or 0)
+            price_per_day = float(band.get('price_per_day') or 0)
+            if duration_days <= 0:
+                continue
+            if price_per_day < 0:
+                continue
+            LetPriceBand.objects.create(
+                order=order,
+                duration_days=duration_days,
+                price_per_day=price_per_day,
+            )
+
+        return order
 
 
 class CategorySummarySerializer(serializers.ModelSerializer):

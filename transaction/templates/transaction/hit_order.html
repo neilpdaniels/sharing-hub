@@ -32,8 +32,8 @@
                     </p>
                     <p class="mb-3">
                       <strong>Delivery/Collection:</strong> {{ order.get_collection_policy_display }}
-                      {% if order.delivery_cost %}
-                      <small class="text-muted">(Delivery: £{{ order.delivery_cost|format_price }})</small>
+                                            {% if order.get_delivery_price_summary %}
+                                            <small class="text-muted">({{ order.get_delivery_price_summary }})</small>
                       {% endif %}
                     </p>
 

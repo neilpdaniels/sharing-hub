@@ -7,7 +7,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from common.models import Category, Order, OrderBlockedDate, Product
+from common.models import System
 from transaction.models import Transaction, TransactionFeedback, TransactionMessage
+from transaction.tasks import auto_close_feedback_windows, send_pending_action_reminders
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)
@@ -224,18 +226,9 @@ class WebTransactionWorkflowExtensionTests(TestCase):
 			end_offset_days=-5,
 		)
 
-		for idx in range(5):
-			TransactionMessage.objects.create(
-				user_from=self.lender,
-				user_to=self.renter,
-				transaction=txn,
-				subject=f'Deposit return proposal {txn.transaction_reference}',
-				description=f'Iteration {idx + 1}',
-				is_system_generated=True,
-			)
-
+		txn.deposit_proposal_iteration_count = 5
 		txn.deposit_proposed_by_lender_at = timezone.now()
-		txn.save(update_fields=['deposit_proposed_by_lender_at'])
+		txn.save(update_fields=['deposit_proposal_iteration_count', 'deposit_proposed_by_lender_at'])
 
 		self.client.force_login(self.lender)
 		blocked_response = self.client.post(
@@ -263,3 +256,263 @@ class WebTransactionWorkflowExtensionTests(TestCase):
 		txn.refresh_from_db()
 		self.assertEqual(txn.transaction_status, Transaction.DISPUTE_REQUESTED)
 
+	def test_missing_rental_feedback_enters_one_sided_state(self):
+		txn = self._create_txn(
+			status=Transaction.RENTAL_AGREED,
+			start_offset_days=-2,
+			end_offset_days=1,
+		)
+
+		self.client.force_login(self.renter)
+		self.client.post(
+			reverse('transaction:view_transaction', kwargs={'transaction_reference': txn.transaction_reference}),
+			{
+				'action': 'report_missing_rental',
+				'missing_rental_reason': 'No handover happened.',
+			},
+		)
+		feedback_response = self.client.post(
+			reverse('transaction:view_transaction', kwargs={'transaction_reference': txn.transaction_reference}),
+			{
+				'action': 'submit_feedback',
+				'communication_rating': '4',
+				'delivery_return_rating': '1',
+				'overall_rating': '2',
+				'feedback_comment': 'Rental never started.',
+			},
+		)
+		self.assertEqual(feedback_response.status_code, 302)
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.FEEDBACK_ONE_SIDED)
+		self.assertIsNotNone(txn.feedback_window_expires_at)
+
+	def test_feedback_window_auto_closes_without_feedback(self):
+		txn = self._create_txn(
+			status=Transaction.AWAITING_FEEDBACK,
+			start_offset_days=-10,
+			end_offset_days=-5,
+		)
+		txn.feedback_window_expires_at = timezone.now() - timedelta(days=1)
+		txn.save(update_fields=['feedback_window_expires_at', 'amended'])
+
+		result = auto_close_feedback_windows()
+		self.assertGreaterEqual(result.get('updated', 0), 1)
+
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK)
+		self.assertIsNone(txn.feedback_window_expires_at)
+
+	def test_feedback_window_auto_closes_as_one_sided_when_single_feedback_exists(self):
+		txn = self._create_txn(
+			status=Transaction.FEEDBACK_ONE_SIDED,
+			start_offset_days=-10,
+			end_offset_days=-5,
+		)
+		txn.feedback_window_expires_at = timezone.now() - timedelta(days=1)
+		txn.save(update_fields=['feedback_window_expires_at', 'amended'])
+		TransactionFeedback.objects.create(
+			transaction=txn,
+			left_by=self.renter,
+			left_for=self.lender,
+			rating=4,
+			communication_rating=4,
+			delivery_return_rating=3,
+			overall_rating=4,
+		)
+
+		auto_close_feedback_windows()
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED)
+		self.assertIsNone(txn.feedback_window_expires_at)
+
+	def test_workflow_payload_is_consistent_for_web_context(self):
+		txn = self._create_txn(
+			status=Transaction.RENTAL_AGREED,
+			start_offset_days=1,
+			end_offset_days=4,
+		)
+
+		payload = txn.get_workflow_payload()
+		self.assertEqual(payload['current_stage'], 4)
+		self.assertEqual(payload['current_label'], 'Agreement')
+		self.assertEqual(len(payload['timeline']), 7)
+		self.assertEqual(payload['timeline'][0]['label'], 'Discussion')
+		self.assertTrue(payload['timeline'][3]['current'])
+
+
+@override_settings(MOBILE_VERIFICATION_ENABLED=False)
+class PendingReminderWorkflowTests(TestCase):
+	def setUp(self):
+		self.category = Category.objects.create(title='Tools')
+		self.product = Product.objects.create(category_id=self.category, name='Ladder')
+		self.lender = User.objects.create_user(username='reminder-lender', email='rl@example.com', password='x')
+		self.renter = User.objects.create_user(username='reminder-renter', email='rr@example.com', password='x')
+		self.order = Order.objects.create(
+			product=self.product,
+			user=self.lender,
+			direction=Order.TO_LET,
+			expiry_date=timezone.now() + timedelta(days=30),
+			status=Order.ACTIVE,
+			price=25,
+			deposit=100,
+			postcode='SW1A1AA',
+		)
+
+	def _create_txn(self, status):
+		return Transaction.objects.create(
+			user_passive=self.lender,
+			user_aggressive=self.renter,
+			order_passive=self.order,
+			product=self.product,
+			transaction_status=status,
+			prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+			rental_start_date=timezone.now().date() + timedelta(days=2),
+			rental_end_date=timezone.now().date() + timedelta(days=4),
+			price=25,
+			deposit=100,
+			current_spot_value=100,
+			price_as_pct_spot_value=25,
+		)
+
+	def test_contract_counterparty_reminder_with_countdown(self):
+		now = timezone.now().replace(hour=13, minute=0, second=0, microsecond=0)
+		txn = self._create_txn(Transaction.RENTAL_AGREED)
+		txn.lender_agreed_at = now - timedelta(hours=3)
+		txn.save(update_fields=['lender_agreed_at', 'amended'])
+
+		with patch('transaction.tasks.timezone.now', return_value=now):
+			result = send_pending_action_reminders()
+		self.assertGreaterEqual(result.get('contract_counterparty', 0), 1)
+
+		msg = TransactionMessage.objects.filter(
+			transaction=txn,
+			user_to=self.renter,
+			subject__startswith='Contract confirmation reminder',
+		).last()
+		self.assertIsNotNone(msg)
+		self.assertIn('24-hour window', msg.description)
+		txn.refresh_from_db()
+		self.assertIsNotNone(txn.contract_counterparty_reminder_at)
+
+	def test_contract_first_signer_reminder_sent(self):
+		now = timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
+		txn = self._create_txn(Transaction.RENTAL_AGREED)
+
+		with patch('transaction.tasks.timezone.now', return_value=now):
+			result = send_pending_action_reminders()
+		self.assertGreaterEqual(result.get('contract_first_signer', 0), 1)
+		msg = TransactionMessage.objects.filter(
+			transaction=txn,
+			user_to=self.lender,
+			subject__startswith='First signature reminder',
+		).last()
+		self.assertIsNotNone(msg)
+		self.assertIn('first signer', msg.description.lower())
+
+	def test_feedback_reminder_sent_to_missing_side(self):
+		now = timezone.now().replace(hour=17, minute=0, second=0, microsecond=0)
+		txn = self._create_txn(Transaction.FEEDBACK_ONE_SIDED)
+		txn.feedback_window_expires_at = now + timedelta(days=5)
+		txn.save(update_fields=['feedback_window_expires_at', 'amended'])
+		TransactionFeedback.objects.create(
+			transaction=txn,
+			left_by=self.lender,
+			left_for=self.renter,
+			rating=4,
+			communication_rating=4,
+			delivery_return_rating=4,
+			overall_rating=4,
+		)
+
+		with patch('transaction.tasks.timezone.now', return_value=now):
+			result = send_pending_action_reminders()
+		self.assertGreaterEqual(result.get('feedback', 0), 1)
+		msg = TransactionMessage.objects.filter(
+			transaction=txn,
+			user_to=self.renter,
+			subject__startswith='Feedback reminder',
+		).last()
+		self.assertIsNotNone(msg)
+		self.assertIn('Time left before auto-close', msg.description)
+
+
+@override_settings(MOBILE_VERIFICATION_ENABLED=False)
+class TransitionNotificationTests(TestCase):
+	def setUp(self):
+		self.category = Category.objects.create(title='Electronics')
+		self.product = Product.objects.create(category_id=self.category, name='Camera')
+		self.lender = User.objects.create_user(username='notif-lender', email='nl@example.com', password='x')
+		self.renter = User.objects.create_user(username='notif-renter', email='nr@example.com', password='x')
+		self.order = Order.objects.create(
+			product=self.product,
+			user=self.lender,
+			direction=Order.TO_LET,
+			expiry_date=timezone.now() + timedelta(days=30),
+			status=Order.ACTIVE,
+			price=30,
+			deposit=80,
+			postcode='SW1A1AA',
+		)
+
+	def _create_txn(self):
+		return Transaction.objects.create(
+			user_passive=self.lender,
+			user_aggressive=self.renter,
+			order_passive=self.order,
+			product=self.product,
+			transaction_status=Transaction.RENTAL_ENQUIRY,
+			prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+			rental_start_date=timezone.now().date() + timedelta(days=2),
+			rental_end_date=timezone.now().date() + timedelta(days=3),
+			price=30,
+			deposit=80,
+			current_spot_value=100,
+			price_as_pct_spot_value=30,
+		)
+
+	def test_major_transition_creates_email_enabled_system_message(self):
+		txn = self._create_txn()
+		txn.prev_transaction_status = txn.transaction_status
+		txn.transaction_status = txn.RENTAL_AGREED
+		txn.transaction_status_raised_by = self.lender
+		txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+
+		msg = TransactionMessage.objects.filter(transaction=txn, user_to=self.renter).last()
+		self.assertIsNotNone(msg)
+		self.assertTrue(msg.is_system_generated)
+		self.assertTrue(msg.email_to_recepient)
+		self.assertIn('Transaction status changed', msg.description)
+
+	def test_dispute_transition_marks_include_admin(self):
+		txn = self._create_txn()
+		txn.prev_transaction_status = txn.transaction_status
+		txn.transaction_status = txn.DISPUTE_REQUESTED
+		txn.transaction_status_raised_by = self.lender
+		txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+
+		msg = TransactionMessage.objects.filter(transaction=txn, user_to=self.renter).last()
+		self.assertIsNotNone(msg)
+		self.assertTrue(msg.include_admin)
+
+	def test_admin_config_can_disable_specific_transition_notifications(self):
+		System.objects.create(name='TRANSACTION_MAJOR_NOTIFICATION_STATUSES', value='DREQ')
+		txn = self._create_txn()
+		txn.prev_transaction_status = txn.transaction_status
+		txn.transaction_status = txn.RENTAL_AGREED
+		txn.transaction_status_raised_by = self.lender
+		txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+
+		msg = TransactionMessage.objects.filter(transaction=txn, user_to=self.renter).last()
+		self.assertIsNone(msg)
+
+	def test_admin_config_can_enable_dispute_notification_only(self):
+		System.objects.create(name='TRANSACTION_MAJOR_NOTIFICATION_STATUSES', value='DREQ')
+		txn = self._create_txn()
+		txn.prev_transaction_status = txn.transaction_status
+		txn.transaction_status = txn.DISPUTE_REQUESTED
+		txn.transaction_status_raised_by = self.lender
+		txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'transaction_status_raised_by', 'amended'])
+
+		msg = TransactionMessage.objects.filter(transaction=txn, user_to=self.renter).last()
+		self.assertIsNotNone(msg)
+		self.assertIn('Dispute requested', msg.subject)

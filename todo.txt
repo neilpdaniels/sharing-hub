@@ -1,14 +1,30 @@
 todo: 
 
+transaction + listings parity rollout
+
+1) transaction workflow contract:
+    - expose a single backend workflow payload for Django + mobile.
+    - make workflow stage, labels, pending/completed flags, and allowed actions come from the backend only.
+    - add parity tests for enquiry, contract, handover, return, dispute, and feedback states.
+
+2) listings contract:
+    - expose canonical listing payloads for product detail and lender listings.
+    - make visible count, filtered count, applied filters, and ordering consistent across web + mobile.
+    - add parity tests for listing counts, filter states, and repeat enquiry creation.
+
 transaction workflow follow-up (post-wiring, 2026-05-28)
+
+
+rentalution fee
+delivery fee (within x km / price per km or single surplus)
 
 1) dispute engine not implemented yet (manual status transitions only):
     - add formal dispute case model with reason codes, evidence bundles, SLA timers, owner, and outcome states.
     - link dispute cases to transactions and mirror to admin moderation UI.
 
 2) deposit proposal cycle hard-cap now enforced at 5 iterations, but needs fuller UX + audit:
-    - add explicit iteration counter field in DB instead of message-derived count.
-    - add visible iteration progress meter in web/mobile (x/5) with final warning banner.
+    - DONE (2026-05-30): explicit iteration counter field added in DB (`deposit_proposal_iteration_count`) and backfilled from historical proposal messages.
+    - DONE (2026-05-30): visible iteration progress meter added in web/mobile (x/5) with warning banner at 3/5, 4/5, and 5/5 stating that unresolved proposals escalate to dispute and may incur a fee.
 
 3) missing return flow now opens dispute, but needs deep handling:
     - define deadline windows and grace period policy.
@@ -21,20 +37,28 @@ transaction workflow follow-up (post-wiring, 2026-05-28)
     - make one-sided feedback explicitly visible as one-sided in profile aggregates.
 
 5) feedback completion logic still binary for normal transactions:
-    - add explicit workflow state for one-sided feedback (missing rental cases) vs mutual feedback complete.
-    - decide whether one-sided feedback can auto-close as completed state or remain cancelled-with-feedback.
+        - DONE (2026-05-30): explicit workflow states added for feedback lifecycle:
+            - one-sided pending feedback (`FEEDBACK_ONE_SIDED`)
+            - mutual feedback completed (`RENTAL_PROCESS_COMPLETED`)
+            - one-sided completed after expiry (`RENTAL_PROCESS_COMPLETED_ONE_SIDED`)
+            - no-feedback completed after expiry (`RENTAL_PROCESS_COMPLETED_NO_FEEDBACK`)
+        - DONE (2026-05-30): one-sided feedback now auto-closes as completed after a feedback window (default 30 days, configurable via `TRANSACTION_FEEDBACK_WINDOW_DAYS`), implemented via scheduled task `auto_close_feedback_windows`.
 
 6) evidence capture UX:
-    - website now advises app capture, but still URL-based in forms; add direct upload parity where needed.
-    - standardize evidence metadata (captured_at, device, checksum, uploader_role) for dispute reliability.
+    - DONE (2026-05-30): website evidence forms now support direct video upload with URL fallback for checkout/return evidence paths.
+    - DONE (2026-05-30): standardized evidence metadata persisted on evidence records: captured_at, capture_device, checksum_sha256, uploader_role (+ evidence_stage/source URL tracking).
 
 7) transaction timeline coherence:
     - centralize step/substep derivation server-side (single source of truth) and expose to web + mobile.
     - remove duplicated step logic currently split across template logic, helper functions, and mobile UI code.
 
 8) notifications:
-    - add push/email notifications for each major workflow transition and dispute escalation.
-    - include reminder nudges for pending actions (contract confirmation, return verification, feedback).
+    - DONE (2026-05-30): push/email notifications now emitted for major workflow transitions and dispute escalation via transaction status-change notifications (`notify_major_status_transition`), with system messages flagged for push and recipient email.
+        - DONE (2026-05-30): reminder nudges added for pending actions (contract confirmation, return verification, feedback) via scheduled task `send_pending_action_reminders`.
+            - contract counterparty reminder: every 4 hours between 9am and 8pm, includes remaining time in the 24-hour confirmation countdown.
+            - contract first-signer reminder: extra reminder cadence (twice/day equivalent, default every 12 hours in 9am-8pm window).
+            - return verification reminder: every 4 hours in reminder window with 24-hour verification countdown.
+            - feedback reminder: every 4 hours in reminder window with countdown to feedback auto-close deadline.
 
 9) tests to add:
     - web + mobile API tests for missing_return and missing_rental actions with date gating.

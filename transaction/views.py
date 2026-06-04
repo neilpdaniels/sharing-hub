@@ -1,5 +1,6 @@
 # Standard library
 import json
+import hashlib
 import logging
 import random
 from datetime import datetime, timedelta, time as dt_time
@@ -35,9 +36,12 @@ from .forms import (
     TransactionMessageImageForm,
 )
 from .helpers import (
+    get_transaction_pricing,
     get_user_feedback_breakdown_map,
     getTransactionStepAndAction,
     returnFeeValue,
+    sync_transaction_fee_charges,
+    sync_transaction_pricing,
 )
 from .models import (
     Transaction,
@@ -50,6 +54,7 @@ from .stripe_connect import stripe_connect_service
 from .tasks import (
     async_collect_deposit_hold,
     async_confirm_card_setup,
+    async_resolve_deposit_hold,
     async_setup_deposit_card_and_test_hold,
 )
 
@@ -81,6 +86,7 @@ def _holding_statuses():
         Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
         Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
         Transaction.AWAITING_FEEDBACK,
+        Transaction.FEEDBACK_ONE_SIDED,
     )
 
 
@@ -120,6 +126,7 @@ def _release_transaction_dates(txn):
 def _require_mobile_verification(request):
     if not getattr(settings, 'MOBILE_VERIFICATION_ENABLED', True):
         return None
+
     try:
         profile = request.user.profile
     except Profile.DoesNotExist:
@@ -131,6 +138,118 @@ def _require_mobile_verification(request):
     next_url = request.get_full_path()
     messages.warning(request, 'Please verify your mobile number before placing a listing or sending an enquiry.')
     return redirect(f'{verify_url}?next={quote(next_url)}')
+
+
+def _infer_uploader_role(txn, user):
+    if user == txn.user_passive:
+        return TransactionMessageImage.ROLE_LENDER
+    if user == txn.user_aggressive:
+        return TransactionMessageImage.ROLE_BORROWER
+    return TransactionMessageImage.ROLE_SYSTEM
+
+
+def _capture_device_from_request(request):
+    return (request.POST.get('capture_device') or request.META.get('HTTP_USER_AGENT') or '')[:120]
+
+
+def _checksum_for_uploaded_file(uploaded_file):
+    digest = hashlib.sha256()
+    for chunk in uploaded_file.chunks():
+        digest.update(chunk)
+    try:
+        uploaded_file.seek(0)
+    except Exception:
+        pass
+    return digest.hexdigest()
+
+
+def _captured_at_from_request(request):
+    raw_value = (request.POST.get('captured_at') or '').strip()
+    if not raw_value:
+        return timezone.now()
+    try:
+        parsed = datetime.fromisoformat(raw_value)
+    except ValueError:
+        return timezone.now()
+
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _save_transaction_evidence(request, txn, *, evidence_stage, video_file_field, video_url_field):
+    uploader_role = _infer_uploader_role(txn, request.user)
+    capture_device = _capture_device_from_request(request)
+    captured_at = _captured_at_from_request(request)
+
+    uploaded_video = request.FILES.get(video_file_field)
+    if uploaded_video:
+        evidence = TransactionMessageImage(
+            txn_message=None,
+            user=request.user,
+            video=uploaded_video,
+            video_raw=uploaded_video,
+            first_image=False,
+            active=True,
+            captured_at=captured_at,
+            capture_device=capture_device,
+            checksum_sha256=_checksum_for_uploaded_file(uploaded_video),
+            uploader_role=uploader_role,
+            evidence_stage=evidence_stage,
+        )
+        evidence.full_clean()
+        evidence.save()
+        return evidence.video.url
+
+    external_url = (request.POST.get(video_url_field) or '').strip()
+    if external_url:
+        evidence = TransactionMessageImage(
+            txn_message=None,
+            user=request.user,
+            first_image=False,
+            active=True,
+            captured_at=captured_at,
+            capture_device=capture_device,
+            checksum_sha256=hashlib.sha256(external_url.encode('utf-8')).hexdigest(),
+            uploader_role=uploader_role,
+            evidence_stage=evidence_stage,
+            external_video_url=external_url,
+        )
+        evidence.full_clean()
+        evidence.save()
+        return external_url
+
+    return ''
+
+
+def _build_transaction_live_state(txn):
+    latest_message = txn.transactionmessage_set.order_by('-created').values('id', 'created').first()
+    latest_msg_id = latest_message['id'] if latest_message else 0
+    latest_msg_ts = latest_message['created'].isoformat() if latest_message and latest_message['created'] else ''
+    message_count = txn.transactionmessage_set.count()
+
+    signature_parts = [
+        str(txn.id),
+        txn.transaction_status or '',
+        txn.payment_status or '',
+        txn.deposit_status or '',
+        txn.product_status or '',
+        txn.amended.isoformat() if txn.amended else '',
+        str(message_count),
+        str(latest_msg_id),
+        latest_msg_ts,
+        txn.checkout_handover_pin or '',
+        txn.return_handover_pin or '',
+        str(getattr(txn, 'deposit_proposal_iteration_count', 0) or 0),
+    ]
+
+    return {
+        'state_signature': '|'.join(signature_parts),
+        'message_count': message_count,
+        'latest_message_id': latest_msg_id,
+        'transaction_status': txn.transaction_status,
+        'updated_at': txn.amended.isoformat() if txn.amended else '',
+    }
 
 
 class OrderFormHandler:
@@ -537,6 +656,15 @@ def remove_order_image(request):
     }
     return JsonResponse(content)
 
+
+
+@login_required
+def transaction_live_state_json(request, transaction_reference):
+    txn = get_object_or_404(Transaction, transaction_reference=transaction_reference)
+    if txn.user_passive != request.user and txn.user_aggressive != request.user:
+        raise Http404
+
+    return JsonResponse(_build_transaction_live_state(txn))
 @login_required
 @ajax_required
 def get_fee(request):
@@ -644,6 +772,16 @@ def hit_order(request, order_id=None):
                 rental_end_date=end_date,
                 enquiry_message=order_hit_form.cleaned_data.get('enquiry_message', ''),
             )
+
+            pricing = get_transaction_pricing(txn)
+            sync_transaction_pricing(txn, pricing)
+            txn.save(update_fields=[
+                'delivery_distance_km',
+                'delivery_cost',
+                'rentalution_fee',
+                'amended',
+            ])
+            sync_transaction_fee_charges(txn, pricing)
             
             # Calculate deposit handling based on rental length and amount
             txn.deposit_handling = txn.calculate_deposit_handling()
@@ -771,13 +909,27 @@ def view_transaction(request, transaction_reference=None):
         return timezone.now().date() >= transaction.rental_start_date
 
     def _has_verified_payment_card(transaction):
-        payment_card_required = (transaction.deposit > 0 or transaction.price > 0)
+        payment_card_required = (
+            transaction.deposit > 0
+            or transaction.price > 0
+            or (transaction.delivery_cost or 0) > 0
+            or (transaction.rentalution_fee or 0) > 0
+        )
         if not payment_card_required:
             return True
         return (
             transaction.deposit_card_setup_status == transaction.CARD_READY
             and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS
         )
+
+    def _rental_payment_required(transaction):
+        total_due = ((transaction.quantity or 0) * (transaction.price or 0)) + (transaction.delivery_cost or 0) + (transaction.rentalution_fee or 0)
+        return total_due > 0
+
+    def _is_rental_payment_collected(transaction):
+        if not _rental_payment_required(transaction):
+            return True
+        return transaction.payment_status == transaction.PAYMENT_CAPTURED_PLACEHOLDER
 
     def _is_deposit_funds_held(transaction):
         if transaction.deposit <= 0:
@@ -795,14 +947,22 @@ def view_transaction(request, transaction_reference=None):
             return None
 
     def _deposit_proposal_iterations(transaction):
-        # Count lender proposal messages as proposal iterations without requiring schema changes.
-        return transaction.transactionmessage_set.filter(
-            subject__startswith='Deposit return proposal',
-            user_from=transaction.user_passive,
-        ).count()
+        raw_value = getattr(transaction, 'deposit_proposal_iteration_count', 0) or 0
+        return max(0, min(5, int(raw_value)))
+
+    def _deposit_iteration_warning_text(iteration_count):
+        if iteration_count < 3:
+            return ''
+        return (
+            f'Iteration {iteration_count}/5: if you do not reach agreement, this will be escalated to a dispute '
+            'and may incur a fee.'
+        )
 
     def _is_missing_rental_voided(transaction):
         return '[MISSING_RENTAL_VOIDED]' in (transaction.deposit_resolution_notes or '')
+
+    def _refresh_feedback_deadline(transaction):
+        transaction.refresh_feedback_deadline()
 
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
@@ -1196,7 +1356,22 @@ Transaction Ref: {txn.transaction_reference}"""
                 )
                 return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
-            checkout_video = request.POST.get('checkout_video_url', '').strip()
+            try:
+                checkout_video = _save_transaction_evidence(
+                    request,
+                    txn,
+                    evidence_stage='checkout_lender',
+                    video_file_field='checkout_video_file',
+                    video_url_field='checkout_video_url',
+                )
+            except ValidationError as exc:
+                messages.error(request, f'Checkout evidence upload failed: {exc}')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+            if not checkout_video:
+                messages.error(request, 'Please provide checkout video evidence as a file upload or URL.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_DAY_AWAITING_VERIFICATION
             txn.checkout_condition_video_url = checkout_video
@@ -1211,8 +1386,69 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.payment_collected_placeholder = True
             txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER
             txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if txn.deposit_collected_placeholder else txn.DEPOSIT_PENDING
-            txn.payment_placeholder_notes = request.POST.get('payment_placeholder_notes', '').strip()
-            txn.save()
+            rental_amount = round((txn.quantity or 0) * (txn.price or 0), 2)
+            total_before_deposit = round(rental_amount + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0), 2)
+            default_payment_note = (
+                f'Rental £{rental_amount:.2f}; '
+                f'Delivery £{(txn.delivery_cost or 0):.2f}; '
+                f'Rentalution fee £{(txn.rentalution_fee or 0):.2f}; '
+                f'Total before deposit £{total_before_deposit:.2f}'
+            )
+            txn.payment_placeholder_notes = (request.POST.get('payment_placeholder_notes', '').strip() or default_payment_note)
+
+            payment_capture_result = stripe_connect_service.collect_rental_payment(transaction=txn)
+            if not payment_capture_result.get('ok'):
+                messages.error(
+                    request,
+                    f'Rental payment capture failed. Handover PIN will not be shown until payment succeeds. {payment_capture_result.get("error") or ""}'.strip(),
+                )
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+            txn.payment_collected_placeholder = True
+            txn.payment_status = payment_capture_result.get('payment_status', txn.PAYMENT_CAPTURED_PLACEHOLDER)
+            txn.payment_collection_requested_at = payment_capture_result.get('collection_requested_at', timezone.now())
+            txn.payment_collection_reference = payment_capture_result.get('collection_reference', '')
+            charged_amount = float(payment_capture_result.get('charged_amount') or 0)
+            capture_note = (
+                f'[STRIPE_RENTAL_CAPTURE] charged={charged_amount:.2f} '
+                f'status={payment_capture_result.get("payment_intent_status") or ""} '
+                f'ref={txn.payment_collection_reference}'
+            ).strip()
+            if capture_note:
+                existing_payment_notes = (txn.payment_placeholder_notes or '').strip()
+                if capture_note not in existing_payment_notes:
+                    txn.payment_placeholder_notes = f'{existing_payment_notes}\n{capture_note}'.strip()
+
+            should_collect_deposit_now = (
+                txn.deposit > 0
+                and _can_collect_deposit(txn)
+                and txn.deposit_collection_status != txn.COLLECT_SUCCESS
+            )
+            if should_collect_deposit_now:
+                txn.deposit_collection_status = txn.COLLECT_NOT_RUN
+                txn.deposit_collection_requested_at = timezone.now()
+                txn.save(update_fields=[
+                    'prev_transaction_status',
+                    'transaction_status',
+                    'checkout_condition_video_url',
+                    'checkout_borrower_confirmed',
+                    'checkout_borrower_video_url',
+                    'checkout_handover_pin',
+                    'checkout_handover_pin_generated_at',
+                    'checkout_handover_verified_at',
+                    'product_status',
+                    'payment_collected_placeholder',
+                    'payment_status',
+                    'payment_collection_requested_at',
+                    'payment_collection_reference',
+                    'deposit_status',
+                    'payment_placeholder_notes',
+                    'deposit_collection_status',
+                    'deposit_collection_requested_at',
+                    'amended',
+                ])
+            else:
+                txn.save()
             TransactionMessage.objects.create(
                 user_from=request.user,
                 user_to=txn.user_aggressive,
@@ -1221,6 +1457,8 @@ Transaction Ref: {txn.transaction_reference}"""
                 description='Lender submitted rental-start evidence. Borrower should confirm agreement or submit counter-evidence.',
                 is_system_generated=True,
             )
+            if should_collect_deposit_now:
+                async_collect_deposit_hold.delay(transaction_id=txn.id)
             messages.success(request, 'Checkout evidence submitted. Waiting for borrower confirmation/counter-evidence and handover PIN verification.')
 
         elif action == 'confirm_checkout_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
@@ -1228,7 +1466,10 @@ Transaction Ref: {txn.transaction_reference}"""
                 messages.error(request, 'Lender checkout evidence is missing.')
             else:
                 txn.checkout_borrower_confirmed = True
-                if _is_deposit_funds_held(txn):
+                if not _is_rental_payment_collected(txn):
+                    txn.save(update_fields=['checkout_borrower_confirmed', 'amended'])
+                    messages.warning(request, 'Evidence confirmed, but PIN cannot be generated until rental payment is captured.')
+                elif _is_deposit_funds_held(txn):
                     if not txn.checkout_handover_pin:
                         txn.checkout_handover_pin = _generate_txn_pin(6)
                         txn.checkout_handover_pin_generated_at = timezone.now()
@@ -1253,13 +1494,27 @@ Transaction Ref: {txn.transaction_reference}"""
                 )
 
         elif action == 'submit_checkout_borrower_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
-            borrower_checkout_video = (request.POST.get('checkout_borrower_video_url') or '').strip()
+            try:
+                borrower_checkout_video = _save_transaction_evidence(
+                    request,
+                    txn,
+                    evidence_stage='checkout_borrower',
+                    video_file_field='checkout_borrower_video_file',
+                    video_url_field='checkout_borrower_video_url',
+                )
+            except ValidationError as exc:
+                messages.error(request, f'Counter-evidence upload failed: {exc}')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
             if not borrower_checkout_video:
-                messages.error(request, 'Please provide borrower checkout video evidence URL.')
+                messages.error(request, 'Please provide borrower checkout evidence as a file upload or URL.')
             else:
                 txn.checkout_borrower_video_url = borrower_checkout_video
                 txn.checkout_borrower_confirmed = False
-                if _is_deposit_funds_held(txn):
+                if not _is_rental_payment_collected(txn):
+                    txn.save(update_fields=['checkout_borrower_video_url', 'checkout_borrower_confirmed', 'amended'])
+                    messages.warning(request, 'Counter-evidence saved, but PIN cannot be generated until rental payment is captured.')
+                elif _is_deposit_funds_held(txn):
                     if not txn.checkout_handover_pin:
                         txn.checkout_handover_pin = _generate_txn_pin(6)
                         txn.checkout_handover_pin_generated_at = timezone.now()
@@ -1286,7 +1541,9 @@ Transaction Ref: {txn.transaction_reference}"""
 
         elif action == 'verify_checkout_handover_pin' and is_lender and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
             entered_pin = (request.POST.get('checkout_handover_pin') or '').strip()
-            if not _is_deposit_funds_held(txn):
+            if not _is_rental_payment_collected(txn):
+                messages.error(request, 'Rental payment must be captured before handover PIN verification.')
+            elif not _is_deposit_funds_held(txn):
                 messages.error(request, 'Deposit funds must be held before rental handover PIN verification.')
             elif not txn.checkout_handover_pin:
                 messages.error(request, 'Borrower has not reached the PIN step yet.')
@@ -1317,9 +1574,20 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.RENTAL_ONGOING,
             txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
         ):
-            return_video = (request.POST.get('return_video_url') or '').strip()
+            try:
+                return_video = _save_transaction_evidence(
+                    request,
+                    txn,
+                    evidence_stage='return_borrower',
+                    video_file_field='return_video_file',
+                    video_url_field='return_video_url',
+                )
+            except ValidationError as exc:
+                messages.error(request, f'Return evidence upload failed: {exc}')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
             if not return_video:
-                messages.error(request, 'Please provide borrower return video evidence URL.')
+                messages.error(request, 'Please provide borrower return evidence as a file upload or URL.')
             else:
                 txn.prev_transaction_status = txn.transaction_status
                 txn.transaction_status = txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION
@@ -1379,9 +1647,20 @@ Transaction Ref: {txn.transaction_reference}"""
                 messages.success(request, 'Evidence confirmed. Return PIN generated and ready for borrower verification.')
 
         elif action == 'submit_lender_return_evidence' and is_lender and txn.transaction_status == txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
-            lender_return_video = (request.POST.get('lender_return_video_url') or '').strip()
+            try:
+                lender_return_video = _save_transaction_evidence(
+                    request,
+                    txn,
+                    evidence_stage='return_lender',
+                    video_file_field='lender_return_video_file',
+                    video_url_field='lender_return_video_url',
+                )
+            except ValidationError as exc:
+                messages.error(request, f'Counter-evidence upload failed: {exc}')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
             if not lender_return_video:
-                messages.error(request, 'Please provide lender return video evidence URL.')
+                messages.error(request, 'Please provide lender return evidence as a file upload or URL.')
             else:
                 if not txn.return_handover_pin:
                     txn.return_handover_pin = _generate_txn_pin(6)
@@ -1446,7 +1725,7 @@ Transaction Ref: {txn.transaction_reference}"""
             elif proposed_amount > txn.deposit:
                 messages.error(request, 'Deposit return amount cannot exceed the original deposit.')
             elif proposal_iterations >= 5:
-                messages.error(request, 'Maximum deposit proposal iterations reached (5). Please raise a dispute to continue.')
+                messages.error(request, 'Maximum deposit proposal iterations reached (5). Please raise a dispute to continue; disputes may incur a fee.')
             else:
                 previous_status = txn.transaction_status
                 txn.prev_transaction_status = txn.transaction_status
@@ -1455,6 +1734,7 @@ Transaction Ref: {txn.transaction_reference}"""
                 txn.deposit_proposed_return_amount = proposed_amount
                 txn.deposit_proposed_by_lender_at = timezone.now()
                 txn.deposit_proposal_accepted_at = None
+                txn.deposit_proposal_iteration_count = proposal_iterations + 1
                 txn.deposit_resolution_notes = resolution_notes
                 txn.save(update_fields=[
                     'prev_transaction_status',
@@ -1463,6 +1743,7 @@ Transaction Ref: {txn.transaction_reference}"""
                     'deposit_proposed_return_amount',
                     'deposit_proposed_by_lender_at',
                     'deposit_proposal_accepted_at',
+                    'deposit_proposal_iteration_count',
                     'deposit_resolution_notes',
                     'amended',
                 ])
@@ -1487,10 +1768,11 @@ Transaction Ref: {txn.transaction_reference}"""
                     is_system_generated=True,
                 )
                 new_iteration_count = proposal_iterations + 1
-                if new_iteration_count == 5:
+                warning_text = _deposit_iteration_warning_text(new_iteration_count)
+                if warning_text:
                     messages.warning(
                         request,
-                        f'Deposit proposal sent: £{proposed_amount:.2f}. This is iteration 5/5 (final warning before dispute escalation).',
+                        f'Deposit proposal sent: £{proposed_amount:.2f}. {warning_text}',
                     )
                 else:
                     messages.success(request, f'Deposit proposal sent: £{proposed_amount:.2f}. Iteration {new_iteration_count}/5.')
@@ -1502,6 +1784,7 @@ Transaction Ref: {txn.transaction_reference}"""
             else:
                 txn.prev_transaction_status = txn.transaction_status
                 txn.transaction_status = txn.AWAITING_FEEDBACK
+                _refresh_feedback_deadline(txn)
                 txn.deposit_status = (
                     txn.DEPOSIT_RETURNED_FULL
                     if abs(proposed_amount - txn.deposit) < 0.01
@@ -1513,6 +1796,7 @@ Transaction Ref: {txn.transaction_reference}"""
                 txn.save(update_fields=[
                     'prev_transaction_status',
                     'transaction_status',
+                    'feedback_window_expires_at',
                     'deposit_status',
                     'deposit_proposal_accepted_at',
                     'deposit_resolution_notes',
@@ -1525,6 +1809,10 @@ Transaction Ref: {txn.transaction_reference}"""
                     subject=f'Deposit proposal accepted {txn.transaction_reference}',
                     description=f'Borrower accepted deposit return proposal of £{proposed_amount:.2f}.',
                     is_system_generated=True,
+                )
+                async_resolve_deposit_hold.delay(
+                    transaction_id=txn.id,
+                    return_amount=proposed_amount,
                 )
                 messages.success(request, 'Deposit proposal accepted. Please leave feedback to close the transaction.')
 
@@ -1558,7 +1846,7 @@ Transaction Ref: {txn.transaction_reference}"""
                     include_admin=True,
                     is_system_generated=True,
                 )
-                messages.warning(request, 'Max proposal iterations reached. Dispute has been escalated to admin.')
+                messages.warning(request, 'Max proposal iterations reached. Dispute has been escalated to admin and may incur a fee depending on outcome.')
             else:
                 txn.prev_transaction_status = txn.transaction_status
                 txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_CONTESTED
@@ -1632,12 +1920,27 @@ Transaction Ref: {txn.transaction_reference}"""
         elif action == 'deposit_full' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.AWAITING_FEEDBACK
+            _refresh_feedback_deadline(txn)
             txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
             txn.deposit_proposed_return_amount = txn.deposit
             txn.deposit_proposed_by_lender_at = timezone.now()
             txn.deposit_proposal_accepted_at = timezone.now()
             txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
-            txn.save()
+            txn.save(update_fields=[
+                'prev_transaction_status',
+                'transaction_status',
+                'feedback_window_expires_at',
+                'deposit_status',
+                'deposit_proposed_return_amount',
+                'deposit_proposed_by_lender_at',
+                'deposit_proposal_accepted_at',
+                'deposit_resolution_notes',
+                'amended',
+            ])
+            async_resolve_deposit_hold.delay(
+                transaction_id=txn.id,
+                return_amount=txn.deposit,
+            )
             messages.success(request, 'Deposit returned in full. Please leave feedback to close the transaction.')
 
         elif action == 'deposit_reduced' and is_lender and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
@@ -1647,12 +1950,27 @@ Transaction Ref: {txn.transaction_reference}"""
             reduced_amount = max(0, min(reduced_amount, txn.deposit))
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.AWAITING_FEEDBACK
+            _refresh_feedback_deadline(txn)
             txn.deposit_status = txn.DEPOSIT_RETURNED_REDUCED
             txn.deposit_proposed_return_amount = reduced_amount
             txn.deposit_proposed_by_lender_at = timezone.now()
             txn.deposit_proposal_accepted_at = timezone.now()
             txn.deposit_resolution_notes = request.POST.get('deposit_resolution_notes', '').strip()
-            txn.save()
+            txn.save(update_fields=[
+                'prev_transaction_status',
+                'transaction_status',
+                'feedback_window_expires_at',
+                'deposit_status',
+                'deposit_proposed_return_amount',
+                'deposit_proposed_by_lender_at',
+                'deposit_proposal_accepted_at',
+                'deposit_resolution_notes',
+                'amended',
+            ])
+            async_resolve_deposit_hold.delay(
+                transaction_id=txn.id,
+                return_amount=reduced_amount,
+            )
             messages.success(request, f'Reduced deposit return recorded (£{reduced_amount:.2f}). Please leave feedback to close the transaction.')
 
         elif action == 'mediation_required' and (is_lender or is_renter) and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
@@ -1666,6 +1984,7 @@ Transaction Ref: {txn.transaction_reference}"""
         elif action == 'submit_feedback' and (is_lender or is_renter) and txn.transaction_status in (
             txn.RENTAL_RETURNED_DEPOSIT_RETURNED,
             txn.AWAITING_FEEDBACK,
+            txn.FEEDBACK_ONE_SIDED,
             txn.RENTAL_PROCESS_COMPLETED,
         ) or (
             action == 'submit_feedback'
@@ -1734,16 +2053,24 @@ Transaction Ref: {txn.transaction_reference}"""
             ).exists()
 
             if txn.transaction_status == txn.CANCEL_ACCEPTED and _is_missing_rental_voided(txn):
-                messages.success(request, 'Feedback submitted for missing-rental report.')
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.FEEDBACK_ONE_SIDED
+                _refresh_feedback_deadline(txn)
+                txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'feedback_window_expires_at', 'amended'])
+                messages.success(request, 'Feedback submitted for missing-rental report. This will auto-close after the feedback window if no counter-feedback is added.')
             else:
                 txn.prev_transaction_status = txn.transaction_status
-                txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.AWAITING_FEEDBACK
-                txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'amended'])
+                txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.FEEDBACK_ONE_SIDED
+                if other_feedback_exists:
+                    txn.feedback_window_expires_at = None
+                else:
+                    _refresh_feedback_deadline(txn)
+                txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'feedback_window_expires_at', 'amended'])
 
                 if other_feedback_exists:
                     messages.success(request, 'Feedback submitted. Both parties have now completed feedback, and the transaction is closed.')
                 else:
-                    messages.success(request, 'Feedback submitted. Waiting for the other party to submit feedback.')
+                    messages.success(request, 'Feedback submitted. Waiting for the other party, and this will auto-close after the feedback window.')
 
         else:
             messages.error(request, 'That action is not available for the current state.')
@@ -1820,6 +2147,10 @@ Transaction Ref: {txn.transaction_reference}"""
     return_pin_available = bool(txn.return_handover_pin)
     checkout_pin_available = bool(txn.checkout_handover_pin)
     deposit_funds_held = _is_deposit_funds_held(txn)
+    deposit_proposal_iteration_count = _deposit_proposal_iterations(txn)
+    deposit_proposal_iteration_limit = 5
+    deposit_proposal_progress_pct = int((deposit_proposal_iteration_count / deposit_proposal_iteration_limit) * 100)
+    deposit_proposal_warning_text = _deposit_iteration_warning_text(deposit_proposal_iteration_count)
 
     missing_rental_voided = _is_missing_rental_voided(txn)
 
@@ -1827,6 +2158,9 @@ Transaction Ref: {txn.transaction_reference}"""
         txn.RENTAL_RETURNED_DEPOSIT_RETURNED,
         txn.AWAITING_FEEDBACK,
         txn.RENTAL_PROCESS_COMPLETED,
+        txn.FEEDBACK_ONE_SIDED,
+        txn.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
+        txn.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
     )
     feedback_stage = txn.transaction_status in feedback_statuses or (
         missing_rental_voided and txn.transaction_status == txn.CANCEL_ACCEPTED and is_renter
@@ -1860,6 +2194,8 @@ Transaction Ref: {txn.transaction_reference}"""
     if is_renter:
         user_payment_methods = request.user.payment_methods.all()
 
+    workflow_payload = txn.get_workflow_payload()
+
     context = {
         'transaction': txn,
         'charges': charges,
@@ -1870,6 +2206,10 @@ Transaction Ref: {txn.transaction_reference}"""
         'total_fees': total_fees,
         'step': step,
         'next_action': next_action,
+        'workflow_stage': workflow_payload['current_stage'],
+        'workflow_stage_label': workflow_payload['current_label'],
+        'workflow_timeline': workflow_payload['timeline'],
+        'workflow_payload': workflow_payload,
         'is_lender': is_lender,
         'is_renter': is_renter,
         'today': today,
@@ -1891,6 +2231,10 @@ Transaction Ref: {txn.transaction_reference}"""
         'return_pin_available': return_pin_available,
         'checkout_pin_available': checkout_pin_available,
         'deposit_funds_held': deposit_funds_held,
+        'deposit_proposal_iteration_count': deposit_proposal_iteration_count,
+        'deposit_proposal_iteration_limit': deposit_proposal_iteration_limit,
+        'deposit_proposal_progress_pct': deposit_proposal_progress_pct,
+        'deposit_proposal_warning_text': deposit_proposal_warning_text,
         'feedback_stage': feedback_stage,
         'feedback_left_by_me': feedback_left_by_me,
         'feedback_prompt_required': feedback_prompt_required,
@@ -1904,6 +2248,8 @@ Transaction Ref: {txn.transaction_reference}"""
         'user_payment_methods': user_payment_methods,
         'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
         'message_turnstile_required': message_turnstile_required,
+        'txn_live_state_signature': _build_transaction_live_state(txn)['state_signature'],
+        'txn_live_poll_interval_ms': int(getattr(settings, 'TRANSACTION_LIVE_POLL_SECONDS', 3)) * 1000,
     }
     return render(request, 'transaction/view_transaction.html', context)
 

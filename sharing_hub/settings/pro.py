@@ -45,3 +45,4 @@ SERVER_EMAIL = 'application@sharing-hub.com'
 SHARING_HUB_DEFAULT_ADMIN_USER = 'wastaco_admin'
 
 TRANSPACT_IS_TEST = False
+STRIPE_CONNECT_ALLOW_LEGACY_CARD_FALLBACK = False

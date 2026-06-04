@@ -99,6 +99,70 @@ def _get_homepage_popular_orders(request, limit=8):
     return popular_orders[:limit]
 
 
+def _get_descendant_category_ids(category):
+    ids = [category.id]
+    for child in Category.objects.filter(parent_category=category):
+        ids.extend(_get_descendant_category_ids(child))
+    return ids
+
+
+def _get_popular_orders(request, limit=8, category=None):
+    orders = Order.objects.filter(status=Order.ACTIVE, direction=Order.TO_LET)
+    if category is not None:
+        orders = orders.filter(product__category_id__in=_get_descendant_category_ids(category))
+
+    popular_orders = list(
+        orders.select_related('product', 'product__category_id', 'user')
+        .prefetch_related('images')
+        .annotate(favourite_count=Count('favourited_by', distinct=True))
+        .order_by('-favourite_count', '-amended')[:limit * 4]
+    )
+
+    if not popular_orders:
+        return []
+
+    home_lat = None
+    home_lon = None
+    if request.user.is_authenticated:
+        try:
+            profile = request.user.profile
+            if profile.latitude and profile.longitude:
+                home_lat = float(profile.latitude)
+                home_lon = float(profile.longitude)
+        except Exception:
+            home_lat = None
+            home_lon = None
+
+    for order in popular_orders:
+        order.home_distance_km = None
+        if (
+            home_lat is not None
+            and home_lon is not None
+            and order.latitude is not None
+            and order.longitude is not None
+        ):
+            try:
+                order.home_distance_km = PostcodeGeocoder.calculate_distance(
+                    home_lat,
+                    home_lon,
+                    float(order.latitude),
+                    float(order.longitude),
+                )
+            except Exception:
+                order.home_distance_km = None
+
+    if home_lat is not None and home_lon is not None:
+        popular_orders.sort(
+            key=lambda item: (
+                item.home_distance_km is None,
+                item.home_distance_km if item.home_distance_km is not None else 10**9,
+                -item.favourite_count,
+            )
+        )
+
+    return popular_orders[:limit]
+
+
 def _build_biscuit(cat):
     biscuit = [cat]
     biscuit_cat = cat
@@ -402,6 +466,7 @@ def browseCategory(request, cat_slug=None):
         context['totalProductsCount'] = totalProductsCount
         context['best_bids'] = best_bids
         context['best_offers'] = best_offers
+        context['browse_popular_orders'] = _get_popular_orders(request, limit=8, category=cat)
         return render(request, 'navigation/browse.html', context)
 
 def productPage(request, product_slug):
@@ -875,5 +940,3 @@ def expandOrder(request):
         'order_user_feedback_stats': get_user_feedback_breakdown(user_id=order.user_id),
     }
     return HttpResponse(template.render(content, request))
-
-

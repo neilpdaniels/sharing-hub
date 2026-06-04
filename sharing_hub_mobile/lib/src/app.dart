@@ -550,26 +550,13 @@ class _SharingHubMobileAppState extends State<SharingHubMobileApp> {
         body: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: Center(
-                child: Image.asset(
-                  'assets/images/app_icon_1024.png',
-                  width: 280,
-                  height: 280,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 60),
-              child: SizedBox(
-                width: 60,
-                height: 60,
-                child: CircularProgressIndicator(
-                  strokeWidth: 5,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.white.withOpacity(0.9),
-                  ),
-                ),
+            Center(
+              child: Image.asset(
+                'assets/images/logo-rentalution.png',
+                width: 220,
+                height: 220,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
               ),
             ),
           ],

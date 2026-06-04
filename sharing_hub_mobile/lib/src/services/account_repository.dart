@@ -1,4 +1,5 @@
 import '../models/account_models.dart';
+import '../models/transaction_models.dart';
 import 'api_client.dart';
 
 class AccountRepository {
@@ -58,5 +59,47 @@ class AccountRepository {
       const {},
       accessToken: accessToken,
     );
+  }
+
+  Future<StripeSetupIntentSession> createPaymentMethodSetupIntent({
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.postJson(
+      '/payment-methods/setup-intent/',
+      const {},
+      accessToken: accessToken,
+    );
+    return StripeSetupIntentSession.fromJson(json);
+  }
+
+  Future<PaymentMethodSummary> confirmPaymentMethodSetup({
+    required String accessToken,
+    required String setupIntentId,
+    required String paymentMethodId,
+  }) async {
+    final json = await _apiClient.postJson(
+      '/payment-methods/confirm/',
+      {
+        'setup_intent_id': setupIntentId,
+        'payment_method_id': paymentMethodId,
+      },
+      accessToken: accessToken,
+    );
+    return PaymentMethodSummary(
+      id: 0,
+      cardBrand: json['card_brand'] as String? ?? 'Card',
+      cardLast4: json['card_last4'] as String? ?? '',
+      isDefault: false,
+    );
+  }
+
+  Future<String> fetchStripePublishableKey({
+    required String accessToken,
+  }) async {
+    final json = await _apiClient.getJsonObject(
+      '/config/',
+      accessToken: accessToken,
+    );
+    return json['stripe_publishable_key'] as String? ?? '';
   }
 }

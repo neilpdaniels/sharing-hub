@@ -1,6 +1,8 @@
 from datetime import timedelta
 import random
+import re
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import BooleanField, Q, Value
 from django.urls import reverse
@@ -19,13 +21,20 @@ from account.models import PaymentMethod, Profile
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
 from common.geocoding import PostcodeGeocoder
-from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, Product
+from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, OrderImage, Product
 from mobile_api.models import MobileDevice
 from transaction.forms import RentalEnquiryForm
-from transaction.models import Transaction, TransactionFeedback, TransactionMessage, TransactionMessageImage
+from transaction.models import Transaction, TransactionFeedback, TransactionImage, TransactionMessage, TransactionMessageImage
+from transaction.helpers import (
+    get_transaction_pricing,
+    sync_transaction_fee_charges,
+    sync_transaction_pricing,
+)
+from transaction.stripe_connect import stripe_connect_service
 from transaction.tasks import (
     async_collect_deposit_hold,
     async_confirm_card_setup,
+    async_resolve_deposit_hold,
     async_setup_deposit_card_and_test_hold,
 )
 
@@ -33,7 +42,9 @@ from .serializers import (
     CategorySummarySerializer,
     MobileTokenObtainSerializer,
     MobileDeviceRegisterSerializer,
+    MobileNotificationPreferencesSerializer,
     MobileDeviceUnregisterSerializer,
+    OrderCreateSerializer,
     OrderAmendSerializer,
     OrderSummarySerializer,
     PaymentMethodSerializer,
@@ -97,10 +108,36 @@ def _parse_distance_km(distance_raw):
 def _resolve_origin_coordinates(location):
     if not location:
         return None, None
+
+    # Accept direct coordinate input from mobile, e.g. "51.50740, -0.12780".
+    coordinate_match = re.match(
+        r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$',
+        location,
+    )
+    if coordinate_match:
+        try:
+            lat = float(coordinate_match.group(1))
+            lon = float(coordinate_match.group(2))
+        except (TypeError, ValueError):
+            lat = None
+            lon = None
+        if lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180:
+            return lat, lon
+
     coords = PostcodeGeocoder.geocode_location(location)
     if not coords:
         return None, None
     return coords.get('latitude'), coords.get('longitude')
+
+
+def _price_per_day_for_days(order, rental_days):
+    bands = list(order.price_bands.all().order_by('duration_days'))
+    for band in bands:
+        if rental_days <= band.duration_days:
+            return float(band.price_per_day)
+    if bands:
+        return float(bands[-1].price_per_day)
+    return float(order.price or 0)
 
 
 def _filter_orders_by_distance(orders, origin_lat, origin_lon, max_distance_km=None):
@@ -176,6 +213,7 @@ def _holding_statuses():
         Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
         Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
         Transaction.AWAITING_FEEDBACK,
+        Transaction.FEEDBACK_ONE_SIDED,
     )
 
 
@@ -264,13 +302,27 @@ class TransactionAccessMixin:
         return txn.user_aggressive_id == self.request.user.id
 
     def _has_verified_payment_card(self, txn):
-        payment_card_required = (txn.deposit > 0 or txn.price > 0)
+        payment_card_required = (
+            txn.deposit > 0
+            or txn.price > 0
+            or (txn.delivery_cost or 0) > 0
+            or (txn.rentalution_fee or 0) > 0
+        )
         if not payment_card_required:
             return True
         return (
             txn.deposit_card_setup_status == txn.CARD_READY
             and txn.deposit_test_hold_status == txn.TEST_HOLD_SUCCESS
         )
+
+    def _rental_payment_required(self, txn):
+        total_due = ((txn.quantity or 0) * (txn.price or 0)) + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0)
+        return total_due > 0
+
+    def _is_rental_payment_collected(self, txn):
+        if not self._rental_payment_required(txn):
+            return True
+        return txn.payment_status == txn.PAYMENT_CAPTURED_PLACEHOLDER
 
     def _is_deposit_funds_held(self, txn):
         if txn.deposit <= 0:
@@ -450,6 +502,9 @@ class MobileDeviceRegisterView(APIView):
             'platform': data.get('platform') or MobileDevice.PLATFORM_OTHER,
             'device_id': data.get('device_id', ''),
             'app_version': data.get('app_version', ''),
+            'notify_transaction_enquiry': data.get('notify_transaction_enquiry', True),
+            'notify_transaction_messages': data.get('notify_transaction_messages', True),
+            'notify_in_app_alerts': data.get('notify_in_app_alerts', True),
             'active': True,
         }
         device, created = MobileDevice.objects.update_or_create(
@@ -480,6 +535,41 @@ class MobileDeviceUnregisterView(APIView):
             queryset = queryset.filter(token=token)
         updated = queryset.update(active=False)
         return Response({'status': 'ok', 'updated': updated}, status=status.HTTP_200_OK)
+
+
+class MobileNotificationPreferencesView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def _current_values(self, user):
+        device = MobileDevice.objects.filter(user=user, active=True).order_by('-updated').first()
+        if device is None:
+            return {
+                'notify_transaction_enquiry': True,
+                'notify_transaction_messages': True,
+                'notify_in_app_alerts': True,
+            }
+        return {
+            'notify_transaction_enquiry': bool(device.notify_transaction_enquiry),
+            'notify_transaction_messages': bool(device.notify_transaction_messages),
+            'notify_in_app_alerts': bool(device.notify_in_app_alerts),
+        }
+
+    def get(self, request, *args, **kwargs):
+        return Response(self._current_values(request.user), status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        serializer = MobileNotificationPreferencesSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updates = serializer.validated_data
+
+        queryset = MobileDevice.objects.filter(user=request.user, active=True)
+        if updates and queryset.exists():
+            queryset.update(**updates)
+
+        payload = self._current_values(request.user)
+        payload['updated'] = bool(updates)
+        payload['applied_to_active_devices'] = queryset.count() if updates else 0
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class MobileAccountDetailView(APIView):
@@ -589,6 +679,45 @@ class MobilePaymentMethodDeleteView(APIView):
         return Response({'status': 'ok', 'message': 'Payment method deleted.'})
 
 
+class MobileAppConfigView(APIView):
+    permission_classes = (AllowAny,)
+
+    def get(self, request, *args, **kwargs):
+        return Response({
+            'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),
+        })
+
+
+class MobilePaymentMethodSetupIntentView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        result = stripe_connect_service.create_user_setup_intent(user=request.user)
+        if not result.get('ok'):
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class MobilePaymentMethodConfirmView(APIView):
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (JSONParser,)
+
+    def post(self, request, *args, **kwargs):
+        setup_intent_id = (request.data.get('setup_intent_id') or '').strip()
+        payment_method_id = (request.data.get('payment_method_id') or '').strip()
+        if not setup_intent_id and not payment_method_id:
+            raise ValidationError('Missing setup intent or payment method.')
+
+        result = stripe_connect_service.confirm_user_payment_method(
+            user=request.user,
+            setup_intent_id=setup_intent_id,
+            payment_method_id=payment_method_id,
+        )
+        if not result.get('ok'):
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
+
+
 class OrderAccessMixin:
     def _get_order(self):
         order = generics.get_object_or_404(Order, id=self.kwargs['order_id'])
@@ -646,6 +775,51 @@ class OrderAmendView(OrderAccessMixin, APIView):
         return Response(OrderSummarySerializer(order, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
+class OrderCreateView(APIView):
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (JSONParser,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = OrderCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        payload = OrderSummarySerializer(order, context={'request': request}).data
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class OrderImageUploadView(APIView):
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, order_id, *args, **kwargs):
+        try:
+            order = Order.objects.get(id=order_id)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if order.user_id != request.user.id:
+            raise PermissionDenied('You can only upload images to your own listings.')
+
+        images = request.FILES.getlist('images')
+        if not images:
+            return Response({'error': 'No image files provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        has_existing_images = order.images.filter(active=True).exists()
+        for idx, uploaded in enumerate(images):
+            mark_main = not has_existing_images and idx == 0
+            OrderImage.objects.create(
+                order=order,
+                image=uploaded,
+                user=request.user,
+                first_image=mark_main,
+                is_main=mark_main,
+                active=True,
+            )
+
+        payload = OrderSummarySerializer(order, context={'request': request}).data
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
 class OrderCancelView(OrderAccessMixin, APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -695,13 +869,7 @@ class CategoryProductsView(generics.ListAPIView):
             except (TypeError, ValueError):
                 max_distance_km = None
 
-        origin_lat = None
-        origin_lon = None
-        if location:
-            coords = PostcodeGeocoder.geocode_location(location)
-            if coords:
-                origin_lat = coords.get('latitude')
-                origin_lon = coords.get('longitude')
+        origin_lat, origin_lon = _resolve_origin_coordinates(location)
 
         queryset = (
             Product.objects.filter(category_id__in=_category_descendant_ids(category))
@@ -855,6 +1023,7 @@ class SearchProductsView(generics.ListAPIView):
         category_slug = (self.request.GET.get('category') or '').strip()
         location = (self.request.GET.get('location') or '').strip()
         distance_raw = (self.request.GET.get('distance') or '').strip()
+        include_zero_listings = (self.request.GET.get('include_zero_listings') or '').strip().lower() == 'true'
         sort_by = (self.request.GET.get('sort_by') or 'name').strip().lower()
 
         max_distance_km = None
@@ -877,18 +1046,12 @@ class SearchProductsView(generics.ListAPIView):
                 | Q(category_id__title__icontains=q)
             )
 
-        origin_lat = None
-        origin_lon = None
-        if location:
-            coords = PostcodeGeocoder.geocode_location(location)
-            if coords:
-                origin_lat = coords.get('latitude')
-                origin_lon = coords.get('longitude')
+        origin_lat, origin_lon = _resolve_origin_coordinates(location)
 
         matched = []
         for product in products:
             active_orders = list(product.order_set.filter(status=Order.ACTIVE))
-            if not active_orders:
+            if not active_orders and not include_zero_listings:
                 continue
 
             nearest_distance = None
@@ -998,44 +1161,8 @@ class TransactionListView(generics.ListAPIView):
 
         start_date = enquiry_form.cleaned_data.get('rental_start_date') if enquiry_form.is_valid() else None
         end_date = enquiry_form.cleaned_data.get('rental_end_date') if enquiry_form.is_valid() else None
-
-        # Check if transaction already exists for this user pair and order.
-        # Support either orientation for backward compatibility.
-        existing = Transaction.objects.filter(
-            order_passive=order,
-        ).filter(
-            Q(user_passive=order.user, user_aggressive=user)
-            | Q(user_passive=user, user_aggressive=order.user)
-        ).first()
-
-        if existing:
-            if start_date and end_date and (
-                existing.rental_start_date != start_date or existing.rental_end_date != end_date
-            ):
-                _release_transaction_dates(existing)
-                existing.rental_start_date = start_date
-                existing.rental_end_date = end_date
-                existing.save(update_fields=['rental_start_date', 'rental_end_date', 'amended'])
-                if existing.transaction_status in _holding_statuses():
-                    _reserve_transaction_dates(existing)
-
-            if enquiry_message:
-                existing.enquiry_message = enquiry_message
-                existing.save(update_fields=['enquiry_message', 'amended'])
-                TransactionMessage.objects.create(
-                    user_from=user,
-                    user_to=order.user,
-                    transaction=existing,
-                    subject=f'Transaction {existing.transaction_reference}',
-                    description=enquiry_message,
-                )
-
-            # Return existing transaction
-            serializer = TransactionDetailSerializer(
-                existing,
-                context={'request': request},
-            )
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        rental_days = (end_date - start_date).days + 1 if start_date and end_date else 1
+        price_per_day = _price_per_day_for_days(order, rental_days)
 
         # Create new transaction
         try:
@@ -1050,7 +1177,7 @@ class TransactionListView(generics.ListAPIView):
                 deposit_status=Transaction.DEPOSIT_PENDING,
                 product_status=Transaction.CONDITION_PENDING,
                 quantity=1,
-                price=float(order.price or 0),
+                price=price_per_day,
                 friend_price=order.mates_rates,
                 deposit=float(order.deposit or 0),
                 friend_deposit=order.mates_deposit,
@@ -1062,6 +1189,39 @@ class TransactionListView(generics.ListAPIView):
                 rental_end_date=end_date,
                 enquiry_message=enquiry_message,
             )
+
+            pricing = get_transaction_pricing(transaction)
+            sync_transaction_pricing(transaction, pricing)
+            transaction.save(update_fields=[
+                'delivery_distance_km',
+                'delivery_cost',
+                'rentalution_fee',
+                'amended',
+            ])
+            sync_transaction_fee_charges(transaction, pricing)
+
+            transaction.deposit_handling = transaction.calculate_deposit_handling()
+
+            if order.product.is_high_risk():
+                renter_profile = Profile.objects.get(user=user)
+                lender_profile = Profile.objects.get(user=order.user)
+
+                requires_kyc = False
+                kyc_message = f'This is a high-risk product (risk rating: {order.product.get_effective_risk_rating()}/100). '
+
+                if not is_profile_kyc_verified(renter_profile):
+                    requires_kyc = True
+                    kyc_message += 'As the person who is borrowing, you must complete KYC verification. '
+
+                if not is_profile_kyc_verified(lender_profile):
+                    requires_kyc = True
+                    kyc_message += 'The lender must also complete KYC verification before this rental can proceed. '
+
+                if requires_kyc:
+                    transaction.requires_kyc = True
+                    transaction.requires_kyc_message = kyc_message
+
+            transaction.save()
 
             _reserve_transaction_dates(transaction)
 
@@ -1083,6 +1243,12 @@ class TransactionListView(generics.ListAPIView):
                     description='You have a new enquiry on your listing.',
                     is_system_generated=True,
                 )
+
+            for ord_image in order.images.filter(active=True):
+                txn_image = TransactionImage()
+                txn_image.image = ord_image.image
+                txn_image.transaction = transaction
+                txn_image.save()
 
             # Return the created transaction
             serializer = TransactionDetailSerializer(
@@ -1252,13 +1418,22 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             self._system_message(txn, request.user, recipient, subject, description)
 
         def deposit_proposal_iterations():
-            return txn.transactionmessage_set.filter(
-                subject__startswith='Deposit return proposal',
-                user_from=txn.user_passive,
-            ).count()
+            raw_value = getattr(txn, 'deposit_proposal_iteration_count', 0) or 0
+            return max(0, min(5, int(raw_value)))
+
+        def deposit_iteration_warning(iteration_count):
+            if iteration_count < 3:
+                return ''
+            return (
+                f'Iteration {iteration_count}/5: if you do not reach agreement, this will be escalated to a dispute '
+                'and may incur a fee.'
+            )
 
         def is_missing_rental_voided():
             return '[MISSING_RENTAL_VOIDED]' in (txn.deposit_resolution_notes or '')
+
+        def refresh_feedback_deadline():
+            txn.refresh_feedback_deadline()
 
         def uploaded_video_url(subject_prefix, description):
             video_files = request.FILES.getlist('videos')
@@ -1480,6 +1655,31 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.save(update_fields=['deposit_card_setup_status', 'amended'])
             return Response({'status': 'ok', 'message': 'Card setup started.'})
 
+        if action == 'create_stripe_setup_intent' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
+            if txn.deposit_collected_placeholder:
+                raise ValidationError('Card setup is no longer available once deposit is collected.')
+
+            payment_card_required = (txn.deposit > 0 or txn.price > 0)
+            if not payment_card_required:
+                raise ValidationError('Card setup is not required for this transaction.')
+
+            setup_result = stripe_connect_service.create_setup_intent(transaction=txn)
+            if not setup_result.get('ok'):
+                raise ValidationError(setup_result.get('error') or 'Failed to create setup intent.')
+
+            setup_intent_id = (setup_result.get('setup_intent_id') or '').strip()
+            if setup_intent_id:
+                txn.stripe_setup_intent_id = setup_intent_id
+                txn.save(update_fields=['stripe_setup_intent_id', 'amended'])
+
+            return Response({
+                'status': 'ok',
+                'message': 'Stripe setup intent created.',
+                'provider': setup_result.get('provider') or '',
+                'setup_intent_id': setup_intent_id,
+                'client_secret': setup_result.get('client_secret') or '',
+            })
+
         if action == 'confirm_stripe_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
             payment_method_id = (request.data.get('payment_method_id') or '').strip()
             setup_intent_id = (data.get('setup_intent_id') or '').strip()
@@ -1533,7 +1733,66 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.payment_collected_placeholder = True
             txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER
             txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if txn.deposit_collected_placeholder else txn.DEPOSIT_PENDING
-            txn.save()
+            rental_amount = round((txn.quantity or 0) * (txn.price or 0), 2)
+            total_before_deposit = round(rental_amount + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0), 2)
+            txn.payment_placeholder_notes = (
+                f'Rental £{rental_amount:.2f}; '
+                f'Delivery £{(txn.delivery_cost or 0):.2f}; '
+                f'Rentalution fee £{(txn.rentalution_fee or 0):.2f}; '
+                f'Total before deposit £{total_before_deposit:.2f}'
+            )
+
+            payment_capture_result = stripe_connect_service.collect_rental_payment(transaction=txn)
+            if not payment_capture_result.get('ok'):
+                raise ValidationError(
+                    f'Rental payment capture failed. Handover PIN will not be shown until payment succeeds. {payment_capture_result.get("error") or ""}'.strip()
+                )
+
+            txn.payment_collected_placeholder = True
+            txn.payment_status = payment_capture_result.get('payment_status', txn.PAYMENT_CAPTURED_PLACEHOLDER)
+            txn.payment_collection_requested_at = payment_capture_result.get('collection_requested_at', timezone.now())
+            txn.payment_collection_reference = payment_capture_result.get('collection_reference', '')
+            charged_amount = float(payment_capture_result.get('charged_amount') or 0)
+            capture_note = (
+                f'[STRIPE_RENTAL_CAPTURE] charged={charged_amount:.2f} '
+                f'status={payment_capture_result.get("payment_intent_status") or ""} '
+                f'ref={txn.payment_collection_reference}'
+            ).strip()
+            if capture_note:
+                existing_payment_notes = (txn.payment_placeholder_notes or '').strip()
+                if capture_note not in existing_payment_notes:
+                    txn.payment_placeholder_notes = f'{existing_payment_notes}\n{capture_note}'.strip()
+
+            should_collect_deposit_now = (
+                txn.deposit > 0
+                and self._can_collect_deposit(txn)
+                and txn.deposit_collection_status != txn.COLLECT_SUCCESS
+            )
+            if should_collect_deposit_now:
+                txn.deposit_collection_status = txn.COLLECT_NOT_RUN
+                txn.deposit_collection_requested_at = timezone.now()
+                txn.save(update_fields=[
+                    'prev_transaction_status',
+                    'transaction_status',
+                    'checkout_condition_video_url',
+                    'checkout_borrower_confirmed',
+                    'checkout_borrower_video_url',
+                    'checkout_handover_pin',
+                    'checkout_handover_pin_generated_at',
+                    'checkout_handover_verified_at',
+                    'product_status',
+                    'payment_collected_placeholder',
+                    'payment_status',
+                    'payment_collection_requested_at',
+                    'payment_collection_reference',
+                    'deposit_status',
+                    'payment_placeholder_notes',
+                    'deposit_collection_status',
+                    'deposit_collection_requested_at',
+                    'amended',
+                ])
+            else:
+                txn.save()
             self._system_message(
                 txn,
                 txn.user_passive,
@@ -1541,6 +1800,8 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 f'Checkout evidence submitted {txn.transaction_reference}',
                 'Lender submitted rental-start evidence. Borrower should confirm or submit counter-evidence.',
             )
+            if should_collect_deposit_now:
+                async_collect_deposit_hold.delay(transaction_id=txn.id)
             return Response({'status': 'ok', 'message': 'Rental started and checkout evidence submitted.'})
 
         if action == 'confirm_checkout_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
@@ -1548,11 +1809,15 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 raise ValidationError('Lender checkout evidence is missing.')
             txn.checkout_borrower_confirmed = True
             update_fields = ['checkout_borrower_confirmed', 'amended']
-            if self._is_deposit_funds_held(txn) and not txn.checkout_handover_pin:
+            if self._is_rental_payment_collected(txn) and self._is_deposit_funds_held(txn) and not txn.checkout_handover_pin:
                 txn.checkout_handover_pin = _generate_txn_pin(6)
                 txn.checkout_handover_pin_generated_at = timezone.now()
                 update_fields.extend(['checkout_handover_pin', 'checkout_handover_pin_generated_at'])
             txn.save(update_fields=update_fields)
+            if not self._is_rental_payment_collected(txn):
+                return Response({'status': 'ok', 'message': 'Checkout evidence confirmed, but PIN is blocked until rental payment is captured.'})
+            if not self._is_deposit_funds_held(txn):
+                return Response({'status': 'ok', 'message': 'Checkout evidence confirmed, but PIN is blocked until deposit funds are held.'})
             return Response({'status': 'ok', 'message': 'Checkout evidence confirmed.'})
 
         if action == 'submit_checkout_borrower_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
@@ -1567,11 +1832,15 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.checkout_borrower_video_url = borrower_video
             txn.checkout_borrower_confirmed = False
             update_fields = ['checkout_borrower_video_url', 'checkout_borrower_confirmed', 'amended']
-            if self._is_deposit_funds_held(txn) and not txn.checkout_handover_pin:
+            if self._is_rental_payment_collected(txn) and self._is_deposit_funds_held(txn) and not txn.checkout_handover_pin:
                 txn.checkout_handover_pin = _generate_txn_pin(6)
                 txn.checkout_handover_pin_generated_at = timezone.now()
                 update_fields.extend(['checkout_handover_pin', 'checkout_handover_pin_generated_at'])
             txn.save(update_fields=update_fields)
+            if not self._is_rental_payment_collected(txn):
+                return Response({'status': 'ok', 'message': 'Borrower checkout counter-evidence submitted, but PIN is blocked until rental payment is captured.'})
+            if not self._is_deposit_funds_held(txn):
+                return Response({'status': 'ok', 'message': 'Borrower checkout counter-evidence submitted, but PIN is blocked until deposit funds are held.'})
             return Response({'status': 'ok', 'message': 'Borrower checkout counter-evidence submitted.'})
 
         if action == 'verify_checkout_handover_pin' and is_lender and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
@@ -1580,6 +1849,8 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 code_type, qr_pin = _parse_qr_payload(data.get('qr_payload'))
                 if code_type == 'CHECKOUT_PIN':
                     pin = qr_pin
+            if not self._is_rental_payment_collected(txn):
+                raise ValidationError('Rental payment must be captured before handover verification.')
             if not self._is_deposit_funds_held(txn):
                 raise ValidationError('Deposit funds must be held before handover verification.')
             if not txn.checkout_handover_pin:
@@ -1686,22 +1957,34 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             if proposed_amount < 0 or proposed_amount > txn.deposit:
                 raise ValidationError('Proposed amount must be between 0 and deposit value.')
             if iterations >= 5:
-                raise ValidationError('Maximum deposit proposal iterations reached (5). Raise dispute to continue.')
+                raise ValidationError('Maximum deposit proposal iterations reached (5). Raise dispute to continue; disputes may incur a fee.')
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
             txn.deposit_status = txn.DEPOSIT_PENDING
             txn.deposit_proposed_return_amount = proposed_amount
             txn.deposit_proposed_by_lender_at = timezone.now()
             txn.deposit_proposal_accepted_at = None
+            txn.deposit_proposal_iteration_count = iterations + 1
             txn.deposit_resolution_notes = notes
-            txn.save()
+            txn.save(update_fields=[
+                'prev_transaction_status',
+                'transaction_status',
+                'deposit_status',
+                'deposit_proposed_return_amount',
+                'deposit_proposed_by_lender_at',
+                'deposit_proposal_accepted_at',
+                'deposit_proposal_iteration_count',
+                'deposit_resolution_notes',
+                'amended',
+            ])
             notify_counterparty(
                 f'Deposit proposal updated {txn.transaction_reference}',
                 f'The lender proposed returning {proposed_amount:.2f} from the deposit.',
             )
             next_iteration = iterations + 1
-            if next_iteration == 5:
-                return Response({'status': 'ok', 'message': f'Deposit proposal saved: {proposed_amount:.2f}. Iteration 5/5 (final warning).'} )
+            warning = deposit_iteration_warning(next_iteration)
+            if warning:
+                return Response({'status': 'ok', 'message': f'Deposit proposal saved: {proposed_amount:.2f}. {warning}'})
             return Response({'status': 'ok', 'message': f'Deposit proposal saved: {proposed_amount:.2f}. Iteration {next_iteration}/5.'})
 
         if action == 'agree_deposit_return' and is_renter and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_PENDING:
@@ -1709,12 +1992,17 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 raise ValidationError('No lender proposal to accept yet.')
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.AWAITING_FEEDBACK
+            refresh_feedback_deadline()
             txn.deposit_status = txn.DEPOSIT_RETURNED_FULL if abs(txn.deposit_proposed_return_amount - txn.deposit) < 0.01 else txn.DEPOSIT_RETURNED_REDUCED
             txn.deposit_proposal_accepted_at = timezone.now()
-            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'deposit_status', 'deposit_proposal_accepted_at', 'amended'])
+            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'feedback_window_expires_at', 'deposit_status', 'deposit_proposal_accepted_at', 'amended'])
             notify_counterparty(
                 f'Deposit proposal accepted {txn.transaction_reference}',
                 'The renter accepted the deposit return proposal.',
+            )
+            async_resolve_deposit_hold.delay(
+                transaction_id=txn.id,
+                return_amount=txn.deposit_proposed_return_amount,
             )
             return Response({'status': 'ok', 'message': 'Deposit proposal accepted.'})
 
@@ -1741,7 +2029,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                     f'Deposit dispute auto-escalated {txn.transaction_reference}',
                     'Maximum proposal iterations reached (5). Deposit dispute auto-escalated to admin review.',
                 )
-                return Response({'status': 'ok', 'message': 'Max proposal iterations reached. Dispute auto-escalated.'})
+                return Response({'status': 'ok', 'message': 'Max proposal iterations reached. Dispute auto-escalated and may incur a fee.'})
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_CONTESTED
             txn.deposit_status = txn.DEPOSIT_MEDIATION
@@ -1791,6 +2079,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             (is_lender or is_renter) and txn.transaction_status in (
             txn.RENTAL_RETURNED_DEPOSIT_RETURNED,
             txn.AWAITING_FEEDBACK,
+            txn.FEEDBACK_ONE_SIDED,
             txn.RENTAL_PROCESS_COMPLETED,
             )
             or (is_renter and txn.transaction_status == txn.CANCEL_ACCEPTED and is_missing_rental_voided())
@@ -1835,6 +2124,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 left_for=request.user,
             ).exists()
             if txn.transaction_status == txn.CANCEL_ACCEPTED and is_missing_rental_voided():
+                txn.prev_transaction_status = txn.transaction_status
+                txn.transaction_status = txn.FEEDBACK_ONE_SIDED
+                refresh_feedback_deadline()
+                txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'feedback_window_expires_at', 'amended'])
                 notify_counterparty(
                     f'Borrower feedback submitted {txn.transaction_reference}',
                     'Borrower submitted final feedback for missing-rental voided transaction.',
@@ -1842,8 +2135,12 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 return Response({'status': 'ok', 'message': 'Feedback submitted.'})
 
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.AWAITING_FEEDBACK
-            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'amended'])
+            txn.transaction_status = txn.RENTAL_PROCESS_COMPLETED if other_feedback_exists else txn.FEEDBACK_ONE_SIDED
+            if other_feedback_exists:
+                txn.feedback_window_expires_at = None
+            else:
+                refresh_feedback_deadline()
+            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'feedback_window_expires_at', 'amended'])
             notify_counterparty(
                 f'Feedback received {txn.transaction_reference}',
                 'The other party left feedback on this transaction.',

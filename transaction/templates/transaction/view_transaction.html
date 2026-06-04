@@ -167,189 +167,75 @@
                                 </tr>
                                 {% endif %}
 
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_ENQUIRY and is_lender %}table-danger{% elif step >= 1 %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">1</span></td>
-                                    <td>Rental discussion</td>
-                                    <td>Both</td>
-                                    <td><small>{{ transaction.created|date:"M d, Y" }}</small></td>
+                                {% for workflow_step in workflow_payload.timeline %}
+                                <tr class="{% if workflow_step.current %}table-danger{% elif workflow_step.done %}table-success{% endif %}">
+                                    <td><span class="workflow-step-circle">{{ workflow_step.step }}</span></td>
+                                    <td>{{ workflow_step.label }}</td>
                                     <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_ENQUIRY and is_lender %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and not transaction.lender_agreed_at and is_lender %}table-danger{% elif transaction.lender_agreed_at %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">2</span></td>
-                                    <td>Contract confirmed - Lender</td>
-                                    <td>Lender</td>
-                                    <td>
-                                        {% if transaction.lender_agreed_at %}
-                                            <small>{{ transaction.lender_agreed_at|date:"M d, Y H:i" }}</small>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_AGREED %}
-                                            <small>Earliest start: now</small>
+                                        {% if workflow_step.step == 1 %}
+                                            Both
+                                        {% elif workflow_step.step == 2 %}
+                                            Lender
+                                        {% elif workflow_step.step == 3 %}
+                                            Borrower
+                                        {% elif workflow_step.step == 4 %}
+                                            Borrower
+                                        {% elif workflow_step.step == 5 %}
+                                            Lender
                                         {% else %}
-                                            <small class="text-muted">TBC</small>
+                                            Both
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and not transaction.lender_agreed_at and is_lender %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.lender_agreed_at %}
+                                        {% if workflow_step.step == 1 %}
+                                            <small>{{ transaction.created|date:"M d, Y" }}</small>
+                                        {% elif workflow_step.step == 2 or workflow_step.step == 3 %}
+                                            {% if transaction.transaction_status == transaction.RENTAL_AGREED %}
+                                                <small>Earliest start: now</small>
+                                            {% else %}
+                                                <small class="text-muted">TBC</small>
+                                            {% endif %}
+                                        {% elif workflow_step.step == 4 %}
+                                            {% if transaction.deposit_test_hold_at %}
+                                                <small>{{ transaction.deposit_test_hold_at|date:"M d, Y H:i" }}</small>
+                                            {% elif transaction.transaction_status == transaction.RENTAL_AGREED and transaction.renter_agreed_at %}
+                                                <small>Available now (contracts signed)</small>
+                                            {% else %}
+                                                <small class="text-muted">TBC</small>
+                                            {% endif %}
+                                        {% elif workflow_step.step == 5 %}
+                                            {% if transaction.payment_collection_requested_at %}
+                                                <small>{{ transaction.payment_collection_requested_at|date:"M d, Y" }}</small>
+                                            {% elif transaction.rental_start_date %}
+                                                <small>Earliest start: {{ transaction.rental_start_date|date:"M d, Y" }}</small>
+                                            {% else %}
+                                                <small class="text-muted">TBC</small>
+                                            {% endif %}
+                                        {% elif workflow_step.step == 6 %}
+                                            {% if transaction.rental_end_date %}
+                                                <small>{{ transaction.rental_end_date|date:"M d, Y" }}</small>
+                                            {% else %}
+                                                <small class="text-muted">TBC</small>
+                                            {% endif %}
+                                        {% else %}
+                                            {% if transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED %}
+                                                <small>{{ transaction.amended|date:"M d, Y" }}</small>
+                                            {% else %}
+                                                <small class="text-muted">TBC</small>
+                                            {% endif %}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if workflow_step.current %}
+                                            <span class="badge badge-danger">Current</span>
+                                        {% elif workflow_step.done %}
                                             <span class="badge badge-success">Completed</span>
                                         {% else %}
                                             <span class="badge badge-secondary">Pending</span>
                                         {% endif %}
                                     </td>
                                 </tr>
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at and is_renter %}table-danger{% elif transaction.renter_agreed_at %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">3</span></td>
-                                    <td>Contract confirmed - Borrower</td>
-                                    <td>Borrower</td>
-                                    <td>
-                                        {% if transaction.renter_agreed_at %}
-                                            <small>{{ transaction.renter_agreed_at|date:"M d, Y H:i" }}</small>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_AGREED %}
-                                            <small>Earliest start: now</small>
-                                        {% else %}
-                                            <small class="text-muted">TBC</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at and is_renter %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.renter_agreed_at %}
-                                            <span class="badge badge-success">Completed</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% if transaction.deposit > 0 or transaction.price > 0 %}
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.renter_agreed_at and transaction.deposit_card_setup_status != transaction.CARD_READY and is_renter %}table-danger{% elif transaction.deposit_card_setup_status == transaction.CARD_READY %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">4</span></td>
-                                    <td>Add card details / use existing card</td>
-                                    <td>Borrower</td>
-                                    <td>
-                                        {% if transaction.deposit_test_hold_at %}
-                                            <small>{{ transaction.deposit_test_hold_at|date:"M d, Y H:i" }}</small>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_AGREED and transaction.renter_agreed_at %}
-                                            <small>Available now (contracts signed)</small>
-                                        {% else %}
-                                            <small class="text-muted">TBC</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.renter_agreed_at and transaction.deposit_card_setup_status != transaction.CARD_READY and is_renter %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.deposit_card_setup_status == transaction.CARD_READY %}
-                                            <span class="badge badge-success">Completed</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endif %}
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">5</span></td>
-                                    <td>
-                                        Rental handover
-                                        <div><small class="text-muted d-block">Follow these steps:</small></div>
-                                        <ul class="text-muted small mb-0 pl-3">
-                                            <li>Lender uploads checkout video evidence.</li>
-                                            <li>Borrower confirms it, or submits a response.</li>
-                                            <li>Borrower shares the rental PIN with the lender.</li>
-                                        </ul>
-                                    </td>
-                                    <td>Lender</td>
-                                    <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
-                                            <small>{{ transaction.rental_start_date|date:"M d, Y" }}</small>
-                                        {% elif transaction.rental_start_date %}
-                                            <small>Earliest start: {{ transaction.rental_start_date|date:"M d, Y" }}</small>
-                                        {% else %}
-                                            <small class="text-muted">TBC</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at and is_lender %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION %}
-                                            <span class="badge badge-info">In progress</span>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_ONGOING or transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED %}
-                                            <span class="badge badge-success">Completed</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr class="{% if transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and is_lender or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}table-danger{% elif transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED or transaction.transaction_status == transaction.MEDIATION_REQUIRED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">6</span></td>
-                                    <td>
-                                        Return and deposit wrap-up
-                                        <div><small class="text-muted d-block">Follow these steps:</small></div>
-                                        <ul class="text-muted small mb-0 pl-3">
-                                            <li>Borrower uploads return video evidence.</li>
-                                            <li>Lender confirms it, or submits a response.</li>
-                                            <li>Lender proposes the deposit return amount.</li>
-                                            <li>Borrower accepts it, or contests it.</li>
-                                            <li>If needed, this can go back and forth up to 5 times before dispute escalation.</li>
-                                            <li>Lender shares the return PIN with the borrower.</li>
-                                        </ul>
-                                    </td>
-                                    <td>Both</td>
-                                    <td>
-                                        {% if transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED %}
-                                            <small>{{ transaction.amended|date:"M d, Y" }}</small>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_RETURNED or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.MEDIATION_REQUIRED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
-                                            <small>{{ transaction.rental_end_date|date:"M d, Y" }}</small>
-                                        {% elif transaction.rental_end_date %}
-                                            <small>Earliest start: {{ transaction.rental_end_date|date:"M d, Y" }}</small>
-                                        {% else %}
-                                            <small class="text-muted">TBC</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and is_lender or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
-                                            <span class="badge badge-info">In progress</span>
-                                        {% elif transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED %}
-                                            <span class="badge badge-success">Completed</span>
-                                        {% elif transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
-                                            <span class="badge badge-warning">Escalated to dispute</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr class="{% if feedback_stage and not feedback_left_by_me %}table-danger{% elif feedback_both_complete or missing_rental_voided and feedback_left_by_me %}table-success{% endif %}">
-                                    <td><span class="workflow-step-circle">7</span></td>
-                                    <td>
-                                        Final feedback
-                                        <div><small class="text-muted d-block">Each person leaves:</small></div>
-                                        <ul class="text-muted small mb-0 pl-3">
-                                            <li>Star ratings</li>
-                                            <li>A short written comment</li>
-                                        </ul>
-                                    </td>
-                                    <td>Both</td>
-                                    <td>
-                                        {% if feedback_stage or missing_rental_voided and feedback_left_by_me %}
-                                            <small>{{ transaction.amended|date:"M d, Y" }}</small>
-                                        {% else %}
-                                            <small class="text-muted">TBC</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if feedback_stage and not feedback_left_by_me %}
-                                            <span class="badge badge-danger">Pending (my action)</span>
-                                        {% elif feedback_both_complete or missing_rental_voided and feedback_left_by_me %}
-                                            <span class="badge badge-success">Completed</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
+                                {% endfor %}
                             </tbody>
                         </table>
                     </div>
@@ -444,21 +330,78 @@
                     {% if feedback_left_by_me %}
                     <p class="mb-2 text-success">You have submitted your feedback.</p>
                     {% else %}
-                    <p class="mb-2 text-muted">Please rate this transaction (0 to 5) to close it.</p>
+                    <p class="mb-2 text-muted">Please rate this transaction to close it.</p>
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_feedback">
-                        <div class="form-group mb-2">
-                            <label for="id_feedback_communication_rating">Comms (0-5)</label>
-                            <input id="id_feedback_communication_rating" class="form-control" type="number" name="communication_rating" min="0" max="5" step="1" required>
+                        <div class="form-group mb-3">
+                            <label>Communication</label>
+                            <div class="star-rating-widget" data-field="communication_rating">
+                                <input type="hidden" id="id_feedback_communication_rating" name="communication_rating" value="0" required>
+                                <div class="stars-wrapper" role="radiogroup" aria-label="Communication rating">
+                                    <button type="button" class="star-button" data-rating="1" aria-label="1 star">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="2" aria-label="2 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="3" aria-label="3 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="4" aria-label="4 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="5" aria-label="5 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group mb-2">
-                            <label for="id_feedback_delivery_return_rating">Delivery and return (0-5)</label>
-                            <input id="id_feedback_delivery_return_rating" class="form-control" type="number" name="delivery_return_rating" min="0" max="5" step="1" required>
+                        <div class="form-group mb-3">
+                            <label>Delivery and Return</label>
+                            <div class="star-rating-widget" data-field="delivery_return_rating">
+                                <input type="hidden" id="id_feedback_delivery_return_rating" name="delivery_return_rating" value="0" required>
+                                <div class="stars-wrapper" role="radiogroup" aria-label="Delivery and return rating">
+                                    <button type="button" class="star-button" data-rating="1" aria-label="1 star">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="2" aria-label="2 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="3" aria-label="3 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="4" aria-label="4 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="5" aria-label="5 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group mb-2">
-                            <label for="id_feedback_overall_rating">Overall (0-5)</label>
-                            <input id="id_feedback_overall_rating" class="form-control" type="number" name="overall_rating" min="0" max="5" step="1" required>
+                        <div class="form-group mb-3">
+                            <label>Overall</label>
+                            <div class="star-rating-widget" data-field="overall_rating">
+                                <input type="hidden" id="id_feedback_overall_rating" name="overall_rating" value="0" required>
+                                <div class="stars-wrapper" role="radiogroup" aria-label="Overall rating">
+                                    <button type="button" class="star-button" data-rating="1" aria-label="1 star">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="2" aria-label="2 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="3" aria-label="3 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="4" aria-label="4 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                    <button type="button" class="star-button" data-rating="5" aria-label="5 stars">
+                                        <span class="star-icon" aria-hidden="true">★</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         <div class="form-group mb-2">
                             <label for="id_feedback_comment">Any comments</label>
@@ -677,9 +620,14 @@
                         Rental is due to begin but cannot be started yet because the borrower has not completed payment card setup.
                     </div>
                     {% else %}
-                    <form method="post">
+                    <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="initiate_rental">
+                        <div class="form-group">
+                            <label for="id_checkout_video_file">Checkout condition video upload</label>
+                            <input id="id_checkout_video_file" class="form-control-file" type="file" name="checkout_video_file" accept="video/*">
+                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                        </div>
                         <div class="form-group">
                             <label for="id_checkout_video_url">Checkout condition video URL</label>
                             <input id="id_checkout_video_url" class="form-control" type="url" name="checkout_video_url" placeholder="https://...">
@@ -717,9 +665,14 @@
                         <input type="hidden" name="action" value="confirm_checkout_evidence">
                         <button class="btn btn-success btn-block" type="submit">Agree With Lender Evidence</button>
                     </form>
-                    <form method="post">
+                    <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_checkout_borrower_evidence">
+                        <div class="form-group">
+                            <label for="id_checkout_borrower_video_file">Borrower counter-evidence video upload</label>
+                            <input id="id_checkout_borrower_video_file" class="form-control-file" type="file" name="checkout_borrower_video_file" accept="video/*">
+                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                        </div>
                         <div class="form-group">
                             <label for="id_checkout_borrower_video_url">Borrower counter-evidence video URL</label>
                             <input id="id_checkout_borrower_video_url" class="form-control" type="url" name="checkout_borrower_video_url" placeholder="https://..." value="{{ transaction.checkout_borrower_video_url }}">
@@ -734,7 +687,7 @@
             <div class="card mb-3 border-success">
                 <div class="card-body">
                     <h5 class="card-title text-success">Checkout Handover PIN</h5>
-                    <p class="mb-1">Share this PIN with the lender so they can complete handover verification:</p>
+                    <p class="mb-1">Payment has been captured and the deposit hold is in place. Share this PIN with the lender so they can complete handover verification:</p>
                     <p class="display-4 mb-1" style="letter-spacing: 0.2rem;">{{ transaction.checkout_handover_pin }}</p>
                     {% if transaction.checkout_handover_pin_generated_at %}
                     <p class="text-muted mb-0"><small>Generated: {{ transaction.checkout_handover_pin_generated_at|date:"M d, Y H:i" }}</small></p>
@@ -747,7 +700,7 @@
             <div class="card mb-3 border-primary">
                 <div class="card-body">
                     <h5 class="card-title">Action: Enter Borrower Checkout PIN (Lender)</h5>
-                    <p class="text-muted mb-2">Enter the PIN provided by borrower to confirm handover and start rental.</p>
+                    <p class="text-muted mb-2">This only appears after the borrower rental payment has been captured and the deposit hold has been placed. Enter the PIN provided by borrower to confirm handover and start rental.</p>
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="verify_checkout_handover_pin">
@@ -797,9 +750,14 @@
                     <div class="alert alert-info py-2 mb-3" role="alert">
                         Video evidence is easiest to record and upload using our Android/iOS app.
                     </div>
-                    <form method="post">
+                    <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_return_borrower_evidence">
+                        <div class="form-group">
+                            <label for="id_return_video_file">Borrower return evidence video upload</label>
+                            <input id="id_return_video_file" class="form-control-file" type="file" name="return_video_file" accept="video/*">
+                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                        </div>
                         <div class="form-group">
                             <label for="id_return_video_url">Borrower return evidence video URL</label>
                             <input id="id_return_video_url" class="form-control" type="url" name="return_video_url" placeholder="https://..." value="{{ transaction.return_borrower_video_url }}">
@@ -823,9 +781,14 @@
                         <input type="hidden" name="action" value="confirm_return_evidence">
                         <button class="btn btn-success btn-block" type="submit">Agree With Borrower Evidence</button>
                     </form>
-                    <form method="post">
+                    <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_lender_return_evidence">
+                        <div class="form-group">
+                            <label for="id_lender_return_video_file">Lender counter-evidence video upload</label>
+                            <input id="id_lender_return_video_file" class="form-control-file" type="file" name="lender_return_video_file" accept="video/*">
+                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                        </div>
                         <div class="form-group">
                             <label for="id_lender_return_video_url">Lender counter-evidence video URL</label>
                             <input id="id_lender_return_video_url" class="form-control" type="url" name="lender_return_video_url" placeholder="https://..." value="{{ transaction.return_lender_video_url }}">
@@ -840,7 +803,7 @@
             <div class="card mb-3 border-success">
                 <div class="card-body">
                     <h5 class="card-title text-success">Return Verification PIN</h5>
-                    <p class="mb-1">Give this PIN to the borrower for handover verification:</p>
+                    <p class="mb-1">Once the return evidence is agreed, give this PIN to the borrower for handover verification:</p>
                     <p class="display-4 mb-1" style="letter-spacing: 0.2rem;">{{ transaction.return_handover_pin }}</p>
                     {% if transaction.return_handover_pin_generated_at %}
                     <p class="text-muted mb-0"><small>Generated: {{ transaction.return_handover_pin_generated_at|date:"M d, Y H:i" }}</small></p>
@@ -853,7 +816,7 @@
             <div class="card mb-3 border-primary">
                 <div class="card-body">
                     <h5 class="card-title">Action: Enter Return Verification PIN</h5>
-                    <p class="text-muted mb-2">Ask the lender for the PIN and submit it to complete return handover.</p>
+                    <p class="text-muted mb-2">Ask the lender for the PIN after the return evidence is agreed, then submit it to complete return handover.</p>
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="verify_return_handover_pin">
@@ -887,10 +850,41 @@
             {% endif %}
             {% endif %}
 
+            {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h5 class="card-title">Deposit Proposal Progress</h5>
+                    <p class="mb-2"><strong>Iteration:</strong> {{ deposit_proposal_iteration_count }}/{{ deposit_proposal_iteration_limit }}</p>
+                    <div class="progress mb-2" style="height: 10px;">
+                        <div
+                            id="depositProposalProgressBar"
+                            data-progress-pct="{{ deposit_proposal_progress_pct }}"
+                            class="progress-bar {% if deposit_proposal_iteration_count >= 5 %}bg-danger{% elif deposit_proposal_iteration_count >= 3 %}bg-warning{% else %}bg-info{% endif %}"
+                            role="progressbar"
+                            style="width: 0%;"
+                            aria-valuenow="{{ deposit_proposal_iteration_count }}"
+                            aria-valuemin="0"
+                            aria-valuemax="{{ deposit_proposal_iteration_limit }}"
+                        ></div>
+                    </div>
+                    {% if deposit_proposal_warning_text %}
+                    <div class="alert {% if deposit_proposal_iteration_count >= 5 %}alert-danger{% else %}alert-warning{% endif %} mb-0" role="alert">
+                        {{ deposit_proposal_warning_text }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
             {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Propose Deposit Return (Lender)</h5>
+                    {% if deposit_proposal_iteration_count >= 5 %}
+                    <div class="alert alert-danger mb-3" role="alert">
+                        Maximum iterations reached (5/5). No further proposals can be submitted. Raise a dispute to continue; dispute handling may incur a fee.
+                    </div>
+                    {% endif %}
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="propose_deposit_return">
@@ -902,7 +896,7 @@
                             <label for="id_deposit_proposal_notes">Notes</label>
                             <textarea id="id_deposit_proposal_notes" class="form-control" name="deposit_resolution_notes" rows="2" placeholder="Reason for full/reduced return...">{{ transaction.deposit_resolution_notes }}</textarea>
                         </div>
-                        <button class="btn btn-primary btn-block" type="submit">Send / Update Proposal</button>
+                        <button class="btn btn-primary btn-block" type="submit" {% if deposit_proposal_iteration_count >= 5 %}disabled{% endif %}>Send / Update Proposal</button>
                     </form>
                 </div>
             </div>
@@ -1151,20 +1145,102 @@
             font-size: 0.74rem;
         }
     }
+
+    /* Star rating widget styles */
+    .star-rating-widget {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .stars-wrapper {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+    }
+
+    .star-button {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        line-height: 0;
+        cursor: pointer;
+        color: inherit;
+        border-radius: 8px;
+    }
+
+    .star-button:focus {
+        outline: none;
+    }
+
+    .star-button:focus-visible .star-icon {
+        transform: scale(1.08);
+        filter: drop-shadow(0 0 0.2rem rgba(255, 193, 7, 0.3));
+    }
+
+    .star-icon {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        line-height: 28px;
+        font-size: 28px;
+        text-align: center;
+        transition: transform 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+        color: #d7dde3;
+        user-select: none;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+    }
+
+    .star-button:hover .star-icon,
+    .star-button.is-active .star-icon,
+    .star-button.is-filled .star-icon {
+        color: #ffb300;
+    }
+
+    .star-button:hover .star-icon {
+        transform: scale(1.08);
+    }
+
+    .star-help-text {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
 </style>
 {% endblock %}
 
 {% block domready %}
-const imageInput = document.getElementById('id_message_images');
-const videoInput = document.getElementById('id_message_videos');
-const dropZone = document.getElementById('messageDropZone');
-const mediaList = document.getElementById('messageMediaList');
-const addImagesBtn = document.getElementById('addImagesBtn');
-const addVideosBtn = document.getElementById('addVideosBtn');
-const messageForm = document.getElementById('txnMessageForm');
-const messageFeedback = document.getElementById('messageSendFeedback');
+const depositProposalProgressBar = document.getElementById('depositProposalProgressBar');
+if (depositProposalProgressBar) {
+    const raw = Number.parseInt(depositProposalProgressBar.dataset.progressPct || '0', 10);
+    const clamped = Number.isNaN(raw) ? 0 : Math.max(0, Math.min(raw, 100));
+    depositProposalProgressBar.style.width = `${clamped}%`;
+}
+document.querySelectorAll('.star-rating-widget').forEach((widget) => {
+    const hiddenInput = widget.querySelector('input[type="hidden"]');
+    const buttons = Array.from(widget.querySelectorAll('.star-button'));
 
-// File size limits (in bytes)
+    function syncStars(rating) {
+        widget.classList.toggle('is-selected', rating > 0);
+        buttons.forEach((button) => {
+            const value = Number.parseInt(button.dataset.rating || '0', 10);
+            button.classList.toggle('is-filled', value <= rating);
+            button.classList.toggle('is-active', value === rating);
+            button.setAttribute('aria-checked', value === rating ? 'true' : 'false');
+            button.tabIndex = value === rating || rating === 0 ? 0 : -1;
+        });
+        hiddenInput.value = String(rating);
+    }
+
+    buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const rating = Number.parseInt(button.dataset.rating || '0', 10);
+            syncStars(rating);
+        });
+    });
+
+    syncStars(Number.parseInt(hiddenInput.value || '0', 10) || 0);
+});
+
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;  // 5 MB
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -1464,5 +1540,52 @@ countdownNodes.forEach((node) => {
 
     tick();
     setInterval(tick, 1000);
+});
+
+const liveStateEndpoint = "{% url 'transaction:transaction_live_state_json' transaction.transaction_reference %}";
+const livePollIntervalMs = {{ txn_live_poll_interval_ms|default:3000 }};
+let lastLiveSignature = "{{ txn_live_state_signature|escapejs }}";
+let livePollInFlight = false;
+
+function pollTransactionLiveState() {
+    if (document.hidden || livePollInFlight) {
+        return;
+    }
+
+    livePollInFlight = true;
+    fetch(liveStateEndpoint, {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    .then((response) => {
+        if (!response.ok) {
+            throw new Error('live state poll failed');
+        }
+        return response.json();
+    })
+    .then((payload) => {
+        const signature = String(payload.state_signature || '');
+        if (!signature) {
+            return;
+        }
+        if (signature !== lastLiveSignature) {
+            window.location.reload();
+            return;
+        }
+        lastLiveSignature = signature;
+    })
+    .catch(() => {
+        // Silent failure; next poll will retry.
+    })
+    .finally(() => {
+        livePollInFlight = false;
+    });
+}
+
+setInterval(pollTransactionLiveState, livePollIntervalMs);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        pollTransactionLiveState();
+    }
 });
 {% endblock %}

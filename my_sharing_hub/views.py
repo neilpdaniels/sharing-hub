@@ -621,14 +621,31 @@ def open_transactions(request):
 
         return False
 
+    mediation_statuses = [
+        Transaction.MEDIATION_REQUIRED,
+        Transaction.DISPUTE_REQUESTED,
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        Transaction.DEPOSIT_MEDIATION,
+    ]
+    awaiting_feedback_statuses = [
+        Transaction.AWAITING_FEEDBACK,
+        Transaction.FEEDBACK_ONE_SIDED,
+    ]
     closed_statuses = [
         Transaction.CANCEL_ACCEPTED,
         Transaction.DEPOSIT_RETURNED,
         Transaction.DEPOSIT_REDUCED,
-        Transaction.MEDIATION_REQUIRED,
+        Transaction.RENTAL_PROCESS_COMPLETED,
+        Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
+        Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
+        Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
     ]
-    object_pass_list = user.rel_from_set.exclude(transaction_status__in=closed_statuses)
-    object_agg_list = user.rel_to_set.exclude(transaction_status__in=closed_statuses)
+    object_pass_list = user.rel_from_set.exclude(
+        transaction_status__in=mediation_statuses + awaiting_feedback_statuses + closed_statuses
+    )
+    object_agg_list = user.rel_to_set.exclude(
+        transaction_status__in=mediation_statuses + awaiting_feedback_statuses + closed_statuses
+    )
     # object_list =  user.rel_to_set.filter()
     object_list = sorted(
     (chain(object_pass_list, object_agg_list)),
@@ -739,6 +756,8 @@ def open_transactions(request):
         'page' : page,
         'type' : 'open',
         'transactions' : transactions,
+        'booking_tabs': True,
+        'booking_tab': 'open',
         'active_view': active_view,
         'calendar_weeks': calendar_weeks,
         'calendar_month_label': month_anchor.strftime('%B %Y'),
@@ -757,7 +776,68 @@ def open_transactions(request):
     getUserTransactions.delay(int(request.user.id))
     return render(request, 'my_sharing_hub/x_transactions.html', context)
 
-# TODO
+@login_required
+def mediation_transactions(request):
+    user = request.user
+    mediation_statuses = [
+        Transaction.MEDIATION_REQUIRED,
+        Transaction.DISPUTE_REQUESTED,
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        Transaction.DEPOSIT_MEDIATION,
+    ]
+    object_pass_list = user.rel_from_set.filter(transaction_status__in=mediation_statuses)
+    object_agg_list = user.rel_to_set.filter(transaction_status__in=mediation_statuses)
+    object_list = sorted(
+        (chain(object_pass_list, object_agg_list)),
+        key=attrgetter('amended'), reverse=True)
+    paginator = Paginator(object_list, 10)
+    page = request.GET.get('page')
+    try:
+        transactions = paginator.page(page)
+    except PageNotAnInteger:
+        transactions = paginator.page(1)
+    except EmptyPage:
+        transactions = paginator.page(paginator.num_pages)
+    context = {
+        'page': page,
+        'type': 'mediation',
+        'transactions': transactions,
+        'booking_tabs': True,
+        'booking_tab': 'mediation',
+    }
+    return render(request, 'my_sharing_hub/x_transactions.html', context)
+
+@login_required
+def awaiting_feedback_transactions(request):
+    user = request.user
+    awaiting_feedback_statuses = [
+        Transaction.AWAITING_FEEDBACK,
+        Transaction.FEEDBACK_ONE_SIDED,
+    ]
+    object_pass_list = user.rel_from_set.filter(transaction_status__in=awaiting_feedback_statuses)
+    object_agg_list = user.rel_to_set.filter(transaction_status__in=awaiting_feedback_statuses)
+    object_pass_list = object_pass_list.filter(feedbacks__left_by__isnull=True)
+    object_agg_list = object_agg_list.filter(feedbacks__left_by__isnull=True)
+    object_list = sorted(
+        (chain(object_pass_list, object_agg_list)),
+        key=attrgetter('amended'), reverse=True)
+    paginator = Paginator(object_list, 10)
+    page = request.GET.get('page')
+    try:
+        transactions = paginator.page(page)
+    except PageNotAnInteger:
+        transactions = paginator.page(1)
+    except EmptyPage:
+        transactions = paginator.page(paginator.num_pages)
+    context = {
+        'page': page,
+        'type': 'feedback',
+        'transactions': transactions,
+        'booking_tabs': True,
+        'booking_tab': 'feedback',
+    }
+    return render(request, 'my_sharing_hub/x_transactions.html', context)
+
 @login_required
 def closed_transactions(request):
     user = request.user
@@ -765,7 +845,8 @@ def closed_transactions(request):
         Transaction.CANCEL_ACCEPTED,
         Transaction.DEPOSIT_RETURNED,
         Transaction.DEPOSIT_REDUCED,
-        Transaction.MEDIATION_REQUIRED,
+        Transaction.RENTAL_PROCESS_COMPLETED,
+        Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
     ]
     object_pass_list = user.rel_from_set.filter(transaction_status__in=closed_statuses)
     object_agg_list = user.rel_to_set.filter(transaction_status__in=closed_statuses)
@@ -785,6 +866,8 @@ def closed_transactions(request):
         'page' : page,
         'type' : 'closed',
         'transactions' : transactions,
+        'booking_tabs': True,
+        'booking_tab': 'closed',
     }
     # return redirect('/navigation/seeAll/')
     return render(request, 'my_sharing_hub/x_transactions.html', context)
@@ -810,5 +893,3 @@ def expand_message(request):
         'created' : message.created.strftime("%Y-%m-%d %H:%M"),
     }
     return JsonResponse(content)
-
-

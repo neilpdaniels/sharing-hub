@@ -134,6 +134,22 @@
 <div class="container">
     <div class="row">
         <div class="col-lg-12">
+        {% if booking_tabs %}
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <a class="nav-link {% if booking_tab == 'open' %}active{% endif %}" href="{% url 'my_sharing_hub:open_transactions' %}">Open bookings</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if booking_tab == 'mediation' %}active{% endif %}" href="{% url 'my_sharing_hub:mediation_transactions' %}">Bookings in mediation</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if booking_tab == 'feedback' %}active{% endif %}" href="{% url 'my_sharing_hub:awaiting_feedback_transactions' %}">Needing feedback</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if booking_tab == 'closed' %}active{% endif %}" href="{% url 'my_sharing_hub:closed_transactions' %}">Closed bookings</a>
+            </li>
+        </ul>
+        {% endif %}
         {% if type == 'open' %}
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">

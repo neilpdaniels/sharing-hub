@@ -13,6 +13,7 @@ class MyOrdersScreen extends StatelessWidget {
     required this.orders,
     required this.loading,
     required this.onRefresh,
+    required this.onListMyItem,
     required this.onAmendOrder,
     required this.onCancelOrder,
   });
@@ -20,6 +21,7 @@ class MyOrdersScreen extends StatelessWidget {
   final List<OrderSummary> orders;
   final bool loading;
   final Future<void> Function() onRefresh;
+  final VoidCallback onListMyItem;
   final AmendOrderCallback onAmendOrder;
   final CancelOrderCallback onCancelOrder;
 
@@ -120,6 +122,12 @@ class MyOrdersScreen extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              FilledButton.icon(
+                onPressed: onListMyItem,
+                icon: const Icon(Icons.add_business_outlined),
+                label: const Text('List my item'),
+              ),
+              const SizedBox(height: 16),
               if (loading)
                 const Padding(
                   padding: EdgeInsets.all(24),

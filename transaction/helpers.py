@@ -1,5 +1,7 @@
+from account.models import Profile
+from common.geocoding import PostcodeGeocoder
 from common.models import TransactionFee, TransactionFeeBand
-from transaction.models import Transaction
+from transaction.models import Transaction, TransactionCharge
 from django.db.models import Avg, Count, Q
 
 
@@ -23,7 +25,10 @@ def get_user_feedback_breakdown(*, user_id):
 
     feedback_qs = TransactionFeedback.objects.filter(
         left_for_id=user_id,
-        transaction__transaction_status=Transaction.RENTAL_PROCESS_COMPLETED,
+        transaction__transaction_status__in=(
+            Transaction.RENTAL_PROCESS_COMPLETED,
+            Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
+        ),
     )
 
     aggregates = feedback_qs.aggregate(
@@ -61,18 +66,186 @@ def get_user_feedback_breakdown_map(user_ids):
     return {uid: get_user_feedback_breakdown(user_id=uid) for uid in user_ids}
 
 def getMinPriceByWeight(fee_bands, total_weight):
-    toReturn = 0
-    for band in fee_bands:
+    bands = sorted(list(fee_bands or []), key=lambda band: (band.max_weight or 0, band.price))
+    if not bands:
+        return 0
+
+    for band in bands:
         if total_weight <= band.max_weight:
-            toReturn = band.price
-    return toReturn
+            return band.price
+    return bands[-1].price
     
 def getMinPriceByValue(fee_bands, total_value):
-    toReturn = 0
-    for band in fee_bands:
+    bands = sorted(list(fee_bands or []), key=lambda band: (band.max_price or 0, band.price))
+    if not bands:
+        return 0
+
+    for band in bands:
         if total_value <= band.max_price:
-            toReturn = band.price
-    return toReturn
+            return band.price
+    return bands[-1].price
+
+
+def get_transaction_delivery_distance_km(transaction):
+    order = transaction.order_passive
+    if order is None or order.latitude is None or order.longitude is None:
+        return None
+
+    try:
+        borrower_profile = transaction.user_aggressive.profile
+    except Profile.DoesNotExist:
+        return None
+
+    if borrower_profile.latitude is None or borrower_profile.longitude is None:
+        return None
+
+    try:
+        return PostcodeGeocoder.calculate_distance(
+            float(borrower_profile.latitude),
+            float(borrower_profile.longitude),
+            float(order.latitude),
+            float(order.longitude),
+        )
+    except Exception:
+        return None
+
+
+def calculate_delivery_cost(order, delivery_distance_km):
+    if order is None:
+        return 0.0, 'flat'
+
+    flat_fee = float(order.delivery_cost or 0)
+    within_km = float(order.delivery_within_km or 0)
+    per_km = float(order.delivery_cost_per_km or 0)
+    distance = float(delivery_distance_km or 0)
+
+    if per_km > 0 and within_km > 0 and distance > 0 and distance <= within_km:
+        return round(distance * per_km, 2), 'per_km'
+
+    if flat_fee > 0:
+        return round(flat_fee, 2), 'flat'
+
+    if per_km > 0 and distance > 0:
+        return round(distance * per_km, 2), 'per_km'
+
+    return 0.0, 'flat'
+
+
+def _get_or_create_transaction_fee(name, fee_type):
+    fee, _ = TransactionFee.objects.get_or_create(
+        name=name,
+        defaults={'fee_type': fee_type},
+    )
+    if fee.fee_type != fee_type:
+        fee.fee_type = fee_type
+        fee.save(update_fields=['fee_type', 'slug'])
+    return fee
+
+
+def _ensure_rentalution_fee_bands(fee):
+    if fee.transactionfeeband_set.exists():
+        return fee
+
+    for price, max_price in ((10, 5), (3, 10), (2, 50), (1.5, 999999)):
+        TransactionFeeBand.objects.create(
+            transaction_fee=fee,
+            price=price,
+            max_price=max_price,
+            price_style=TransactionFeeBand.PERCENTAGE,
+        )
+    return fee
+
+
+def get_rentalution_fee_reference():
+    fee = _get_or_create_transaction_fee('Rentalution fee', TransactionFee.VALUE)
+    return _ensure_rentalution_fee_bands(fee)
+
+
+def get_delivery_fee_reference():
+    return _get_or_create_transaction_fee('Delivery charge', TransactionFee.FLAT)
+
+
+def calculate_rentalution_fee(total_amount):
+    total_amount = round(float(total_amount or 0), 2)
+    if total_amount <= 0:
+        return 0.0
+
+    fee = get_rentalution_fee_reference()
+    bands = list(fee.transactionfeeband_set.all())
+    if not bands:
+        return 0.0
+
+    matched_band = None
+    for band in sorted(bands, key=lambda item: (item.max_price or 0, item.price)):
+        if total_amount <= (band.max_price or 0):
+            matched_band = band
+            break
+    if matched_band is None:
+        matched_band = sorted(bands, key=lambda item: (item.max_price or 0, item.price))[-1]
+
+    if matched_band.price_style == TransactionFeeBand.PERCENTAGE:
+        return round((float(matched_band.price or 0) / 100.0) * total_amount, 2)
+    return round(float(matched_band.price or 0), 2)
+
+
+def get_transaction_pricing(transaction):
+    order = transaction.order_passive
+    delivery_distance_km = get_transaction_delivery_distance_km(transaction)
+    delivery_cost, delivery_charge_mode = calculate_delivery_cost(order, delivery_distance_km)
+    rental_amount = round((transaction.quantity or 0) * (transaction.price or 0), 2)
+    rentalution_fee = calculate_rentalution_fee(rental_amount + delivery_cost)
+
+    return {
+        'delivery_distance_km': delivery_distance_km,
+        'delivery_cost': delivery_cost,
+        'delivery_charge_mode': delivery_charge_mode,
+        'rentalution_fee': rentalution_fee,
+        'rental_amount': rental_amount,
+        'total_before_deposit': round(rental_amount + delivery_cost + rentalution_fee, 2),
+    }
+
+
+def sync_transaction_pricing(transaction, pricing):
+    delivery_distance_km = pricing.get('delivery_distance_km')
+    if delivery_distance_km is not None:
+        transaction.delivery_distance_km = delivery_distance_km
+    transaction.delivery_cost = pricing.get('delivery_cost') or 0
+    transaction.rentalution_fee = pricing.get('rentalution_fee') or 0
+
+
+def sync_transaction_fee_charges(transaction, pricing):
+    delivery_cost = float(pricing.get('delivery_cost') or 0)
+    rentalution_fee = float(pricing.get('rentalution_fee') or 0)
+    delivery_fee_ref = get_delivery_fee_reference()
+    rentalution_fee_ref = get_rentalution_fee_reference()
+
+    if delivery_cost > 0:
+        TransactionCharge.objects.update_or_create(
+            transaction=transaction,
+            transaction_fee=delivery_fee_ref,
+            user_to_pay=transaction.user_aggressive,
+            defaults={'price': delivery_cost},
+        )
+    else:
+        TransactionCharge.objects.filter(
+            transaction=transaction,
+            transaction_fee=delivery_fee_ref,
+            user_to_pay=transaction.user_aggressive,
+        ).delete()
+
+    if rentalution_fee > 0:
+        TransactionCharge.objects.update_or_create(
+            transaction=transaction,
+            transaction_fee=rentalution_fee_ref,
+            user_to_pay=transaction.user_passive,
+            defaults={'price': rentalution_fee},
+        )
+    else:
+        TransactionCharge.objects.filter(
+            transaction=transaction,
+            transaction_fee=rentalution_fee_ref,
+            user_to_pay=transaction.user_passive,
+        ).delete()
     
 # def checkFee(fee, qty, unit_price, expected_value, order):
 #     toReturn = False
@@ -120,7 +293,7 @@ def getMinPriceByValue(fee_bands, total_value):
  
 def returnFeeValue(fee, qty, unit_price, order):
     toReturn = False
-    fee_bands = fee.transactionfeeband_set.all().order_by('-price')
+    fee_bands = fee.transactionfeeband_set.all()
     if len(fee_bands) == 1:
         if fee.fee_type == TransactionFee.FLAT:
             if fee_bands[0].price_style == TransactionFeeBand.ABSOLUTE:
@@ -191,7 +364,13 @@ def getTransactionStepAndAction(txn, request):
     elif txn.transaction_status in (txn.RENTAL_RETURNED_DEPOSIT_PENDING, txn.RENTAL_RETURNED_DEPOSIT_RETURNED, txn.RENTAL_RETURNED_DEPOSIT_CONTESTED):
         step = 6
         next_action = is_lender
-    elif txn.transaction_status in (txn.AWAITING_FEEDBACK, txn.RENTAL_PROCESS_COMPLETED):
+    elif txn.transaction_status in (
+        txn.AWAITING_FEEDBACK,
+        txn.FEEDBACK_ONE_SIDED,
+        txn.RENTAL_PROCESS_COMPLETED,
+        txn.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
+        txn.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
+    ):
         step = 7
         next_action = False
     elif txn.transaction_status in (txn.MEDIATION_REQUIRED, txn.DISPUTE_REQUESTED):

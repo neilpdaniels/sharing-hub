@@ -1222,8 +1222,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final scaffoldState = _scaffoldKey.currentState;
     if (scaffoldState?.isEndDrawerOpen ?? false) return true;
     if (_detailPageType != null) return true;
-    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null)
+    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null) {
       return true;
+    }
     if (!_isAuthenticated && _selectedIndex == _loginTabIndex) return true;
     if (_selectedIndex != 0) return true;
     return false;
@@ -1794,10 +1795,10 @@ class _HomeScreenState extends State<HomeScreen> {
             return GestureDetector(
               onTap: () => _loadBrowseProducts(cat.slug),
               child: Card(
-                color: const Color(0xFF2EC4B6),
                 elevation: 2,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: Color(0xFF2EC4B6), width: 1.5),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -2135,6 +2136,7 @@ class _HomeScreenState extends State<HomeScreen> {
           orders: _orders,
           loading: _ordersLoading,
           onRefresh: _loadOrders,
+          onListMyItem: _openListMyItem,
           onAmendOrder: _amendOrder,
           onCancelOrder: _cancelOrder,
         ),

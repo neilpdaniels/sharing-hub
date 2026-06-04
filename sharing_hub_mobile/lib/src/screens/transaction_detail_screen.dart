@@ -32,6 +32,7 @@ class TransactionDetailScreen extends StatefulWidget {
 class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   final _messageController = TextEditingController();
   final _pinController = TextEditingController();
+  final _messageFocusNode = FocusNode();
   final List<File> _images = [];
   final List<File> _videos = [];
   File? _evidenceVideoFile;
@@ -39,11 +40,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   TransactionDetail? _detail;
   TransactionCodes? _codes;
+  List<PaymentMethodSummary> _paymentMethods = const [];
   List<TransactionMessage> _messages = const [];
   bool _loading = true;
   bool _busy = false;
   String? _error;
   Timer? _livePollTimer;
+  Timer? _countdownTimer;
   String _lastLiveSignature = '';
 
   @override
@@ -56,8 +59,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   @override
   void dispose() {
     _livePollTimer?.cancel();
+    _countdownTimer?.cancel();
     _messageController.dispose();
     _pinController.dispose();
+    _messageFocusNode.dispose();
     super.dispose();
   }
 
@@ -71,6 +76,20 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         return;
       }
       _refreshSilently();
+    });
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    if (_detail?.status != 'RAGR') {
+      return;
+    }
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          // Trigger rebuild to update countdown display
+        });
+      }
     });
   }
 
@@ -117,6 +136,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         accessToken: widget.accessToken,
         transactionReference: widget.transactionReference,
       );
+      final paymentMethods = await widget.repository.fetchPaymentMethods(
+        accessToken: widget.accessToken,
+      );
       if (!mounted) {
         return;
       }
@@ -125,6 +147,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         _detail = detail;
         _messages = messages;
         _codes = codes;
+        _paymentMethods = paymentMethods;
         _lastLiveSignature = _buildLiveSignature(
           detail: detail,
           messages: messages,
@@ -135,6 +158,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           _evidenceVideoUrl = null;
         }
       });
+      _startCountdownTimer();
     } catch (e) {
       if (!mounted) {
         return;
@@ -165,6 +189,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         accessToken: widget.accessToken,
         transactionReference: widget.transactionReference,
       );
+      final paymentMethods = await widget.repository.fetchPaymentMethods(
+        accessToken: widget.accessToken,
+      );
 
       if (!mounted) {
         return;
@@ -184,12 +211,14 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         _detail = detail;
         _messages = messages;
         _codes = codes;
+        _paymentMethods = paymentMethods;
         _lastLiveSignature = signature;
         if (!canSubmitVideoEvidence) {
           _evidenceVideoFile = null;
           _evidenceVideoUrl = null;
         }
       });
+      _startCountdownTimer();
     } catch (_) {
       // Keep polling quiet; user can still manually refresh via actions.
     }
@@ -212,12 +241,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         fields: fields,
       );
       await _refresh();
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Action completed: $action')));
     } catch (e) {
       if (!mounted) {
         return;
@@ -322,12 +345,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         });
       }
       await _refresh();
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Action completed: $action')));
     } catch (e) {
       if (!mounted) {
         return;
@@ -396,12 +413,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       return deadlineByTime;
     }
 
-    final startOfDay = DateTime(
+    // Deadline is end of the rental start day (23:59:59), unless 24-hour window expires first
+    final endOfDay = DateTime(
       rentalStartDate.year,
       rentalStartDate.month,
-      rentalStartDate.day,
-    );
-    return deadlineByTime.isBefore(startOfDay) ? deadlineByTime : startOfDay;
+      rentalStartDate.day + 1,
+    ).subtract(const Duration(seconds: 1));
+    return deadlineByTime.isBefore(endOfDay) ? deadlineByTime : endOfDay;
   }
 
   String _formatDuration(Duration duration) {
@@ -419,6 +437,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
     final remaining = deadline.difference(DateTime.now());
     return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  void _scrollToMessages() {
+    _messageFocusNode.requestFocus();
   }
 
   Future<void> _sendMessage() async {
@@ -744,39 +766,57 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     bool required = true,
   }) async {
     final controller = TextEditingController(text: initialValue);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(title),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 2,
-            maxLines: 4,
-            decoration: InputDecoration(labelText: label, hintText: hint),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+    try {
+      final value = await showDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(title),
+            content: TextField(
+              controller: controller,
+              autofocus: false,
+              minLines: 2,
+              maxLines: 4,
+              decoration: InputDecoration(labelText: label, hintText: hint),
             ),
-            FilledButton(
-              onPressed: () {
-                final text = controller.text.trim();
-                if (required && text.isEmpty) {
-                  return;
-                }
-                Navigator.pop(dialogContext, text);
-              },
-              child: const Text('Continue'),
-            ),
-          ],
-        );
-      },
-    );
-    controller.dispose();
-    return value;
+            actions: [
+              TextButton(
+                onPressed: () {
+                  FocusScope.of(dialogContext).unfocus();
+                  if (Navigator.of(dialogContext).canPop()) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                },
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final text = controller.text.trim();
+                  if (required && text.isEmpty) {
+                    return;
+                  }
+                  FocusScope.of(dialogContext).unfocus();
+                  final navigator = Navigator.of(dialogContext);
+                  if (!navigator.canPop()) {
+                    return;
+                  }
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (navigator.canPop()) {
+                      navigator.pop(text);
+                    }
+                  });
+                },
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+      return value;
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<Map<String, dynamic>?> _promptForDepositProposal(
@@ -851,85 +891,120 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<Map<String, dynamic>?> _promptForFeedback() async {
-    final comms = TextEditingController();
-    final delivery = TextEditingController();
-    final overall = TextEditingController();
     final comment = TextEditingController();
+    var communicationRating = 0;
+    var deliveryReturnRating = 0;
+    var overallRating = 0;
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Submit Feedback'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: comms,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Comms (0-5)'),
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Submit Feedback'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildStarRatingField(
+                      label: 'Comms',
+                      value: communicationRating,
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          communicationRating = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildStarRatingField(
+                      label: 'Delivery / return',
+                      value: deliveryReturnRating,
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          deliveryReturnRating = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildStarRatingField(
+                      label: 'Overall',
+                      value: overallRating,
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          overallRating = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: comment,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Comment (optional)',
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: delivery,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Delivery/Return (0-5)',
-                  ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: overall,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Overall (0-5)'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: comment,
-                  minLines: 2,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'Comment (optional)',
-                  ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext, {
+                      'communication_rating': communicationRating,
+                      'delivery_return_rating': deliveryReturnRating,
+                      'overall_rating': overallRating,
+                      'feedback_comment': comment.text.trim(),
+                    });
+                  },
+                  child: const Text('Submit'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final commsScore = int.tryParse(comms.text.trim());
-                final deliveryScore = int.tryParse(delivery.text.trim());
-                final overallScore = int.tryParse(overall.text.trim());
-                if (commsScore == null ||
-                    deliveryScore == null ||
-                    overallScore == null) {
-                  return;
-                }
-                Navigator.pop(dialogContext, {
-                  'communication_rating': commsScore,
-                  'delivery_return_rating': deliveryScore,
-                  'overall_rating': overallScore,
-                  'feedback_comment': comment.text.trim(),
-                });
-              },
-              child: const Text('Submit'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
 
-    comms.dispose();
-    delivery.dispose();
-    overall.dispose();
     comment.dispose();
     return result;
+  }
+
+  Widget _buildStarRatingField({
+    required String label,
+    required int value,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: List.generate(6, (index) {
+            final selected = index <= value;
+            return IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              onPressed: () => onChanged(index),
+              icon: Icon(
+                selected ? Icons.star : Icons.star_border,
+                color: Colors.amber,
+              ),
+              tooltip: '$index out of 5',
+            );
+          }),
+        ),
+      ],
+    );
   }
 
   Future<Map<String, dynamic>?> _promptForCardDetails() async {
@@ -1004,90 +1079,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return result;
   }
 
-  Future<stripe.PaymentMethodParams?>
-  _promptForStripePaymentMethodParams() async {
-    final cardholderNameController = TextEditingController();
-    var cardComplete = false;
-    String? inlineError;
-
-    final params = await showDialog<stripe.PaymentMethodParams>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogBuildContext, setDialogState) {
-            return AlertDialog(
-              title: const Text('Add deposit card (Stripe)'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: cardholderNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Cardholder name (optional)',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    stripe.CardField(
-                      enablePostalCode: true,
-                      onCardChanged: (card) {
-                        setDialogState(() {
-                          cardComplete = card?.complete ?? false;
-                          if (cardComplete) {
-                            inlineError = null;
-                          }
-                        });
-                      },
-                    ),
-                    if (inlineError != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        inlineError!,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    if (!cardComplete) {
-                      setDialogState(() {
-                        inlineError = 'Please enter complete card details.';
-                      });
-                      return;
-                    }
-
-                    final name = cardholderNameController.text.trim();
-                    Navigator.pop(
-                      dialogContext,
-                      stripe.PaymentMethodParams.card(
-                        paymentMethodData: stripe.PaymentMethodData(
-                          billingDetails: stripe.BillingDetails(
-                            name: name.isEmpty ? null : name,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text('Confirm card'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    cardholderNameController.dispose();
-    return params;
-  }
-
   Future<void> _setupDepositCardWithStripe() async {
     setState(() {
       _busy = true;
@@ -1143,20 +1134,22 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       stripe.Stripe.publishableKey = publishableKey;
       await stripe.Stripe.instance.applySettings();
 
-      final paymentMethodParams = await _promptForStripePaymentMethodParams();
-      if (paymentMethodParams == null) {
-        return;
-      }
-
-      final setupIntent = await stripe.Stripe.instance.confirmSetupIntent(
-        paymentIntentClientSecret: session.clientSecret,
-        params: paymentMethodParams,
+      await stripe.Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: stripe.SetupPaymentSheetParameters(
+          setupIntentClientSecret: session.clientSecret,
+          merchantDisplayName: 'rentalution',
+        ),
       );
 
+      await stripe.Stripe.instance.presentPaymentSheet();
+
+      final setupIntent = await stripe.Stripe.instance.retrieveSetupIntent(
+        session.clientSecret,
+      );
       final paymentMethodId = setupIntent.paymentMethodId.trim();
       final setupIntentId = setupIntent.id.trim();
-      if (paymentMethodId.isEmpty) {
-        throw Exception('Stripe did not return a payment method id.');
+      if (setupIntentId.isEmpty || paymentMethodId.isEmpty) {
+        throw Exception('Stripe did not return a saved payment method.');
       }
 
       await widget.repository.performAction(
@@ -1165,7 +1158,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         action: 'confirm_stripe_card',
         fields: {
           'payment_method_id': paymentMethodId,
-          if (setupIntentId.isNotEmpty) 'setup_intent_id': setupIntentId,
+          'setup_intent_id': setupIntentId,
         },
       );
 
@@ -1236,40 +1229,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return 'No deposit card on file';
   }
 
-  int _workflowStep(TransactionDetail detail) {
-    final status = detail.status;
-    final missingRentalVoided =
-        status == 'CACK' &&
-        detail.depositResolutionNotes.contains('[MISSING_RENTAL_VOIDED]');
-    if (status == 'RENQ') return 1;
-    if (status == 'RAGR') {
-      if (detail.renterAgreedAt != null) return 4;
-      if (detail.lenderAgreedAt != null) return 3;
-      return 2;
-    }
-    if (status == 'RDAYAWV' || status == 'RONG') return 5;
-    if (status == 'RRTDAYAWV' ||
-        status == 'RRTDPEND' ||
-        status == 'RRTDCON' ||
-        status == 'DREQ' ||
-        status == 'RRTDRET') {
-      return 6;
-    }
-    if (status == 'AWFB' || status == 'RCOMP' || missingRentalVoided) return 7;
-    return 1;
-  }
-
   Widget _workflowCard(TransactionDetail detail) {
-    final current = _workflowStep(detail);
-    const labels = [
-      '1. Rental discussion',
-      '2. Lender confirms contract',
-      '3. Borrower confirms contract',
-      '4. Borrower card setup',
-      '5. Checkout evidence + confirmation/counter + borrower PIN to lender',
-      '6. Return evidence + confirmation/counter + deposit proposal cycle + lender PIN to borrower',
-      '7. Feedback (both parties): star ratings + commentary',
-    ];
+    final current = detail.workflowStage;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1285,10 +1246,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
-                ...labels.asMap().entries.map((entry) {
-                  final step = entry.key + 1;
-                  final active = step == current;
-                  final done = step < current;
+                ...detail.workflowTimeline.map((entry) {
+                  final step = entry.step;
+                  final active = entry.current;
+                  final done = entry.done;
 
                   Color statusColor = done
                       ? Colors.green.shade700
@@ -1345,11 +1306,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              entry.value,
+                              entry.label,
                               style: TextStyle(
-                                fontWeight: active
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
+                                fontWeight:
+                                    active ? FontWeight.w700 : FontWeight.w500,
                                 color: done
                                     ? Colors.green.shade700
                                     : active
@@ -1401,7 +1361,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Widget _checkoutCheckInSection(TransactionDetail detail) {
-    final current = _workflowStep(detail);
+    final current = detail.workflowStage;
     final isCheckout = current == 5;
     final title = isCheckout
         ? 'Checkout Handover Evidence'
@@ -1445,13 +1405,16 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            // Show verification code section if PIN is available or at checkout stage
+            // Show the code only to the side that should present it.
             if (isCheckout ||
                 (isPastCheckout &&
-                    detail.checkoutHandoverPinGeneratedAt != null))
+                    detail.checkoutHandoverPinGeneratedAt != null &&
+                    detail.meIsRenter))
               _pinSection('Verification Code'),
             if (!isCheckout ||
-                (isPastCheckout && detail.returnHandoverPinGeneratedAt != null))
+                (isPastCheckout &&
+                    detail.returnHandoverPinGeneratedAt != null &&
+                    detail.meIsLender))
               _pinSection('Return Code'),
             const SizedBox(height: 16),
             // Show condition evidence section
@@ -1740,6 +1703,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final nativeStripeConfigured = AppConfig.stripePublishableKey
         .trim()
         .isNotEmpty;
+    final hasSavedPaymentMethods = _paymentMethods.isNotEmpty;
     final canSubmitVideoEvidence = detail.canSubmitVideoEvidence;
     final proposalIterationCount = _depositProposalIterationCount(detail);
     final proposalIterationLimit = _depositProposalIterationLimit(detail);
@@ -1747,10 +1711,30 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
     if (detail.status == 'RAGR' && contractRemaining != null) {
       actions.add(
-        Text(
-          contractRemaining == Duration.zero
-              ? 'Contract confirmation window has expired.'
-              : 'Contract confirmation window remaining: ${_formatDuration(contractRemaining)}',
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: contractRemaining == Duration.zero
+                ? Colors.red.withOpacity(0.1)
+                : Colors.amber.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: contractRemaining == Duration.zero
+                  ? Colors.red.withOpacity(0.3)
+                  : Colors.amber.withOpacity(0.3),
+            ),
+          ),
+          child: Text(
+            contractRemaining == Duration.zero
+                ? 'Contract confirmation window has expired.'
+                : 'Contract confirmation window remaining: ${_formatDuration(contractRemaining)}',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: contractRemaining == Duration.zero
+                  ? Colors.red[700]
+                  : Colors.orange[700],
+            ),
+          ),
         ),
       );
       actions.add(const SizedBox(height: 8));
@@ -1813,34 +1797,58 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     if (detail.status == 'RAGR' &&
         detail.meIsRenter &&
         detail.renterAgreedAt == null) {
-      actions.add(
-        _actionButton('Confirm Renter Contract', () async {
-          final agreed = await _showRentalTermsConfirmation();
-          if (!agreed) {
-            return;
-          }
-          if (contractRemaining == Duration.zero) {
-            if (!mounted) {
+      // Only show confirm/reject buttons if contract window is still open
+      if (contractRemaining != Duration.zero) {
+        actions.add(
+          _actionButton('Confirm Renter Contract', () async {
+            final agreed = await _showRentalTermsConfirmation();
+            if (!agreed) {
               return;
             }
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Contract confirmation window has expired. This rental can no longer be confirmed.',
+            await _performAction('confirm_renter_contract');
+          }),
+        );
+        actions.add(
+          _actionButton(
+            'Reject Agreement',
+            () => _performAction('reject_rental_agreement'),
+          ),
+        );
+      } else {
+        // Contract window has expired - suggest messaging lender
+        actions.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Contract confirmation window has expired',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Please contact the lender to request an extension of the confirmation deadline.',
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _scrollToMessages,
+                        icon: const Icon(Icons.message),
+                        label: const Text('Send Message'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            );
-            return;
-          }
-          await _performAction('confirm_renter_contract');
-        }),
-      );
-      actions.add(
-        _actionButton(
-          'Reject Agreement',
-          () => _performAction('reject_rental_agreement'),
-        ),
-      );
+            ),
+          ),
+        );
+      }
     }
 
     if ((detail.status == 'RENQ' || detail.status == 'RAGR') &&
@@ -1859,12 +1867,15 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         detail.checkoutHandoverVerifiedAt == null) {
       actions.add(
         _actionButton('Report Missing Rental', () async {
+          if (!mounted) {
+            return;
+          }
           final reason = await _promptForText(
             title: 'Report Missing Rental',
             label: 'Reason',
             hint: 'Explain what happened',
           );
-          if (reason == null || reason.isEmpty) {
+          if (!mounted || reason == null || reason.trim().isEmpty) {
             return;
           }
           await _performAction(
@@ -1916,18 +1927,20 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ),
         );
       }
-      actions.add(
-        _actionButton('Use Existing Saved Card', () async {
-          final method = await _promptForExistingPaymentMethod();
-          if (method == null) {
-            return;
-          }
-          await _performAction(
-            'use_existing_card',
-            fields: {'payment_method_id': method.id},
-          );
-        }),
-      );
+      if (hasSavedPaymentMethods) {
+        actions.add(
+          _actionButton('Use Existing Saved Card', () async {
+            final method = await _promptForExistingPaymentMethod();
+            if (method == null) {
+              return;
+            }
+            await _performAction(
+              'use_existing_card',
+              fields: {'payment_method_id': method.id},
+            );
+          }),
+        );
+      }
     }
 
     if (detail.status == 'RDAYAWV' && detail.meIsRenter) {
@@ -2223,14 +2236,25 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         actions.add(const Text('Evidence uploaded and ready for action.'));
       }
     }
-    actions.add(
-      TextField(
-        controller: _pinController,
-        decoration: const InputDecoration(
-          labelText: 'PIN (optional for PIN actions)',
+    final showCheckoutPinEntry =
+        detail.status == 'RDAYAWV' && detail.meIsLender;
+    final showReturnPinEntry =
+        detail.status == 'RRTDAYAWV' && detail.meIsRenter;
+    if (showCheckoutPinEntry || showReturnPinEntry) {
+      actions.add(
+        TextField(
+          controller: _pinController,
+          decoration: InputDecoration(
+            labelText: showCheckoutPinEntry
+                ? 'Checkout PIN'
+                : 'Return PIN',
+            helperText: showCheckoutPinEntry
+                ? 'Enter the borrower-provided PIN for checkout handover.'
+                : 'Enter the lender-provided PIN for return handover.',
+          ),
         ),
-      ),
-    );
+      );
+    }
 
     if (actions.isEmpty) {
       actions.add(
@@ -2257,7 +2281,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   Widget _codesCard() {
     final codes = _codes;
-    if (codes == null) {
+    final detail = _detail;
+    if (codes == null || detail == null) {
+      return const SizedBox.shrink();
+    }
+    final showCheckoutCode = detail.meIsRenter && codes.checkoutPin.isNotEmpty;
+    final showReturnCode = detail.meIsLender && codes.returnPin.isNotEmpty;
+    if (!showCheckoutCode && !showReturnCode) {
       return const SizedBox.shrink();
     }
 
@@ -2272,9 +2302,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            if (codes.checkoutPin.isNotEmpty)
+            if (showCheckoutCode)
               _actionButton(
-                'Show Checkout QR/PIN',
+                'Show Checkout Code',
                 () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => QrDisplayScreen(
@@ -2285,9 +2315,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   ),
                 ),
               ),
-            if (codes.returnPin.isNotEmpty)
+            if (showReturnCode)
               _actionButton(
-                'Show Return QR/PIN',
+                'Show Return Code',
                 () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => QrDisplayScreen(
@@ -2298,8 +2328,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   ),
                 ),
               ),
-            if (codes.checkoutPin.isEmpty && codes.returnPin.isEmpty)
-              const Text('No active verification code available yet.'),
+            if (!showCheckoutCode && !showReturnCode)
+              const Text('No code available for your role right now.'),
           ],
         ),
       ),
@@ -2320,6 +2350,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _messageController,
+              focusNode: _messageFocusNode,
               minLines: 2,
               maxLines: 4,
               decoration: const InputDecoration(labelText: 'Message'),

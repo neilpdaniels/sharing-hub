@@ -77,6 +77,14 @@ final ThemeData sharingHubLightTheme = ThemeData(
     contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
     hintStyle: const TextStyle(color: SharingHubPalette.lightTextMuted),
   ),
+  outlinedButtonTheme: OutlinedButtonThemeData(
+    style: OutlinedButton.styleFrom(
+      foregroundColor: SharingHubPalette.lightText,
+      side: const BorderSide(color: SharingHubPalette.lightBorder, width: 1.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+    ),
+  ),
   elevatedButtonTheme: ElevatedButtonThemeData(
     style: ElevatedButton.styleFrom(
       backgroundColor: SharingHubPalette.brandTeal,
@@ -140,12 +148,13 @@ final ThemeData sharingHubLightTheme = ThemeData(
     ),
   ),
   cardTheme: CardThemeData(
-    color: SharingHubPalette.brandTeal,
+    color: SharingHubPalette.lightSurfaceSoft,
+    surfaceTintColor: Colors.transparent,
     elevation: 0,
     margin: const EdgeInsets.symmetric(vertical: 8),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: SharingHubPalette.lightBorder),
+      side: BorderSide(color: SharingHubPalette.brandTeal, width: 1.5),
     ),
   ),
   listTileTheme: const ListTileThemeData(
@@ -279,12 +288,13 @@ final ThemeData sharingHubDarkTheme = ThemeData(
     ),
   ),
   cardTheme: CardThemeData(
-    color: SharingHubPalette.brandTeal,
+    color: SharingHubPalette.darkSurfaceSoft,
+    surfaceTintColor: Colors.transparent,
     elevation: 0,
     margin: const EdgeInsets.symmetric(vertical: 8),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: SharingHubPalette.darkBorder),
+      side: BorderSide(color: SharingHubPalette.brandTeal, width: 1.5),
     ),
   ),
   listTileTheme: const ListTileThemeData(

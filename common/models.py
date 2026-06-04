@@ -367,7 +367,19 @@ class Order(models.Model):
     delivery_cost = models.FloatField(
         null=True, blank=True,
         validators=[MinValueValidator(0)],
-        help_text='Delivery cost (£), if applicable'
+        help_text='Flat delivery fee (£) when the delivery distance is beyond the included range'
+    )
+    delivery_within_km = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(1000)],
+        help_text='Delivery is charged per km up to this distance'
+    )
+    delivery_cost_per_km = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text='Delivery cost per km (£) within the included distance'
     )
     collection_details = models.CharField(
         max_length=200, blank=True, default='',
@@ -397,6 +409,22 @@ class Order(models.Model):
         
         super(Order, self).save(*args, **kwargs)
         updateSummaryPrices.delay(self.pk)
+
+    def get_delivery_price_summary(self):
+        if self.collection_policy == self.MUST_COLLECT:
+            return ''
+
+        per_km = self.delivery_cost_per_km or 0
+        within_km = self.delivery_within_km or 0
+        flat_fee = self.delivery_cost or 0
+
+        if per_km > 0 and within_km > 0 and flat_fee > 0:
+            return f'£{per_km:.2f}/km within {within_km} km, then £{flat_fee:.2f} flat'
+        if per_km > 0 and within_km > 0:
+            return f'£{per_km:.2f}/km within {within_km} km'
+        if flat_fee > 0:
+            return f'Flat delivery fee £{flat_fee:.2f}'
+        return ''
 
 
 class FavouriteOrder(models.Model):

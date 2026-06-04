@@ -1,4 +1,5 @@
 from django.db import models
+from datetime import timedelta
 from common.models import Order, Product, TransactionFee
 from django.core.validators import MaxValueValidator, MinValueValidator, FileExtensionValidator
 from django.core.exceptions import ValidationError
@@ -40,6 +41,16 @@ def unique_txn_ref_generator():
     return new_txn_ref
 
 class Transaction(models.Model):
+    WORKFLOW_STAGE_LABELS = {
+        1: 'Discussion',
+        2: 'Lender confirms contract',
+        3: 'Borrower confirms contract',
+        4: 'Borrower card setup',
+        5: 'Checkout evidence + confirmation/counter + borrower PIN to lender',
+        6: 'Return evidence + confirmation/counter + deposit proposal cycle + lender PIN to borrower',
+        7: 'Feedback (both parties): star ratings + commentary',
+    }
+
     # objects = models.DjongoManager()
 
     user_passive = models.ForeignKey('auth.User', 
@@ -61,7 +72,10 @@ class Transaction(models.Model):
     RENTAL_RETURNED_DEPOSIT_RETURNED = 'RRTDRET'
     RENTAL_RETURNED_DEPOSIT_CONTESTED = 'RRTDCON'
     AWAITING_FEEDBACK = 'AWFB'
+    FEEDBACK_ONE_SIDED = 'FB1SIDE'
     RENTAL_PROCESS_COMPLETED = 'RCOMP'
+    RENTAL_PROCESS_COMPLETED_ONE_SIDED = 'RCOMP1S'
+    RENTAL_PROCESS_COMPLETED_NO_FEEDBACK = 'RCMPNFB'
     DEPOSIT_RETURNED = 'DRET'
     DEPOSIT_REDUCED = 'DRED'
     MEDIATION_REQUIRED = 'DMED'
@@ -87,19 +101,22 @@ class Transaction(models.Model):
 
 
     TRANSACTION_STATUS_CHOICES = (
-        (RENTAL_ENQUIRY, 'Rental discussion'),
-        (RENTAL_AGREED, 'Rental agreed'),
-        (RENTAL_DAY_AWAITING_VERIFICATION, 'Rental day, awaiting verification'),
-        (RENTAL_ONGOING, 'Rental ongoing'),
-        (RENTAL_RETURN_DAY_AWAITING_VERIFICATION, 'Rental return day, awaiting verification'),
-        (RENTAL_RETURNED_DEPOSIT_PENDING, 'Rental returned, deposit return pending'),
-        (RENTAL_RETURNED_DEPOSIT_RETURNED, 'Rental returned, deposit returned'),
-        (RENTAL_RETURNED_DEPOSIT_CONTESTED, 'Rental returned, deposit contested'),
-        (AWAITING_FEEDBACK, 'Awaiting feedback'),
-        (RENTAL_PROCESS_COMPLETED, 'Rental process fully completed'),
+        (RENTAL_ENQUIRY, 'Discussion'),
+        (RENTAL_AGREED, 'Agreement'),
+        (RENTAL_DAY_AWAITING_VERIFICATION, 'Checkout verification'),
+        (RENTAL_ONGOING, 'Ongoing'),
+        (RENTAL_RETURN_DAY_AWAITING_VERIFICATION, 'Return verification'),
+        (RENTAL_RETURNED_DEPOSIT_PENDING, 'Deposit review'),
+        (RENTAL_RETURNED_DEPOSIT_RETURNED, 'Deposit returned'),
+        (RENTAL_RETURNED_DEPOSIT_CONTESTED, 'Deposit contested'),
+        (AWAITING_FEEDBACK, 'Feedback'),
+        (FEEDBACK_ONE_SIDED, 'Feedback'),
+        (RENTAL_PROCESS_COMPLETED, 'Completed'),
+        (RENTAL_PROCESS_COMPLETED_ONE_SIDED, 'Completed'),
+        (RENTAL_PROCESS_COMPLETED_NO_FEEDBACK, 'Closed'),
         (CANCEL_REQUESTED, 'Cancellation requested'),
         (CANCEL_ACCEPTED, 'Cancelled'),
-        (DISPUTE_REQUESTED, 'Dispute requested'),
+        (DISPUTE_REQUESTED, 'Mediation'),
     )
     transaction_status = models.CharField(
         'transaction status',
@@ -120,8 +137,8 @@ class Transaction(models.Model):
 
 
     PAYMENT_STATUS_CHOICES = (
-        (PAYMENT_PENDING, 'Pending capture'),
-        (PAYMENT_CAPTURED_PLACEHOLDER, 'Captured (placeholder)'),
+        (PAYMENT_PENDING, 'Pending'),
+        (PAYMENT_CAPTURED_PLACEHOLDER, 'Captured'),
         (PAYMENT_NOT_REQUIRED, 'Not required'),
     )
     payment_status = models.CharField(
@@ -132,11 +149,11 @@ class Transaction(models.Model):
     )
 
     DEPOSIT_STATUS_CHOICES = (
-        (DEPOSIT_PENDING, 'Pending hold'),
-        (DEPOSIT_HELD_PLACEHOLDER, 'Held (placeholder)'),
+        (DEPOSIT_PENDING, 'Pending'),
+        (DEPOSIT_HELD_PLACEHOLDER, 'Held'),
         (DEPOSIT_RETURNED_FULL, 'Returned in full'),
         (DEPOSIT_RETURNED_REDUCED, 'Returned with reduction'),
-        (DEPOSIT_MEDIATION, 'Mediation required'),
+        (DEPOSIT_MEDIATION, 'Mediation'),
     )
     deposit_status = models.CharField(
         'deposit status',
@@ -147,9 +164,9 @@ class Transaction(models.Model):
 
 
     PRODUCT_STATUS_CHOICES = (
-        (CONDITION_PENDING, 'Condition evidence pending'),
-        (CHECKOUT_VIDEO_ADDED, 'Checkout condition video added'),
-        (RETURN_VIDEO_ADDED, 'Return condition video added'),
+        (CONDITION_PENDING, 'Condition pending'),
+        (CHECKOUT_VIDEO_ADDED, 'Checkout video added'),
+        (RETURN_VIDEO_ADDED, 'Return video added'),
     )
     product_status = models.CharField(
         'product status',
@@ -189,9 +206,16 @@ class Transaction(models.Model):
 
     payment_collected_placeholder = models.BooleanField(default=False)
     deposit_collected_placeholder = models.BooleanField(default=False)
+    payment_collection_requested_at = models.DateTimeField(blank=True, null=True)
+    payment_collection_reference = models.CharField(max_length=120, blank=True)
     payment_placeholder_notes = models.TextField(blank=True, max_length=1000)
     deposit_placeholder_notes = models.TextField(blank=True, max_length=1000)
     deposit_resolution_notes = models.TextField(blank=True, max_length=1000)
+    feedback_window_expires_at = models.DateTimeField(blank=True, null=True)
+    contract_first_signer_reminder_at = models.DateTimeField(blank=True, null=True)
+    contract_counterparty_reminder_at = models.DateTimeField(blank=True, null=True)
+    return_verification_reminder_at = models.DateTimeField(blank=True, null=True)
+    feedback_reminder_at = models.DateTimeField(blank=True, null=True)
     deposit_proposed_return_amount = models.FloatField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(999999)],
@@ -200,6 +224,11 @@ class Transaction(models.Model):
     deposit_proposed_by_lender_at = models.DateTimeField(blank=True, null=True)
     deposit_proposal_contested_at = models.DateTimeField(blank=True, null=True)
     deposit_proposal_accepted_at = models.DateTimeField(blank=True, null=True)
+    deposit_proposal_iteration_count = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(5)],
+        help_text='Number of lender deposit proposal iterations used (max 5)',
+    )
 
     # Placeholder Stripe Connect deposit setup/collection states
     CARD_NONE = 'NONE'
@@ -309,6 +338,16 @@ class Transaction(models.Model):
         validators=[MinValueValidator(1), MaxValueValidator(1000)],
         help_text='Maximum distance in km the lender can deliver/travel'
     )
+    delivery_cost = models.FloatField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(999999)],
+        help_text='Computed delivery cost charged for this transaction'
+    )
+    rentalution_fee = models.FloatField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(999999)],
+        help_text='Computed Rentalution fee charged for this transaction'
+    )
     
     total_weight = models.FloatField(default=0, validators=[MinValueValidator(0), MaxValueValidator(999999)])
 
@@ -383,6 +422,19 @@ class Transaction(models.Model):
             delta = self.rental_end_date - self.rental_start_date
             return delta.days + 1  # inclusive
         return 0
+
+    @staticmethod
+    def feedback_window_days():
+        raw_days = getattr(settings, 'TRANSACTION_FEEDBACK_WINDOW_DAYS', 30)
+        try:
+            return max(1, int(raw_days))
+        except (TypeError, ValueError):
+            return 30
+
+    def refresh_feedback_deadline(self, *, from_dt=None):
+        base_dt = from_dt or timezone.now()
+        self.feedback_window_expires_at = base_dt + timedelta(days=self.feedback_window_days())
+        return self.feedback_window_expires_at
     
     def calculate_deposit_handling(self):
         """Determine deposit handling based on rental length and amount"""
@@ -429,6 +481,66 @@ class Transaction(models.Model):
 
         return self.get_transaction_status_display()
 
+    def get_workflow_stage_number(self):
+        status = self.transaction_status
+        missing_rental_voided = (
+            status == self.CANCEL_ACCEPTED
+            and '[MISSING_RENTAL_VOIDED]' in (self.deposit_resolution_notes or '')
+        )
+        if status == self.RENTAL_ENQUIRY:
+            return 1
+        if status == self.RENTAL_AGREED:
+            if self.renter_agreed_at:
+                return 4
+            if self.lender_agreed_at:
+                return 3
+            return 2
+        if status in (
+            self.RENTAL_DAY_AWAITING_VERIFICATION,
+            self.RENTAL_ONGOING,
+        ):
+            return 5
+        if status in (
+            self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+            self.RENTAL_RETURNED_DEPOSIT_PENDING,
+            self.RENTAL_RETURNED_DEPOSIT_RETURNED,
+            self.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+            self.DISPUTE_REQUESTED,
+            self.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
+        ):
+            return 6
+        if status in (
+            self.AWAITING_FEEDBACK,
+            self.FEEDBACK_ONE_SIDED,
+            self.RENTAL_PROCESS_COMPLETED,
+            self.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
+        ) or missing_rental_voided:
+            return 7
+        return 1
+
+    def get_workflow_stage_label(self):
+        return self.WORKFLOW_STAGE_LABELS.get(self.get_workflow_stage_number(), 'Workflow step')
+
+    def get_workflow_payload(self):
+        current = self.get_workflow_stage_number()
+        timeline = [
+            {
+                'step': step,
+                'label': self.WORKFLOW_STAGE_LABELS.get(step, 'Workflow step'),
+                'current': step == current,
+                'done': step < current,
+            }
+            for step in range(1, 8)
+        ]
+        return {
+            'current_stage': current,
+            'current_label': self.get_workflow_stage_label(),
+            'timeline': timeline,
+        }
+
+    def get_workflow_timeline(self):
+        return self.get_workflow_payload()['timeline']
+
     def __str__(self):
         return self.transaction_reference
 
@@ -464,6 +576,15 @@ class TransactionMessage(models.Model):
 
 
 class TransactionMessageImage(models.Model):
+    ROLE_LENDER = 'lender'
+    ROLE_BORROWER = 'borrower'
+    ROLE_SYSTEM = 'system'
+    UPLOADER_ROLE_CHOICES = (
+        (ROLE_LENDER, 'Lender'),
+        (ROLE_BORROWER, 'Borrower'),
+        (ROLE_SYSTEM, 'System'),
+    )
+
     txn_message = models.ForeignKey(TransactionMessage, related_name='txn_msg_img', on_delete=models.CASCADE, blank=True, null=True)
     image = models.ImageField(
         upload_to=RandomFileName('images/txn_msg/'),
@@ -486,6 +607,12 @@ class TransactionMessageImage(models.Model):
         help_text='Raw/uncompressed video archive for verification purposes. Chain of custody.'
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    captured_at = models.DateTimeField(blank=True, null=True)
+    capture_device = models.CharField(max_length=120, blank=True)
+    checksum_sha256 = models.CharField(max_length=64, blank=True)
+    uploader_role = models.CharField(max_length=12, choices=UPLOADER_ROLE_CHOICES, blank=True)
+    evidence_stage = models.CharField(max_length=40, blank=True)
+    external_video_url = models.URLField(blank=True, max_length=500)
     active = models.BooleanField(default=True)
     first_image = models.BooleanField(default=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

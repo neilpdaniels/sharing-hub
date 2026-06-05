@@ -29,6 +29,10 @@ class OrderAddForm(forms.ModelForm):
         required=False,
         max_length=500,
     )
+    collection_is_not_home_address = forms.BooleanField(
+        label='Collection is not at my home address',
+        required=False,
+    )
 
     class Meta:
         model = Order
@@ -45,6 +49,8 @@ class OrderAddForm(forms.ModelForm):
             'delivery_within_km',
             'delivery_cost_per_km',
             'collection_details',
+            'collection_address',
+            'collection_postcode',
             'max_rental_days',
             'description',
             'additional_comments',
@@ -64,12 +70,16 @@ class OrderAddForm(forms.ModelForm):
             'delivery_within_km': 'I would deliver up to (km as the crow flies)',
             'delivery_cost_per_km': 'Price per km (£)',
             'collection_details': 'Details',
+            'collection_address': 'Collection address',
+            'collection_postcode': 'Collection postcode',
             'max_rental_days': 'Maximum rental duration (days)',
         }
         widgets = {
             'latitude': forms.HiddenInput(),
             'longitude': forms.HiddenInput(),
             'collection_details': forms.TextInput(attrs={'placeholder': 'e.g. available for collection Mon–Fri 9am–5pm'}),
+            'collection_address': forms.TextInput(attrs={'placeholder': 'e.g. Unit 4, 12 High Street, Mobberley'}),
+            'collection_postcode': forms.TextInput(attrs={'placeholder': 'e.g. WA16 8NN'}),
             'max_rental_days': forms.NumberInput(attrs={'min': 1, 'placeholder': '7'}),
             'delivery_within_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 1000, 'placeholder': '10'}),
             'delivery_cost_per_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01, 'placeholder': '0.00'}),
@@ -78,9 +88,14 @@ class OrderAddForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields['collection_is_not_home_address'].initial = not self.instance.collection_is_home_address
         self.fields['delivery_within_km'].help_text = 'Delivery is charged per km up to this distance.'
         self.fields['delivery_cost_per_km'].help_text = 'Delivery cost per km (£) within this range.'
         self.fields['delivery_cost'].help_text = 'Flat delivery fee (£) when delivery distance is beyond this range.'
+        self.fields['collection_is_not_home_address'].help_text = 'Tick this if buyers should collect from a different address or postcode.'
+        self.fields['collection_address'].help_text = 'Shown only when collection is not at your home address.'
+        self.fields['collection_postcode'].help_text = 'Collection postcode for this listing.'
 
     def clean(self):
         cleaned_data = super().clean()
@@ -95,30 +110,41 @@ class OrderAddForm(forms.ModelForm):
             cleaned_data['delivery_within_km'] = None
             cleaned_data['delivery_cost_per_km'] = None
             cleaned_data['delivery_cost'] = None
-            return cleaned_data
+        else:
+            # Delivery pricing must use a single pricing mode.
+            if delivery_cost_per_km > 0 and delivery_cost > 0:
+                raise forms.ValidationError(
+                    'Choose one delivery pricing mode only: either price per km or flat delivery fee.'
+                )
 
-        # Delivery pricing must use a single pricing mode.
-        if delivery_cost_per_km > 0 and delivery_cost > 0:
-            raise forms.ValidationError(
-                'Choose one delivery pricing mode only: either price per km or flat delivery fee.'
-            )
+            if delivery_cost_per_km > 0 and not delivery_within_km:
+                self.add_error(
+                    'delivery_within_km',
+                    'Delivery up to (km) is required when using price per km.',
+                )
 
-        if delivery_cost_per_km > 0 and not delivery_within_km:
-            self.add_error(
-                'delivery_within_km',
-                'Delivery up to (km) is required when using price per km.',
-            )
+            if (
+                collection_policy == Order.WILL_DELIVER
+                and delivery_within_km
+                and radius_km
+                and delivery_within_km > radius_km
+            ):
+                self.add_error(
+                    'delivery_within_km',
+                    'Delivery distance cannot be greater than Maximum let radius when lender will deliver.',
+                )
 
-        if (
-            collection_policy == Order.WILL_DELIVER
-            and delivery_within_km
-            and radius_km
-            and delivery_within_km > radius_km
-        ):
-            self.add_error(
-                'delivery_within_km',
-                'Delivery distance cannot be greater than Maximum let radius when lender will deliver.',
-            )
+        collection_is_not_home_address = cleaned_data.get('collection_is_not_home_address')
+        cleaned_data['collection_is_home_address'] = not collection_is_not_home_address
+
+        if not collection_is_not_home_address:
+            cleaned_data['collection_address'] = ''
+            cleaned_data['collection_postcode'] = ''
+        else:
+            if not (cleaned_data.get('collection_address') or '').strip():
+                self.add_error('collection_address', 'Enter the collection address.')
+            if not (cleaned_data.get('collection_postcode') or '').strip():
+                self.add_error('collection_postcode', 'Enter the collection postcode.')
 
         return cleaned_data
 

@@ -4,60 +4,210 @@
 {% block title %}How rentalution Works{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="row">
-        <div class="col-lg-2"></div>
-        <div class="col-lg-8">
-<br />
-<h3>Market overview</h3>
-rentalution exits to reduce the spread (the difference between the buying and selling prices) on physically delivered goods.  We're starting off with physically delivered precious metals; coins and bullion.
-<br /> 
-It's aim is to provide an efficient and safe marketplace, reducing costs and making physical delivery a better option of ownership.
-<br /> <br />
-rentalution seeks to make a market place, where buyers and sellers can meet in a safe, efficient manner, with minimal costs.
-<br /><br />
+<div class="container py-4 py-lg-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card border-0 shadow-sm mb-4" style="overflow:hidden;">
+                <div class="card-body p-4 p-lg-5" style="background: linear-gradient(135deg, #f7fbfa 0%, #fff7ef 100%);">
+                    <div class="row align-items-center">
+                        <div class="col-lg-7 mb-4 mb-lg-0">
+                            <p class="text-uppercase text-muted mb-2" style="letter-spacing:.08em;font-weight:800;">How it works</p>
+                            <h1 class="mb-3" style="font-weight:900; color:#132644; line-height:1.05;">Rent things simply. Protect both sides. Keep it friendly.</h1>
+                            <p class="lead mb-0" style="color:#4b5c6d;">
+                                rentalution helps people borrow and lend with clear steps, secure payments, and a deposit hold on card so everyone knows where they stand.
+                            </p>
+                        </div>
+                        <div class="col-lg-5">
+                            <div class="card border-0 shadow-sm" style="background:#ffffffcc;">
+                                <div class="card-body p-4">
+                                    <div class="d-flex align-items-center mb-3">
+                                        <div class="how-badge mr-3">1</div>
+                                        <div>
+                                            <h5 class="mb-1" style="font-weight:800;">Browse & choose</h5>
+                                            <p class="mb-0 text-muted">Find an item nearby and pick the listing that suits your dates.</p>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center mb-3">
+                                        <div class="how-badge mr-3">2</div>
+                                        <div>
+                                            <h5 class="mb-1" style="font-weight:800;">Agree the rental</h5>
+                                            <p class="mb-0 text-muted">Confirm the booking details, then both sides sign off in the app or web.</p>
+                                        </div>
+                                    </div>
+                            <div class="d-flex align-items-center">
+                                <div class="how-badge mr-3">3</div>
+                                <div>
+                                    <h5 class="mb-1" style="font-weight:800;">Pick up, return, close</h5>
+                                    <p class="mb-0 text-muted">Use the handover steps, capture condition evidence at collection and return, then leave feedback once everything is wrapped up.</p>
+                                </div>
+                            </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-<h3>Order placement and execution</h3>
-It allows orders to be priced in £ else as a percentage of the most recent fixing price (any any £ offset).  Relative prices will move as the fixing prices are updated.  For example, if the current spot price is 1000 USD for a troy Oz:
-<br />
-<h6>Example: 1 Oz  Pamp Bar, in £</h6>
+            <div class="row mb-4">
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <div class="how-step">01</div>
+                            <h5 class="mt-3" style="font-weight:800;">Find the right item</h5>
+                            <p class="mb-0 text-muted">
+                                Browse listings, compare prices, and check the item details before you send an enquiry.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <div class="how-step">02</div>
+                            <h5 class="mt-3" style="font-weight:800;">Agree the booking</h5>
+                            <p class="mb-0 text-muted">
+                                Send your dates, confirm the terms, and move into a live rental transaction with both parties kept in the loop.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <div class="how-step">03</div>
+                            <h5 class="mt-3" style="font-weight:800;">Handover & return</h5>
+                            <p class="mb-0 text-muted">
+                                Follow the checkout and return steps, add any required evidence, then leave feedback when the rental is done.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-<br />price = ([value of item in metal content] * % reference) + offset
-<br />
-<br />reference price = 1000 USD per Oz
-<br />reference price using current exchange rate (p1) = £779.88
-<br />order reference percent (p2) = 99%
-<br />order price offset (p3) = -£10
-<br />
-<br />Order price = (p1 * p2) + p3
-<br />Order price = (779.88 * 0.99) - 10 = £762.08
+            <div class="row mb-4">
+                <div class="col-lg-7 mb-3 mb-lg-0">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4 p-lg-5">
+                            <p class="text-uppercase text-muted mb-2" style="letter-spacing:.08em;font-weight:800;">Deposits</p>
+                            <h3 class="mb-3" style="font-weight:900; color:#132644;">We protect deposits with a card hold</h3>
+                            <p class="text-muted mb-3">
+                                Instead of taking money up front in every case, we place a hold on the borrower’s card for the deposit amount. That means the funds are reserved, but not usually taken unless there’s a valid reason to collect them.
+                            </p>
+                            <ul class="mb-0 pl-3" style="color:#425366; line-height:1.7;">
+                                <li>The hold gives the lender confidence without making the process feel heavy.</li>
+                                <li>The borrower keeps visibility of what’s reserved and when it’s released.</li>
+                                <li>Condition evidence is captured at both collection and return so there’s a clear record if anything needs reviewing.</li>
+                                <li>If there’s an issue, the deposit can be reviewed through the transaction workflow.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="card h-100 border-0 shadow-sm" style="background: linear-gradient(180deg, #132644 0%, #1b3d64 100%); color:#fff;">
+                        <div class="card-body p-4 p-lg-5">
+                            <h4 class="mb-3" style="font-weight:900; color:#eaf3ff;">The workflow stays clear from start to finish</h4>
+                            <div class="how-timeline">
+                                <div class="how-timeline-item">
+                                    <strong>Discussion</strong>
+                                    <span>Ask questions and agree the rental.</span>
+                                </div>
+                                <div class="how-timeline-item">
+                                    <strong>Agreement</strong>
+                                    <span>Both sides confirm the booking.</span>
+                                </div>
+                            <div class="how-timeline-item">
+                                    <strong>Checkout & return</strong>
+                                    <span>Capture condition evidence at handover, use the PIN steps, and keep the booking clear on both sides.</span>
+                                </div>
+                                <div class="how-timeline-item">
+                                    <strong>Feedback / closure</strong>
+                                    <span>Leave feedback and close the booking cleanly.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-<br /> <br />
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4 p-lg-5">
+                    <h3 class="mb-3" style="font-weight:900; color:#132644;">A few things to know</h3>
+                    <div class="row">
+                        <div class="col-md-4 mb-3 mb-md-0">
+                            <h6 style="font-weight:800;">Friendly and clear</h6>
+                            <p class="mb-0 text-muted">Every transaction is designed to be understandable on both web and mobile.</p>
+                        </div>
+                        <div class="col-md-4 mb-3 mb-md-0">
+                            <h6 style="font-weight:800;">Shared trust</h6>
+                            <p class="mb-0 text-muted">Messages, evidence, and feedback are all linked to the same booking flow.</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h6 style="font-weight:800;">Room for graphics</h6>
+                            <p class="mb-0 text-muted">This layout is ready for future illustrations or iconography when you want to add them.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-<h3>Transaction processing</h3>
-All tranasactions are binding unless both parties agree to cancel.  Orders are not automatically matched - crossed order books (where buy prices are lower than sell prices) are a possibility but should be viewed with caution; if prices seem to good to be true then then usually are.
-<br /> <br />
-Escrow is mandated and is provided by FCA approved "TODO", whose service is entirely independent from rentalution.
-<br /> 
-There are a few sequential and tracked states in a transaction:
-<ol>
-    <li>1</li>
-    <li>2</li>
-</ol>
-<br />
-Should there be a need for conflict resolution the escrow service provider will come into play, and rentalution will help mediate (TODO).  
-<br /><br />
-
-<h3>Help for buyers and sellers</h3>
-<ul>
-    <li>You can see how many successful tranasactions a user has made by clicking the username in the order</li>
-    <li>if a price looks too good then it probably is - be aware of the value of the item by reviewing previous transactions and the current value; we also provide prices from external retailers should they allow us to.  Obviously many items will trade at a premium to the spot price</li>
-    <li>Certain metals (e.g. gold) are VAT exempt, others (e.g. silver) are not.  All prices listed are inclusive of any applicable VAT and any VAT registered companies should quote inclusive of VAT</li>
-</ul>
         </div>
     </div>
 </div>
-
 {% endblock %}
+
+{% block styles %}
+<style>
+    .how-badge {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        background: #2EC4B6;
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        flex: 0 0 auto;
+        box-shadow: 0 6px 18px rgba(46, 196, 182, 0.24);
+    }
+
+    .how-step {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 56px;
+        height: 56px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #fff2ea 0%, #e8fbf7 100%);
+        color: #132644;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+    }
+
+    .how-timeline {
+        display: grid;
+        gap: 0.9rem;
+    }
+
+    .how-timeline-item {
+        padding: 0.95rem 1rem;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .how-timeline-item strong {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-size: 0.98rem;
+    }
+
+    .how-timeline-item span {
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 0.94rem;
+        line-height: 1.5;
+    }
+</style>
+{% endblock %}
+
 {% block domready %}
 {% endblock %}

@@ -537,6 +537,9 @@ def copy_order_as_new(request, order_id):
         collection_policy=source_order.collection_policy,
         delivery_cost=source_order.delivery_cost,
         collection_details=source_order.collection_details,
+        collection_is_home_address=source_order.collection_is_home_address,
+        collection_address=source_order.collection_address,
+        collection_postcode=source_order.collection_postcode,
         max_rental_days=source_order.max_rental_days,
     )
 

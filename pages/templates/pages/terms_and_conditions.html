@@ -1,13 +1,115 @@
 {% extends "base.html" %}
 {% load thumbnail %}
 
-{% block title %}eTerms and Conditions{% endblock %}
+{% block title %}Terms and Conditions{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="row">
-        <div class="col-lg-12">
-            <h2>Terms and Conditions</h2>
+<div class="container py-4 py-lg-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4 p-lg-5">
+                    <p class="text-uppercase text-muted mb-2" style="letter-spacing:.08em;font-weight:800;">Legal</p>
+                    <h1 class="mb-3" style="font-weight:900; color:#132644;">Terms and Conditions</h1>
+                    <p class="lead mb-0" style="color:#4b5c6d;">
+                        These terms explain how rentalution works, what we expect from users, and how bookings, deposits, and support are handled.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4 p-lg-5">
+                    <h3 class="mb-3" style="font-weight:900; color:#132644;">1. Using rentalution</h3>
+                    <p class="text-muted">
+                        By using the site or app, you agree to act honestly, keep your account details accurate, and follow the rules that apply to each booking or listing.
+                    </p>
+                    <p class="text-muted mb-0">
+                        You must not use rentalution for anything unlawful, misleading, abusive, or harmful to another user.
+                    </p>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <h5 style="font-weight:800;">Bookings</h5>
+                            <p class="mb-0 text-muted">
+                                A booking becomes a live transaction once both parties confirm the rental steps. Dates, messages, and evidence are then tracked through the booking workflow.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <h5 style="font-weight:800;">Deposits</h5>
+                            <p class="mb-0 text-muted">
+                                Deposits are usually handled by placing a hold on the borrower’s card. Depending on the outcome of the booking, the hold may be released, returned, or reviewed.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <h5 style="font-weight:800;">Evidence</h5>
+                            <p class="mb-0 text-muted">
+                                Condition evidence may be captured at collection and return so both sides have a clear record if anything needs review later.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4 p-lg-5">
+                    <h3 class="mb-3" style="font-weight:900; color:#132644;">2. User responsibilities</h3>
+                    <ul class="mb-0 pl-3" style="color:#425366; line-height:1.75;">
+                        <li>Provide accurate information when creating a listing, enquiry, or transaction.</li>
+                        <li>Keep rental items in the condition described, apart from fair wear and tear.</li>
+                        <li>Respond promptly to booking steps, messages, and evidence requests.</li>
+                        <li>Return items on time and in the agreed condition.</li>
+                        <li>Use the platform respectfully and keep communication professional.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4 p-lg-5">
+                    <h3 class="mb-3" style="font-weight:900; color:#132644;">3. Payments, fees, and holds</h3>
+                    <p class="text-muted">
+                        rentalution may charge fees for using the platform or for specific services, and those fees will be shown before you complete a relevant action.
+                    </p>
+                    <p class="text-muted mb-0">
+                        Where a deposit hold is required, you authorise the platform or its payment partner to place and later release or collect that hold according to the booking outcome and the relevant transaction workflow.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4 p-lg-5">
+                    <h3 class="mb-3" style="font-weight:900; color:#132644;">4. Cancellations, disputes, and feedback</h3>
+                    <p class="text-muted">
+                        Some bookings can only be cancelled if both parties agree, or if the transaction reaches a stage where the booking rules allow it.
+                    </p>
+                    <p class="text-muted">
+                        If there is a disagreement about handover, condition, or deposit return, the booking may move into mediation or dispute review. Both parties can also leave feedback at the end of the rental.
+                    </p>
+                    <p class="text-muted mb-0">
+                        Feedback should be honest, fair, and based on the actual booking experience.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4 p-lg-5">
+                    <h3 class="mb-3" style="font-weight:900; color:#132644;">5. Contact</h3>
+                    <p class="text-muted mb-0">
+                        If you need help understanding these terms, or think something on the platform needs attention, please contact <a href="mailto:admin@rentalution.com">admin@rentalution.com</a>.
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 </div>

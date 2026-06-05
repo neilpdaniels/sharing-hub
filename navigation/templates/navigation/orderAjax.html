@@ -25,6 +25,16 @@
                 {% endif %}
             </div>
 
+            {% if not order.collection_is_home_address %}
+            <div class="mb-2">
+                <strong class="text-dark d-block">Collection address</strong>
+                <div>
+                    {% if order.collection_address %}{{ order.collection_address }}<br>{% endif %}
+                    {% if order.collection_postcode %}{{ order.collection_postcode }}{% endif %}
+                </div>
+            </div>
+            {% endif %}
+
             <div>
                 <strong class="text-dark d-block">Additional details</strong>
                 {% if order.additional_comments %}

@@ -385,6 +385,23 @@ class Order(models.Model):
         max_length=200, blank=True, default='',
         help_text='e.g. times of collection, address note'
     )
+    collection_is_home_address = models.BooleanField(
+        default=True,
+        help_text='Set this to false if collection happens somewhere other than your home address.',
+    )
+    collection_address = models.CharField(
+        max_length=300,
+        blank=True,
+        default='',
+        help_text='Collection address if different from the home address',
+    )
+    collection_postcode = models.CharField(
+        max_length=10,
+        blank=True,
+        default='',
+        db_index=True,
+        help_text='Collection postcode if different from the home address',
+    )
     max_rental_days = models.PositiveIntegerField(
         null=True, blank=True, default=7,
         help_text='Maximum number of days a borrower can rent this item in one booking'

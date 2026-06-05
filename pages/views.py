@@ -1,4 +1,9 @@
+from django.conf import settings
+from django.contrib import messages
+from django.core.mail import send_mail
 from django.shortcuts import render
+
+from common.security import verify_turnstile_token
 
 
 def how_it_works(request):
@@ -14,7 +19,55 @@ def fees_and_charges(request):
 
 
 def help_and_support(request):
-    return render(request, 'pages/help_and_support.html')
+    show_turnstile = True
+    captcha_error = ''
+
+    if request.method == 'POST':
+        name = (request.POST.get('name') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        subject = (request.POST.get('subject') or '').strip()
+        message = (request.POST.get('message') or '').strip()
+
+        token = (request.POST.get('cf-turnstile-response') or '').strip()
+        if not verify_turnstile_token(token, request.META.get('REMOTE_ADDR', '')):
+            captcha_error = 'Human verification failed. Please try again.'
+
+        if not captcha_error and (not name or not email or not subject or not message):
+            messages.error(request, 'Please complete all fields before submitting.')
+        elif not captcha_error:
+            support_to = 'admin@rentalution.com'
+            send_mail(
+                subject=f'Help & Support: {subject}',
+                message=(
+                    f'From: {name}\n'
+                    f'Email: {email}\n\n'
+                    f'Message:\n{message}'
+                ),
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                recipient_list=[support_to],
+                fail_silently=True,
+            )
+            messages.success(request, 'Thanks. Your message has been sent and we’ll get back to you soon.')
+            return render(request, 'pages/help_and_support.html', {
+                'show_turnstile': True,
+                'support_email': support_to,
+                'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+            })
+
+    context = {
+        'show_turnstile': True,
+        'captcha_error': captcha_error,
+        'support_email': 'admin@rentalution.com',
+        'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+    }
+    if request.method == 'POST' and not captcha_error:
+        context.update({
+            'name': name,
+            'email': email,
+            'subject': subject,
+            'message': message,
+        })
+    return render(request, 'pages/help_and_support.html', context)
 
 
 def buyers_guide(request):

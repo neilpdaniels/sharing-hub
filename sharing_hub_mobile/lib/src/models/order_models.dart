@@ -15,6 +15,9 @@ class OrderSummary {
     required this.currency,
     required this.description,
     required this.postcode,
+    required this.collectionIsHomeAddress,
+    required this.collectionAddress,
+    required this.collectionPostcode,
     required this.radiusKm,
     required this.latitude,
     required this.longitude,
@@ -53,6 +56,9 @@ class OrderSummary {
   final String currency;
   final String description;
   final String postcode;
+  final bool collectionIsHomeAddress;
+  final String collectionAddress;
+  final String collectionPostcode;
   final int radiusKm;
   final double? latitude;
   final double? longitude;
@@ -104,6 +110,9 @@ class OrderSummary {
       currency: json['currency'] as String? ?? 'GBP',
       description: json['description'] as String? ?? '',
       postcode: json['postcode'] as String? ?? '',
+      collectionIsHomeAddress: json['collection_is_home_address'] as bool? ?? true,
+      collectionAddress: json['collection_address'] as String? ?? '',
+      collectionPostcode: json['collection_postcode'] as String? ?? '',
       radiusKm: json['radius_km'] as int? ?? 10,
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),

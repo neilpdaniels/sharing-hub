@@ -288,6 +288,13 @@ class MyOrdersScreen extends StatelessWidget {
     final deliveryCostPerKmController = TextEditingController(
       text: order.deliveryCostPerKm?.toStringAsFixed(2) ?? '',
     );
+    var collectionIsNotHomeAddress = !order.collectionIsHomeAddress;
+    final collectionAddressController = TextEditingController(
+      text: order.collectionAddress,
+    );
+    final collectionPostcodeController = TextEditingController(
+      text: order.collectionPostcode,
+    );
     final collectionDetailsController = TextEditingController(
       text: _stripAvailabilityMarker(order.collectionDetails),
     );
@@ -393,6 +400,48 @@ class MyOrdersScreen extends StatelessWidget {
                         decoration: const InputDecoration(
                           labelText: 'Maximum let radius (km)',
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      StatefulBuilder(
+                        builder: (context, setLocalState) {
+                          return Column(
+                            children: [
+                              CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                value: collectionIsNotHomeAddress,
+                                onChanged: (value) {
+                                  setLocalState(() {
+                                    collectionIsNotHomeAddress = value ?? false;
+                                    if (!collectionIsNotHomeAddress) {
+                                      collectionAddressController.clear();
+                                      collectionPostcodeController.clear();
+                                    }
+                                  });
+                                },
+                                title: const Text(
+                                  'Collection is not at my home address',
+                                ),
+                                controlAffinity: ListTileControlAffinity.leading,
+                              ),
+                              if (collectionIsNotHomeAddress) ...[
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: collectionAddressController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Collection address',
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: collectionPostcodeController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Collection postcode',
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
                       ),
                       const SizedBox(height: 8),
                       TextField(
@@ -584,6 +633,14 @@ class MyOrdersScreen extends StatelessWidget {
                         .text
                         .trim();
                     fields['postcode'] = postcodeController.text.trim();
+                    fields['collection_is_home_address'] =
+                        !collectionIsNotHomeAddress;
+                    fields['collection_address'] = collectionIsNotHomeAddress
+                        ? collectionAddressController.text.trim()
+                        : '';
+                    fields['collection_postcode'] = collectionIsNotHomeAddress
+                        ? collectionPostcodeController.text.trim()
+                        : '';
                     fields['collection_details'] =
                         _mergeCollectionDetailsAvailability(
                           collectionDetailsController.text.trim(),

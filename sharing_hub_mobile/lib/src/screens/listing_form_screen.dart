@@ -47,6 +47,8 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   final _deliveryWithinKmController = TextEditingController();
   final _deliveryCostPerKmController = TextEditingController();
   final _collectionDetailsController = TextEditingController();
+  final _collectionAddressController = TextEditingController();
+  final _collectionPostcodeController = TextEditingController();
   final _maxRentalDaysController = TextEditingController(text: '7');
   final _descriptionController = TextEditingController();
   final _additionalCommentsController = TextEditingController();
@@ -57,6 +59,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
 
   bool _saving = false;
   bool _searchingProducts = false;
+  bool _collectionIsNotHomeAddress = false;
 
   int _currentStep = 0;
   Set<int> _availableWeekdays = {1, 2, 3, 4, 5, 6, 7};
@@ -121,6 +124,9 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     _deliveryCostPerKmController.text = order.deliveryCostPerKm == null
         ? ''
         : order.deliveryCostPerKm!.toStringAsFixed(2);
+    _collectionIsNotHomeAddress = !order.collectionIsHomeAddress;
+    _collectionAddressController.text = order.collectionAddress;
+    _collectionPostcodeController.text = order.collectionPostcode;
 
     _availableWeekdays = _extractAvailabilityDays(order.collectionDetails);
     _collectionDetailsController.text = _stripAvailabilityMarker(
@@ -355,6 +361,16 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
 
   bool get _canIncludeDeliveryInfo => _collectionPolicy != 'MC';
 
+  void _setCollectionAddressMode(bool value) {
+    setState(() {
+      _collectionIsNotHomeAddress = value;
+      if (!value) {
+        _collectionAddressController.clear();
+        _collectionPostcodeController.clear();
+      }
+    });
+  }
+
   Map<String, dynamic> _buildPayload() {
     final payload = <String, dynamic>{
       'price': double.parse(_priceController.text.trim()),
@@ -371,6 +387,13 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
       'mates_deposit':
           double.tryParse(_matesDepositController.text.trim()) ?? 0,
       'collection_details': _collectionDetailsWithAvailability(),
+      'collection_is_home_address': !_collectionIsNotHomeAddress,
+      'collection_address': _collectionIsNotHomeAddress
+          ? _collectionAddressController.text.trim()
+          : '',
+      'collection_postcode': _collectionIsNotHomeAddress
+          ? _collectionPostcodeController.text.trim()
+          : '',
     };
 
     if (_canIncludeDeliveryInfo) {
@@ -692,6 +715,30 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                 labelText: 'Maximum let radius (km)',
               ),
             ),
+            const SizedBox(height: 12),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _collectionIsNotHomeAddress,
+              onChanged: (value) => _setCollectionAddressMode(value ?? false),
+              title: const Text('Collection is not at my home address'),
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+            if (_collectionIsNotHomeAddress) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _collectionAddressController,
+                decoration: const InputDecoration(
+                  labelText: 'Collection address',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _collectionPostcodeController,
+                decoration: const InputDecoration(
+                  labelText: 'Collection postcode',
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _letVisibility,

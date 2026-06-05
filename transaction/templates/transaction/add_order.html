@@ -85,6 +85,14 @@
                 {% bootstrap_field order_form.delivery_cost %}
               </div>
             </div>
+            <hr>
+            <div class="mb-2">
+              {% bootstrap_field order_form.collection_is_not_home_address %}
+            </div>
+            <div id="collection-address-wrap" style="display:none;">
+              {% bootstrap_field order_form.collection_address %}
+              {% bootstrap_field order_form.collection_postcode %}
+            </div>
             {% bootstrap_field order_form.collection_details %}
           </div>
         </div>
@@ -321,6 +329,16 @@ function toggleDeliveryCost() {
   }
 }
 
+function toggleCollectionAddress() {
+  if ($('#id_collection_is_not_home_address').is(':checked')) {
+    $('#collection-address-wrap').show();
+  } else {
+    $('#collection-address-wrap').hide();
+    $('#id_collection_address').val('');
+    $('#id_collection_postcode').val('');
+  }
+}
+
 function currentDeliveryPricingMode() {
   if ($('#id_delivery_pricing_mode_per_km').is(':checked')) {
     return 'per_km';
@@ -386,6 +404,8 @@ $('#id_delivery_amount').on('input', syncDeliveryPricingFields);
 initDeliveryPricingMode();
 $('#id_collection_policy').on('change', toggleDeliveryCost);
 toggleDeliveryCost();
+$('#id_collection_is_not_home_address').on('change', toggleCollectionAddress);
+toggleCollectionAddress();
 
 function toggleAudiencePricing() {
   var vis = $('#id_let_visibility').val();

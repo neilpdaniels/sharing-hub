@@ -96,6 +96,10 @@ class OrderAddForm(forms.ModelForm):
         self.fields['collection_is_not_home_address'].help_text = 'Tick this if buyers should collect from a different address or postcode.'
         self.fields['collection_address'].help_text = 'Shown only when collection is not at your home address.'
         self.fields['collection_postcode'].help_text = 'Collection postcode for this listing.'
+        self.fields['max_rental_days'].help_text = (
+            'If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. '
+            'Payment cards can still be different.'
+        )
 
     def clean(self):
         cleaned_data = super().clean()

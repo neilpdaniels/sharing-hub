@@ -2,12 +2,15 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from account.models import Profile
 from common.models import Category, Order, Product
+from friends.models import Friendship
 from transaction.models import Transaction
 
 
@@ -94,6 +97,119 @@ class LenderListingsViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class MobilePasswordAuthTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='password-user',
+            email='password-user@example.com',
+            password='old-password',
+        )
+
+    def test_password_reset_request_sends_email(self):
+        response = self.client.post(
+            reverse('mobile_api:auth_password_reset'),
+            {'email': self.user.email},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.user.email, mail.outbox[0].to)
+        self.assertIn('reset your password', mail.outbox[0].subject.lower())
+
+    def test_password_change_updates_password(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('mobile_api:auth_password_change'),
+            {
+                'old_password': 'old-password',
+                'new_password1': 'NewStrongPass123!',
+                'new_password2': 'NewStrongPass123!',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('NewStrongPass123!'))
+
+
+class NearbyPeopleApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='nearby-user',
+            email='nearby-user@example.com',
+            password='secret',
+        )
+        self.profile = Profile.objects.create(
+            user=self.user,
+            date_of_birth='1990-01-01',
+            mobile_number='07111111111',
+            address_line_1='1 Main St',
+            town='London',
+            postcode='SW1A1AA',
+            latitude=51.5000,
+            longitude=-0.1000,
+        )
+        self.friend = User.objects.create_user(
+            username='friend-user',
+            email='friend@example.com',
+            password='secret',
+        )
+        Profile.objects.create(
+            user=self.friend,
+            date_of_birth='1990-01-01',
+            mobile_number='07222222222',
+            address_line_1='2 Main St',
+            town='London',
+            postcode='SW1A2AA',
+            latitude=51.5010,
+            longitude=-0.1010,
+        )
+        self.other = User.objects.create_user(
+            username='other-user',
+            email='other@example.com',
+            password='secret',
+        )
+        Profile.objects.create(
+            user=self.other,
+            date_of_birth='1990-01-01',
+            mobile_number='07333333333',
+            address_line_1='3 Main St',
+            town='London',
+            postcode='SW1A3AA',
+            latitude=51.6000,
+            longitude=-0.3000,
+        )
+
+    def test_nearby_people_excludes_existing_friendships(self):
+        Friendship.objects.create(user_from=self.user, user_to=self.friend, status=Friendship.ACCEPTED)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('mobile_api:friends_nearby'), {'radius_km': 10})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['count'], 0)
+
+    def test_nearby_people_returns_local_profiles(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('mobile_api:friends_nearby'), {'radius_km': 10})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['count'], 1)
+        self.assertEqual(payload['results'][0]['username'], 'friend-user')
+
+    def test_send_friend_request(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse('mobile_api:friends_add', kwargs={'user_id': self.other.id}))
+
+        self.assertEqual(response.status_code, 201)
+        friendship = Friendship.objects.get(user_from=self.user, user_to=self.other)
+        self.assertEqual(friendship.status, Friendship.PENDING)
 
 
 class ProductDetailDistanceFilterTests(TestCase):
@@ -360,6 +476,41 @@ class TransactionActionWorkflowTests(TestCase):
             price_as_pct_spot_value=15,
         )
 
+    def test_transaction_detail_exposes_role_aware_allowed_actions(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_AGREED,
+            start_offset_days=2,
+            end_offset_days=5,
+        )
+
+        self.client.force_login(self.lender)
+        lender_response = self.client.get(
+            reverse(
+                'mobile_api:transactions_detail',
+                kwargs={'transaction_reference': txn.transaction_reference},
+            )
+        )
+        self.assertEqual(lender_response.status_code, 200)
+        lender_payload = lender_response.json()
+        lender_actions = lender_payload.get('workflow_payload', {}).get('allowed_actions', [])
+        self.assertIn('confirm_lender_contract', lender_actions)
+        self.assertIn('collect_deposit', lender_actions)
+        self.assertNotIn('confirm_renter_contract', lender_actions)
+
+        self.client.force_login(self.renter)
+        renter_response = self.client.get(
+            reverse(
+                'mobile_api:transactions_detail',
+                kwargs={'transaction_reference': txn.transaction_reference},
+            )
+        )
+        self.assertEqual(renter_response.status_code, 200)
+        renter_payload = renter_response.json()
+        renter_actions = renter_payload.get('workflow_payload', {}).get('allowed_actions', [])
+        self.assertIn('confirm_renter_contract', renter_actions)
+        self.assertIn('add_deposit_card', renter_actions)
+        self.assertNotIn('confirm_lender_contract', renter_actions)
+
     def test_mobile_report_missing_rental_and_feedback_path(self):
         txn = self._create_txn(
             status=Transaction.RENTAL_AGREED,
@@ -523,7 +674,7 @@ class TransactionActionWorkflowTests(TestCase):
         )
         mock_create_setup_intent.return_value = {
             'ok': True,
-            'provider': 'placeholder',
+            'provider': 'stripe',
             'setup_intent_id': 'seti_mobile_123',
             'client_secret': 'seti_mobile_123_secret',
         }
@@ -541,7 +692,7 @@ class TransactionActionWorkflowTests(TestCase):
         payload = response.json()
         self.assertEqual(payload.get('setup_intent_id'), 'seti_mobile_123')
         self.assertEqual(payload.get('client_secret'), 'seti_mobile_123_secret')
-        self.assertEqual(payload.get('provider'), 'placeholder')
+        self.assertEqual(payload.get('provider'), 'stripe')
 
         txn.refresh_from_db()
         self.assertEqual(txn.stripe_setup_intent_id, 'seti_mobile_123')

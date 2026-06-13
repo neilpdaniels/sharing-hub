@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Transactions{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="mb-4">
+        <h2 class="mb-1">Admin Transactions</h2>
+        <p class="text-muted mb-0">Web-only admin workspace for reviewing transactions, resolving disputes, and moving a transaction to any state.</p>
+    </div>
+
+    <div class="card mb-4" id="disputes">
+        <div class="card-body">
+            <h4 class="mb-3">Dispute Queue</h4>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Case</th>
+                            <th>Transaction</th>
+                            <th>Status</th>
+                            <th>Outcome</th>
+                            <th>Owner</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for case in dispute_cases %}
+                        <tr>
+                            <td>{{ case.case_number }}</td>
+                            <td><a href="{% url 'transaction:dispute_case_review' case.case_number %}">{{ case.transaction.transaction_reference }}</a></td>
+                            <td>{{ case.get_status_display }}</td>
+                            <td>{{ case.get_outcome_display }}</td>
+                            <td>{{ case.owner|default:"Unassigned" }}</td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-primary" href="{% url 'transaction:dispute_case_review' case.case_number %}">Review</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-muted">No dispute cases yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <h4 class="mb-3">Transactions</h4>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr>
+                            <th>Reference</th>
+                            <th>Lender</th>
+                            <th>Borrower</th>
+                            <th>Current State</th>
+                            <th>Set State</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for txn in transactions %}
+                        <tr>
+                            <td><a href="{% url 'transaction:view_transaction' txn.transaction_reference %}">{{ txn.transaction_reference }}</a></td>
+                            <td>{{ txn.user_passive }}</td>
+                            <td>{{ txn.user_aggressive }}</td>
+                            <td>
+                                <span class="badge badge-secondary">{{ txn.get_transaction_status_display }}</span>
+                                <div><small class="text-muted">{{ txn.get_deposit_status_display }} / {{ txn.get_payment_status_display }}</small></div>
+                            </td>
+                            <td>
+                                <form method="post" class="form-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="transaction_reference" value="{{ txn.transaction_reference }}">
+                                    <select name="new_status" class="form-control form-control-sm mr-2">
+                                        {% for code, label in transaction_status_choices %}
+                                        <option value="{{ code }}" {% if code == txn.transaction_status %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input type="text" name="note" class="form-control form-control-sm mr-2" placeholder="Optional note">
+                                    <button class="btn btn-sm btn-primary" type="submit">Update</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-muted">No transactions found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

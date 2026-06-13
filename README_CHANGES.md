@@ -252,10 +252,10 @@ README_CHANGES.md          # This quick reference file
    - `filter_transactions_by_distance()`
    - `geocode_postcode_for_order()`
 
-6. **`sharing_hub/settings/base.py`**
+6. **`rentalution/settings/base.py`**
    - INSTALLED_APPS: Replaced reference_price with friends
 
-7. **`sharing_hub/urls.py`**
+7. **`rentalution/urls.py`**
    - Added: `path('friends/', include('friends.urls', namespace='friends'))`
 
 8. **`navigation/views.py`**

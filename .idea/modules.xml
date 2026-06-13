@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/sharing_hub.iml" filepath="$PROJECT_DIR$/.idea/sharing_hub.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/rentalution.iml" filepath="$PROJECT_DIR$/.idea/rentalution.iml" />
     </modules>
   </component>
 </project>

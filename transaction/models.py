@@ -3,7 +3,6 @@ from datetime import timedelta
 from common.models import Order, Product, TransactionFee
 from django.core.validators import MaxValueValidator, MinValueValidator, FileExtensionValidator
 from django.core.exceptions import ValidationError
-from simple_history.models import HistoricalRecords
 import random
 import string
 from common.helpers import RandomFileName 
@@ -12,6 +11,7 @@ from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
 import sys
 from django.conf import settings
+from simple_history.models import HistoricalRecords
 
 # File size limits (in bytes)
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
@@ -76,6 +76,7 @@ class Transaction(models.Model):
     RENTAL_PROCESS_COMPLETED = 'RCOMP'
     RENTAL_PROCESS_COMPLETED_ONE_SIDED = 'RCOMP1S'
     RENTAL_PROCESS_COMPLETED_NO_FEEDBACK = 'RCMPNFB'
+    DISPUTE_DECIDED = 'DDEC'
     DEPOSIT_RETURNED = 'DRET'
     DEPOSIT_REDUCED = 'DRED'
     MEDIATION_REQUIRED = 'DMED'
@@ -114,6 +115,7 @@ class Transaction(models.Model):
         (RENTAL_PROCESS_COMPLETED, 'Completed'),
         (RENTAL_PROCESS_COMPLETED_ONE_SIDED, 'Completed'),
         (RENTAL_PROCESS_COMPLETED_NO_FEEDBACK, 'Closed'),
+        (DISPUTE_DECIDED, 'Dispute decision reached'),
         (CANCEL_REQUESTED, 'Cancellation requested'),
         (CANCEL_ACCEPTED, 'Cancelled'),
         (DISPUTE_REQUESTED, 'Mediation'),
@@ -216,6 +218,7 @@ class Transaction(models.Model):
     contract_counterparty_reminder_at = models.DateTimeField(blank=True, null=True)
     return_verification_reminder_at = models.DateTimeField(blank=True, null=True)
     feedback_reminder_at = models.DateTimeField(blank=True, null=True)
+    deposit_reminder_at = models.DateTimeField(blank=True, null=True)
     deposit_proposed_return_amount = models.FloatField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(999999)],
@@ -247,6 +250,7 @@ class Transaction(models.Model):
     )
     deposit_cardholder_name = models.CharField(max_length=120, blank=True)
     deposit_card_brand = models.CharField(max_length=20, blank=True)
+    deposit_card_funding = models.CharField(max_length=20, blank=True, default='')
     deposit_card_last4 = models.CharField(max_length=4, blank=True)
 
     TEST_HOLD_NOT_RUN = 'NOT_RUN'
@@ -514,6 +518,7 @@ class Transaction(models.Model):
             self.FEEDBACK_ONE_SIDED,
             self.RENTAL_PROCESS_COMPLETED,
             self.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
+            self.DISPUTE_DECIDED,
         ) or missing_rental_voided:
             return 7
         return 1
@@ -521,14 +526,204 @@ class Transaction(models.Model):
     def get_workflow_stage_label(self):
         return self.WORKFLOW_STAGE_LABELS.get(self.get_workflow_stage_number(), 'Workflow step')
 
+    def _workflow_step_display_date(self, step):
+        if step == 1:
+            return self.created
+        if step in (2, 3):
+            if self.transaction_status == self.RENTAL_AGREED:
+                return 'Earliest start: now'
+            return 'TBC'
+        if step == 4:
+            if self.deposit_test_hold_at:
+                return self.deposit_test_hold_at
+            if self.transaction_status == self.RENTAL_AGREED and self.renter_agreed_at:
+                return 'Available now (contracts signed)'
+            return 'TBC'
+        if step == 5:
+            if self.payment_collection_requested_at:
+                return self.payment_collection_requested_at
+            if self.rental_start_date:
+                return self.rental_start_date
+            return 'TBC'
+        if step == 6:
+            if self.rental_end_date:
+                return self.rental_end_date
+            return 'TBC'
+        if self.transaction_status in (self.AWAITING_FEEDBACK, self.RENTAL_PROCESS_COMPLETED):
+            return self.amended
+        return 'TBC'
+
+    def _format_workflow_step_display_date(self, value):
+        if value is None:
+            return 'TBC'
+        if isinstance(value, str):
+            return value
+        try:
+            return value.strftime('%b %d, %Y %H:%M')
+        except AttributeError:
+            return str(value)
+
+    def get_allowed_actions(self):
+        status = self.transaction_status
+        actions = []
+
+        if status == self.RENTAL_ENQUIRY:
+            actions.extend(['agree_rental', 'reject_enquiry', 'request_cancellation'])
+        elif status == self.RENTAL_AGREED:
+            actions.extend([
+                'confirm_lender_contract',
+                'reinitiate_lender_contract',
+                'confirm_renter_contract',
+                'reject_rental_agreement',
+                'add_deposit_card',
+                'use_existing_card',
+                'confirm_stripe_card',
+                'collect_deposit',
+                'send_message',
+            ])
+        elif status == self.RENTAL_DAY_AWAITING_VERIFICATION:
+            actions.extend([
+                'confirm_checkout_evidence',
+                'submit_checkout_borrower_evidence',
+                'verify_checkout_handover_pin',
+            ])
+        elif status == self.RENTAL_ONGOING:
+            actions.append('submit_return_borrower_evidence')
+        elif status == self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
+            actions.extend([
+                'confirm_return_evidence',
+                'submit_lender_return_evidence',
+                'verify_return_handover_pin',
+                'submit_return_borrower_evidence',
+            ])
+        elif status == self.RENTAL_RETURNED_DEPOSIT_PENDING:
+            if self.deposit > 0:
+                actions.extend([
+                    'propose_deposit_return',
+                    'deposit_full',
+                    'deposit_reduced',
+                    'mediation_required',
+                    'agree_deposit_return',
+                    'contest_deposit_return',
+                    'raise_deposit_dispute_admin',
+                ])
+        elif status in (
+            self.RENTAL_RETURNED_DEPOSIT_RETURNED,
+            self.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+            self.DISPUTE_REQUESTED,
+        ):
+            actions.append('secure_dispute_funds')
+        elif status in (self.AWAITING_FEEDBACK, self.FEEDBACK_ONE_SIDED):
+            actions.append('submit_feedback')
+
+        return list(dict.fromkeys(actions))
+
+    def get_allowed_actions_for_user(self, user):
+        if user is None or not getattr(user, 'is_authenticated', False):
+            return []
+
+        status = self.transaction_status
+        is_lender = user.id == self.user_passive_id
+        is_renter = user.id == self.user_aggressive_id
+        actions = []
+
+        if status == self.RENTAL_ENQUIRY:
+            if is_lender:
+                actions.extend(['agree_rental', 'reject_enquiry'])
+            if is_lender or is_renter:
+                actions.append('request_cancellation')
+        elif status == self.RENTAL_AGREED:
+            if is_lender and not self.lender_agreed_at:
+                actions.extend(['confirm_lender_contract', 'reinitiate_lender_contract'])
+            if is_renter and self.lender_agreed_at and not self.renter_agreed_at:
+                actions.extend(['confirm_renter_contract', 'reject_rental_agreement'])
+            if is_renter:
+                actions.extend(['add_deposit_card', 'use_existing_card', 'confirm_stripe_card'])
+            if is_lender and self.deposit_card_setup_status == self.CARD_READY:
+                actions.append('collect_deposit')
+            if is_lender or is_renter:
+                actions.append('send_message')
+        elif status == self.RENTAL_DAY_AWAITING_VERIFICATION:
+            if is_renter:
+                actions.extend([
+                    'confirm_checkout_evidence',
+                    'submit_checkout_borrower_evidence',
+                ])
+            if is_lender:
+                actions.append('verify_checkout_handover_pin')
+        elif status == self.RENTAL_ONGOING:
+            if is_renter:
+                actions.append('submit_return_borrower_evidence')
+        elif status == self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
+            if is_lender:
+                actions.extend([
+                    'confirm_return_evidence',
+                    'submit_lender_return_evidence',
+                ])
+            if is_renter:
+                actions.extend([
+                    'verify_return_handover_pin',
+                    'submit_return_borrower_evidence',
+                ])
+        elif status == self.RENTAL_RETURNED_DEPOSIT_PENDING:
+            if self.deposit > 0:
+                if is_lender:
+                    actions.extend([
+                        'propose_deposit_return',
+                        'deposit_full',
+                        'deposit_reduced',
+                        'mediation_required',
+                    ])
+                if is_renter:
+                    actions.extend([
+                        'agree_deposit_return',
+                        'contest_deposit_return',
+                    ])
+                if is_lender or is_renter:
+                    actions.append('raise_deposit_dispute_admin')
+        elif status in (
+            self.RENTAL_RETURNED_DEPOSIT_RETURNED,
+            self.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+            self.DISPUTE_REQUESTED,
+        ):
+            if is_lender or is_renter:
+                actions.append('secure_dispute_funds')
+        elif status in (self.AWAITING_FEEDBACK, self.FEEDBACK_ONE_SIDED):
+            if is_lender or is_renter:
+                actions.append('submit_feedback')
+
+        return list(dict.fromkeys(actions))
+
     def get_workflow_payload(self):
         current = self.get_workflow_stage_number()
+        cancellation_banner = None
+        if self.transaction_status == self.CANCEL_REQUESTED:
+            cancellation_banner = {
+                'label': 'Cancellation requested',
+                'user': 'System',
+                'status': 'Awaiting cancellation outcome',
+                'badge': 'badge-warning',
+                'row_class': 'table-warning',
+                'date': self.amended,
+            }
+        elif self.transaction_status == self.CANCEL_ACCEPTED:
+            cancellation_banner = {
+                'label': 'Rental cancelled',
+                'user': 'System',
+                'status': 'Cancelled',
+                'badge': 'badge-warning',
+                'row_class': 'table-warning',
+                'date': self.amended,
+            }
         timeline = [
             {
                 'step': step,
                 'label': self.WORKFLOW_STAGE_LABELS.get(step, 'Workflow step'),
                 'current': step == current,
                 'done': step < current,
+                'display_date': self._format_workflow_step_display_date(
+                    self._workflow_step_display_date(step)
+                ),
             }
             for step in range(1, 8)
         ]
@@ -536,6 +731,8 @@ class Transaction(models.Model):
             'current_stage': current,
             'current_label': self.get_workflow_stage_label(),
             'timeline': timeline,
+            'allowed_actions': self.get_allowed_actions(),
+            'cancellation_banner': cancellation_banner,
         }
 
     def get_workflow_timeline(self):
@@ -543,6 +740,116 @@ class Transaction(models.Model):
 
     def __str__(self):
         return self.transaction_reference
+
+
+class DisputeCase(models.Model):
+    REASON_MISSING_RENTAL = 'missing_rental'
+    REASON_MISSING_RETURN = 'missing_return'
+    REASON_DEPOSIT_CONTEST = 'deposit_contest'
+    REASON_GENERAL = 'general'
+    REASON_DISPUTE_TEAM = 'dispute_team'
+
+    REASON_CODE_CHOICES = (
+        (REASON_MISSING_RENTAL, 'Missing rental'),
+        (REASON_MISSING_RETURN, 'Missing return'),
+        (REASON_DEPOSIT_CONTEST, 'Deposit contest'),
+        (REASON_GENERAL, 'General dispute'),
+        (REASON_DISPUTE_TEAM, 'Dispute team review'),
+    )
+
+    STATUS_OPEN = 'open'
+    STATUS_NEEDS_INFO = 'needs_info'
+    STATUS_UNDER_REVIEW = 'under_review'
+    STATUS_ESCALATED = 'escalated'
+    STATUS_RESOLVED = 'resolved'
+    STATUS_CLOSED = 'closed'
+
+    STATUS_CHOICES = (
+        (STATUS_OPEN, 'Open'),
+        (STATUS_NEEDS_INFO, 'Needs info'),
+        (STATUS_UNDER_REVIEW, 'Under review'),
+        (STATUS_ESCALATED, 'Escalated'),
+        (STATUS_RESOLVED, 'Resolved'),
+        (STATUS_CLOSED, 'Closed'),
+    )
+
+    OUTCOME_PENDING = 'pending'
+    OUTCOME_LENDER = 'lender'
+    OUTCOME_BORROWER = 'borrower'
+    OUTCOME_SPLIT = 'split'
+    OUTCOME_VOID = 'void'
+    OUTCOME_REFUND = 'refund'
+    OUTCOME_OTHER = 'other'
+
+    OUTCOME_CHOICES = (
+        (OUTCOME_PENDING, 'Pending'),
+        (OUTCOME_LENDER, 'Lender favoured'),
+        (OUTCOME_BORROWER, 'Borrower favoured'),
+        (OUTCOME_SPLIT, 'Split outcome'),
+        (OUTCOME_VOID, 'Void / no payout'),
+        (OUTCOME_REFUND, 'Refund / release'),
+        (OUTCOME_OTHER, 'Other'),
+    )
+
+    transaction = models.ForeignKey(
+        Transaction,
+        related_name='dispute_cases',
+        on_delete=models.CASCADE,
+    )
+    case_number = models.CharField(max_length=32, unique=True, db_index=True)
+    reason_code = models.CharField(max_length=32, choices=REASON_CODE_CHOICES, default=REASON_GENERAL)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, default=OUTCOME_PENDING)
+    owner = models.ForeignKey(
+        'auth.User',
+        related_name='owned_dispute_cases',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+    raised_by = models.ForeignKey(
+        'auth.User',
+        related_name='raised_dispute_cases',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+    resolved_by = models.ForeignKey(
+        'auth.User',
+        related_name='resolved_dispute_cases',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+    summary = models.TextField(blank=True, default='')
+    resolution_notes = models.TextField(blank=True, default='')
+    internal_resolution_notes = models.TextField(blank=True, default='')
+    external_resolution_notes = models.TextField(blank=True, default='')
+    lender_final_statement_at = models.DateTimeField(blank=True, null=True)
+    borrower_final_statement_at = models.DateTimeField(blank=True, null=True)
+    evidence_bundle = models.JSONField(blank=True, default=dict)
+    deposit_return_amount = models.FloatField(default=0)
+    payment_offset_amount = models.FloatField(default=0)
+    sla_due_at = models.DateTimeField(blank=True, null=True)
+    escalated_at = models.DateTimeField(blank=True, null=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+    closed_at = models.DateTimeField(blank=True, null=True)
+    created = models.DateTimeField(auto_now_add=True)
+    amended = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.case_number
+
+    @staticmethod
+    def next_case_number():
+        prefix = 'DCASE'
+        existing = DisputeCase.objects.order_by('-id').values_list('id', flat=True).first() or 0
+        return f'{prefix}-{existing + 1:06d}'
+
+    def save(self, *args, **kwargs):
+        if not self.case_number:
+            self.case_number = self.next_case_number()
+        super().save(*args, **kwargs)
 
 class TransactionImage(models.Model):
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, blank=True, null=True)
@@ -571,6 +878,10 @@ class TransactionMessage(models.Model):
     read_by_user_to = models.BooleanField(default=False)
     email_to_recepient = models.BooleanField(default=False)
     include_admin = models.BooleanField(default=False)
+    private_to_sender = models.BooleanField(
+        default=False,
+        help_text='If true, only the sender and admin should be able to see this message on the transaction view.',
+    )
     is_system_generated = models.BooleanField(default=False)
     history = HistoricalRecords()
 

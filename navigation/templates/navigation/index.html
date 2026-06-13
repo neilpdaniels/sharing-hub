@@ -180,10 +180,8 @@
         }
     </style>
 
-    <div class="d-flex align-items-center justify-content-between">
-        <h2 class="rh-home-section-title mb-0">Browse categories</h2>
-        <a href="{% url 'navigation:seeAll' %}" class="font-weight-bold" style="color: var(--rh-primary);">Browse all</a>
-    </div>
+    {% url 'navigation:seeAll' as browse_all_url %}
+    {% include "common/partials/section_header.html" with title="Browse categories" action_url=browse_all_url action_text="Browse all" %}
     <div class="rh-cat-links mt-3">
         {% for category in browse_categories %}
             <a class="rh-cat-link" href="{% url 'navigation:browseCategory' category.slug %}">
@@ -221,10 +219,8 @@
         {% endfor %}
     </div>
 
-    <div class="d-flex align-items-center justify-content-between">
-        <h2 class="rh-home-section-title mb-0">Popular near you</h2>
-        <a href="{% url 'navigation:search' %}" class="font-weight-bold" style="color: var(--rh-primary);">View all</a>
-    </div>
+    {% url 'navigation:search' as popular_all_url %}
+    {% include "common/partials/section_header.html" with title="Popular near you" action_url=popular_all_url action_text="View all" %}
     <div class="rh-popular-carousel mt-3 mb-3">
         <div class="rh-popular-carousel-viewport" id="rh-popular-carousel-home">
             <div class="rh-popular-carousel-track">

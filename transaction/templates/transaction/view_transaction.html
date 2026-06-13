@@ -34,17 +34,87 @@
             </div>
             {% endif %}
 
-            <div class="card mb-3">
+            {% if active_dispute_case %}
+            <div class="card mb-3 border-danger">
                 <div class="card-body">
-                    <h5 class="card-title">{{ transaction.product.name }}</h5>
-                    <p class="mb-1"><strong>Status:</strong> {{ transaction.get_status_display_verbose }}</p>
-                    <p class="mb-1"><strong>Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
-                    <p class="mb-1"><strong>Price:</strong> £{{ transaction.price|format_price }} per day</p>
-                    <p class="mb-1"><strong>Deposit:</strong> £{{ transaction.deposit|format_price }}</p>
-                    <p class="mb-1"><strong>Deposit status:</strong> {{ transaction.get_deposit_status_display }}</p>
-                    <p class="mb-0"><strong>Payment status:</strong> {{ transaction.get_payment_status_display }}</p>
+                    <h5 class="mb-2 text-danger">Dispute case {{ active_dispute_case.case_number }}</h5>
+                    <p class="mb-1"><strong>Status:</strong> {{ active_dispute_case.get_status_display }}</p>
+                    <p class="mb-1"><strong>Outcome:</strong> {{ active_dispute_case.get_outcome_display }}</p>
+                    <p class="mb-0"><strong>Reason:</strong> {{ active_dispute_case.get_reason_code_display }}</p>
+                    <p class="mb-0 mt-2 small text-muted">Private dispute messages can be sent within 24 hours of the dispute opening. They go only to the dispute team and are not visible to the other party.</p>
+                    <p class="mb-0 mt-1 small text-muted">
+                        Deadline: {% if dispute_final_statement_deadline %}{{ dispute_final_statement_deadline|date:"d/m/Y H:i" }}{% else %}Not set{% endif %}
+                    </p>
+                    <p class="mb-0 mt-1 small text-danger">
+                        Time left:
+                        <strong
+                            class="js-contract-countdown js-dispute-countdown"
+                            {% if dispute_final_statement_deadline %}data-deadline="{{ dispute_final_statement_deadline|date:'c' }}"{% endif %}
+                            data-seconds-remaining="{{ dispute_final_statement_seconds_remaining|default:'' }}"
+                        >{{ dispute_final_statement_seconds_display|default:'--:--:--' }}</strong>
+                    </p>
+                    {% if dispute_final_statement_open %}
+                    <form method="post" class="mt-3">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="submit_final_statement">
+                        <div class="form-group">
+                        <label for="id_requested_amount">Requested amount to admin (£)</label>
+                            <input type="number" class="form-control" id="id_requested_amount" name="requested_amount" step="0.01" min="0" placeholder="e.g. 20.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="id_final_statement">Private message</label>
+                            <textarea class="form-control" id="id_final_statement" name="final_statement" rows="4" placeholder="Explain why the dispute is open and justify the amount you are requesting."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-outline-danger">Send final statement to admin</button>
+                    </form>
+                    {% elif request.user == transaction.user_passive or request.user == transaction.user_aggressive %}
+                    <p class="mb-0 mt-3 text-muted">The 24-hour final statement window has closed, or you have already submitted your statement.</p>
+                    {% endif %}
+                    {% if request.user.is_staff %}
+                    <p class="mb-0 mt-2"><a href="{% url 'transaction:dispute_case_review' active_dispute_case.case_number %}">Open dispute review</a></p>
+                    {% endif %}
                 </div>
             </div>
+            {% endif %}
+
+            {% if active_dispute_case %}
+            {% if is_lender or is_renter %}
+            {% if dispute_final_statement_open %}
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h5 class="mb-2 text-info">Private message to dispute team</h5>
+                    <p class="mb-2 small text-muted">This message is visible to the dispute team and to you only. The other party cannot see it.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="send_dispute_private_message">
+                        <div class="form-group">
+                            <label for="id_private_dispute_message">Message</label>
+                            <textarea class="form-control" id="id_private_dispute_message" name="message_body" rows="4" placeholder="Add any private context for the dispute team..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-info">Send private message</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+            {% endif %}
+            {% endif %}
+
+            <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ transaction.product.name }}</h5>
+                        <p class="mb-1"><strong>Status:</strong> {{ transaction.get_status_display_verbose }}</p>
+                        <p class="mb-1"><strong>Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
+                        <p class="mb-1"><strong>Price:</strong> £{{ transaction.price|format_price }} per day</p>
+                        <p class="mb-1"><strong>Deposit:</strong> £{{ transaction.deposit|format_price }}</p>
+                        {% if transaction.max_rental_days > 5 %}
+                        <div class="alert alert-warning py-2 px-3 mb-2 mt-2" style="font-size:0.92rem;">
+                            Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.
+                        </div>
+                        {% endif %}
+                        <p class="mb-1"><strong>Deposit status:</strong> {{ transaction.get_deposit_status_display }}</p>
+                        <p class="mb-0"><strong>Payment status:</strong> {{ transaction.get_payment_status_display }}</p>
+                    </div>
+                </div>
 
             <div class="card mb-3">
                 <div class="card-body">
@@ -149,21 +219,13 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% if transaction.transaction_status == transaction.CANCEL_REQUESTED %}
+                                {% if workflow_payload.cancellation_banner %}
                                 <tr class="table-warning">
                                     <td><span class="workflow-step-circle">!</span></td>
-                                    <td>Cancellation requested</td>
-                                    <td>System</td>
-                                    <td><small>{{ transaction.amended|date:"M d, Y" }}</small></td>
-                                    <td><span class="badge badge-warning">Awaiting cancellation outcome</span></td>
-                                </tr>
-                                {% elif transaction.transaction_status == transaction.CANCEL_ACCEPTED %}
-                                <tr class="table-warning">
-                                    <td><span class="workflow-step-circle">!</span></td>
-                                    <td>Rental cancelled</td>
-                                    <td>System</td>
-                                    <td><small>{{ transaction.amended|date:"M d, Y" }}</small></td>
-                                    <td><span class="badge badge-warning">Cancelled</span></td>
+                                    <td>{{ workflow_payload.cancellation_banner.label }}</td>
+                                    <td>{{ workflow_payload.cancellation_banner.user }}</td>
+                                    <td><small>{{ workflow_payload.cancellation_banner.date|date:"M d, Y" }}</small></td>
+                                    <td><span class="badge {{ workflow_payload.cancellation_banner.badge }}">{{ workflow_payload.cancellation_banner.status }}</span></td>
                                 </tr>
                                 {% endif %}
 
@@ -189,40 +251,8 @@
                                     <td>
                                         {% if workflow_step.step == 1 %}
                                             <small>{{ transaction.created|date:"M d, Y" }}</small>
-                                        {% elif workflow_step.step == 2 or workflow_step.step == 3 %}
-                                            {% if transaction.transaction_status == transaction.RENTAL_AGREED %}
-                                                <small>Earliest start: now</small>
-                                            {% else %}
-                                                <small class="text-muted">TBC</small>
-                                            {% endif %}
-                                        {% elif workflow_step.step == 4 %}
-                                            {% if transaction.deposit_test_hold_at %}
-                                                <small>{{ transaction.deposit_test_hold_at|date:"M d, Y H:i" }}</small>
-                                            {% elif transaction.transaction_status == transaction.RENTAL_AGREED and transaction.renter_agreed_at %}
-                                                <small>Available now (contracts signed)</small>
-                                            {% else %}
-                                                <small class="text-muted">TBC</small>
-                                            {% endif %}
-                                        {% elif workflow_step.step == 5 %}
-                                            {% if transaction.payment_collection_requested_at %}
-                                                <small>{{ transaction.payment_collection_requested_at|date:"M d, Y" }}</small>
-                                            {% elif transaction.rental_start_date %}
-                                                <small>Earliest start: {{ transaction.rental_start_date|date:"M d, Y" }}</small>
-                                            {% else %}
-                                                <small class="text-muted">TBC</small>
-                                            {% endif %}
-                                        {% elif workflow_step.step == 6 %}
-                                            {% if transaction.rental_end_date %}
-                                                <small>{{ transaction.rental_end_date|date:"M d, Y" }}</small>
-                                            {% else %}
-                                                <small class="text-muted">TBC</small>
-                                            {% endif %}
                                         {% else %}
-                                            {% if transaction.transaction_status == transaction.AWAITING_FEEDBACK or transaction.transaction_status == transaction.RENTAL_PROCESS_COMPLETED %}
-                                                <small>{{ transaction.amended|date:"M d, Y" }}</small>
-                                            {% else %}
-                                                <small class="text-muted">TBC</small>
-                                            {% endif %}
+                                            <small>{{ workflow_step.display_date }}</small>
                                         {% endif %}
                                     </td>
                                     <td>
@@ -304,7 +334,7 @@
                 <div class="card-body">
                     <h5 class="card-title">Messages</h5>
                     <div class="transaction-messages transaction-messages--compact">
-                        {% include "my_sharing_hub/messages.html" with messages_=messages_ %}
+                        {% include "my_rentalution/messages.html" with messages_=messages_ %}
                     </div>
                 </div>
             </div>
@@ -322,7 +352,7 @@
                 </div>
             </div>
 
-            {% if feedback_stage %}
+            {% if feedback_stage and 'submit_feedback' in allowed_actions %}
             <div class="card mb-3 {% if feedback_prompt_required %}border-warning{% endif %}">
                 <div class="card-body">
                     <h5 class="card-title">Feedback</h5>
@@ -463,25 +493,29 @@
                 </div>
             </div>
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_ENQUIRY %}
+            {% if 'agree_rental' in allowed_actions or 'reject_enquiry' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Respond To Enquiry</h5>
+                    {% if 'agree_rental' in allowed_actions %}
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="agree_rental">
                         <button class="btn btn-success btn-block" type="submit">Agree Rental</button>
                     </form>
+                    {% endif %}
+                    {% if 'reject_enquiry' in allowed_actions %}
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="reject_enquiry">
                         <button class="btn btn-outline-danger btn-block" type="submit">Reject Enquiry</button>
                     </form>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
 
-            {% if transaction.transaction_status == transaction.RENTAL_ENQUIRY %}
+            {% if 'request_cancellation' in allowed_actions %}
             <div class="card mb-3 border-warning">
                 <div class="card-body">
                     <h5 class="card-title">Request Cancellation</h5>
@@ -519,7 +553,7 @@
             </div>
             {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at %}
+            {% if 'confirm_renter_contract' in allowed_actions or 'reject_rental_agreement' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Confirm Rental</h5>
@@ -527,15 +561,23 @@
                     {% if contract_deadline %}
                     <p class="mb-2 text-muted">
                         Time remaining to confirm:
-                        <strong class="js-contract-countdown" data-deadline="{{ contract_deadline_iso }}">--:--:--</strong>
+                        <strong
+                            class="js-contract-countdown"
+                            data-deadline="{{ contract_deadline_iso }}"
+                            data-seconds-remaining="{{ contract_seconds_remaining|default:'' }}"
+                        >{{ contract_seconds_remaining_display|default:'--:--:--' }}</strong>
                     </p>
                     {% endif %}
+                    {% if 'confirm_renter_contract' in allowed_actions %}
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_renter_contract">
                         <button class="btn btn-success btn-block" type="submit">Confirm Rental Agreement</button>
                     </form>
+                    {% endif %}
+                    {% if 'reject_rental_agreement' in allowed_actions %}
                     <button class="btn btn-outline-danger btn-block mt-2" type="button" data-toggle="modal" data-target="#rejectRentalAgreementModal">Reject Rental Agreement</button>
+                    {% endif %}
                 </div>
             </div>
 
@@ -564,35 +606,31 @@
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_AGREED and not transaction.lender_agreed_at %}
+            {% if 'confirm_lender_contract' in allowed_actions or 'reinitiate_lender_contract' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Confirm Contract</h5>
                     <p class="mb-2">Review and accept the rental terms and conditions to confirm this contract.</p>
+                    {% if 'confirm_lender_contract' in allowed_actions %}
                     <form method="post" id="confirmRentalForm">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_lender_contract">
                         <button class="btn btn-success btn-block" type="button" data-toggle="modal" data-target="#rentalTcsModal">Review Terms & Confirm</button>
                     </form>
+                    {% endif %}
                     {% include "transaction/rental_tcs_modal.html" %}
+                    {% if 'reinitiate_lender_contract' in allowed_actions %}
+                    <form method="post" class="mt-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="reinitiate_lender_contract">
+                        <button class="btn btn-outline-info btn-block" type="submit">Re-send Confirmation Request</button>
+                    </form>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at and contract_seconds_remaining != None and contract_seconds_remaining > 0 %}
-            <div class="card mb-3">
-                <div class="card-body">
-                    <h5 class="card-title">Action: Awaiting Borrower</h5>
-                    <p class="mb-2">Borrower confirmation window is active.</p>
-                    <p class="mb-0 text-muted">
-                        Time remaining:
-                        <strong class="js-contract-countdown" data-deadline="{{ contract_deadline_iso }}">--:--:--</strong>
-                    </p>
-                </div>
-            </div>
-            {% endif %}
-
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and not transaction.renter_agreed_at and contract_seconds_remaining != None and contract_seconds_remaining <= 0 %}
+            {% if 'reinitiate_lender_contract' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Awaiting Borrower</h5>
@@ -608,7 +646,7 @@
 
             {% include "transaction/card_setup_form.html" %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_AGREED and transaction.lender_agreed_at and transaction.renter_agreed_at %}
+            {% if 'initiate_rental' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Submit Checkout Evidence (Lender)</h5>
@@ -634,11 +672,12 @@
                         </div>
                         <div class="form-check mb-2">
                             <input type="hidden" name="payment_collected_placeholder" value="1">
-                            <span class="text-muted small">Payment is collected automatically when the rental starts.</span>
+                            <span class="text-muted small">Rental payment is collected automatically when the rental starts. The deposit is handled separately.</span>
                         </div>
                         <div class="form-group mb-2">
-                            <label for="id_payment_placeholder_notes">Payment notes</label>
+                            <label for="id_payment_placeholder_notes">Rental payment notes</label>
                             <textarea id="id_payment_placeholder_notes" class="form-control" name="payment_placeholder_notes" rows="2"></textarea>
+                            <small class="form-text text-muted">Use this to note the rental amount, delivery charge, and platform fee breakdown for the payment capture.</small>
                         </div>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" value="1" id="id_deposit_collected_placeholder" name="deposit_collected_placeholder">
@@ -655,7 +694,7 @@
             </div>
             {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION %}
+            {% if 'confirm_checkout_evidence' in allowed_actions or 'submit_checkout_borrower_evidence' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Review Checkout Evidence (Borrower)</h5>
@@ -683,7 +722,7 @@
             </div>
             {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and checkout_pin_available %}
+            {% if 'verify_checkout_handover_pin' in allowed_actions and checkout_pin_available %}
             <div class="card mb-3 border-success">
                 <div class="card-body">
                     <h5 class="card-title text-success">Checkout Handover PIN</h5>
@@ -696,7 +735,7 @@
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and checkout_pin_available %}
+            {% if 'verify_checkout_handover_pin' in allowed_actions and checkout_pin_available %}
             <div class="card mb-3 border-primary">
                 <div class="card-body">
                     <h5 class="card-title">Action: Enter Borrower Checkout PIN (Lender)</h5>
@@ -714,7 +753,7 @@
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION and not checkout_pin_available and not deposit_funds_held %}
+            {% if 'verify_checkout_handover_pin' in allowed_actions and not checkout_pin_available and not deposit_funds_held %}
             <div class="card mb-3 border-warning">
                 <div class="card-body">
                     <h5 class="card-title">Deposit Hold Required Before PIN</h5>
@@ -723,7 +762,7 @@
             </div>
             {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_ENQUIRY or is_renter and transaction.transaction_status == transaction.RENTAL_AGREED %}
+            {% if 'report_missing_rental' in allowed_actions %}
             {% if transaction.rental_start_date and today > transaction.rental_start_date and not transaction.checkout_handover_verified_at %}
             <div class="card mb-3 border-warning">
                 <div class="card-body">
@@ -743,7 +782,7 @@
             {% endif %}
             {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_ONGOING or is_renter and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            {% if 'submit_return_borrower_evidence' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Return Day Evidence (Borrower)</h5>
@@ -768,7 +807,7 @@
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            {% if 'confirm_return_evidence' in allowed_actions or 'submit_lender_return_evidence' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Review Return Evidence (Lender)</h5>
@@ -799,7 +838,7 @@
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and return_pin_available %}
+            {% if 'verify_return_handover_pin' in allowed_actions and return_pin_available %}
             <div class="card mb-3 border-success">
                 <div class="card-body">
                     <h5 class="card-title text-success">Return Verification PIN</h5>
@@ -812,7 +851,7 @@
             </div>
             {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION and return_pin_available %}
+            {% if 'verify_return_handover_pin' in allowed_actions and return_pin_available %}
             <div class="card mb-3 border-primary">
                 <div class="card-body">
                     <h5 class="card-title">Action: Enter Return Verification PIN</h5>
@@ -830,7 +869,7 @@
             </div>
             {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_ONGOING or is_lender and transaction.transaction_status == transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION %}
+            {% if 'report_missing_return' in allowed_actions %}
             {% if transaction.rental_end_date and today > transaction.rental_end_date %}
             <div class="card mb-3 border-warning">
                 <div class="card-body">
@@ -850,7 +889,8 @@
             {% endif %}
             {% endif %}
 
-            {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
+            {% if transaction.deposit > 0 %}
+            {% if 'propose_deposit_return' in allowed_actions or 'agree_deposit_return' in allowed_actions or 'contest_deposit_return' in allowed_actions or 'secure_dispute_funds' in allowed_actions or 'raise_deposit_dispute_admin' in allowed_actions %}
             <div class="card mb-3 border-info">
                 <div class="card-body">
                     <h5 class="card-title">Deposit Proposal Progress</h5>
@@ -875,8 +915,10 @@
                 </div>
             </div>
             {% endif %}
+            {% endif %}
 
-            {% if is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING or is_lender and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED %}
+            {% if transaction.deposit > 0 %}
+            {% if 'propose_deposit_return' in allowed_actions or 'deposit_full' in allowed_actions or 'deposit_reduced' in allowed_actions or 'mediation_required' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Propose Deposit Return (Lender)</h5>
@@ -889,20 +931,42 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="propose_deposit_return">
                         <div class="form-group mb-2">
-                            <label for="id_deposit_proposed_return_amount">Amount to return (£)</label>
-                            <input id="id_deposit_proposed_return_amount" class="form-control" type="number" name="deposit_proposed_return_amount" min="0" step="0.01" max="{{ transaction.deposit }}" value="{{ transaction.deposit_proposed_return_amount|default:transaction.deposit }}">
+                            <label for="id_deposit_proposed_return_amount_range">Amount to return (£)</label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <strong class="js-deposit-return-display">£{{ transaction.deposit|format_price }}</strong>
+                                <small class="text-muted js-deposit-return-percent">100%</small>
+                            </div>
+                            <input
+                                id="id_deposit_proposed_return_amount_range"
+                                class="form-range js-deposit-return-range"
+                                type="range"
+                                min="0"
+                                step="0.01"
+                                max="{{ transaction.deposit }}"
+                                value="{{ transaction.deposit_proposed_return_amount|default:transaction.deposit }}"
+                                aria-label="Deposit return amount slider"
+                            >
+                            <input
+                                id="id_deposit_proposed_return_amount"
+                                type="hidden"
+                                name="deposit_proposed_return_amount"
+                                value="{{ transaction.deposit_proposed_return_amount|default:transaction.deposit }}"
+                            >
+                            <small class="text-muted">Slide left to reduce the return amount. A reason is required for partial returns.</small>
                         </div>
                         <div class="form-group mb-2">
-                            <label for="id_deposit_proposal_notes">Notes</label>
-                            <textarea id="id_deposit_proposal_notes" class="form-control" name="deposit_resolution_notes" rows="2" placeholder="Reason for full/reduced return...">{{ transaction.deposit_resolution_notes }}</textarea>
+                            <label for="id_deposit_proposal_notes" class="js-deposit-notes-label">Notes</label>
+                            <textarea id="id_deposit_proposal_notes" class="form-control js-deposit-notes" name="deposit_resolution_notes" rows="2" placeholder="Reason for full/reduced return...">{{ transaction.deposit_resolution_notes }}</textarea>
                         </div>
-                        <button class="btn btn-primary btn-block" type="submit" {% if deposit_proposal_iteration_count >= 5 %}disabled{% endif %}>Send / Update Proposal</button>
+                        <button class="btn btn-primary btn-block js-deposit-submit" type="submit" {% if deposit_proposal_iteration_count >= 5 %}disabled{% endif %}>Send / Update Proposal</button>
                     </form>
                 </div>
             </div>
             {% endif %}
+            {% endif %}
 
-            {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING and transaction.deposit_proposed_by_lender_at %}
+            {% if transaction.deposit > 0 %}
+            {% if 'agree_deposit_return' in allowed_actions or 'contest_deposit_return' in allowed_actions %}
             <div class="card mb-3 border-info">
                 <div class="card-body">
                     <h5 class="card-title">Current Deposit Proposal</h5>
@@ -911,17 +975,22 @@
                 </div>
             </div>
             {% endif %}
+            {% endif %}
 
-            {% if is_renter and transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_PENDING and transaction.deposit_proposed_by_lender_at %}
+            {% if transaction.deposit > 0 %}
+            {% if 'agree_deposit_return' in allowed_actions or 'contest_deposit_return' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Review Deposit Proposal (Borrower)</h5>
                     <p class="mb-2">Lender proposed £{{ transaction.deposit_proposed_return_amount|format_price }} return. Accept or contest.</p>
+                    {% if 'agree_deposit_return' in allowed_actions %}
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="agree_deposit_return">
                         <button class="btn btn-success btn-block" type="submit">Agree Proposal</button>
                     </form>
+                    {% endif %}
+                    {% if 'contest_deposit_return' in allowed_actions %}
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="contest_deposit_return">
@@ -931,11 +1000,48 @@
                         </div>
                         <button class="btn btn-outline-danger btn-block" type="submit">Contest Proposal</button>
                     </form>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
+            {% endif %}
 
-            {% if transaction.transaction_status == transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED or transaction.transaction_status == transaction.DISPUTE_REQUESTED %}
+            <script>
+            (function () {
+                const range = document.querySelector('.js-deposit-return-range');
+                const hidden = document.getElementById('id_deposit_proposed_return_amount');
+                const display = document.querySelector('.js-deposit-return-display');
+                const percent = document.querySelector('.js-deposit-return-percent');
+                const notes = document.querySelector('.js-deposit-notes');
+                const notesLabel = document.querySelector('.js-deposit-notes-label');
+                const submit = document.querySelector('.js-deposit-submit');
+                if (!range || !hidden || !display || !percent || !notes || !notesLabel || !submit) {
+                    return;
+                }
+
+                const max = parseFloat(range.max || '0') || 0;
+                const update = () => {
+                    const value = parseFloat(range.value || '0') || 0;
+                    hidden.value = value.toFixed(2);
+                    display.textContent = '£' + value.toFixed(2);
+                    const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+                    percent.textContent = pct + '%';
+                    const partial = max > 0 && value < max - 0.0001;
+                    notes.required = partial;
+                    notesLabel.textContent = partial ? 'Reason for partial return' : 'Notes';
+                    notes.placeholder = partial
+                        ? 'Explain why you are returning less than 100%'
+                        : 'Reason for full/reduced return...';
+                    submit.textContent = partial ? 'Send Partial Return Proposal' : 'Send / Update Proposal';
+                };
+
+                range.addEventListener('input', update);
+                update();
+            })();
+            </script>
+
+            {% if transaction.deposit > 0 %}
+            {% if 'secure_dispute_funds' in allowed_actions or 'raise_deposit_dispute_admin' in allowed_actions %}
             <div class="card mb-3 border-danger">
                 <div class="card-body">
                     <h5 class="card-title text-danger">Deposit Dispute In Progress</h5>
@@ -943,7 +1049,7 @@
                     <p class="mb-2"><strong>Estimated hold deadline:</strong> {{ dispute_hold_deadline|date:"M d, Y H:i" }}</p>
                     {% endif %}
 
-                    {% if urgent_dispute_funds_action %}
+                    {% if urgent_dispute_funds_action and 'secure_dispute_funds' in allowed_actions %}
                     <div class="alert alert-danger mb-2" role="alert">
                         Card-hold window is approaching. Secure funds now to protect dispute resolution.
                     </div>
@@ -954,7 +1060,7 @@
                     </form>
                     {% endif %}
 
-                    {% if transaction.transaction_status != transaction.DISPUTE_REQUESTED %}
+                    {% if 'raise_deposit_dispute_admin' in allowed_actions %}
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="raise_deposit_dispute_admin">
@@ -969,6 +1075,7 @@
                     {% endif %}
                 </div>
             </div>
+            {% endif %}
             {% endif %}
 
             {% if transaction.deposit_resolution_notes %}
@@ -985,6 +1092,61 @@
     <p>Transaction not found.</p>
     {% endif %}
 </div>
+
+<script>
+(function() {
+    function formatRemaining(totalSeconds) {
+        if (totalSeconds <= 0) {
+            return 'Expired';
+        }
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function initCountdown(node) {
+        const deadlineIso = node.getAttribute('data-deadline');
+        const secondsRaw = node.getAttribute('data-seconds-remaining');
+        let fallbackSeconds = Number.parseInt(secondsRaw || '', 10);
+        const hasFallbackSeconds = Number.isFinite(fallbackSeconds);
+        const deadline = deadlineIso ? new Date(deadlineIso) : null;
+        const canUseDeadline = !!(deadline && !Number.isNaN(deadline.getTime()));
+
+        const tick = () => {
+            let remaining = null;
+            if (canUseDeadline) {
+                remaining = Math.floor((deadline.getTime() - Date.now()) / 1000);
+            } else if (hasFallbackSeconds) {
+                remaining = fallbackSeconds;
+            }
+
+            if (remaining === null) {
+                return;
+            }
+
+            node.textContent = formatRemaining(remaining);
+
+            if (!canUseDeadline && hasFallbackSeconds && fallbackSeconds > 0) {
+                fallbackSeconds -= 1;
+            }
+        };
+
+        tick();
+        window.setInterval(tick, 1000);
+    }
+
+    function boot() {
+        document.querySelectorAll('.js-contract-countdown[data-deadline], .js-dispute-countdown[data-deadline]').forEach(initCountdown);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
+    }
+})();
+</script>
 {% endblock %}
 
 {% block styles %}
@@ -1407,7 +1569,7 @@ if (messageForm) {
     });
 }
 
-const expandMessageUrl = "{% url 'my_sharing_hub:expand_message' %}";
+const expandMessageUrl = "{% url 'my_rentalution:expand_message' %}";
 
 const setMessageAsRead = (messageRef) => {
     const row = document.getElementById(`message_row_${messageRef}`);
@@ -1524,18 +1686,30 @@ function formatRemaining(totalSeconds) {
 const countdownNodes = document.querySelectorAll('.js-contract-countdown[data-deadline]');
 countdownNodes.forEach((node) => {
     const deadlineIso = node.getAttribute('data-deadline');
-    if (!deadlineIso) {
-        return;
-    }
-    const deadline = new Date(deadlineIso);
-    if (Number.isNaN(deadline.getTime())) {
-        return;
-    }
+    const initialSecondsRaw = node.getAttribute('data-seconds-remaining');
+    let fallbackSeconds = Number.parseInt(initialSecondsRaw || '', 10);
+    const hasFallbackSeconds = Number.isFinite(fallbackSeconds);
+    const deadline = deadlineIso ? new Date(deadlineIso) : null;
+    const canUseDeadline = deadline && !Number.isNaN(deadline.getTime());
 
     const tick = () => {
-        const now = new Date();
-        const remaining = Math.floor((deadline.getTime() - now.getTime()) / 1000);
+        let remaining = null;
+        if (canUseDeadline) {
+            const now = new Date();
+            remaining = Math.floor((deadline.getTime() - now.getTime()) / 1000);
+        } else if (hasFallbackSeconds) {
+            remaining = fallbackSeconds;
+        }
+
+        if (remaining === null) {
+            return;
+        }
         node.textContent = formatRemaining(remaining);
+        if (!canUseDeadline && hasFallbackSeconds) {
+            if (fallbackSeconds > 0) {
+                fallbackSeconds--;
+            }
+        }
     };
 
     tick();

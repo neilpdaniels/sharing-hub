@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.conf import settings
-from .models import Transaction, TransactionMessage
+from .models import DisputeCase, Transaction, TransactionMessage
 from .tasks import send_new_message_push_notification
 from common.models import System
 
@@ -19,6 +19,7 @@ MAJOR_STATUS_NOTIFICATION_SET = {
     Transaction.RENTAL_PROCESS_COMPLETED,
     Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
     Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
+    Transaction.DISPUTE_DECIDED,
     Transaction.CANCEL_ACCEPTED,
 }
 
@@ -88,9 +89,62 @@ def _create_system_transition_message(*, txn, user_from, user_to):
     )
 
 
+def _ensure_dispute_case(txn, *, owner=None):
+    if txn.transaction_status not in {txn.DISPUTE_REQUESTED, txn.CANCEL_ACCEPTED} and txn.deposit_status != txn.DEPOSIT_MEDIATION:
+        return None
+
+    reason_code = DisputeCase.REASON_GENERAL
+    summary = (txn.deposit_resolution_notes or '').strip()
+    if '[MISSING_RENTAL_VOIDED]' in summary:
+        reason_code = DisputeCase.REASON_MISSING_RENTAL
+    elif 'missing return' in summary.lower():
+        reason_code = DisputeCase.REASON_MISSING_RETURN
+    elif 'deposit' in summary.lower():
+        reason_code = DisputeCase.REASON_DEPOSIT_CONTEST
+    elif 'arbitration' in summary.lower() or 'dispute team' in summary.lower():
+        reason_code = DisputeCase.REASON_DISPUTE_TEAM
+
+    dispute_case, created = DisputeCase.objects.get_or_create(
+        transaction=txn,
+        reason_code=reason_code,
+        defaults={
+            'owner': owner,
+            'raised_by': txn.transaction_status_raised_by,
+            'status': DisputeCase.STATUS_OPEN,
+            'outcome': DisputeCase.OUTCOME_PENDING,
+            'summary': summary or f'Dispute raised for transaction {txn.transaction_reference}.',
+            'evidence_bundle': {
+                'transaction_reference': txn.transaction_reference,
+                'transaction_status': txn.transaction_status,
+                'raised_by_id': txn.transaction_status_raised_by_id,
+                'deposit_status': txn.deposit_status,
+                'notes': summary,
+            },
+        },
+    )
+
+    if not created:
+        updates = []
+        if owner and dispute_case.owner_id != owner.id:
+            dispute_case.owner = owner
+            updates.append('owner')
+        if summary and dispute_case.summary != summary:
+            dispute_case.summary = summary
+            updates.append('summary')
+        if txn.transaction_status_raised_by_id and dispute_case.raised_by_id != txn.transaction_status_raised_by_id:
+            dispute_case.raised_by = txn.transaction_status_raised_by
+            updates.append('raised_by')
+        if updates:
+            dispute_case.save(update_fields=updates + ['amended'])
+
+    return dispute_case
+
+
 @receiver(post_save, sender=Transaction)
 def notify_major_status_transition(sender, instance, created, **kwargs):
     if created:
+        if instance.transaction_status in {instance.DISPUTE_REQUESTED, instance.CANCEL_ACCEPTED}:
+            _ensure_dispute_case(instance)
         return
     if instance.transaction_status == instance.prev_transaction_status:
         return
@@ -124,6 +178,9 @@ def notify_major_status_transition(sender, instance, created, **kwargs):
         user_from=instance.user_aggressive,
         user_to=instance.user_passive,
     )
+
+    if instance.transaction_status in {instance.DISPUTE_REQUESTED, instance.CANCEL_ACCEPTED}:
+        _ensure_dispute_case(instance)
 
 
 # move into order.save

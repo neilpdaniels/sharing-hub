@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% load common_lib %}
+
+{% block title %}Dispute Case {{ case.case_number }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h3 class="mb-2">Dispute Case {{ case.case_number }}</h3>
+                    <p class="text-muted mb-1">Transaction: <a href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">{{ transaction.transaction_reference }}</a></p>
+                    <p class="text-muted mb-1">Reason: {{ case.get_reason_code_display }}</p>
+                    <p class="text-muted mb-1">Status: {{ case.get_status_display }}</p>
+                    <p class="text-muted mb-0">Outcome: {{ case.get_outcome_display }}</p>
+                </div>
+            </div>
+
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h5 class="mb-3 text-info">Settlement Summary</h5>
+                    <p class="mb-1"><strong>Deposit held:</strong> £{{ transaction.deposit|floatformat:2 }}</p>
+                    <p class="mb-0 text-muted">The dispute decision only adjusts how much of the deposit is returned to the borrower.</p>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="mb-3">Evidence / Summary</h5>
+                    <p class="mb-2">{{ case.summary|linebreaksbr }}</p>
+                    <pre class="mb-0" style="white-space: pre-wrap;">{{ evidence_bundle|pprint }}</pre>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="mb-3">Decision</h5>
+                    <form method="post" id="dispute-decision-form">
+                        {% csrf_token %}
+                        <div class="form-group">
+                            <label for="owner_id">Owner</label>
+                            <select class="form-control" id="owner_id" name="owner_id">
+                                <option value="">Unassigned</option>
+                                {% for staff_user in staff_users %}
+                                <option value="{{ staff_user.id }}" {% if case.owner_id == staff_user.id %}selected{% endif %}>
+                                    {{ staff_user.get_full_name|default:staff_user.username }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="internal_resolution_notes">Internal resolution notes</label>
+                            <textarea class="form-control" id="internal_resolution_notes" name="internal_resolution_notes" rows="4" placeholder="Private notes for the dispute team only">{{ case.internal_resolution_notes }}</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="external_resolution_notes">External resolution notes</label>
+                            <textarea class="form-control" id="external_resolution_notes" name="external_resolution_notes" rows="4" placeholder="Notes that will be shown to the lender and borrower">{{ case.external_resolution_notes }}</textarea>
+                        </div>
+                        <div class="card mb-3 border-secondary">
+                                <div class="card-body">
+                                    <h6 class="mb-3">Settlement split</h6>
+                                <p class="mb-2 text-muted">Set how the deposit should be split between lender and borrower.</p>
+                                <div class="form-group">
+                                    <label for="settlement_ratio">Lender share of settlement (%)</label>
+                                    <input type="range" class="custom-range" min="0" max="100" step="1" id="settlement_ratio" value="50">
+                                    <div class="d-flex justify-content-between small text-muted">
+                                        <span>Borrower 100%</span>
+                                        <strong id="settlement_ratio_label">50% lender / 50% borrower</strong>
+                                        <span>Lender 100%</span>
+                                    </div>
+                                    <small class="form-text text-muted">The same ratio is applied only to the deposit. The lender keeps their share of the deposit, and the borrower gets the rest.</small>
+                                    <input type="hidden" id="settlement_ratio_value" name="settlement_ratio" value="50">
+                                    <input type="hidden" id="deposit_return_percent" name="deposit_return_percent" value="50">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group col-md-6">
+                                        <label for="deposit_return_amount">Borrower gets from deposit (£)</label>
+                                        <input type="number" step="0.01" min="0" class="form-control" id="deposit_return_amount" name="deposit_return_amount" value="{{ case.deposit_return_amount }}">
+                                    </div>
+                                </div>
+                                <div class="alert alert-light border mb-0" id="settlement_summary">
+                                    <strong>Settlement preview</strong>
+                                    <div class="small text-muted mt-1" id="settlement_summary_text">Move the slider to preview how the deposit will be split.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning border mb-2">
+                            <strong>Important:</strong> The slider only changes the settlement preview. The decision dropdown below changes the dispute state. Closing decisions will ask you to confirm before submitting.
+                        </div>
+                        <div class="form-group">
+                            <label for="resolution_decision">Resolution decision</label>
+                            <select class="form-control" id="resolution_decision" name="resolution_decision">
+                                {% for value, label in resolution_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="small text-muted mb-3" id="decision_summary_hint">Choose a decision and review the settlement summary before submitting.</div>
+                        <button class="btn btn-primary mb-2" type="submit" id="decision_submit">Submit decision</button>
+                        <p class="small text-muted mb-0">Tip: if the lender is fully at fault, move the lender share toward 100%.</p>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="mb-3">Case Meta</h5>
+                    <p class="mb-1"><strong>Owner:</strong> {{ case.owner|default:"Unassigned" }}</p>
+                    <p class="mb-1"><strong>Raised by:</strong> {{ case.raised_by|default:"-" }}</p>
+                    <p class="mb-1"><strong>Resolved by:</strong> {{ case.resolved_by|default:"-" }}</p>
+                    <p class="mb-1"><strong>SLA due:</strong> {{ case.sla_due_at|default:"-" }}</p>
+                    <p class="mb-1"><strong>Deposit return:</strong> £{{ case.deposit_return_amount|floatformat:2 }}</p>
+                    <p class="mb-1"><strong>Opened:</strong> {{ case.created }}</p>
+                    <p class="mb-0"><strong>Updated:</strong> {{ case.amended }}</p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="mb-3">Users</h5>
+                    <p class="mb-1"><strong>Lender:</strong> {{ transaction.user_passive }}</p>
+                    <p class="mb-1"><strong>Borrower:</strong> {{ transaction.user_aggressive }}</p>
+                    <p class="mb-0 small text-muted">Users are notified through platform messages after each decision.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    const slider = document.getElementById('settlement_ratio');
+    const ratioLabel = document.getElementById('settlement_ratio_label');
+    const depositInput = document.getElementById('deposit_return_amount');
+    const depositPercentInput = document.getElementById('deposit_return_percent');
+    const summaryText = document.getElementById('settlement_summary_text');
+    const form = document.getElementById('dispute-decision-form');
+    const depositHeld = {{ transaction.deposit|floatformat:2 }};
+    const decisionSelect = document.getElementById('resolution_decision');
+    const submitButton = document.getElementById('decision_submit');
+
+    function money(value) {
+        return '£' + Number(value || 0).toFixed(2);
+    }
+
+    function recalc() {
+        const lenderShare = Number(slider.value || 0);
+        const borrowerShare = 100 - lenderShare;
+        const depositReturnGross = (depositHeld * borrowerShare) / 100;
+        const lenderDepositGross = depositHeld - depositReturnGross;
+        const depositReturn = depositReturnGross;
+        if (depositInput) depositInput.value = depositReturn.toFixed(2);
+        if (depositPercentInput) depositPercentInput.value = borrowerShare.toFixed(0);
+        const ratioInput = document.getElementById('settlement_ratio_value');
+        if (ratioInput) ratioInput.value = lenderShare.toFixed(0);
+        if (ratioLabel) ratioLabel.textContent = `${lenderShare}% lender / ${borrowerShare}% borrower`;
+        if (summaryText) {
+            summaryText.textContent = `Borrower receives ${money(depositReturn)} from the deposit. Lender keeps ${money(lenderDepositGross)} of the deposit.`;
+        }
+    }
+
+    function updateDecisionCopy() {
+        if (!decisionSelect || !submitButton) {
+            return;
+        }
+        const selected = decisionSelect.value || 'under_review';
+        const isClosingDecision = selected !== 'under_review';
+        submitButton.textContent = isClosingDecision ? 'Submit and close dispute' : 'Submit update';
+        submitButton.className = isClosingDecision ? 'btn btn-danger mb-2' : 'btn btn-primary mb-2';
+    }
+
+    function confirmSubmit(event) {
+        if (!decisionSelect) {
+            return;
+        }
+        const selected = decisionSelect.value || 'under_review';
+        if (selected === 'under_review') {
+            return;
+        }
+        const labels = {
+            lender: 'In favour of lender',
+            borrower: 'In favour of borrower',
+            split: 'Split outcome',
+            void: 'Void / no payout',
+            refund: 'Refund / release',
+            other: 'Other outcome',
+        };
+        const label = labels[selected] || 'close the dispute';
+        const summary = summaryText ? summaryText.textContent : '';
+        const confirmed = window.confirm(
+            `${label}\n\n${summary}\n\nThis will close the dispute and notify the parties. Continue?`
+        );
+        if (!confirmed) {
+            event.preventDefault();
+        }
+    }
+
+    if (slider) {
+        slider.addEventListener('input', recalc);
+        recalc();
+    }
+
+    if (decisionSelect) {
+        decisionSelect.addEventListener('change', updateDecisionCopy);
+        updateDecisionCopy();
+    }
+
+    if (form) {
+        form.addEventListener('submit', confirmSubmit);
+    }
+
+    if (submitButton) {
+        submitButton.addEventListener('click', function (event) {
+            if (!decisionSelect) {
+                return;
+            }
+            const selected = decisionSelect.value || 'under_review';
+            if (selected === 'under_review') {
+                return;
+            }
+            const labels = {
+                lender: 'In favour of lender',
+                borrower: 'In favour of borrower',
+                split: 'Split outcome',
+                void: 'Void / no payout',
+                refund: 'Refund / release',
+                other: 'Other outcome',
+            };
+            const label = labels[selected] || 'close the dispute';
+            const summary = summaryText ? summaryText.textContent : '';
+            const confirmed = window.confirm(
+                `${label}\n\n${summary}\n\nThis will close the dispute and notify the parties. Continue?`
+            );
+            if (!confirmed) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

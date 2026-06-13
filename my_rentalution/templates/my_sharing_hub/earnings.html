@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block subtitle %}My rentalution{% endblock %}
+{% block title %}Earnings{% endblock %}
+
+{% block content %}
+<style>
+    .earn-wrap {
+        background: linear-gradient(180deg, #f8fbfd 0%, #f4f8f9 100%);
+        border: 1px solid #dcebef;
+        border-radius: 22px;
+        padding: 1.1rem;
+    }
+
+    .earn-title {
+        color: #1f3f4b;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        margin-bottom: 0.35rem;
+    }
+
+    .earn-subtitle {
+        color: #547079;
+        margin-bottom: 1rem;
+    }
+
+    .earn-card {
+        border: 1px solid #d7ebe7;
+        border-radius: 16px;
+        box-shadow: 0 8px 20px rgba(20, 78, 92, 0.06);
+        height: 100%;
+    }
+
+    .earn-card .card-body {
+        border-radius: 16px;
+        background: #fff;
+    }
+
+    .earn-label {
+        color: #53707a;
+        font-size: 0.83rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.2rem;
+    }
+
+    .earn-figure {
+        color: #1f3f4b;
+        font-weight: 800;
+        font-size: 1.4rem;
+        line-height: 1.2;
+    }
+
+    .earn-filter-box {
+        border: 1px solid #d7ebe7;
+        border-radius: 16px;
+        background: #f8fcfb;
+    }
+
+    .earn-chart-wrap {
+        min-height: 280px;
+        position: relative;
+    }
+
+    .earn-pending-table th {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #49646c;
+    }
+</style>
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+            <div class="earn-wrap">
+                <h2 class="earn-title">Earnings</h2>
+                <p class="earn-subtitle">Track realized earnings over time, filter a date range for tax reporting, and monitor pending payments.</p>
+
+                <div class="card earn-filter-box mb-3">
+                    <div class="card-body">
+                        <form method="get" class="form-row align-items-end">
+                            <div class="col-md-4 mb-2">
+                                <label for="start_date" class="mb-1">Start date</label>
+                                <input id="start_date" name="start_date" type="date" class="form-control" value="{% if start_date %}{{ start_date|date:'Y-m-d' }}{% endif %}">
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label for="end_date" class="mb-1">End date</label>
+                                <input id="end_date" name="end_date" type="date" class="form-control" value="{% if end_date %}{{ end_date|date:'Y-m-d' }}{% endif %}">
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <button type="submit" class="btn btn-primary mr-2">Apply</button>
+                                <a href="{% url 'my_rentalution:earnings' %}" class="btn btn-outline-secondary">Clear</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 mb-3">
+                        <div class="card earn-card">
+                            <div class="card-body">
+                                <div class="earn-label">Tax Period Total (Net)</div>
+                                <div class="earn-figure">GBP {{ filtered_net_total|floatformat:2 }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card earn-card">
+                            <div class="card-body">
+                                <div class="earn-label">Tax Period Gross</div>
+                                <div class="earn-figure">GBP {{ filtered_gross_total|floatformat:2 }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card earn-card">
+                            <div class="card-body">
+                                <div class="earn-label">Fees In Period</div>
+                                <div class="earn-figure">GBP {{ filtered_fee_total|floatformat:2 }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card earn-card">
+                            <div class="card-body">
+                                <div class="earn-label">Pending Payments</div>
+                                <div class="earn-figure">GBP {{ pending_total|floatformat:2 }}</div>
+                                <small class="text-muted">{{ pending_rows|length }} booking{{ pending_rows|length|pluralize }}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card earn-card mb-3">
+                    <div class="card-body">
+                        <h5 class="mb-3">Total Earnings Over Time</h5>
+                        <div class="earn-chart-wrap">
+                            <canvas id="earningsChart" aria-label="Line chart of total earnings over time"></canvas>
+                        </div>
+                        {% if realized_count == 0 %}
+                        <div class="alert alert-light border mt-3 mb-0">No realized earnings in the selected date range.</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card earn-card">
+                    <div class="card-body">
+                        <h5 class="mb-3">Pending Payments</h5>
+                        {% if pending_rows %}
+                        <div class="table-responsive">
+                            <table class="table table-striped earn-pending-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Reference</th>
+                                        <th>Rental End</th>
+                                        <th>Status</th>
+                                        <th class="text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in pending_rows %}
+                                    <tr>
+                                        <td>{{ row.txn.transaction_reference }}</td>
+                                        <td>{% if row.txn.rental_end_date %}{{ row.txn.rental_end_date|date:'Y-m-d' }}{% else %}-{% endif %}</td>
+                                        <td>{{ row.txn.get_transaction_status_display }}</td>
+                                        <td class="text-right">GBP {{ row.gross|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-light border mb-0">No pending lender payments right now.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block pageJavascript %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block domready %}
+const chartLabels = {{ chart_labels_json|safe }};
+const chartValues = {{ chart_values_json|safe }};
+const chartCanvas = document.getElementById('earningsChart');
+
+if (chartCanvas && chartLabels.length > 0 && chartValues.length > 0 && window.Chart) {
+    new Chart(chartCanvas, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: 'Cumulative net earnings',
+                data: chartValues,
+                borderColor: '#1f7a8c',
+                backgroundColor: 'rgba(31, 122, 140, 0.12)',
+                fill: true,
+                tension: 0.25,
+                pointRadius: 3,
+                pointHoverRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'GBP ' + Number(value).toFixed(0);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+{% endblock %}

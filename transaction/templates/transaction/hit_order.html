@@ -52,6 +52,11 @@
                         <small>For longer rentals with high deposits, the deposit will be taken and returned at the end.</small>
                     </div>
                     {% endif %}
+                    <div id="long-rental-deposit-note" class="alert alert-warning mb-3" style="display:none;">
+                        <strong>Long rental deposit rule</strong><br/>
+                        Rentals over 5 days require a Visa or Mastercard credit card for the deposit.
+                        You can still pay with a different card.
+                    </div>
 
                     {% if order_hit_form.non_field_errors %}
                     <div class="alert alert-danger">{{ order_hit_form.non_field_errors }}</div>
@@ -126,9 +131,11 @@
                                                     <div><strong>Applied daily price:</strong> £<span id="price-per-day">{{ order.price|floatformat:2 }}</span></div>
                                                     <div><strong>Band:</strong> <span id="price-band-note">Base daily price</span></div>
                                                     <div><strong>Estimated rental subtotal:</strong> £<span id="price-subtotal">{{ order.price|floatformat:2 }}</span></div>
+                                                    <div id="pricing-long-rental-note" class="mt-2 font-weight-bold text-warning" style="display:none;">Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.</div>
                                                     {% if order.max_rental_days %}
                                                     <div class="text-muted">Maximum booking length: {{ order.max_rental_days }} day(s)</div>
                                                     {% endif %}
+                                                    <div class="text-muted mt-2">By sending this enquiry you agree that any unresolved booking dispute may be escalated to the dispute team and decided from the evidence provided.</div>
                                                 </div>
 
                                                 {% bootstrap_field order_hit_form.enquiry_message %}
@@ -222,6 +229,11 @@
         document.getElementById('price-per-day').textContent = pricing.rate.toFixed(2);
         document.getElementById('price-band-note').textContent = pricing.label;
         document.getElementById('price-subtotal').textContent = (days > 0 ? (days * pricing.rate) : pricing.rate).toFixed(2);
+        var longRental = days > 5;
+        var note = document.getElementById('pricing-long-rental-note');
+        var banner = document.getElementById('long-rental-deposit-note');
+        if (note) note.style.display = longRental ? 'block' : 'none';
+        if (banner) banner.style.display = longRental ? 'block' : 'none';
     }
 
     function dateIsSelectableEndpoint(d) {

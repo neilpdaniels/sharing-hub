@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% load thumbnail %}
+
+{% block title %}My rentalution - inbox{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+                <div>
+                    <h2 class="mb-1">Inbox</h2>
+                    <p class="mb-0 text-muted">All sent and received messages, with unread items first.</p>
+                </div>
+                <div class="mt-2 mt-md-0">
+                    <a class="btn btn-outline-secondary" href="{% url 'my_rentalution:dashboard' %}">Back to dashboard</a>
+                </div>
+            </div>
+
+            {% if messages_|length > 0 %}
+            {% include "pagination.html" with page=messages_ %}
+            {% endif %}
+
+            <div class="table-responsive">
+                <table class="table table-striped mb-0 messages-table align-middle inbox-table">
+                    <thead>
+                        <tr>
+                            <th>Read</th>
+                            <th>Date / Time</th>
+                            <th>Direction</th>
+                            <th>Counterparty</th>
+                            <th>Item</th>
+                            <th>Subject</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% if messages_|length > 0 %}
+                        {% for message in messages_ %}
+                        <tr class="{% if message.inbox_is_unread %}table-warning{% endif %}">
+                            <td class="text-center">
+                                <button type="button" class="btn btn-link p-0 message-open-btn {% if message.inbox_is_unread %}is-unread{% else %}is-read{% endif %}" id="expand_message_{{ message.id }}" aria-label="Open message {{ message.id }}">
+                                    <span class="fa {% if message.inbox_is_unread %}fa-envelope{% else %}fa-envelope-open{% endif %}"></span>
+                                </button>
+                            </td>
+                            <td>{{ message.created|date:'Y-m-d H:i' }}</td>
+                            <td>
+                                <span class="badge {% if message.inbox_direction == 'Received' %}badge-primary{% else %}badge-secondary{% endif %}">{{ message.inbox_direction }}</span>
+                                {% if message.inbox_is_unread %}
+                                    <span class="badge badge-danger ml-1">Unread</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ message.inbox_counterparty }}</td>
+                            <td>{{ message.inbox_item_name|default:'-' }}</td>
+                            <td class="message-subject-cell">{{ message.subject }}</td>
+                            <td>{{ message.inbox_preview|truncatechars:120 }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if messages_|length == 0 %}
+            <div class="card mt-3">
+                <div class="card-body">
+                    <p class="mb-0">No messages yet.</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    .inbox-table th,
+    .inbox-table td {
+        padding: 0.45rem 0.68rem;
+        vertical-align: middle;
+        font-size: 0.94rem;
+        line-height: 1.22;
+    }
+
+    .inbox-table thead th {
+        text-transform: none;
+        letter-spacing: normal;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #4a5563;
+        background: #eef2f5;
+        border-bottom: 1px solid #d9e0e6;
+    }
+
+    .inbox-table tbody tr {
+        border-bottom: 1px solid #e4eaef;
+    }
+
+    .inbox-table td:first-child {
+        width: 72px;
+        text-align: center;
+    }
+
+    .inbox-table .message-subject-cell {
+        font-weight: 500;
+    }
+
+    #messageModal .modal-dialog {
+        max-width: min(960px, 92vw);
+    }
+
+    #messageModal .modal-body {
+        padding: 1.25rem 1.5rem;
+    }
+
+    #messageModalContent {
+        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 55vh;
+        overflow-y: auto;
+    }
+</style>
+
+<div class="modal fade" id="messageModal" tabindex="-1" role="dialog" aria-labelledby="messageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="messageModalLabel"></h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-md-4">Date/Time:</div>
+                        <div class="col-md-4 ml-auto" id="messageModalDateTime"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">From:</div>
+                        <div class="col-md-4 ml-auto" id="messageModalFrom"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">To:</div>
+                        <div class="col-md-4 ml-auto" id="messageModalTo"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 ml-auto"><p class="mt-3 mb-2">Content:</p></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 ml-auto"><span id="messageModalContent"></span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block domready %}
+<script>
+(function() {
+    const expandMessageUrl = "{% url 'my_rentalution:expand_message' %}";
+    const openButtons = document.querySelectorAll('[id^="expand_message_"]');
+    openButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+            const messageRef = button.id.replace('expand_message_', '');
+            const response = await fetch(`${expandMessageUrl}?message_id=${encodeURIComponent(messageRef)}`, {
+                credentials: 'same-origin',
+            });
+            const data = await response.json();
+            document.getElementById('messageModalLabel').textContent = data.subject || 'Message';
+            document.getElementById('messageModalDateTime').textContent = data.created || '';
+            document.getElementById('messageModalFrom').textContent = data.from || '';
+            document.getElementById('messageModalTo').textContent = data.to || '';
+            document.getElementById('messageModalContent').textContent = data.body || '';
+            window.jQuery('#messageModal').modal('show');
+            button.classList.remove('is-unread');
+            button.classList.add('is-read');
+            const icon = button.querySelector('.fa');
+            if (icon) {
+                icon.classList.remove('fa-envelope');
+                icon.classList.add('fa-envelope-open');
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

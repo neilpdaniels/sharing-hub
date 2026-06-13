@@ -1,0 +1,46 @@
+<div class="rh-page-hero-card{% if image_url %} rh-page-hero-card--image{% else %} rh-page-hero-card--no-image{% endif %}{% if compact_hero %} rh-page-hero-card--compact{% endif %}"{% if image_url %} style="background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.42) 100%), url('{{ image_url }}');"{% endif %}>
+  {% if not image_url %}
+  <div class="rh-page-hero-media">
+    <div class="rh-page-hero-image rh-page-hero-image--empty d-flex align-items-center justify-content-center">
+      <i class="fas fa-th-large text-muted" style="font-size:2rem;"></i>
+    </div>
+  </div>
+  {% endif %}
+  <div class="rh-page-hero-copy{% if image_url %} rh-page-hero-copy--overlay{% endif %}{% if compact_hero %} rh-page-hero-copy--compact{% endif %}{% if not image_url %} rh-page-hero-copy--no-image{% endif %}">
+    {% if breadcrumbs %}
+    <nav aria-label="Breadcrumb" class="mb-3">
+      <ul class="browse-breadcrumb">
+        {% for crumb in breadcrumbs %}
+          {% if not forloop.first %}
+          <li class="sep"><i class="fas fa-chevron-right"></i></li>
+          {% endif %}
+          <li>
+            {% if crumb.url %}
+              <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+            {% else %}
+              <span class="current">{{ crumb.label }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% endif %}
+    {% if eyebrow %}
+    <div class="text-uppercase small font-weight-bold" style="letter-spacing:0.08em; color:#7e8f99;">{{ eyebrow }}</div>
+    {% endif %}
+    {% if not image_url %}
+    <div class="mb-2" style="color:#74808f;">
+      <i class="fas fa-th-large" style="font-size:1.4rem;"></i>
+    </div>
+    {% endif %}
+    <h1 class="mb-2" style="font-size:2rem; font-weight:800; color:#132644;">{{ title }}</h1>
+    {% if body %}
+    <div class="browse-category-description browse-category-description--hero">
+      {{ body|safe }}
+    </div>
+    {% endif %}
+    {% if footer_note %}
+    <div class="mt-3 text-muted small">{{ footer_note }}</div>
+    {% endif %}
+  </div>
+</div>

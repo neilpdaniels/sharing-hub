@@ -1,6 +1,8 @@
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 
 from django.contrib.auth import authenticate
+from django.urls import reverse
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -17,6 +19,39 @@ class UserSummarySerializer(serializers.Serializer):
     email = serializers.EmailField()
     first_name = serializers.CharField()
     last_name = serializers.CharField()
+
+
+class NearbyUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    display_name = serializers.CharField()
+    distance_km = serializers.FloatField()
+    town = serializers.CharField(allow_blank=True, allow_null=True)
+    postcode = serializers.CharField(allow_blank=True, allow_null=True)
+    avatar_url = serializers.CharField(allow_blank=True)
+    rating = serializers.FloatField()
+    successful_txns = serializers.IntegerField()
+    address_verified = serializers.BooleanField()
+
+
+class FriendSummarySerializer(serializers.Serializer):
+    friendship_id = serializers.IntegerField()
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    display_name = serializers.CharField()
+    town = serializers.CharField(allow_blank=True, allow_null=True)
+    postcode = serializers.CharField(allow_blank=True, allow_null=True)
+    avatar_url = serializers.CharField(allow_blank=True)
+    status = serializers.CharField()
+
+
+class BlockedUserSerializer(serializers.Serializer):
+    block_id = serializers.IntegerField()
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    display_name = serializers.CharField()
 
 
 class ProfileSummarySerializer(serializers.Serializer):
@@ -96,6 +131,7 @@ class TransactionListSerializer(serializers.ModelSerializer):
     order_id = serializers.IntegerField(source='order_passive_id', allow_null=True)
     item_name = serializers.CharField(source='product.name', read_only=True, allow_blank=True)
     counterparty_name = serializers.SerializerMethodField()
+    counterparty = serializers.SerializerMethodField()
     parties_summary = serializers.SerializerMethodField()
     workflow_stage = serializers.SerializerMethodField()
     workflow_stage_label = serializers.SerializerMethodField()
@@ -111,6 +147,57 @@ class TransactionListSerializer(serializers.ModelSerializer):
         counterparty = obj.user_passive if obj.user_aggressive_id == request.user.id else obj.user_aggressive
         full_name = f'{counterparty.first_name} {counterparty.last_name}'.strip()
         return full_name or counterparty.username
+
+    def get_counterparty(self, obj):
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return {}
+
+        counterparty = obj.user_passive if obj.user_aggressive_id == request.user.id else obj.user_aggressive
+        full_name = f'{counterparty.first_name} {counterparty.last_name}'.strip()
+        display_name = full_name or counterparty.username
+
+        try:
+            profile = counterparty.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        avatar_url = ''
+        if profile is not None and profile.image:
+            avatar_url = request.build_absolute_uri(profile.image.url)
+
+        address_parts = []
+        if profile is not None:
+            if profile.address_line_1:
+                address_parts.append(profile.address_line_1)
+            if profile.address_line_2:
+                address_parts.append(profile.address_line_2)
+            locality = ', '.join(
+                part for part in [profile.town, profile.county] if part
+            )
+            if locality:
+                address_parts.append(locality)
+            if profile.postcode:
+                address_parts.append(profile.postcode)
+
+        return {
+            'id': counterparty.id,
+            'display_name': display_name,
+            'username': counterparty.username,
+            'avatar_url': avatar_url,
+            'mobile_number': profile.mobile_number if profile is not None else '',
+            'address_line_1': profile.address_line_1 if profile is not None else '',
+            'address_line_2': profile.address_line_2 if profile is not None else '',
+            'town': profile.town if profile is not None else '',
+            'county': profile.county if profile is not None else '',
+            'postcode': profile.postcode if profile is not None else '',
+            'address_display': '\n'.join(address_parts),
+            'rating': profile.user_rating if profile is not None else 0,
+            'successful_txns': profile.user_successful_txns if profile is not None else 0,
+            'email_confirmed': profile.email_confirmed if profile is not None else False,
+            'mobile_verified': profile.mobile_verified if profile is not None else False,
+            'address_verified': profile.address_verified if profile is not None else False,
+        }
 
     def get_parties_summary(self, obj):
         request = self.context.get('request')
@@ -132,7 +219,11 @@ class TransactionListSerializer(serializers.ModelSerializer):
         return obj.get_workflow_timeline()
 
     def get_workflow_payload(self, obj):
-        return obj.get_workflow_payload()
+        payload = obj.get_workflow_payload()
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        payload['allowed_actions'] = obj.get_allowed_actions_for_user(user)
+        return payload
 
     def get_feedback_left_by_me(self, obj):
         request = self.context.get('request')
@@ -152,6 +243,7 @@ class TransactionListSerializer(serializers.ModelSerializer):
             'deposit_status',
             'item_name',
             'counterparty_name',
+            'counterparty',
             'parties_summary',
             'workflow_stage',
             'workflow_stage_label',
@@ -210,6 +302,10 @@ class TransactionDetailSerializer(TransactionListSerializer):
     listing_image_urls = serializers.SerializerMethodField()
     me_is_lender = serializers.SerializerMethodField()
     me_is_renter = serializers.SerializerMethodField()
+    active_dispute_case = serializers.SerializerMethodField()
+    dispute_final_statement_deadline = serializers.SerializerMethodField()
+    dispute_final_statement_seconds_remaining = serializers.SerializerMethodField()
+    dispute_final_statement_open = serializers.SerializerMethodField()
 
     class Meta(TransactionListSerializer.Meta):
         fields = TransactionListSerializer.Meta.fields + (
@@ -247,6 +343,10 @@ class TransactionDetailSerializer(TransactionListSerializer):
             'listing_image_urls',
             'me_is_lender',
             'me_is_renter',
+            'active_dispute_case',
+            'dispute_final_statement_deadline',
+            'dispute_final_statement_seconds_remaining',
+            'dispute_final_statement_open',
         )
 
     def get_deposit_proposal_iteration_limit(self, obj):
@@ -293,6 +393,60 @@ class TransactionDetailSerializer(TransactionListSerializer):
         if request is None or not request.user.is_authenticated:
             return False
         return obj.user_aggressive_id == request.user.id
+
+    def get_active_dispute_case(self, obj):
+        request = self.context.get('request')
+        case = obj.dispute_cases.order_by('-created').first()
+        if case is None:
+            return None
+        owner_name = ''
+        if case.owner:
+            owner_name = case.owner.get_full_name() or case.owner.username
+        data = {
+            'case_number': case.case_number,
+            'reason_code': case.reason_code,
+            'status': case.status,
+            'outcome': case.outcome,
+            'owner_name': owner_name,
+        }
+        if request is not None and getattr(request.user, 'is_staff', False):
+            data['review_url'] = request.build_absolute_uri(
+                reverse('transaction:dispute_case_review', kwargs={'case_number': case.case_number})
+            )
+        return data
+
+    def _get_dispute_final_statement_deadline(self, obj):
+        case = obj.dispute_cases.order_by('-created').first()
+        if case is None or not case.created:
+            return None
+        return case.created + timedelta(hours=24)
+
+    def get_dispute_final_statement_deadline(self, obj):
+        deadline = self._get_dispute_final_statement_deadline(obj)
+        return deadline.isoformat() if deadline else None
+
+    def get_dispute_final_statement_seconds_remaining(self, obj):
+        deadline = self._get_dispute_final_statement_deadline(obj)
+        if deadline is None:
+            return None
+        seconds = int((deadline - timezone.now()).total_seconds())
+        return max(0, seconds)
+
+    def get_dispute_final_statement_open(self, obj):
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+        case = obj.dispute_cases.order_by('-created').first()
+        if case is None:
+            return False
+        deadline = self._get_dispute_final_statement_deadline(obj)
+        if deadline is None or timezone.now() > deadline:
+            return False
+        if request.user == obj.user_passive:
+            return not bool(case.lender_final_statement_at)
+        if request.user == obj.user_aggressive:
+            return not bool(case.borrower_final_statement_at)
+        return False
 
 
 class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
@@ -462,6 +616,8 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     handover_unavailable_dates = serializers.SerializerMethodField()
     price_bands = LetPriceBandSerializer(many=True, read_only=True)
     is_favourite = serializers.SerializerMethodField()
+    money_earned = serializers.SerializerMethodField()
+    money_pending = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -507,6 +663,8 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'amended',
             'price_bands',
             'is_favourite',
+            'money_earned',
+            'money_pending',
         )
 
     def get_listing_image_url(self, obj):
@@ -570,6 +728,38 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             for blocked_date in obj.blocked_dates.all()
             if blocked_date.reason == OrderBlockedDate.HANDOVER_UNAVAILABLE
         ]
+
+    def _order_transactions(self, obj):
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return []
+
+        cached = getattr(self, '_transaction_cache', None)
+        if cached is None:
+            transaction_qs = Transaction.objects.filter(
+                user_passive=request.user,
+                order_passive__user=request.user,
+            ).exclude(transaction_status=Transaction.CANCEL_ACCEPTED)
+            cached = {}
+            for txn in transaction_qs.select_related('order_passive').prefetch_related('transactioncharge_set'):
+                cached.setdefault(txn.order_passive_id, []).append(txn)
+            self._transaction_cache = cached
+
+        return cached.get(obj.id, [])
+
+    def get_money_earned(self, obj):
+        earned = 0.0
+        for txn in self._order_transactions(obj):
+            if txn.payment_status == Transaction.PAYMENT_CAPTURED_PLACEHOLDER or txn.payment_collected_placeholder:
+                earned += float(txn.price or 0)
+        return round(earned, 2)
+
+    def get_money_pending(self, obj):
+        pending = 0.0
+        for txn in self._order_transactions(obj):
+            if txn.payment_status == Transaction.PAYMENT_PENDING and float(txn.price or 0) > 0:
+                pending += float(txn.price or 0)
+        return round(pending, 2)
 
     def get_is_favourite(self, obj):
         preset = getattr(obj, 'is_favourite', None)
@@ -822,6 +1012,7 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'card_brand',
+            'card_funding',
             'card_last4',
             'is_default',
             'created_at',

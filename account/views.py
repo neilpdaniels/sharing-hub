@@ -32,6 +32,7 @@ from django.views import View
 from common.helpers import is_profile_kyc_verified
 from common.phone_utils import format_to_e164, mask_mobile_number
 from common.security import verify_turnstile_token
+from .profanity import username_contains_blocked_word
 from .avatar_generation import AvatarGenerationError, generate_avatar_with_replicate
 from .avatar_presets import build_random_avatar_content, normalize_avatar_options
 from .forms import (
@@ -151,9 +152,9 @@ def myaccount(request):
 
 @login_required
 def mobile_verify(request):
-    next_url = request.GET.get('next') or request.POST.get('next') or reverse('my_sharing_hub:dashboard')
+    next_url = request.GET.get('next') or request.POST.get('next') or reverse('my_rentalution:dashboard')
     if not _is_safe_relative_path(next_url):
-        next_url = reverse('my_sharing_hub:dashboard')
+        next_url = reverse('my_rentalution:dashboard')
 
     profile = get_object_or_404(Profile, user=request.user)
 
@@ -706,10 +707,12 @@ def check_username(request):
         return JsonResponse({'available': False, 'error': 'Must be 30 characters or fewer.'})
     if not re.match(r'^[a-zA-Z0-9_-]+$', username):
         return JsonResponse({'available': False, 'error': 'Letters, numbers, hyphens and underscores only.'})
+    if username_contains_blocked_word(username):
+        return JsonResponse({'available': False, 'error': 'Username not available.'})
     from django.contrib.auth.models import User
     taken = User.objects.filter(username__iexact=username).exists()
     if taken:
-        return JsonResponse({'available': False, 'error': 'That username is already taken.'})
+        return JsonResponse({'available': False, 'error': 'Username not available.'})
     return JsonResponse({'available': True})
 
 

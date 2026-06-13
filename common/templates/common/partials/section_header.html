@@ -1,0 +1,11 @@
+<div class="d-flex align-items-center justify-content-between flex-wrap" style="gap:0.5rem;">
+  <div>
+    <h2 class="rh-home-section-title mb-0" {% if title_size %}style="font-size:{{ title_size }};"{% endif %}>{{ title }}</h2>
+    {% if subtitle %}
+    <div class="text-muted small mt-1">{{ subtitle }}</div>
+    {% endif %}
+  </div>
+  {% if action_url and action_text %}
+  <a href="{{ action_url }}" class="font-weight-bold" style="color: var(--rh-primary);">{{ action_text }}</a>
+  {% endif %}
+</div>

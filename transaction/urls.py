@@ -23,5 +23,7 @@ urlpatterns = [
     path('transaction_message_image_upload/', views.TransactionMessageImageUpload.as_view(), name='transaction_message_image_upload'),
     path('transpact_refresh/', views.transpact_refresh, name='transpact_refresh'),
     path('stripe/connect/webhook/', views.stripe_connect_webhook, name='stripe_connect_webhook'),
+    path('dispute/<str:case_number>/review/', views.dispute_case_review, name='dispute_case_review'),
+    path('admin/transactions/', views.admin_transaction_browser, name='admin_transaction_browser'),
 
 ]   

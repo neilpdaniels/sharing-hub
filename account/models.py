@@ -49,6 +49,14 @@ class Profile(models.Model):
     user_rating = models.FloatField(default=0)
     user_successful_txns = models.IntegerField(validators=[MinValueValidator(0), MaxValueValidator(999999)], default=0)
     user_failed_txns = models.IntegerField(validators=[MinValueValidator(0), MaxValueValidator(999999)], default=0)
+    user_bookings_pending_other_party = models.IntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(999999)],
+        default=0,
+    )
+    user_bookings_pending_my_action = models.IntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(999999)],
+        default=0,
+    )
     create_date = models.DateTimeField('date created', auto_now_add=True)
 
     def __str__(self):
@@ -144,6 +152,12 @@ class PaymentMethod(models.Model):
         default='Card',
         help_text='Card brand (Visa, Mastercard, etc.)'
     )
+    card_funding = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        help_text='Card funding type from Stripe (credit, debit, prepaid, etc.)'
+    )
     card_last4 = models.CharField(
         max_length=4,
         help_text='Last 4 digits of card'
@@ -161,4 +175,5 @@ class PaymentMethod(models.Model):
         ordering = ['-is_default', '-created_at']
     
     def __str__(self):
-        return f'{self.card_brand} ****{self.card_last4} for {self.user.username}'
+        funding = f' {self.card_funding}' if self.card_funding else ''
+        return f'{self.card_brand}{funding} ****{self.card_last4} for {self.user.username}'

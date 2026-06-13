@@ -1,5 +1,12 @@
 todo: 
 
+mobile/web parity implementation backlog
+
+priority order:
+1) finish workflow parity first, because it is core to the product and should feel nearly identical on web and mobile.
+2) reuse existing backend models, serializers, helpers, and UI patterns where possible.
+3) keep Python changes pep8-compliant and keep mobile text / labels aligned with the main site copy.
+
 transaction + listings parity rollout
 
 1) transaction workflow contract:
@@ -22,21 +29,34 @@ delivery fee (within x km / price per km or single surplus)
     - add formal dispute case model with reason codes, evidence bundles, SLA timers, owner, and outcome states.
     - link dispute cases to transactions and mirror to admin moderation UI.
 
-2) deposit proposal cycle hard-cap now enforced at 5 iterations, but needs fuller UX + audit:
+2) time, inactivity, and no-action policy gaps still need a formal pass:
+    - define what happens when no one acts at enquiry, contract, checkout, return, dispute, and feedback stages.
+    - add explicit expiry windows, grace periods, auto-cancellation, auto-escalation, and reminder rules for each action-dependent state.
+    - define which states are waiting on a person versus waiting on a timer, and what terminal state or fallback applies when the timer expires.
+    - spell out the completed-state actions that still need a policy decision, especially:
+        - contract expiry after first signer / second signer timeout
+        - checkout PIN not verified before rental start cutoff
+        - return PIN not verified before return cutoff
+        - no deposit proposal response after the cap or after escalation
+        - dispute review with no admin decision yet
+        - feedback window expiry with one-sided or zero feedback
+    - add tests for all timeout/no-action branches so completed items cannot regress silently.
+
+3) deposit proposal cycle hard-cap now enforced at 5 iterations, but needs fuller UX + audit:
     - DONE (2026-05-30): explicit iteration counter field added in DB (`deposit_proposal_iteration_count`) and backfilled from historical proposal messages.
     - DONE (2026-05-30): visible iteration progress meter added in web/mobile (x/5) with warning banner at 3/5, 4/5, and 5/5 stating that unresolved proposals escalate to dispute and may incur a fee.
 
-3) missing return flow now opens dispute, but needs deep handling:
+4) missing return flow now opens dispute, but needs deep handling:
     - define deadline windows and grace period policy.
     - add lender evidence checklist for missing return filing.
     - define borrower rebuttal window and auto-escalation timings.
 
-4) missing rental flow now voids transaction + borrower-only feedback, but needs formal policy:
+5) missing rental flow now voids transaction + borrower-only feedback, but needs formal policy:
     - confirm if lender can submit rebuttal evidence before/after void.
     - define if financial penalties/fees apply on voided starts.
     - make one-sided feedback explicitly visible as one-sided in profile aggregates.
 
-5) feedback completion logic still binary for normal transactions:
+6) feedback completion logic still binary for normal transactions:
         - DONE (2026-05-30): explicit workflow states added for feedback lifecycle:
             - one-sided pending feedback (`FEEDBACK_ONE_SIDED`)
             - mutual feedback completed (`RENTAL_PROCESS_COMPLETED`)
@@ -44,15 +64,15 @@ delivery fee (within x km / price per km or single surplus)
             - no-feedback completed after expiry (`RENTAL_PROCESS_COMPLETED_NO_FEEDBACK`)
         - DONE (2026-05-30): one-sided feedback now auto-closes as completed after a feedback window (default 30 days, configurable via `TRANSACTION_FEEDBACK_WINDOW_DAYS`), implemented via scheduled task `auto_close_feedback_windows`.
 
-6) evidence capture UX:
+7) evidence capture UX:
     - DONE (2026-05-30): website evidence forms now support direct video upload with URL fallback for checkout/return evidence paths.
     - DONE (2026-05-30): standardized evidence metadata persisted on evidence records: captured_at, capture_device, checksum_sha256, uploader_role (+ evidence_stage/source URL tracking).
 
-7) transaction timeline coherence:
+8) transaction timeline coherence:
     - centralize step/substep derivation server-side (single source of truth) and expose to web + mobile.
     - remove duplicated step logic currently split across template logic, helper functions, and mobile UI code.
 
-8) notifications:
+9) notifications:
     - DONE (2026-05-30): push/email notifications now emitted for major workflow transitions and dispute escalation via transaction status-change notifications (`notify_major_status_transition`), with system messages flagged for push and recipient email.
         - DONE (2026-05-30): reminder nudges added for pending actions (contract confirmation, return verification, feedback) via scheduled task `send_pending_action_reminders`.
             - contract counterparty reminder: every 4 hours between 9am and 8pm, includes remaining time in the 24-hour confirmation countdown.
@@ -60,21 +80,113 @@ delivery fee (within x km / price per km or single surplus)
             - return verification reminder: every 4 hours in reminder window with 24-hour verification countdown.
             - feedback reminder: every 4 hours in reminder window with countdown to feedback auto-close deadline.
 
-9) tests to add:
+10) tests to add:
     - web + mobile API tests for missing_return and missing_rental actions with date gating.
     - tests for deposit iteration limit (<=5 proposals) and auto-escalation on post-limit contest.
     - tests for borrower-only feedback path on missing-rental voided transactions.
 
-10) web/mobile parity audit for shared UX:
+11) web/mobile parity audit for shared UX:
     - identify components, labels/text, and step flows that differ between main site and mobile app.
     - define shared source-of-truth patterns (copy, state-to-step mapping, action labels) and apply across both platforms.
     - prioritize high-impact mismatches in transaction flow first, then expand to account/profile and navigation surfaces.
 
 
+workflow parity gaps to implement next
+
+1) rental enquiry flow parity:
+    - add the web-style enquiry/start-rental flow to mobile with matching fields, validation, and call-to-action order.
+    - reuse the existing transaction action endpoints and share the same action labels / outcome states across web and mobile.
+    - include date-gated logic, pricing summary, and long-rental warnings in the same places as the site.
+
+2) rental contract / T&Cs parity:
+    - add the rental terms and conditions confirmation step to the app before a rental is committed.
+    - mirror the web modal content and acceptance behavior in a mobile-friendly screen or modal.
+    - keep the contract acceptance copy synchronized with the main site.
+
+3) handover and evidence parity:
+    - make checkout and return evidence states match the web flow more closely.
+    - ensure PIN / QR verification, evidence upload, and verified states line up across both platforms.
+    - keep evidence labels and status text shared from the backend where possible.
+
+4) dispute / cancellation parity:
+    - bring the web dispute and cancellation flows into mobile.
+    - expose the same reasons, prompts, and confirmation steps used on the site.
+    - reuse the shared transaction action model and add tests for each edge case.
+
+5) feedback closeout parity:
+    - keep the mobile feedback window, one-sided completion, and final closeout states aligned with the web workflow.
+    - surface the same reminders, pending states, and completion states in both apps.
+    - add tests to lock down the expiry behavior and one-sided feedback path.
+
+
+feature backlog from app/site comparison
+
+1) whats popular:
+    - add the trending searches / popular terms view to the app.
+    - decide whether to surface it as a standalone screen or a home/search entry point.
+    - reuse the web data source instead of building a separate mobile-only popularity source.
+
+2) improve app search to match site:
+    - DONE (2026-06-09): added popular terms, filter summary chips, and richer result cards.
+    - add the missing web-like search filters and sorting behavior.
+    - align search copy, empty states, and result metadata with the main site.
+    - keep search result cards and category navigation consistent with the website.
+    - review whether browse, search, and nearby listings should share one backend query contract.
+
+3) add password reset / password change:
+    - DONE (2026-06-09): exposed password reset request in mobile and wired the login screen to open it.
+    - expose reset confirmation and password change screens in mobile.
+    - reuse the existing Django auth flows and align validation / copy with the web forms.
+    - make the settings / account area link to these flows in the same way the site does.
+
+4) kyc verification:
+    - add the KYC verification entry point and status display to the app.
+    - reuse the same backend verification states and messaging as the web flow.
+    - confirm what steps are manual, what steps are provider-driven, and what can be shared across platforms.
+
+5) add friends / view nearby people:
+    - add the friend / user discovery flow to the app.
+    - include nearby people / users where the main site already supports it.
+    - reuse the existing profile and location data rather than duplicating filters or ranking logic.
+
+6) improve listing creation:
+    - DONE (2026-06-09): improved category discovery with chips, helper guidance, and a clearer item search flow.
+    - DONE (2026-06-09): added a guided search helper card and a cleaner validation summary.
+    - DONE (2026-06-09): added live product suggestions while typing so item discovery feels closer to autocomplete.
+    - DONE (2026-06-09): tightened pricing and delivery guidance copy so the form feels closer to the web flow.
+    - bring the mobile listing form closer to the web add/edit listing experience.
+    - support the same pricing, delivery, collection, availability, image upload, and category/product autocomplete behaviors.
+    - reuse web validation rules and backend form semantics wherever practical.
+
+
+supporting technical tasks
+
+1) shared workflow state contract:
+    - consolidate transaction state helpers so web templates and Flutter screens consume the same stage/label/action source.
+    - remove duplicated hard-coded status text from the client where the backend can own it.
+
+2) shared contact / party detail contract:
+    - standardize counterparty data for transaction screens, including name, avatar, address, and verification fields.
+    - reuse the same payload for both the app and the main site transaction pages.
+
+3) shared search / browse contract:
+    - expose the same filters, ordering, and result metadata to both web and mobile.
+    - add parity tests that compare site-visible states with app-visible states for the same query.
+
+4) shared auth / account contract:
+    - align the account detail fields and verification states shown in web and mobile.
+    - avoid introducing separate mobile-only account semantics unless strictly necessary.
+
+5) regression tests:
+    - add backend tests for transaction workflow responses, search response shape, and auth/account flows.
+    - add mobile widget / integration tests for the highest-risk workflow screens once the contract is stable.
+
+
+
 broken links / missing pages audit (2026-05-26)
 
 1) Safety page created and wired: pages/safety/. TODO: replace placeholder text with full safety policy content and links.
-2) Notifications page created and wired: my_sharing_hub/notifications/. TODO: implement real notification feed, unread state, and notification actions.
+2) Notifications page created and wired: my_rentalution/notifications/. TODO: implement real notification feed, unread state, and notification actions.
 3) Missing social destinations in footer: Facebook, Instagram, Twitter/X all point to # in common/templates/base.html (footer). Add real profile URLs.
 4) Broken AJAX endpoint in product page: {% url "quotes:refresh_request" %} in navigation/templates/navigation/productPage.html has no registered quotes namespace/route. Add the route or replace/remove this call.
 

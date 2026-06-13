@@ -37,6 +37,14 @@ class UserRegistrationStartFormTests(TestCase):
 		self.assertFalse(form.is_valid())
 		self.assertIn('username', form.errors)
 
+	def test_rejects_blocked_username(self):
+		payload = self._valid_payload()
+		payload['username'] = 'shit_head'
+		form = UserRegistrationStartForm(data=payload)
+
+		self.assertFalse(form.is_valid())
+		self.assertIn('username', form.errors)
+
 	def test_rejects_duplicate_email_case_insensitive(self):
 		User.objects.create_user(username='other_user', email='NEIL@example.com', password='x')
 		form = UserRegistrationStartForm(data=self._valid_payload())
@@ -68,3 +76,15 @@ class AvatarEditFormTests(TestCase):
 
 		self.assertFalse(form.is_valid())
 		self.assertIn('avatar_hair_length', form.errors)
+
+
+class UsernameCheckTests(TestCase):
+	def test_rejects_blocked_username(self):
+		from django.test import Client
+
+		client = Client()
+		response = client.get('/account/register/check-username/', {'username': 'shit_head'})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertFalse(response.json()['available'])
+		self.assertEqual(response.json()['error'], 'Username not available.')

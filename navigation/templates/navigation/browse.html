@@ -8,15 +8,6 @@
 {% block content %}
 
 <style>
-    .browse-page-separator {
-        width: 100%;
-        height: 3px;
-        background-color: #d8e2e6;
-        border: none;
-        margin: 0;
-        padding: 0;
-    }
-
     .browse-meta-bar {
         display: flex;
         align-items: center;
@@ -156,51 +147,207 @@
         border-color: #d8e2e6;
     }
 
-    .browse-hero {
-        background: linear-gradient(180deg, #fbf7f0 0%, #fff 100%);
-        border: 1px solid #e3e7ea;
+    .rh-page-hero-card {
+        border: 1px solid #e7eceb;
         border-radius: 18px;
-        padding: 1rem;
-        box-shadow: 0 10px 24px rgba(22, 34, 48, 0.04);
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 6px 18px rgba(24, 34, 56, 0.05);
+        display: grid;
+        grid-template-rows: 320px auto;
+        margin-bottom: 1.25rem;
+        background-size: cover;
+        background-position: center center;
+        background-repeat: no-repeat;
     }
 
-    .browse-hero-image-wrap {
+    .rh-page-hero-card--no-image {
+        display: block;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+    }
+
+    .rh-page-hero-media {
         height: 100%;
+        overflow: hidden;
     }
 
     .browse-hero-image {
         display: block;
         width: 100%;
         height: 100%;
-        min-height: 240px;
+        min-height: 0;
         object-fit: cover;
-        border-radius: 18px;
+        object-position: center center;
         background: #f4f6f7;
     }
 
     .browse-hero-image--empty {
-        min-height: 240px;
+        width: 100%;
+        height: 100%;
         background: #f4f6f7;
         color: #97a3ad;
-        border: 2px dashed #d5dde1;
+        border: 0;
     }
 
     .browse-hero-copy {
-        padding: 0.25rem 0.25rem 0.25rem 0.5rem;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        padding: 1rem 1rem 1.15rem;
+        background: #fff;
+    }
+
+    .rh-page-hero-copy--no-image {
+        padding-top: 1.25rem;
+    }
+
+    .rh-page-hero-copy--overlay {
+        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.18) 28%, rgba(255,255,255,0.88) 70%, #ffffff 100%);
+        padding: 18rem 1.25rem 1.15rem;
+    }
+
+    .rh-page-hero-card--compact {
+        grid-template-rows: 220px auto;
+    }
+
+    .rh-page-hero-card--compact .rh-page-hero-copy--compact {
+        padding: 1rem 1.25rem 1.2rem;
+    }
+
+    .rh-page-hero-card--compact .rh-page-hero-copy--compact .browse-breadcrumb {
+        margin-bottom: 0.15rem;
+    }
+
+    .rh-page-hero-card--compact .rh-page-hero-copy--compact h1 {
+        margin-bottom: 0.35rem !important;
+        font-size: 2.1rem;
+    }
+
+    .rh-page-hero-card--compact .rh-page-hero-copy--compact .browse-category-description--hero {
+        margin-top: 0.15rem;
+    }
+
+    .rh-page-hero-card--no-image .rh-page-hero-copy--no-image .browse-category-description--hero {
+        max-width: 52rem;
+    }
+
+    .rh-page-hero-card--image .browse-breadcrumb a,
+    .rh-page-hero-card--image .browse-breadcrumb .current,
+    .rh-page-hero-card--image .browse-hero h1,
+    .rh-page-hero-card--image .browse-category-description--hero,
+    .rh-page-hero-card--image .browse-hero .text-uppercase,
+    .rh-page-hero-card--image .browse-hero .text-muted {
+        color: #132644 !important;
+        text-shadow: none;
+    }
+
+    .rh-page-hero-card--image .browse-breadcrumb .sep {
+        color: rgba(19, 38, 68, 0.65);
     }
 
     .browse-category-description--hero {
-        font-size: 1rem;
-        line-height: 1.6;
-        max-width: 62rem;
+        font-size: 0.98rem;
+        line-height: 1.65;
+        max-width: 58rem;
+        color: #2f3b46;
+    }
+
+    .browse-hero .browse-breadcrumb {
+        margin-bottom: 0.2rem;
+    }
+
+    .browse-hero h1 {
+        letter-spacing: -0.02em;
     }
 
     .browse-products-heading {
         padding-top: 0.5rem;
         border-top: 1px solid #e6ebee;
+    }
+
+    .browse-popular-section {
+        margin: 1.5rem 0 1.8rem;
+        padding: 1rem 0 0.25rem;
+        border-top: 1px dashed #d9e4e7;
+    }
+
+    .browse-popular-section .rh-popular-carousel {
+        position: relative;
+    }
+
+    .browse-popular-section .rh-popular-carousel-viewport {
+        overflow-x: auto;
+        scroll-snap-type: x proximity;
+        scroll-behavior: smooth;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .browse-popular-section .rh-popular-carousel-viewport::-webkit-scrollbar {
+        display: none;
+    }
+
+    .browse-popular-section .rh-popular-carousel-track {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: calc((100% - 1.5rem * 2) / 3);
+        gap: 1.5rem;
+    }
+
+    .browse-popular-section .rh-popular-card {
+        border: 1px solid #e7eceb;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 6px 18px rgba(24, 34, 56, 0.05);
+        height: 100%;
+        scroll-snap-align: start;
+    }
+
+    .browse-popular-section .rh-popular-thumb {
+        height: 80px;
+        width: 100%;
+        object-fit: cover;
+        display: block;
+        background: #f5f7f8;
+    }
+
+    .browse-popular-section .rh-popular-body {
+        padding: 0.65rem;
+    }
+
+    .browse-popular-section .rh-popular-name {
+        color: #1a2a3f;
+        font-weight: 800;
+        font-size: 0.92rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .browse-popular-section .rh-popular-meta {
+        color: #586472;
+        font-size: 0.78rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .browse-popular-section .rh-popular-price {
+        color: #132644;
+        font-weight: 800;
+        font-size: 0.92rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .browse-popular-section .rh-popular-distance {
+        color: #6d7887;
+        font-size: 0.76rem;
+    }
+
+    @media (max-width: 1199px) {
+        .browse-popular-section .rh-popular-carousel-track { grid-auto-columns: calc((100% - 1rem) / 2); }
+    }
+
+    @media (max-width: 991px) {
+        .browse-popular-section .rh-popular-carousel-track { grid-auto-columns: 82%; }
+    }
+
+    @media (max-width: 575px) {
+        .browse-popular-section .rh-popular-carousel-track { grid-auto-columns: 88%; }
     }
 
     @media (max-width: 767.98px) {
@@ -432,96 +579,17 @@
         gap: 1.5rem;
     }
 
-    .browse-popular-section .rh-popular-card {
-        border-radius: 12px;
-    }
-
-    .browse-popular-section .rh-popular-thumb {
-        height: 108px;
-        border-radius: 12px 12px 0 0;
-    }
-
-    .browse-popular-section .rh-popular-body {
-        padding: 0.65rem 0.7rem 0.75rem;
-    }
-
-    .browse-popular-section .rh-popular-name {
-        font-size: 0.86rem;
-    }
-
-    .browse-popular-section .rh-popular-price {
-        font-size: 0.88rem;
-    }
-
-    .browse-popular-section .rh-home-section-title {
-        font-size: 1.3rem;
-    }
-
-    @media (max-width: 991px) {
-        .browse-popular-section .rh-popular-carousel-track {
-            grid-auto-columns: 78%;
-        }
-    }
-
-    @media (max-width: 575px) {
-        .browse-popular-section .rh-popular-carousel-track {
-            grid-auto-columns: 86%;
-        }
-    }
 </style>
 
 <div class="container browse-page-container py-3">
-    <hr class="browse-page-separator">
     {% if category %}
-    <div class="browse-hero mb-3">
-        <div class="row align-items-stretch">
-            <div class="col-lg-4 mb-3 mb-lg-0">
-                <div class="browse-hero-image-wrap">
-                    {% if category.image %}
-                        {% thumbnail category.image "640" format="PNG" as im %}
-                        <img src="{{ im.url }}" alt="{{ category.title }}" class="browse-hero-image">
-                        {% endthumbnail %}
-                    {% else %}
-                        <div class="browse-hero-image browse-hero-image--empty d-flex align-items-center justify-content-center">
-                            <i class="fas fa-th-large text-muted" style="font-size:2rem;"></i>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="col-lg-8">
-                <div class="browse-hero-copy h-100">
-                    <nav aria-label="Breadcrumb" class="mb-3">
-                        <ul class="browse-breadcrumb">
-                            <li><a href="{% url 'homepage' %}">Home</a></li>
-                            {% for item in biscuit %}
-                            <li class="sep"><i class="fas fa-chevron-right"></i></li>
-                            <li>
-                                {% if forloop.last %}
-                                <span class="current">{{ item.title|title }}</span>
-                                {% else %}
-                                <a href="{% url 'navigation:browseCategory' item.slug %}">{{ item.title|title }}</a>
-                                {% endif %}
-                            </li>
-                            {% endfor %}
-                        </ul>
-                    </nav>
-                    <h1 class="mb-2" style="font-size:2rem; font-weight:800; color:#132644;">{{ category.title|title }}</h1>
-                    {% if category.description %}
-                    <div class="browse-category-description browse-category-description--hero">
-                        {{ category.description|safe }}
-                    </div>
-                    {% else %}
-                    <p class="text-muted mb-0">Browse items in this category and find something useful nearby.</p>
-                    {% endif %}
-                    {% if category.virtual_depth %}
-                    <div class="mt-3">
-                        <div class="text-muted small">This category has live buy/sell pricing available too.</div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
+    {% if category.image %}
+    {% with image_url=category.image.url %}
+        {% include "common/partials/hero_split.html" with image_url=image_url image_alt=category.title title=category.title|title body=category.description footer_note=category.virtual_depth|yesno:"This category has live buy/sell pricing available too.," breadcrumbs=breadcrumbs compact_hero=True %}
+    {% endwith %}
+    {% else %}
+        {% include "common/partials/hero_split.html" with image_url='' image_alt=category.title title=category.title|title body=category.description footer_note=category.virtual_depth|yesno:"This category has live buy/sell pricing available too.," breadcrumbs=breadcrumbs compact_hero=True %}
+    {% endif %}
 
     {% if category.virtual_depth %}
     <div class="row">
@@ -627,10 +695,7 @@
             <div class="browse-main-container">
     {% if browse_popular_orders %}
     <div class="browse-popular-section">
-        <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap:0.5rem;">
-            <h2 class="rh-home-section-title mb-0">Popular near you</h2>
-            <div class="text-muted small">Suggested listings based on your location</div>
-        </div>
+        {% include "common/partials/section_header.html" with title="Popular near you" subtitle="Suggested listings based on your location" %}
         <div class="rh-popular-carousel mt-3">
             <div class="rh-popular-carousel-viewport" id="rh-popular-carousel-browse">
                 <div class="rh-popular-carousel-track">
@@ -667,8 +732,8 @@
     </div>
     {% endif %}
 
-    {% if request.user.is_staff %}
-    <div class="admin-quick-actions">
+                    {% if request.user.is_staff %}
+                    <div class="admin-quick-actions">
                         <a href="{% url 'admin:common_category_change' category.id %}">Edit category and tags</a>
                         <a href="{% url 'admin:common_category_add' %}?parent_category={{ category.id }}">Add child category</a>
                         <a href="{% url 'admin:common_product_add' %}?category_id={{ category.id }}">Add product in this category</a>
@@ -678,11 +743,11 @@
 
                     {% with countOnPage=products|length %}
                     <div class="browse-products-heading mt-4 mb-2 d-flex align-items-center justify-content-between flex-wrap" style="gap:0.5rem;">
-                        <h2 class="rh-home-section-title mb-0" style="font-size:1.4rem;">Products in this category</h2>
+                        {% include "common/partials/section_header.html" with title="Products in this category" title_size="1.4rem" %}
                         <div class="browse-results-meta">
-                            <span>Showing</span>
-                            <strong>{{ products.number|add:"-1"|multiply:"20"|add:"1" }}-{{ products.number|add:"-1"|multiply:"20"|add:countOnPage }}</strong>
-                            <span>of {{ totalProductsCount }}</span>
+                          <span>Showing</span>
+                          <strong>{{ products.number|add:"-1"|multiply:"20"|add:"1" }}-{{ products.number|add:"-1"|multiply:"20"|add:countOnPage }}</strong>
+                          <span>of {{ totalProductsCount }}</span>
                         </div>
                     </div>
 

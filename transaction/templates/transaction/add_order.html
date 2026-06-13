@@ -100,12 +100,39 @@
         {# ── Pricing ── #}
         <div class="card mb-3">
           <div class="card-header font-weight-bold">Pricing</div>
-          <div class="card-body">
-            <div id="public-pricing-fields">
-              {% bootstrap_field order_form.price %}
-              {% bootstrap_field order_form.max_rental_days %}
-              {% bootstrap_field order_form.deposit %}
-            </div>
+        <div class="card-body">
+        <div id="public-pricing-fields">
+          {% bootstrap_field order_form.price %}
+          {% bootstrap_field order_form.max_rental_days %}
+          <div class="alert alert-warning mt-2 mb-3" style="display:block;">
+            <strong>Long rental note</strong><br/>
+            If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. Payment cards can still be different.
+          </div>
+          {% bootstrap_field order_form.deposit %}
+          <div class="alert alert-info mt-3 mb-0" style="display:block;">
+            <strong>Fees on each rental</strong><br/>
+            The rental payment is captured separately from the deposit. Your rental payout will be reduced by card transaction costs of 2% on the rental payment, and by the banded Rentalution fee that applies to the total rental amount. If a deposit hold is actually captured later, card transaction costs can also apply to that held amount.
+          </div>
+        </div>
+
+            <style>
+              #dynamic-price-bands-wrap .band-duration-wrap {
+                position: relative;
+                z-index: 2;
+              }
+
+              #dynamic-price-bands-wrap .band-duration-wrap select {
+                position: relative;
+                z-index: 2;
+                width: 100%;
+                cursor: pointer;
+              }
+
+              #dynamic-price-bands-wrap .input-group-prepend,
+              #dynamic-price-bands-wrap .input-group-append {
+                z-index: 1;
+              }
+            </style>
 
             <div id="dynamic-price-bands-wrap">
             <hr>
@@ -118,7 +145,7 @@
               <div class="price-band-row d-flex align-items-center mb-2">
                 {% for hidden in band_form.hidden_fields %}{{ hidden }}{% endfor %}
                 {{ band_form.DELETE.as_hidden }}
-                <div style="width:180px;" class="mr-2">{{ band_form.duration_days }}</div>
+                <div style="width:180px;" class="mr-2 band-duration-wrap">{{ band_form.duration_days }}</div>
                 <div style="width:170px;" class="mr-2">
                   <div class="input-group input-group-sm">
                     <div class="input-group-prepend"><span class="input-group-text">£</span></div>
@@ -147,7 +174,7 @@
               <div class="price-band-row d-flex align-items-center mb-2">
                 {% for hidden in band_form.hidden_fields %}{{ hidden }}{% endfor %}
                 {{ band_form.DELETE.as_hidden }}
-                <div style="width:180px;" class="mr-2">{{ band_form.duration_days }}</div>
+                <div style="width:180px;" class="mr-2 band-duration-wrap">{{ band_form.duration_days }}</div>
                 <div style="width:170px;" class="mr-2">
                   <div class="input-group input-group-sm">
                     <div class="input-group-prepend"><span class="input-group-text">£</span></div>

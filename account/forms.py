@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 
 from common.phone_utils import normalize_to_domestic
 from .form_mixins import AvatarFieldsMixin
+from .profanity import username_contains_blocked_word
 from .models import Profile
 from .validators import calculate_age
 import re
@@ -41,8 +42,10 @@ class UserRegistrationStartForm(AvatarFieldsMixin):
         username = self.cleaned_data['username'].strip()
         if not re.match(r'^[a-zA-Z0-9_-]+$', username):
             raise forms.ValidationError('Only letters, numbers, hyphens and underscores are allowed.')
+        if username_contains_blocked_word(username):
+            raise forms.ValidationError('Username not available.')
         if User.objects.filter(username__iexact=username).exists():
-            raise forms.ValidationError('That username is already taken.')
+            raise forms.ValidationError('Username not available.')
         return username
 
     def clean_first_name(self):
@@ -150,4 +153,3 @@ class ProfileEditForm(forms.ModelForm):
     def clean_mobile_number(self):
         number = (self.cleaned_data.get('mobile_number') or '').strip()
         return normalize_to_domestic(number)
-

@@ -12,7 +12,7 @@ This document outlines all changes made to the Sharing Hub project to:
 ## 1. Friends Module Integration
 
 ### Add to Main URLs
-In `sharing_hub/urls.py`, add the friends URL configuration:
+In `rentalution/urls.py`, add the friends URL configuration:
 
 ```python
 from django.urls import path, include
@@ -201,7 +201,7 @@ cp -r reference_price reference_price.backup
 rm -rf reference_price
 ```
 
-Also remove from `sharing_hub/settings/base.py` if not already done:
+Also remove from `rentalution/settings/base.py` if not already done:
 - Already removed from INSTALLED_APPS ✓
 
 ## 9. Environment Variables & Settings
@@ -317,7 +317,7 @@ Then restore the reference_price app from backup.
 ### Common Issues
 
 **Q: Migration fails with "no such table"**
-A: This usually means app isn't in INSTALLED_APPS. Check `sharing_hub/settings/base.py` includes `'friends.apps.FriendsConfig'`.
+A: This usually means app isn't in INSTALLED_APPS. Check `rentalution/settings/base.py` includes `'friends.apps.FriendsConfig'`.
 
 **Q: "ReferencePrice" import errors**
 A: Remove import statements from navigation/views.py and any custom views.

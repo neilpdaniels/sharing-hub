@@ -2,7 +2,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import render
 
-from sharing_hub.context_processors import get_transaction_notification_payload
+from rentalution.context_processors import get_transaction_notification_payload
 
 # Create your views here.
 

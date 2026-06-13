@@ -3,6 +3,7 @@ import random
 import re
 
 from django.conf import settings
+from django.contrib.auth.forms import PasswordChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.db.models import BooleanField, Q, Value
 from django.urls import reverse
@@ -22,6 +23,7 @@ from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
 from common.geocoding import PostcodeGeocoder
 from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, OrderImage, Product
+from friends.models import BlockedUser, Friendship, FriendsHelper
 from mobile_api.models import MobileDevice
 from transaction.forms import RentalEnquiryForm
 from transaction.models import Transaction, TransactionFeedback, TransactionImage, TransactionMessage, TransactionMessageImage
@@ -48,6 +50,9 @@ from .serializers import (
     OrderAmendSerializer,
     OrderSummarySerializer,
     PaymentMethodSerializer,
+    NearbyUserSerializer,
+    FriendSummarySerializer,
+    BlockedUserSerializer,
     ProfileSummarySerializer,
     ProductDetailSerializer,
     ProductSummarySerializer,
@@ -191,6 +196,66 @@ def _apply_favourite_flags_for_user(user, orders):
     )
     for order in orders:
         order.is_favourite = order.id in favourite_ids
+
+
+def _serialize_nearby_user(request, profile, distance_km):
+    user = profile.user
+    full_name = f'{user.first_name} {user.last_name}'.strip()
+    display_name = full_name or user.username
+    avatar_url = ''
+    if profile.image:
+        avatar_url = request.build_absolute_uri(profile.image.url)
+    return {
+        'id': user.id,
+        'username': user.username,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'display_name': display_name,
+        'distance_km': round(float(distance_km), 2),
+        'town': profile.town,
+        'postcode': profile.postcode,
+        'avatar_url': avatar_url,
+        'rating': profile.user_rating,
+        'successful_txns': profile.user_successful_txns,
+        'address_verified': profile.address_verified,
+    }
+
+
+def _serialize_friendship_profile(request, friendship, current_user):
+    other = friendship.user_to if friendship.user_from_id == current_user.id else friendship.user_from
+    try:
+        profile = other.profile
+    except Profile.DoesNotExist:
+        profile = None
+
+    full_name = f'{other.first_name} {other.last_name}'.strip()
+    display_name = full_name or other.username
+    avatar_url = ''
+    if profile is not None and profile.image:
+        avatar_url = request.build_absolute_uri(profile.image.url)
+
+    return {
+        'friendship_id': friendship.id,
+        'user_id': other.id,
+        'username': other.username,
+        'display_name': display_name,
+        'town': profile.town if profile is not None else '',
+        'postcode': profile.postcode if profile is not None else '',
+        'avatar_url': avatar_url,
+        'status': friendship.status,
+    }
+
+
+def _serialize_blocked_user(block):
+    user = block.blocked_user
+    full_name = f'{user.first_name} {user.last_name}'.strip()
+    display_name = full_name or user.username
+    return {
+        'block_id': block.id,
+        'user_id': user.id,
+        'username': user.username,
+        'display_name': display_name,
+    }
 
 
 def _iter_rental_dates(start_date, end_date):
@@ -364,6 +429,290 @@ class MobileLoginView(APIView):
         serializer = MobileTokenObtainSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+class NearbyPeopleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        radius_raw = request.query_params.get('radius_km') or '10'
+        try:
+            radius_km = max(1, min(int(radius_raw), 100))
+        except (TypeError, ValueError):
+            radius_km = 10
+
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            return Response(
+                {'detail': 'Please complete your profile before browsing nearby people.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if profile.latitude is None or profile.longitude is None:
+            return Response(
+                {'detail': 'Please set your postcode before browsing nearby people.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        nearby_ids = set()
+        blocked_ids = FriendsHelper.get_blocked_user_ids(request.user)
+        blocked_by_ids = FriendsHelper.get_blocked_by_user_ids(request.user)
+        excluded_ids = blocked_ids | blocked_by_ids | {request.user.id}
+        relationship_ids = set(
+            Friendship.objects.filter(
+                Q(user_from=request.user) | Q(user_to=request.user)
+            ).values_list('user_from_id', flat=True)
+        ) | set(
+            Friendship.objects.filter(
+                Q(user_from=request.user) | Q(user_to=request.user)
+            ).values_list('user_to_id', flat=True)
+        )
+        excluded_ids |= relationship_ids
+
+        nearby_profiles = Profile.objects.select_related('user').exclude(
+            user_id__in=excluded_ids,
+        ).exclude(
+            latitude__isnull=True,
+        ).exclude(
+            longitude__isnull=True,
+        )
+
+        for candidate in nearby_profiles:
+            distance_km = PostcodeGeocoder.calculate_distance(
+                float(profile.latitude),
+                float(profile.longitude),
+                float(candidate.latitude),
+                float(candidate.longitude),
+            )
+            if distance_km <= radius_km:
+                nearby_ids.add((distance_km, candidate))
+
+        nearby = [
+            _serialize_nearby_user(request, candidate, distance_km)
+            for distance_km, candidate in sorted(nearby_ids, key=lambda item: item[0])
+        ]
+        return Response(
+            {
+                'radius_km': radius_km,
+                'count': len(nearby),
+                'results': NearbyUserSerializer(nearby, many=True).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class FriendsHubView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        current_user = request.user
+        accepted = Friendship.objects.filter(
+            status=Friendship.ACCEPTED,
+        ).filter(
+            Q(user_from=current_user) | Q(user_to=current_user)
+        ).select_related('user_from', 'user_to')
+        pending_received = Friendship.objects.filter(
+            user_to=current_user,
+            status=Friendship.PENDING,
+        ).select_related('user_from', 'user_to')
+        pending_sent = Friendship.objects.filter(
+            user_from=current_user,
+            status=Friendship.PENDING,
+        ).select_related('user_from', 'user_to')
+        blocked = BlockedUser.objects.filter(
+            blocked_by=current_user,
+        ).select_related('blocked_user')
+
+        accepted_payload = [
+            _serialize_friendship_profile(request, friendship, current_user)
+            for friendship in accepted
+        ]
+        pending_received_payload = [
+            _serialize_friendship_profile(request, friendship, current_user)
+            for friendship in pending_received
+        ]
+        pending_sent_payload = [
+            _serialize_friendship_profile(request, friendship, current_user)
+            for friendship in pending_sent
+        ]
+        blocked_payload = [
+            _serialize_blocked_user(block)
+            for block in blocked
+        ]
+
+        payload = {
+            'accepted_count': len(accepted_payload),
+            'pending_received_count': len(pending_received_payload),
+            'pending_sent_count': len(pending_sent_payload),
+            'blocked_count': len(blocked_payload),
+            'accepted': FriendSummarySerializer(accepted_payload, many=True).data,
+            'pending_received': FriendSummarySerializer(pending_received_payload, many=True).data,
+            'pending_sent': FriendSummarySerializer(pending_sent_payload, many=True).data,
+            'blocked': BlockedUserSerializer(blocked_payload, many=True).data,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class FriendRequestCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id, *args, **kwargs):
+        try:
+            target_user = get_object_or_404(User, id=user_id)
+            if target_user == request.user:
+                return Response({'detail': 'You cannot add yourself as a friend.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            friendship = Friendship.objects.get(
+                Q(user_from=request.user, user_to=target_user) |
+                Q(user_from=target_user, user_to=request.user)
+            )
+            if friendship.status == Friendship.ACCEPTED:
+                return Response({'detail': 'You are already connected.'}, status=status.HTTP_200_OK)
+            if friendship.status == Friendship.PAUSED:
+                return Response({'detail': 'This connection is paused.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'A connection already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+        except Friendship.DoesNotExist:
+            friendship = Friendship.objects.create(user_from=request.user, user_to=target_user)
+        except Exception as exc:
+            return Response(
+                {'detail': f'Could not create friend request: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                'status': 'ok',
+                'message': 'Friend request sent.',
+                'friendship_status': friendship.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class FriendRequestAcceptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, friendship_id, *args, **kwargs):
+        friendship = get_object_or_404(Friendship, id=friendship_id)
+        if friendship.user_to_id != request.user.id:
+            return Response({'detail': 'Not allowed.'}, status=status.HTTP_403_FORBIDDEN)
+        if friendship.status != Friendship.PENDING:
+            return Response({'detail': 'This request is no longer pending.'}, status=status.HTTP_400_BAD_REQUEST)
+        friendship.accept()
+        return Response({'status': 'ok', 'message': 'Friend request accepted.'}, status=status.HTTP_200_OK)
+
+
+class FriendRequestRejectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, friendship_id, *args, **kwargs):
+        friendship = get_object_or_404(Friendship, id=friendship_id)
+        if friendship.user_to_id != request.user.id:
+            return Response({'detail': 'Not allowed.'}, status=status.HTTP_403_FORBIDDEN)
+        if friendship.status != Friendship.PENDING:
+            return Response({'detail': 'This request is no longer pending.'}, status=status.HTTP_400_BAD_REQUEST)
+        friendship.reject()
+        return Response({'status': 'ok', 'message': 'Friend request rejected.'}, status=status.HTTP_200_OK)
+
+
+class FriendRequestCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, friendship_id, *args, **kwargs):
+        friendship = get_object_or_404(Friendship, id=friendship_id)
+        if friendship.user_from_id != request.user.id:
+            return Response({'detail': 'Not allowed.'}, status=status.HTTP_403_FORBIDDEN)
+        if friendship.status != Friendship.PENDING:
+            return Response({'detail': 'This request is no longer pending.'}, status=status.HTTP_400_BAD_REQUEST)
+        friendship.reject()
+        return Response({'status': 'ok', 'message': 'Friend request cancelled.'}, status=status.HTTP_200_OK)
+
+
+class FriendRemoveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, friendship_id, *args, **kwargs):
+        friendship = get_object_or_404(Friendship, id=friendship_id)
+        if friendship.user_from_id != request.user.id and friendship.user_to_id != request.user.id:
+            return Response({'detail': 'Not allowed.'}, status=status.HTTP_403_FORBIDDEN)
+        friendship.delete()
+        return Response({'status': 'ok', 'message': 'Friend removed.'}, status=status.HTTP_200_OK)
+
+
+class FriendBlockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id, *args, **kwargs):
+        target_user = get_object_or_404(User, id=user_id)
+        if target_user == request.user:
+            return Response({'detail': 'You cannot block yourself.'}, status=status.HTTP_400_BAD_REQUEST)
+        if BlockedUser.objects.filter(blocked_by=request.user, blocked_user=target_user).exists():
+            return Response({'detail': 'This user is already blocked.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        BlockedUser.objects.create(
+            blocked_by=request.user,
+            blocked_user=target_user,
+            report_flagged=False,
+        )
+        Friendship.objects.filter(
+            Q(user_from=request.user, user_to=target_user) |
+            Q(user_from=target_user, user_to=request.user)
+        ).delete()
+        return Response({'status': 'ok', 'message': 'User blocked.'}, status=status.HTTP_200_OK)
+
+
+class FriendUnblockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id, *args, **kwargs):
+        target_user = get_object_or_404(User, id=user_id)
+        block = BlockedUser.objects.filter(blocked_by=request.user, blocked_user=target_user).first()
+        if block is None:
+            return Response({'detail': 'This user is not blocked.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        block.delete()
+        return Response({'status': 'ok', 'message': 'User unblocked.'}, status=status.HTTP_200_OK)
+
+
+class MobilePasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        email = (request.data.get('email') or '').strip()
+        if not email:
+            return Response({'detail': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        form = PasswordResetForm(data={'email': email})
+        if not form.is_valid():
+            return Response({'detail': _first_form_error(form)}, status=status.HTTP_400_BAD_REQUEST)
+
+        form.save(
+            request=request,
+            use_https=request.is_secure(),
+            email_template_name='registration/password_reset_email.html',
+            subject_template_name='registration/password_reset_subject.txt',
+        )
+        return Response(
+            {'status': 'ok', 'message': 'If the email exists, a reset link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class MobilePasswordChangeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        form = PasswordChangeForm(request.user, data=request.data)
+        if not form.is_valid():
+            return Response({'detail': _first_form_error(form)}, status=status.HTTP_400_BAD_REQUEST)
+
+        form.save()
+        return Response(
+            {'status': 'ok', 'message': 'Password updated successfully.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class MobileRegisterStartView(APIView):
@@ -602,6 +951,34 @@ class MobileAccountDetailView(APIView):
                     'mobile_verified': profile.mobile_verified if profile else False,
                     'address_verified': profile.address_verified if profile else False,
                 },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class MobileKycStatusView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, *args, **kwargs):
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            return Response({'detail': 'Profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        baseline_verified = bool(
+            profile.email_confirmed and profile.mobile_verified and profile.address_verified
+        )
+        is_verified = is_profile_kyc_verified(profile)
+        return Response(
+            {
+                'is_verified': is_verified,
+                'baseline_verified': baseline_verified,
+                'email_confirmed': profile.email_confirmed,
+                'mobile_verified': profile.mobile_verified,
+                'address_verified': profile.address_verified,
+                'verified_at': profile.create_date,
+                'status_label': 'Verified' if is_verified else 'Verification pending',
+                'web_url': request.build_absolute_uri(reverse('kyc_verify')),
             },
             status=status.HTTP_200_OK,
         )
@@ -1628,6 +2005,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.deposit_card_setup_status = txn.CARD_READY
             txn.deposit_cardholder_name = 'Stripe'
             txn.deposit_card_brand = pm.card_brand
+            txn.deposit_card_funding = pm.card_funding
             txn.deposit_card_last4 = pm.card_last4
             txn.deposit_test_hold_status = txn.TEST_HOLD_SUCCESS
             txn.deposit_test_hold_amount = 0.30
@@ -1956,6 +2334,8 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 raise ValidationError('deposit_proposed_return_amount is required.')
             if proposed_amount < 0 or proposed_amount > txn.deposit:
                 raise ValidationError('Proposed amount must be between 0 and deposit value.')
+            if proposed_amount < txn.deposit and not notes:
+                raise ValidationError('deposit_resolution_notes is required when returning less than the full deposit.')
             if iterations >= 5:
                 raise ValidationError('Maximum deposit proposal iterations reached (5). Raise dispute to continue; disputes may incur a fee.')
             txn.prev_transaction_status = txn.transaction_status

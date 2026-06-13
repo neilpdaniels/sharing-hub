@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% load thumbnail %}
+{% load static %}
+
+{% block title %}My rentalution -  Messages {{ type | title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+            {% include "my_rentalution/messages.html" with messages_=messages_ %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block domready %}
+{% if messages_ %}
+    // common accross all messages_
+    function getData(messageRef) {
+        return $.ajax({
+            url : '{% url "my_rentalution:expand_message" %}',
+            type: 'GET',
+            data: { message_id : messageRef},
+        });
+    }
+
+    function markMessageAsRead(messageRef) {
+        var $button = $('#expand_message_' + messageRef);
+        $button.removeClass('is-unread').addClass('is-read');
+        $button.attr('title', 'Read message');
+        $button.find('.fa').removeClass('fa-envelope').addClass('fa-envelope-open-o');
+
+        $('#message_row_' + messageRef).removeClass('is-unread').addClass('is-read');
+
+        var $status = $('#message_status_' + messageRef);
+        $status.removeClass('is-unread').addClass('is-read').text('Read');
+    }
+
+    function handleMessageData(data, messageRef) {
+        markMessageAsRead(messageRef);
+        $('#messageModalContent').text(data.body);
+        $('#messageModalContent').css("word-wrap","break-word");
+        $('#messageModalLabel').text(data.subject);
+        $('#messageModalFrom').text(data.from);
+        $('#messageModalTo').text(data.to);
+        $('#messageModalDateTime').text(data.created);
+        $('.modal-title').text(data.title);
+        // show modal
+        $('#messageModal').modal('show');
+    }
+
+    function openMessage(messageRef) {
+        getData(messageRef).done(function(data) {
+            handleMessageData(data, messageRef);
+        });
+    }
+
+    $('.message-open-btn').on('click', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var messageRef = $(this).data('messageId');
+        openMessage(messageRef);
+    });
+
+    $('.message-row').on('click', function(event) {
+        if ($(event.target).closest('a, button, input, select, textarea, label').length) {
+            return;
+        }
+        var messageRef = $(this).data('messageId');
+        openMessage(messageRef);
+    });
+
+    $('.message-row').on('keydown', function(event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            var messageRef = $(this).data('messageId');
+            openMessage(messageRef);
+        }
+    });
+{% endif %}
+{% endblock %}

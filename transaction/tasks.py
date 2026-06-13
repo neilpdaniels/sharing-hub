@@ -13,7 +13,8 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import service_account
 
 from common.models import Order
-from .models import Transaction
+from account.models import Profile
+from .models import DisputeCase, Transaction
 from .stripe_connect import stripe_connect_service
 
 
@@ -41,6 +42,13 @@ def _format_time_left(delta):
     return f'{hours}h {minutes}m'
 
 
+def _format_end_of_day_notice(now):
+    local_now = timezone.localtime(now)
+    end_of_day = local_now.replace(hour=23, minute=59, second=59, microsecond=0)
+    countdown = _format_time_left(end_of_day - local_now)
+    return countdown
+
+
 def _send_system_alert(*, txn, user_from, user_to, subject, description):
     from .models import TransactionMessage
 
@@ -54,6 +62,119 @@ def _send_system_alert(*, txn, user_from, user_to, subject, description):
         include_admin=False,
         is_system_generated=True,
     )
+
+
+def _configured_pending_statuses():
+    return {
+        Transaction.RENTAL_ENQUIRY,
+        Transaction.RENTAL_AGREED,
+        Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
+        Transaction.RENTAL_ONGOING,
+        Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+        Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        Transaction.DISPUTE_REQUESTED,
+        Transaction.AWAITING_FEEDBACK,
+        Transaction.FEEDBACK_ONE_SIDED,
+    }
+
+
+def _requires_action_and_pending_other_party(txn, user):
+    is_lender = txn.user_passive_id == user.id
+    is_renter = txn.user_aggressive_id == user.id
+    status = txn.transaction_status
+
+    if status == txn.RENTAL_ENQUIRY and is_lender:
+        return True, True
+
+    if status == txn.RENTAL_AGREED:
+        lender_done = bool(txn.lender_agreed_at)
+        renter_done = bool(txn.renter_agreed_at)
+
+        if not lender_done and is_lender:
+            return True, True
+        if lender_done and not renter_done and is_renter:
+            return True, True
+        if lender_done and renter_done:
+            if txn.deposit_card_setup_status != txn.CARD_READY and is_renter:
+                return True, True
+            if (
+                is_lender
+                and txn.deposit_card_setup_status == txn.CARD_READY
+                and txn.rental_start_date
+                and timezone.localdate() >= txn.rental_start_date
+            ):
+                return True, True
+            return False, True
+
+    if (
+        status == txn.RENTAL_DAY_AWAITING_VERIFICATION
+        and is_renter
+        and txn.rental_start_date
+        and timezone.localdate() >= txn.rental_start_date
+    ):
+        return True, True
+
+    if status == txn.RENTAL_RETURNED_DEPOSIT_PENDING and is_lender:
+        return True, True
+
+    if status in (
+        txn.RENTAL_ONGOING,
+        txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+        txn.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        txn.DISPUTE_REQUESTED,
+        txn.AWAITING_FEEDBACK,
+        txn.FEEDBACK_ONE_SIDED,
+    ):
+        return False, True
+
+    return False, False
+
+
+def _recalculate_booking_stats():
+    active_statuses = _configured_pending_statuses()
+    stats_by_user = {}
+
+    pending_qs = (
+        Transaction.objects.filter(transaction_status__in=active_statuses)
+        .select_related('user_passive', 'user_aggressive')
+    )
+    for txn in pending_qs:
+        for user in (txn.user_passive, txn.user_aggressive):
+            if user.id not in stats_by_user:
+                stats_by_user[user.id] = {
+                    'pending_other_party': 0,
+                    'pending_my_action': 0,
+                }
+            requires_action, is_not_completed = _requires_action_and_pending_other_party(txn, user)
+            if not is_not_completed:
+                continue
+            if requires_action:
+                stats_by_user[user.id]['pending_my_action'] += 1
+            else:
+                stats_by_user[user.id]['pending_other_party'] += 1
+
+    if not stats_by_user:
+        return {'updated': 0}
+
+    profiles = Profile.objects.filter(user_id__in=stats_by_user.keys()).only('id', 'user_id')
+    updated = 0
+    for profile in profiles:
+        values = stats_by_user.get(profile.user_id, {'pending_other_party': 0, 'pending_my_action': 0})
+        if (
+            profile.user_bookings_pending_other_party == values['pending_other_party']
+            and profile.user_bookings_pending_my_action == values['pending_my_action']
+        ):
+            continue
+        profile.user_bookings_pending_other_party = values['pending_other_party']
+        profile.user_bookings_pending_my_action = values['pending_my_action']
+        profile.save(update_fields=[
+            'user_bookings_pending_other_party',
+            'user_bookings_pending_my_action',
+        ])
+        updated += 1
+
+    return {'updated': updated}
 
 
 def _load_fcm_http_v1_credentials():
@@ -169,6 +290,56 @@ def auto_close_feedback_windows():
 
 
 @shared_task
+def auto_cancel_overdue_first_day_bookings():
+    """
+    Cancel rentals that have not completed the first-day workflow by end of the
+    rental start day.
+
+    These are system cancellations, so the Transaction save() path and signals
+    will emit the usual system messages to both parties.
+    """
+    now = timezone.localtime()
+    today = now.date()
+    end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    candidates = Transaction.objects.filter(
+        rental_start_date__lte=today,
+        transaction_status__in=(
+            Transaction.RENTAL_ENQUIRY,
+            Transaction.RENTAL_AGREED,
+            Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
+        ),
+    ).select_related('user_passive', 'user_aggressive')
+
+    cancelled = 0
+    for txn in candidates:
+        if txn.transaction_status == txn.CANCEL_ACCEPTED:
+            continue
+        if txn.rental_start_date == today and now <= end_of_today:
+            continue
+
+        txn.prev_transaction_status = txn.transaction_status
+        txn.transaction_status = txn.CANCEL_ACCEPTED
+        txn.transaction_status_raised_by = None
+        note = f'[AUTO_CANCELLED_BY_SYSTEM] First day of rental ended on {txn.rental_start_date}.'
+        existing_notes = (txn.deposit_resolution_notes or '').strip()
+        if note not in existing_notes:
+            txn.deposit_resolution_notes = f'{existing_notes}\n{note}'.strip()
+        txn.save(update_fields=[
+            'prev_transaction_status',
+            'transaction_status',
+            'transaction_status_raised_by',
+            'deposit_resolution_notes',
+            'amended',
+        ])
+        cancelled += 1
+
+    stats_result = _recalculate_booking_stats()
+    result = {'cancelled': cancelled, 'stats_updated': stats_result.get('updated', 0)}
+    logger.info('Auto-cancel overdue first-day bookings: %s', result)
+    return result
+
+
+@shared_task
 def send_pending_action_reminders():
     """
     Send reminder nudges for pending contract confirmations, return verification,
@@ -179,6 +350,7 @@ def send_pending_action_reminders():
     - Contract first signer pending: extra reminders twice/day equivalent via 12-hour interval in reminder window.
     - Return verification pending: every 4 hours in reminder window with 24h countdown from PIN generation.
     - Feedback pending: every 4 hours in reminder window with feedback window countdown.
+    - Deposit review pending: borrower/lender reminders include end-of-day escalation language.
     """
     now = timezone.now()
     if not _in_reminder_window(now):
@@ -188,11 +360,13 @@ def send_pending_action_reminders():
     contract_first_signer_sent = 0
     return_verification_sent = 0
     feedback_sent = 0
+    deposit_review_sent = 0
 
     counterparty_every = int(getattr(settings, 'TRANSACTION_REMINDER_COUNTERPARTY_EVERY_HOURS', 4))
     first_signer_every = int(getattr(settings, 'TRANSACTION_REMINDER_FIRST_SIGNER_EVERY_HOURS', 12))
     return_every = int(getattr(settings, 'TRANSACTION_REMINDER_RETURN_EVERY_HOURS', 4))
     feedback_every = int(getattr(settings, 'TRANSACTION_REMINDER_FEEDBACK_EVERY_HOURS', 4))
+    deposit_review_every = int(getattr(settings, 'TRANSACTION_REMINDER_DEPOSIT_EVERY_HOURS', 4))
 
     # Contract reminders: lender has signed, borrower pending (24h countdown from lender signature)
     contract_pending_qs = Transaction.objects.filter(
@@ -311,14 +485,132 @@ def send_pending_action_reminders():
         txn.save(update_fields=['feedback_reminder_at', 'amended'])
         feedback_sent += 1
 
+    # Deposit review reminders:
+    # - borrower receives the first reminder when lender proposes less than the full deposit
+    # - lender receives reminders while borrower has contested and the lender has not responded
+    deposit_qs = Transaction.objects.filter(
+        transaction_status__in=(
+            Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+            Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
+        ),
+        deposit_proposed_by_lender_at__isnull=False,
+    ).select_related('user_passive', 'user_aggressive')
+    for txn in deposit_qs:
+        if not _should_send_by_interval(txn.deposit_reminder_at, now, deposit_review_every):
+            continue
+
+        lender_responded = bool(txn.deposit_resolution_notes and txn.transaction_status == txn.RENTAL_RETURNED_DEPOSIT_CONTESTED)
+        borrower_responded = bool(txn.deposit_proposal_accepted_at)
+
+        recipients = []
+        if txn.transaction_status == Transaction.RENTAL_RETURNED_DEPOSIT_PENDING and not borrower_responded:
+            recipients.append(
+                (
+                    txn.user_passive,
+                    txn.user_aggressive,
+                    'Deposit return proposal pending',
+                    (
+                        'The lender has proposed a deposit return outcome. Please respond by the end of today '
+                        'or the case may be escalated for review.'
+                    ),
+                )
+            )
+        elif txn.transaction_status == Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED and not lender_responded:
+            recipients.append(
+                (
+                    txn.user_aggressive,
+                    txn.user_passive,
+                    'Deposit contest pending',
+                    (
+                        'The borrower has contested the deposit outcome. Please respond by the end of today '
+                        'or the case may be escalated for review.'
+                    ),
+                )
+            )
+
+        if not recipients:
+            continue
+
+        countdown = _format_end_of_day_notice(now)
+        for user_from, user_to, subject_prefix, body in recipients:
+            _send_system_alert(
+                txn=txn,
+                user_from=user_from,
+                user_to=user_to,
+                subject=f'{subject_prefix} {txn.transaction_reference}',
+                description=f'{body} Time left today: {countdown}.',
+            )
+
+        txn.deposit_reminder_at = now
+        txn.save(update_fields=['deposit_reminder_at', 'amended'])
+        deposit_review_sent += 1
+
     result = {
         'contract_counterparty': contract_counterparty_sent,
         'contract_first_signer': contract_first_signer_sent,
         'return_verification': return_verification_sent,
         'feedback': feedback_sent,
+        'deposit_review': deposit_review_sent,
     }
     logger.info('Pending action reminders sent: %s', result)
     return result
+
+
+@shared_task
+def escalate_overdue_disputes():
+    """
+    Escalate disputes that have passed their SLA without a staff decision.
+    """
+    now = timezone.now()
+    candidates = DisputeCase.objects.filter(
+        status__in=(DisputeCase.STATUS_OPEN, DisputeCase.STATUS_NEEDS_INFO, DisputeCase.STATUS_UNDER_REVIEW),
+        sla_due_at__isnull=False,
+        sla_due_at__lte=now,
+    ).select_related('transaction', 'transaction__user_passive', 'transaction__user_aggressive')
+
+    updated = 0
+    for case in candidates:
+        if case.status == DisputeCase.STATUS_ESCALATED:
+            continue
+
+        case.status = DisputeCase.STATUS_ESCALATED
+        case.escalated_at = now
+        case.resolution_notes = (
+            f'{case.resolution_notes}\n'
+            f'[SLA_ESCALATED] SLA deadline reached; dispute team review required.'
+        ).strip()
+        case.save(update_fields=['status', 'escalated_at', 'resolution_notes', 'amended'])
+
+        txn = case.transaction
+        txn.deposit_status = txn.DEPOSIT_MEDIATION
+        txn.transaction_status = txn.DISPUTE_REQUESTED
+        txn.deposit_resolution_notes = (
+            f'{txn.deposit_resolution_notes}\n'
+            f'[DISPUTE_SLA_ESCALATED] dispute_case={case.case_number}'
+        ).strip()
+        txn.save(update_fields=['deposit_status', 'transaction_status', 'deposit_resolution_notes', 'amended'])
+
+        from .models import TransactionMessage
+
+        for user_from, user_to in (
+            (txn.user_passive, txn.user_aggressive),
+            (txn.user_aggressive, txn.user_passive),
+        ):
+            TransactionMessage.objects.create(
+                user_from=user_from,
+                user_to=user_to,
+                transaction=txn,
+                subject=f'Dispute escalated {txn.transaction_reference}',
+                description=(
+                    'The dispute team SLA expired before a decision was recorded. '
+                    'The dispute remains open and you should keep all evidence and messages on-platform.'
+                ),
+                include_admin=True,
+                is_system_generated=True,
+            )
+        updated += 1
+
+    return {'updated': updated}
 
 
 @shared_task
@@ -348,6 +640,7 @@ def async_confirm_card_setup(transaction_id, setup_intent_id, payment_method_id)
             transaction.deposit_card_setup_status = result.get('card_setup_status', transaction.CARD_READY)
             transaction.deposit_cardholder_name = result.get('cardholder_name', '')
             transaction.deposit_card_brand = result.get('card_brand', '')[:20]
+            transaction.deposit_card_funding = result.get('card_funding', '')[:20]
             transaction.deposit_card_last4 = result.get('card_last4', '')
             transaction.stripe_setup_intent_id = setup_intent_id
             transaction.stripe_payment_method_id = payment_method_id
@@ -399,6 +692,7 @@ def async_setup_deposit_card_and_test_hold(transaction_id, cardholder_name, card
             transaction.deposit_card_setup_status = result.get('card_setup_status', transaction.CARD_READY)
             transaction.deposit_cardholder_name = result.get('cardholder_name', cardholder_name)
             transaction.deposit_card_brand = result.get('card_brand', card_brand.upper()[:20])
+            transaction.deposit_card_funding = result.get('card_funding', '')[:20]
             transaction.deposit_card_last4 = result.get('card_last4', card_last4)
             
             transaction.deposit_test_hold_status = result.get('test_hold_status', transaction.TEST_HOLD_SUCCESS)

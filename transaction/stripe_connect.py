@@ -1,4 +1,3 @@
-import json
 import logging
 
 from django.conf import settings
@@ -10,17 +9,12 @@ logger = logging.getLogger(__name__)
 
 class StripeConnectService:
     """
-    Scaffold service for Stripe Connect deposit operations.
+    Stripe Connect deposit operations.
 
-    For now this supports a placeholder mode and a live-mode scaffold path.
-    When full integration is ready, replace TODO blocks with real Stripe calls.
+    The service now assumes real Stripe test/live credentials are configured.
+    If Stripe cannot be loaded or configured, it fails loudly instead of
+    silently falling back to a placeholder flow.
     """
-
-    def _is_placeholder_mode(self):
-        return getattr(settings, 'STRIPE_CONNECT_PLACEHOLDER_MODE', True)
-
-    def _allow_legacy_card_fallback(self):
-        return getattr(settings, 'STRIPE_CONNECT_ALLOW_LEGACY_CARD_FALLBACK', True)
 
     def _build_reference(self, prefix, transaction_reference):
         ts = int(timezone.now().timestamp())
@@ -32,7 +26,7 @@ class StripeConnectService:
         except Exception:
             return None, {
                 'ok': False,
-                'error': 'Stripe SDK not installed for live mode. Enable placeholder mode or install stripe package.'
+                'error': 'Stripe SDK not installed. Install the stripe package and configure test keys.'
             }
 
         stripe.api_key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '')
@@ -55,6 +49,14 @@ class StripeConnectService:
         delivery_amount = transaction.delivery_cost or 0
         rentalution_amount = transaction.rentalution_fee or 0
         return self._to_minor_units(rental_amount + delivery_amount + rentalution_amount)
+
+    def _long_rental_requires_credit_or_mastercard(self, transaction):
+        return int(getattr(transaction, 'max_rental_days', 0) or 0) > 5
+
+    def _is_deposit_card_allowed_for_long_rental(self, card_brand, card_funding):
+        brand = (card_brand or '').strip().lower()
+        funding = (card_funding or '').strip().lower()
+        return brand in ('visa', 'mastercard') and funding in ('credit', 'charge')
 
     def _ensure_customer_and_payment_method(self, stripe, *, transaction):
         customer_id = (transaction.stripe_customer_id or '').strip()
@@ -101,28 +103,9 @@ class StripeConnectService:
         Create a Stripe SetupIntent for secure card collection.
         Returns dict with client_secret for Stripe Elements.
         """
-        if self._is_placeholder_mode():
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'client_secret': f'seti_placeholder_{transaction.id}_{int(timezone.now().timestamp())}_secret_placeholder',
-                'setup_intent_id': f'seti_placeholder_{transaction.id}',
-            }
-
-        try:
-            import stripe  # type: ignore
-        except Exception:
-            return {
-                'ok': False,
-                'error': 'Stripe SDK not installed for live mode. Enable placeholder mode or install stripe package.'
-            }
-
-        stripe.api_key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '')
-        if not stripe.api_key:
-            return {
-                'ok': False,
-                'error': 'STRIPE_CONNECT_SECRET_KEY not configured.'
-            }
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
 
         try:
             setup_intent = stripe.SetupIntent.create(
@@ -149,28 +132,9 @@ class StripeConnectService:
         """
         Create a Stripe SetupIntent for a user-level saved card flow.
         """
-        if self._is_placeholder_mode():
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'client_secret': f'seti_placeholder_user_{user.id}_{int(timezone.now().timestamp())}_secret_placeholder',
-                'setup_intent_id': f'seti_placeholder_user_{user.id}',
-            }
-
-        try:
-            import stripe  # type: ignore
-        except Exception:
-            return {
-                'ok': False,
-                'error': 'Stripe SDK not installed for live mode. Enable placeholder mode or install stripe package.'
-            }
-
-        stripe.api_key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '')
-        if not stripe.api_key:
-            return {
-                'ok': False,
-                'error': 'STRIPE_CONNECT_SECRET_KEY not configured.'
-            }
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
 
         try:
             setup_intent = stripe.SetupIntent.create(
@@ -197,32 +161,9 @@ class StripeConnectService:
         """
         Persist a user-level payment method after Stripe setup completes and run a £0.30 verification hold.
         """
-        if self._is_placeholder_mode():
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'card_brand': 'Visa',
-                'card_last4': '4242',
-                'test_hold_status': 'success',
-                'test_hold_amount': 0.30,
-                'stripe_setup_intent_id': setup_intent_id,
-                'stripe_payment_method_id': payment_method_id,
-            }
-
-        try:
-            import stripe  # type: ignore
-        except Exception:
-            return {
-                'ok': False,
-                'error': 'Stripe SDK not installed for live mode. Enable placeholder mode or install stripe package.'
-            }
-
-        stripe.api_key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '')
-        if not stripe.api_key:
-            return {
-                'ok': False,
-                'error': 'STRIPE_CONNECT_SECRET_KEY not configured.'
-            }
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
 
         if not setup_intent_id and not payment_method_id:
             return {
@@ -263,6 +204,7 @@ class StripeConnectService:
             card_data = getattr(pm_obj, 'card', {}) or {}
             billing = getattr(pm_obj, 'billing_details', {}) or {}
             card_brand = (getattr(card_data, 'brand', None) or 'Card').title()
+            card_funding = (getattr(card_data, 'funding', None) or '').lower()
             card_last4 = getattr(card_data, 'last4', None) or 'xxxx'
             stripe_setup_intent_id = setup_intent_id or ''
             stripe_payment_method_id = payment_method_id
@@ -314,6 +256,7 @@ class StripeConnectService:
                     'user': user,
                     'stripe_setup_intent_id': stripe_setup_intent_id,
                     'card_brand': card_brand,
+                    'card_funding': card_funding,
                     'card_last4': card_last4,
                 },
             )
@@ -322,6 +265,7 @@ class StripeConnectService:
                 'ok': True,
                 'provider': 'stripe',
                 'card_brand': card_brand,
+                'card_funding': card_funding,
                 'card_last4': card_last4,
                 'cardholder_name': cardholder_name,
                 'test_hold_status': 'success',
@@ -343,34 +287,9 @@ class StripeConnectService:
         Confirm card setup after Stripe Elements submission.
         Extract card details and run £0.30 test hold.
         """
-        if self._is_placeholder_mode():
-            now = timezone.now()
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'card_setup_status': transaction.CARD_READY,
-                'card_brand': 'Visa',
-                'card_last4': '4242',
-                'test_hold_status': transaction.TEST_HOLD_SUCCESS,
-                'test_hold_amount': 0.30,
-                'test_hold_at': now,
-                'test_hold_reference': self._build_reference('stripe_connect_test', transaction.transaction_reference),
-            }
-
-        try:
-            import stripe  # type: ignore
-        except Exception:
-            return {
-                'ok': False,
-                'error': 'Stripe SDK not installed for live mode. Enable placeholder mode or install stripe package.'
-            }
-
-        stripe.api_key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '')
-        if not stripe.api_key:
-            return {
-                'ok': False,
-                'error': 'STRIPE_CONNECT_SECRET_KEY not configured.'
-            }
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
 
         if not setup_intent_id and not payment_method_id:
             return {
@@ -416,8 +335,16 @@ class StripeConnectService:
             card_data = getattr(pm_obj, 'card', {}) or {}
             billing = getattr(pm_obj, 'billing_details', {}) or {}
             card_brand = (getattr(card_data, 'brand', None) or 'Card').title()
+            card_funding = (getattr(card_data, 'funding', None) or '').lower()
             card_last4 = getattr(card_data, 'last4', None) or 'xxxx'
             cardholder_name = getattr(billing, 'name', None) or 'Stripe'
+
+            if self._long_rental_requires_credit_or_mastercard(transaction):
+                if not self._is_deposit_card_allowed_for_long_rental(card_brand, card_funding):
+                    return {
+                        'ok': False,
+                        'error': 'Long rentals require a Visa or Mastercard credit card for the deposit.'
+                    }
 
             # Create/retrieve Stripe Customer and attach PaymentMethod
             # This is required for off_session transactions
@@ -474,6 +401,7 @@ class StripeConnectService:
                 'card_setup_status': transaction.CARD_READY,
                 'cardholder_name': cardholder_name,
                 'card_brand': card_brand,
+                'card_funding': card_funding,
                 'card_last4': card_last4,
                 'test_hold_status': transaction.TEST_HOLD_SUCCESS,
                 'test_hold_amount': 0.30,
@@ -490,62 +418,22 @@ class StripeConnectService:
 
     def setup_deposit_card_and_test_hold(self, *, transaction, cardholder_name, card_brand, card_last4):
         """
-        Prepare card details and run a placeholder/live £0.30 test hold.
+        Prepare card details and run a Stripe £0.30 test hold.
         Returns dict with fields required by the transaction view.
         """
-        brand = (card_brand or '').upper()[:20]
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
 
-        if self._is_placeholder_mode():
-            now = timezone.now()
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'card_setup_status': transaction.CARD_READY,
-                'cardholder_name': cardholder_name,
-                'card_brand': brand,
-                'card_last4': card_last4,
-                'test_hold_status': transaction.TEST_HOLD_SUCCESS,
-                'test_hold_amount': 0.30,
-                'test_hold_at': now,
-                'test_hold_reference': self._build_reference('stripe_connect_test', transaction.transaction_reference),
-            }
-
-        # Live-mode scaffold (to be implemented with real Stripe Connect calls)
-        try:
-            import stripe  # type: ignore
-        except Exception:
-            return {
-                'ok': False,
-                'error': 'Stripe SDK not installed for live mode. Enable placeholder mode or install stripe package.'
-            }
-
-        stripe.api_key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '')
-        if not stripe.api_key:
-            return {
-                'ok': False,
-                'error': 'STRIPE_CONNECT_SECRET_KEY not configured.'
-            }
-
-        # TODO: create Customer + SetupIntent/PaymentMethod and run £0.30 verification hold.
         return {
             'ok': False,
-            'error': 'Live Stripe Connect card setup scaffold is present but not implemented yet.'
+            'error': 'Direct card setup is not supported here. Use the Stripe SetupIntent flow.'
         }
 
     def collect_deposit_hold(self, *, transaction):
         """
         Trigger full deposit authorization hold/retrieval.
         """
-        if self._is_placeholder_mode():
-            now = timezone.now()
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'collection_status': transaction.COLLECT_SUCCESS,
-                'collection_requested_at': now,
-                'collection_reference': self._build_reference('stripe_connect_collect', transaction.transaction_reference),
-            }
-
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:
             return stripe_error
@@ -628,18 +516,6 @@ class StripeConnectService:
         """
         Capture rental payment (rental + delivery + Rentalution fee) at rental start.
         """
-        if self._is_placeholder_mode():
-            now = timezone.now()
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'payment_status': transaction.PAYMENT_CAPTURED_PLACEHOLDER,
-                'collection_requested_at': now,
-                'collection_reference': self._build_reference('stripe_connect_rental', transaction.transaction_reference),
-                'payment_intent_status': 'succeeded',
-                'charged_amount': self._rental_total_minor(transaction) / 100.0,
-            }
-
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:
             return stripe_error
@@ -657,26 +533,6 @@ class StripeConnectService:
             }
 
         try:
-            if not (transaction.stripe_payment_method_id or '').strip():
-                # Transitional compatibility: older/manual card-ready flows may not have a Stripe PM id yet.
-                # Keep workflow moving, but mark capture as fallback so ops can audit and migrate these paths.
-                if (
-                    self._allow_legacy_card_fallback()
-                    and
-                    transaction.deposit_card_setup_status == transaction.CARD_READY
-                    and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS
-                ):
-                    now = timezone.now()
-                    return {
-                        'ok': True,
-                        'provider': 'legacy_card_fallback',
-                        'payment_status': transaction.PAYMENT_CAPTURED_PLACEHOLDER,
-                        'collection_requested_at': now,
-                        'collection_reference': self._build_reference('legacy_rental_capture', transaction.transaction_reference),
-                        'payment_intent_status': 'fallback_no_payment_method_id',
-                        'charged_amount': total_minor / 100.0,
-                    }
-
             existing_reference = (transaction.payment_collection_reference or '').strip()
             if existing_reference:
                 existing_intent = stripe.PaymentIntent.retrieve(existing_reference)
@@ -753,19 +609,6 @@ class StripeConnectService:
         if return_minor > deposit_minor:
             return_minor = deposit_minor
         charge_minor = max(0, deposit_minor - return_minor)
-
-        if self._is_placeholder_mode():
-            action = 'release_hold' if charge_minor == 0 else (
-                'capture_full' if charge_minor == deposit_minor else 'capture_partial'
-            )
-            return {
-                'ok': True,
-                'provider': 'placeholder',
-                'resolution_action': action,
-                'resolution_reference': self._build_reference('stripe_connect_resolve', transaction.transaction_reference),
-                'charged_amount': charge_minor / 100.0,
-                'returned_amount': return_minor / 100.0,
-            }
 
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:
@@ -874,29 +717,63 @@ class StripeConnectService:
                 'error': f'Failed to resolve deposit hold: {str(exc)}'
             }
 
+    def refund_rental_payment(self, *, transaction, refund_amount):
+        """
+        Refund part of the rental payment so dispute resolution can offset the
+        lender payout against the original product-fee payment.
+        """
+        refund_minor = self._to_minor_units(refund_amount)
+        if refund_minor <= 0:
+            return {
+                'ok': True,
+                'provider': 'stripe',
+                'refund_action': 'none',
+                'refund_reference': '',
+                'refunded_amount': 0.0,
+            }
+
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+
+        reference = (transaction.payment_collection_reference or '').strip()
+        if not reference:
+            return {
+                'ok': False,
+                'error': 'No Stripe payment reference is stored on this transaction.'
+            }
+
+        try:
+            refund = stripe.Refund.create(
+                payment_intent=reference,
+                amount=refund_minor,
+                metadata={
+                    'transaction_id': str(transaction.id),
+                    'transaction_reference': transaction.transaction_reference,
+                    'purpose': 'dispute_payment_offset_refund',
+                },
+            )
+            return {
+                'ok': True,
+                'provider': 'stripe',
+                'refund_action': 'refund_partial' if refund_minor > 0 else 'none',
+                'refund_reference': getattr(refund, 'id', reference),
+                'refunded_amount': refund_minor / 100.0,
+            }
+        except Exception as exc:
+            logger.exception('Stripe rental payment refund failed: %s', exc)
+            return {
+                'ok': False,
+                'error': f'Failed to refund rental payment: {str(exc)}'
+            }
+
     def process_webhook(self, *, payload, signature):
         """
         Webhook scaffold for Stripe Connect events.
         """
-        if self._is_placeholder_mode():
-            try:
-                data = json.loads(payload.decode('utf-8') if isinstance(payload, (bytes, bytearray)) else payload)
-                event_type = data.get('type', 'placeholder.unknown')
-            except Exception:
-                event_type = 'placeholder.unknown'
-            return {
-                'ok': True,
-                'event_type': event_type,
-                'provider': 'placeholder',
-            }
-
-        try:
-            import stripe  # type: ignore
-        except Exception:
-            return {
-                'ok': False,
-                'error': 'Stripe SDK not installed for live webhook verification.'
-            }
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
 
         endpoint_secret = getattr(settings, 'STRIPE_CONNECT_WEBHOOK_SECRET', '')
         if not endpoint_secret:

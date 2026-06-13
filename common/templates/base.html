@@ -81,39 +81,39 @@
         </div>
       </details>
       {% if request.user.is_authenticated %}
-      <a href="{% url 'my_sharing_hub:messages_received' %}" class="rh-nav-link{% if '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path %} rh-nav-link--active{% endif %}">
+      <a href="{% url 'my_rentalution:messages_received' %}" class="rh-nav-link{% if '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path %} rh-nav-link--active{% endif %}">
         <i class="fas fa-comment-dots rh-nav-icon"></i><span>Messages</span>
         {% if unread_message_count > 0 %}
         <span class="rh-nav-count" title="{{ unread_message_count }} unread message{{ unread_message_count|pluralize }}">{{ unread_message_count }}</span>
         {% endif %}
       </a>
-      <a href="{% url 'my_sharing_hub:notifications' %}" class="rh-nav-link{% if '/notifications/' in request.path %} rh-nav-link--active{% endif %}">
+      <a href="{% url 'my_rentalution:notifications' %}" class="rh-nav-link{% if '/notifications/' in request.path %} rh-nav-link--active{% endif %}">
         <i class="fas fa-bell rh-nav-icon"></i><span>Notifications</span>
       </a>
-      <details class="rh-nav-group" {% if request.resolver_match.namespace == 'my_sharing_hub' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %}open{% endif %}>
-        <summary class="rh-nav-link rh-nav-toggle{% if request.resolver_match.namespace == 'my_sharing_hub' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %} rh-nav-link--active{% endif %}">
+      <details class="rh-nav-group" {% if request.resolver_match.namespace == 'my_rentalution' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %}open{% endif %}>
+        <summary class="rh-nav-link rh-nav-toggle{% if request.resolver_match.namespace == 'my_rentalution' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %} rh-nav-link--active{% endif %}">
           <span class="rh-nav-toggle-main">
             <i class="fas fa-user-circle rh-nav-icon"></i><span>My account</span>
           </span>
           <i class="fas fa-chevron-down rh-nav-caret" aria-hidden="true"></i>
         </summary>
         <div class="rh-nav-submenu">
-          <a href="{% url 'my_sharing_hub:open_transactions' %}" class="rh-nav-sublink{% if '/open_transactions/' in request.path or '/closed_transactions/' in request.path %} rh-nav-sublink--active{% endif %}">
+          <a href="{% url 'my_rentalution:open_transactions' %}" class="rh-nav-sublink{% if '/open_transactions/' in request.path or '/closed_transactions/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-calendar-check"></i></span>
             <span>Bookings</span>
             {% if txn_notice_count > 0 %}
             <span class="rh-nav-count rh-nav-count--attention" title="{{ txn_notice_count }} booking action{{ txn_notice_count|pluralize }} pending">{{ txn_notice_count }}</span>
             {% endif %}
           </a>
-          <a href="{% url 'my_sharing_hub:favourites' %}" class="rh-nav-sublink{% if '/favourites/' in request.path %} rh-nav-sublink--active{% endif %}">
+          <a href="{% url 'my_rentalution:favourites' %}" class="rh-nav-sublink{% if '/favourites/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="far fa-heart"></i></span>
             <span>Favourites</span>
           </a>
-          <a href="{% url 'my_sharing_hub:open_orders' %}" class="rh-nav-sublink{% if '/open_orders/' in request.path or '/closed_orders/' in request.path %} rh-nav-sublink--active{% endif %}">
+          <a href="{% url 'my_rentalution:open_orders' %}" class="rh-nav-sublink{% if '/open_orders/' in request.path or '/closed_orders/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-list"></i></span>
             <span>My listings</span>
           </a>
-          <a href="{% url 'my_sharing_hub:earnings' %}" class="rh-nav-sublink{% if '/earnings/' in request.path %} rh-nav-sublink--active{% endif %}">
+          <a href="{% url 'my_rentalution:earnings' %}" class="rh-nav-sublink{% if '/earnings/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-coins"></i></span>
             <span>Earnings</span>
           </a>
@@ -125,7 +125,7 @@
             <span class="rh-subicon"><i class="fas fa-user-slash"></i></span>
             <span>Blocked users</span>
           </a>
-          <a href="{% url 'my_sharing_hub:my_details' %}" class="rh-nav-sublink{% if '/my_details/' in request.path or '/account/edit/' in request.path or '/payment_methods/' in request.path %} rh-nav-sublink--active{% endif %}">
+          <a href="{% url 'my_rentalution:my_details' %}" class="rh-nav-sublink{% if '/my_details/' in request.path or '/account/edit/' in request.path or '/payment_methods/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-id-card"></i></span>
             <span>My details</span>
           </a>
@@ -138,6 +138,26 @@
       <a href="{% url 'transaction:list_item' %}" class="rh-nav-link{% if '/list_item' in request.path or '/add_order' in request.path %} rh-nav-link--active{% endif %}">
         <i class="fas fa-plus-circle rh-nav-icon"></i><span>List an item</span>
       </a>
+      {% if request.user.is_staff %}
+      <details class="rh-nav-group" {% if '/transaction/admin/' in request.path or '/transaction/dispute/' in request.path %}open{% endif %}>
+        <summary class="rh-nav-link rh-nav-toggle{% if '/transaction/admin/' in request.path or '/transaction/dispute/' in request.path %} rh-nav-link--active{% endif %}">
+          <span class="rh-nav-toggle-main">
+            <i class="fas fa-shield-alt rh-nav-icon"></i><span>Admin</span>
+          </span>
+          <i class="fas fa-chevron-down rh-nav-caret" aria-hidden="true"></i>
+        </summary>
+        <div class="rh-nav-submenu">
+          <a href="{% url 'transaction:admin_transaction_browser' %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'transaction' and request.resolver_match.url_name == 'admin_transaction_browser' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-exchange-alt"></i></span>
+            <span>Transactions</span>
+          </a>
+          <a href="{% url 'transaction:admin_transaction_browser' %}#disputes" class="rh-nav-sublink{% if request.resolver_match.namespace == 'transaction' and request.resolver_match.url_name == 'dispute_case_review' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-gavel"></i></span>
+            <span>Disputes</span>
+          </a>
+        </div>
+      </details>
+      {% endif %}
       {% endif %}
 
       {% if not request.user.is_authenticated %}
@@ -199,22 +219,22 @@
 
       <div class="rh-topbar-right">
         {% if request.user.is_authenticated %}
-        <a href="{% url 'my_sharing_hub:messages_received' %}" class="rh-topbar-icon-btn" title="Messages">
+        <a href="{% url 'my_rentalution:messages_received' %}" class="rh-topbar-icon-btn" title="Messages">
           <i class="fas fa-comment-dots"></i>
         </a>
-        <a href="{% url 'my_sharing_hub:notifications' %}" class="rh-topbar-icon-btn" title="Notifications">
+        <a href="{% url 'my_rentalution:notifications' %}" class="rh-topbar-icon-btn" title="Notifications">
           <i class="fas fa-bell"></i>
         </a>
         {% if request.user.profile.image %}
-        <a href="{% url 'my_sharing_hub:my_details' %}" title="My details" aria-label="My details">
+        <a href="{% url 'my_rentalution:my_details' %}" title="My details" aria-label="My details">
           <img src="{{ request.user.profile.image.url }}" class="rh-topbar-avatar" alt="avatar">
         </a>
         {% elif request.user.profile.image_generated %}
-        <a href="{% url 'my_sharing_hub:my_details' %}" title="My details" aria-label="My details">
+        <a href="{% url 'my_rentalution:my_details' %}" title="My details" aria-label="My details">
           <img src="{{ request.user.profile.image_generated.url }}" class="rh-topbar-avatar" alt="avatar">
         </a>
         {% else %}
-        <a href="{% url 'my_sharing_hub:my_details' %}" title="My details" aria-label="My details">
+        <a href="{% url 'my_rentalution:my_details' %}" title="My details" aria-label="My details">
           <span class="rh-topbar-avatar-initials">{{ request.user.first_name|first|default:request.user.username|first|upper }}</span>
         </a>
         {% endif %}
@@ -245,7 +265,7 @@
       <div class="container">
         <div id="txn-live-notice-mount"></div>
         {% if request.user.is_authenticated and txn_login_notice %}
-        <a id="txn-login-notice" class="alert fade show mt-2 d-block" role="alert" href="{% url 'my_sharing_hub:notifications' %}">
+        <a id="txn-login-notice" class="alert fade show mt-2 d-block" role="alert" href="{% url 'my_rentalution:notifications' %}">
           <strong>Notifications:</strong>
           {{ txn_notice_count }} notification{{ txn_notice_count|pluralize }}.
         </a>
@@ -263,7 +283,7 @@
                 <p class="mb-2">These bookings need your attention now:</p>
                 <div class="list-group">
                   {% for notice in txn_notice_items %}
-                  <a href="{% url 'my_sharing_hub:notifications' %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-start flex-column flex-md-row">
+                  <a href="{% url 'my_rentalution:notifications' %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-start flex-column flex-md-row">
                     <div>
                       <strong>{{ notice.product_name }}</strong>
                       <div class="small text-muted">{{ notice.date_label }}</div>
@@ -274,7 +294,7 @@
                 </div>
               </div>
               <div class="modal-footer">
-                <a class="btn btn-primary" href="{% url 'my_sharing_hub:notifications' %}">View all alerts</a>
+                <a class="btn btn-primary" href="{% url 'my_rentalution:notifications' %}">View all alerts</a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
               </div>
             </div>
@@ -297,7 +317,7 @@
                 <div class="list-group" id="txn-live-enquiry-items"></div>
               </div>
               <div class="modal-footer">
-                <a class="btn btn-primary" href="{% url 'my_sharing_hub:notifications' %}">View all alerts</a>
+                <a class="btn btn-primary" href="{% url 'my_rentalution:notifications' %}">View all alerts</a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
               </div>
             </div>

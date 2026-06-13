@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import Transaction, TransactionMessage, TransactionCharge, TransactionMessageImage, TransactionImage
+from .models import (
+    DisputeCase,
+    Transaction,
+    TransactionMessage,
+    TransactionCharge,
+    TransactionMessageImage,
+    TransactionImage,
+)
 from simple_history.admin import SimpleHistoryAdmin
 
 @admin.register(Transaction)
@@ -22,3 +29,23 @@ class TransactionChargeAdmin(admin.ModelAdmin):
 @admin.register(TransactionImage)
 class TransactionImageAdmin(admin.ModelAdmin):
     list_display = ('transaction', 'image')
+
+
+@admin.register(DisputeCase)
+class DisputeCaseAdmin(admin.ModelAdmin):
+    list_display = (
+        'case_number',
+        'transaction',
+        'reason_code',
+        'status',
+        'outcome',
+        'owner',
+        'raised_by',
+        'sla_due_at',
+        'escalated_at',
+        'resolved_at',
+        'closed_at',
+    )
+    list_filter = ('reason_code', 'status', 'outcome')
+    search_fields = ('case_number', 'transaction__transaction_reference', 'summary', 'resolution_notes')
+    readonly_fields = ('case_number', 'created', 'amended')

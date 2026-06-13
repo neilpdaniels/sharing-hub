@@ -16,7 +16,7 @@ Use either the modern dependency flow (`pyproject.toml`) or requirements files.
 For local runs:
 
 ```bash
-export DJANGO_SETTINGS_MODULE=sharing_hub.settings.local
+export DJANGO_SETTINGS_MODULE=rentalution.settings.local
 ```
 
 ### 3. Run server
@@ -86,12 +86,12 @@ Base path: `/api/v1/`
 
 ## Flutter App Setup
 
-Project path: `sharing_hub_mobile/`
+Project path: `rentalution_mobile/`
 
 ### 1. Get dependencies
 
 ```bash
-cd sharing_hub_mobile
+cd rentalution_mobile
 flutter pub get
 ```
 

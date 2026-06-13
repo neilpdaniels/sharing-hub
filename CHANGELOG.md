@@ -154,7 +154,7 @@ else:
 
 ---
 
-## 5. Settings Configuration (`sharing_hub/settings/base.py`)
+## 5. Settings Configuration (`rentalution/settings/base.py`)
 
 ### INSTALLED_APPS Update
 ```python
@@ -169,7 +169,7 @@ Friends app properly registered in Django.
 
 ---
 
-## 6. URL Configuration (`sharing_hub/urls.py`)
+## 6. URL Configuration (`rentalution/urls.py`)
 
 ### Friends URLs Added
 ```python
@@ -462,7 +462,7 @@ Good news: Most templates should continue working. Changes are primarily:
 ### `account/` App
 - ℹ️ No changes needed
 
-### `my_sharing_hub/` App
+### `my_rentalution/` App
 - ℹ️ May want to add friends widget/integration
 
 ### NEW `friends/` App
@@ -632,8 +632,8 @@ Consider for next phases:
 - `common/models.py` - Order & Product models
 - `transaction/models.py` - Transaction model
 - `transaction/forms.py` - Order forms
-- `sharing_hub/settings/base.py` - INSTALLED_APPS
-- `sharing_hub/urls.py` - Added friends URLs
+- `rentalution/settings/base.py` - INSTALLED_APPS
+- `rentalution/urls.py` - Added friends URLs
 - `navigation/views.py` - Removed reference price usage
 
 **Total Changes**: 18 files modified/created

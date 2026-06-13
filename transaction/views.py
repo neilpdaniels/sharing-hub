@@ -6,17 +6,21 @@ import random
 from datetime import datetime, timedelta, time as dt_time
 from operator import attrgetter
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 # Django
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.db import models
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
@@ -44,6 +48,7 @@ from .helpers import (
     sync_transaction_pricing,
 )
 from .models import (
+    DisputeCase,
     Transaction,
     TransactionFeedback,
     TransactionImage,
@@ -250,6 +255,403 @@ def _build_transaction_live_state(txn):
         'transaction_status': txn.transaction_status,
         'updated_at': txn.amended.isoformat() if txn.amended else '',
     }
+
+
+def _dispute_case_reason_from_transaction(txn):
+    summary = (txn.deposit_resolution_notes or '').lower()
+    if '[missing_rental_voided]' in summary:
+        return DisputeCase.REASON_MISSING_RENTAL
+    if 'missing return' in summary:
+        return DisputeCase.REASON_MISSING_RETURN
+    if 'deposit' in summary:
+        return DisputeCase.REASON_DEPOSIT_CONTEST
+    return DisputeCase.REASON_DISPUTE_TEAM
+
+
+def _ensure_dispute_case(txn):
+    case, _ = DisputeCase.objects.get_or_create(
+        transaction=txn,
+        reason_code=_dispute_case_reason_from_transaction(txn),
+        defaults={
+            'raised_by': txn.transaction_status_raised_by,
+            'summary': (txn.deposit_resolution_notes or '').strip() or f'Dispute opened for {txn.transaction_reference}.',
+            'evidence_bundle': {
+                'transaction_reference': txn.transaction_reference,
+                'transaction_status': txn.transaction_status,
+                'deposit_status': txn.deposit_status,
+                'notes': (txn.deposit_resolution_notes or '').strip(),
+            },
+        },
+    )
+    return case
+
+
+def _apply_dispute_outcome(case, *, outcome, status, resolution_notes, resolved_by, owner=None):
+    case.outcome = outcome
+    case.status = status
+    case.resolution_notes = resolution_notes
+    case.resolved_by = resolved_by
+    case.resolved_at = timezone.now()
+    case.closed_at = timezone.now() if status in (DisputeCase.STATUS_RESOLVED, DisputeCase.STATUS_CLOSED) else None
+    if owner is not None:
+        case.owner = owner
+    case.save(update_fields=[
+        'outcome',
+        'status',
+        'resolution_notes',
+        'resolved_by',
+        'resolved_at',
+        'closed_at',
+        'owner',
+        'amended',
+    ])
+    return case
+
+
+def _can_submit_dispute_final_statement(txn, user):
+    case = txn.dispute_cases.order_by('-created').first()
+    if case is None:
+        return None
+    if case.status not in {DisputeCase.STATUS_OPEN, DisputeCase.STATUS_NEEDS_INFO, DisputeCase.STATUS_UNDER_REVIEW, DisputeCase.STATUS_ESCALATED}:
+        return None
+    if user == txn.user_passive and not case.lender_final_statement_at:
+        return case
+    if user == txn.user_aggressive and not case.borrower_final_statement_at:
+        return case
+    return None
+
+
+def _dispute_final_statement_deadline(case):
+    if case is None or not case.created:
+        return None
+    return case.created + timedelta(hours=24)
+
+
+@staff_member_required
+def dispute_case_review(request, case_number):
+    case = get_object_or_404(
+        DisputeCase.objects.select_related(
+            'transaction',
+            'transaction__user_passive',
+            'transaction__user_aggressive',
+            'raised_by',
+            'owner',
+            'resolved_by',
+        ),
+        case_number=case_number,
+    )
+
+    txn = case.transaction
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        internal_notes = (request.POST.get('internal_resolution_notes') or '').strip()
+        external_notes = (request.POST.get('external_resolution_notes') or '').strip()
+        owner_id = request.POST.get('owner_id') or ''
+        deposit_return_amount_raw = (request.POST.get('deposit_return_amount') or '').strip()
+        resolution_decision = (request.POST.get('resolution_decision') or '').strip()
+        owner = None
+        if owner_id:
+            owner = get_object_or_404(User, id=owner_id, is_staff=True)
+
+        if internal_notes:
+            case.internal_resolution_notes = internal_notes
+        if external_notes:
+            case.external_resolution_notes = external_notes
+
+        if action == 'mark_under_review':
+            case.status = DisputeCase.STATUS_UNDER_REVIEW
+            if owner is not None:
+                case.owner = owner
+            update_fields = ['status', 'owner', 'amended']
+            if internal_notes:
+                update_fields.append('internal_resolution_notes')
+            if external_notes:
+                update_fields.append('external_resolution_notes')
+            case.save(update_fields=update_fields)
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_passive,
+                transaction=txn,
+                subject=f'Dispute under review {txn.transaction_reference}',
+                description='Your dispute has been accepted for review by the dispute team. Please keep evidence and messages on-platform.',
+                include_admin=True,
+                is_system_generated=True,
+            )
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_aggressive,
+                transaction=txn,
+                subject=f'Dispute under review {txn.transaction_reference}',
+                description='Your dispute has been accepted for review by the dispute team. Please keep evidence and messages on-platform.',
+                include_admin=True,
+                is_system_generated=True,
+            )
+            messages.success(request, 'Dispute marked as under review.')
+            return redirect('transaction:dispute_case_review', case_number=case.case_number)
+
+        if action == 'submit_final_statement':
+            statement = (request.POST.get('final_statement') or '').strip()
+            statement_amount = (request.POST.get('requested_amount') or '').strip()
+            try:
+                requested_amount = max(0.0, round(float(statement_amount or 0), 2))
+            except ValueError:
+                requested_amount = 0.0
+            deadline = _dispute_final_statement_deadline(case)
+            if deadline and timezone.now() > deadline:
+                messages.error(request, 'The 24-hour dispute statement window has closed.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+            if request.user == txn.user_passive:
+                if case.lender_final_statement_at:
+                    messages.error(request, 'Lender final statement has already been submitted.')
+                    return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+                case.lender_final_statement_at = timezone.now()
+                side_label = 'Lender'
+            elif request.user == txn.user_aggressive:
+                if case.borrower_final_statement_at:
+                    messages.error(request, 'Borrower final statement has already been submitted.')
+                    return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+                case.borrower_final_statement_at = timezone.now()
+                side_label = 'Borrower'
+            else:
+                messages.error(request, 'Only the lender or borrower can submit a final statement.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+            if not statement:
+                messages.error(request, 'Please add your final statement before submitting.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+            statement_text = (
+                f'{side_label} final dispute statement\n'
+                f'Requested amount: £{requested_amount:.2f}\n\n'
+                f'{statement}'
+            )
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=request.user,
+                transaction=txn,
+                subject=f'Final dispute statement {txn.transaction_reference}',
+                description=statement_text,
+                include_admin=True,
+                private_to_sender=True,
+                is_system_generated=False,
+            )
+            case.save(update_fields=[
+                'lender_final_statement_at',
+                'borrower_final_statement_at',
+                'amended',
+            ])
+            messages.success(request, 'Final statement submitted to admin.')
+            return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+        if action in {'resolve_lender', 'resolve_borrower', 'resolve_split', 'resolve_void', 'resolve_refund', 'resolve_other', 'mark_under_review'} or resolution_decision:
+            previous_status = txn.transaction_status
+            outcome_map = {
+                'resolve_lender': DisputeCase.OUTCOME_LENDER,
+                'resolve_borrower': DisputeCase.OUTCOME_BORROWER,
+                'resolve_split': DisputeCase.OUTCOME_SPLIT,
+                'resolve_void': DisputeCase.OUTCOME_VOID,
+                'resolve_refund': DisputeCase.OUTCOME_REFUND,
+                'resolve_other': DisputeCase.OUTCOME_OTHER,
+                'lender': DisputeCase.OUTCOME_LENDER,
+                'borrower': DisputeCase.OUTCOME_BORROWER,
+                'split': DisputeCase.OUTCOME_SPLIT,
+                'void': DisputeCase.OUTCOME_VOID,
+                'refund': DisputeCase.OUTCOME_REFUND,
+                'other': DisputeCase.OUTCOME_OTHER,
+            }
+            decision_key = resolution_decision or action
+            if decision_key == 'mark_under_review':
+                case.status = DisputeCase.STATUS_UNDER_REVIEW
+                update_fields = ['status', 'resolution_notes', 'amended']
+                case.resolution_notes = external_notes or internal_notes or case.resolution_notes
+                if owner is not None:
+                    case.owner = owner
+                    update_fields.append('owner')
+                if internal_notes:
+                    update_fields.append('internal_resolution_notes')
+                if external_notes:
+                    update_fields.append('external_resolution_notes')
+                case.save(update_fields=update_fields)
+                messages.success(request, 'Dispute marked as under review.')
+                return redirect('transaction:dispute_case_review', case_number=case.case_number)
+
+            outcome = outcome_map.get(decision_key, DisputeCase.OUTCOME_OTHER)
+            case = _apply_dispute_outcome(
+                case,
+                outcome=outcome,
+                status=DisputeCase.STATUS_RESOLVED,
+                resolution_notes=external_notes or case.external_resolution_notes or case.internal_resolution_notes or case.resolution_notes,
+                resolved_by=request.user,
+                owner=owner or case.owner,
+            )
+
+            try:
+                deposit_return_amount = max(0.0, float(deposit_return_amount_raw or 0))
+            except ValueError:
+                deposit_return_amount = 0.0
+
+            lender_share_ratio = max(0.0, min(100.0, float(request.POST.get('settlement_ratio') or 50))) / 100.0
+            borrower_share_ratio = 1.0 - lender_share_ratio
+
+            if outcome in (DisputeCase.OUTCOME_LENDER, DisputeCase.OUTCOME_SPLIT, DisputeCase.OUTCOME_REFUND):
+                txn.deposit_status = txn.DEPOSIT_RETURNED_FULL if deposit_return_amount >= (txn.deposit or 0) else txn.DEPOSIT_RETURNED_REDUCED
+                txn.transaction_status = txn.DISPUTE_DECIDED
+            elif outcome in (DisputeCase.OUTCOME_BORROWER, DisputeCase.OUTCOME_VOID):
+                txn.deposit_status = txn.DEPOSIT_MEDIATION
+                txn.transaction_status = txn.DISPUTE_DECIDED
+                deposit_return_amount = 0.0
+            else:
+                txn.deposit_status = txn.DEPOSIT_MEDIATION
+                txn.transaction_status = txn.DISPUTE_DECIDED
+
+            settlement_notes = txn.deposit_resolution_notes
+            if external_notes:
+                settlement_notes = f'{settlement_notes}\n\nExternal resolution notes:\n{external_notes}'.strip()
+            if internal_notes:
+                settlement_notes = f'{settlement_notes}\n\nInternal resolution notes:\n{internal_notes}'.strip()
+            txn.deposit_resolution_notes = settlement_notes
+            txn.transaction_status_raised_by = request.user
+            txn.prev_transaction_status = previous_status
+            txn.save(update_fields=[
+                'prev_transaction_status',
+                'transaction_status',
+                'deposit_status',
+                'deposit_resolution_notes',
+                'transaction_status_raised_by',
+                'amended',
+            ])
+
+            case.deposit_return_amount = deposit_return_amount
+            case.payment_offset_amount = 0
+            case.save(update_fields=['deposit_return_amount', 'payment_offset_amount', 'amended'])
+
+            if deposit_return_amount > 0:
+                async_resolve_deposit_hold.delay(
+                    transaction_id=txn.id,
+                    return_amount=deposit_return_amount,
+                )
+
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_passive,
+                transaction=txn,
+                subject=f'Dispute resolved {txn.transaction_reference}',
+                description=(
+                    f'The dispute team has resolved this case. Outcome: {case.get_outcome_display()}. '
+                    f'Deposit return: £{deposit_return_amount:.2f}. '
+                    f'Transaction closed. Notes: {external_notes or case.external_resolution_notes or case.internal_resolution_notes or "See dispute record."}'
+                ),
+                include_admin=True,
+                is_system_generated=True,
+            )
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_aggressive,
+                transaction=txn,
+                subject=f'Dispute resolved {txn.transaction_reference}',
+                description=(
+                    f'The dispute team has resolved this case. Outcome: {case.get_outcome_display()}. '
+                    f'Deposit return: £{deposit_return_amount:.2f}. '
+                    f'Transaction closed. Notes: {external_notes or case.external_resolution_notes or case.internal_resolution_notes or "See dispute record."}'
+                ),
+                include_admin=True,
+                is_system_generated=True,
+            )
+            messages.success(request, 'Dispute resolved and users notified.')
+            return redirect('transaction:dispute_case_review', case_number=case.case_number)
+
+    context = {
+        'case': case,
+        'transaction': txn,
+        'evidence_bundle': case.evidence_bundle or {},
+        'staff_users': User.objects.filter(is_staff=True).order_by('username'),
+        'resolution_choices': [
+            ('under_review', 'Mark under review'),
+            ('lender', 'In favour of lender'),
+            ('borrower', 'In favour of borrower'),
+            ('split', 'Split outcome'),
+            ('void', 'Void / no payout'),
+            ('refund', 'Refund / release'),
+            ('other', 'Other outcome'),
+        ],
+    }
+    return render(request, 'transaction/dispute_case_review.html', context)
+
+
+@staff_member_required
+def admin_transaction_browser(request):
+    transactions = Transaction.objects.select_related(
+        'user_passive',
+        'user_aggressive',
+        'order_passive',
+        'transaction_status_raised_by',
+    ).order_by('-amended', '-created')[:200]
+    dispute_transactions = Transaction.objects.select_related(
+        'user_passive',
+        'user_aggressive',
+        'order_passive',
+    ).filter(
+        models.Q(transaction_status=Transaction.DISPUTE_REQUESTED)
+        | models.Q(deposit_status=Transaction.DEPOSIT_MEDIATION)
+        | models.Q(transaction_status=Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED)
+    ).order_by('-amended', '-created')[:100]
+    dispute_cases = DisputeCase.objects.select_related(
+        'transaction',
+        'transaction__user_passive',
+        'transaction__user_aggressive',
+        'owner',
+        'raised_by',
+    ).order_by('-amended', '-created')[:100]
+
+    case_map = {case.transaction_id: case for case in dispute_cases}
+    for txn in dispute_transactions:
+        if txn.id not in case_map:
+            case = _ensure_dispute_case(txn)
+            if case is not None:
+                case_map[txn.id] = case
+    dispute_cases = sorted(case_map.values(), key=lambda case: case.amended or case.created, reverse=True)
+
+    if request.method == 'POST':
+        transaction_reference = (request.POST.get('transaction_reference') or '').strip()
+        new_status = (request.POST.get('new_status') or '').strip()
+        note = (request.POST.get('note') or '').strip()
+        txn = get_object_or_404(Transaction, transaction_reference=transaction_reference)
+
+        valid_statuses = {choice[0] for choice in Transaction.TRANSACTION_STATUS_CHOICES}
+        if new_status not in valid_statuses:
+            messages.error(request, 'Choose a valid transaction status.')
+        else:
+            previous_status = txn.transaction_status
+            previous_label = txn.get_transaction_status_display()
+            txn.prev_transaction_status = previous_status
+            txn.transaction_status = new_status
+            txn.transaction_status_raised_by = request.user
+            if note:
+                txn.deposit_resolution_notes = (
+                    f'{txn.deposit_resolution_notes}\n[ADMIN_STATE_CHANGE] {note}'
+                ).strip()
+            txn.save(update_fields=[
+                'prev_transaction_status',
+                'transaction_status',
+                'transaction_status_raised_by',
+                'deposit_resolution_notes',
+                'amended',
+            ])
+            if txn.transaction_status in {Transaction.DISPUTE_REQUESTED, Transaction.CANCEL_ACCEPTED} or txn.deposit_status == txn.DEPOSIT_MEDIATION:
+                _ensure_dispute_case(txn)
+            messages.success(
+                request,
+                f'Transaction {txn.transaction_reference} moved from '
+                f'{previous_label} to {txn.get_transaction_status_display()}.'
+            )
+        return redirect('transaction:admin_transaction_browser')
+
+    context = {
+        'transactions': transactions,
+        'dispute_cases': dispute_cases,
+        'transaction_status_choices': Transaction.TRANSACTION_STATUS_CHOICES,
+    }
+    return render(request, 'transaction/admin_transaction_browser.html', context)
 
 
 class OrderFormHandler:
@@ -878,7 +1280,7 @@ def view_transaction(request, transaction_reference=None):
     card_setup_allowed_statuses = (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED)
 
     def _get_contract_deadline(transaction):
-        """Deadline is min(lender confirmation + 24h, rental start datetime)."""
+        """Deadline is min(lender confirmation + 24h, end of rental start day)."""
         if not transaction.lender_agreed_at:
             return None
 
@@ -886,12 +1288,13 @@ def view_transaction(request, transaction_reference=None):
         candidates = [deadline_24h]
 
         if transaction.rental_start_date:
-            start_naive = datetime.combine(transaction.rental_start_date, dt_time.min)
-            if timezone.is_naive(start_naive):
-                start_dt = timezone.make_aware(start_naive, timezone.get_current_timezone())
-            else:
-                start_dt = start_naive
-            candidates.append(start_dt)
+            london_tz = ZoneInfo('Europe/London')
+            end_of_day_naive = (
+                datetime.combine(transaction.rental_start_date + timedelta(days=1), dt_time.min)
+                - timedelta(seconds=1)
+            )
+            end_of_day = timezone.make_aware(end_of_day_naive, london_tz)
+            candidates.append(end_of_day)
 
         return min(candidates)
 
@@ -1178,6 +1581,11 @@ Transaction Ref: {txn.transaction_reference}"""
 
             if txn.deposit <= 0 and txn.price <= 0:
                 messages.info(request, 'No payment method is required for this transaction.')
+            elif int(getattr(txn, 'max_rental_days', 0) or 0) > 5:
+                messages.error(
+                    request,
+                    'Long rentals require a Visa or Mastercard credit card for the deposit. Please use the Stripe card flow instead.',
+                )
             elif not cardholder_name:
                 messages.error(request, 'Please enter the cardholder name.')
             elif len(card_last4) != 4 or not card_last4.isdigit():
@@ -1204,9 +1612,19 @@ Transaction Ref: {txn.transaction_reference}"""
             else:
                 try:
                     pm = request.user.payment_methods.get(id=payment_method_id)
+                    if int(getattr(txn, 'max_rental_days', 0) or 0) > 5:
+                        card_brand = (pm.card_brand or '').strip().lower()
+                        card_funding = (pm.card_funding or '').strip().lower()
+                        if card_brand not in ('visa', 'mastercard') or card_funding not in ('credit', 'charge'):
+                            messages.error(
+                                request,
+                                'Long rentals require a Visa or Mastercard credit card for the deposit. Choose a different card.',
+                            )
+                            return redirect('transaction:view_transaction', txn.transaction_reference)
                     txn.deposit_card_setup_status = txn.CARD_READY
                     txn.deposit_cardholder_name = 'Stripe'
                     txn.deposit_card_brand = pm.card_brand
+                    txn.deposit_card_funding = pm.card_funding
                     txn.deposit_card_last4 = pm.card_last4
                     txn.deposit_test_hold_status = txn.TEST_HOLD_SUCCESS
                     txn.deposit_test_hold_amount = 0.30
@@ -1347,6 +1765,36 @@ Transaction Ref: {txn.transaction_reference}"""
                     messages.info(request, f'Message sent with {attachment_count} attachment(s).')
                 else:
                     messages.info(request, 'Message sent.')
+
+        elif action == 'send_dispute_private_message' and (is_lender or is_renter):
+            body = (request.POST.get('message_body') or '').strip()
+            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            if message_turnstile_required:
+                turnstile_token = request.POST.get('cf-turnstile-response', '')
+                if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+                    if is_ajax:
+                        return JsonResponse({'ok': False, 'error': 'Human verification failed. Please complete the checkbox and try again.'}, status=400)
+                    messages.error(request, 'Human verification failed. Please try again.')
+                    return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+            if not body:
+                if is_ajax:
+                    return JsonResponse({'ok': False, 'error': 'Please enter a message before sending.'}, status=400)
+                messages.error(request, 'Please enter a message before sending.')
+            else:
+                txn_message = TransactionMessage.objects.create(
+                    user_from=request.user,
+                    user_to=request.user,
+                    transaction=txn,
+                    subject=f'Private dispute message {txn.transaction_reference}',
+                    description=body,
+                    include_admin=True,
+                    private_to_sender=True,
+                    is_system_generated=False,
+                )
+                if is_ajax:
+                    return JsonResponse({'ok': True, 'message': 'Private message sent.'})
+                messages.info(request, 'Private message sent to the dispute team.')
 
         elif action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
             if not _has_verified_payment_card(txn):
@@ -1692,12 +2140,15 @@ Transaction Ref: {txn.transaction_reference}"""
                 messages.error(request, 'Invalid return verification PIN. Please try again.')
             else:
                 txn.prev_transaction_status = txn.transaction_status
-                txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
+                txn.transaction_status = txn.AWAITING_FEEDBACK if (txn.deposit or 0) <= 0 else txn.RENTAL_RETURNED_DEPOSIT_PENDING
                 txn.return_handover_verified_at = timezone.now()
+                if (txn.deposit or 0) <= 0:
+                    txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
                 txn.save(update_fields=[
                     'prev_transaction_status',
                     'transaction_status',
                     'return_handover_verified_at',
+                    'deposit_status',
                     'amended',
                 ])
                 TransactionMessage.objects.create(
@@ -1708,7 +2159,10 @@ Transaction Ref: {txn.transaction_reference}"""
                     description='Borrower completed return PIN verification. Return is confirmed and deposit resolution can now proceed.',
                     is_system_generated=True,
                 )
-                messages.success(request, 'Return verification complete. Rental marked as returned and ready for deposit resolution.')
+                if (txn.deposit or 0) <= 0:
+                    messages.success(request, 'Return verification complete. No deposit is held, so the transaction has moved straight to feedback.')
+                else:
+                    messages.success(request, 'Return verification complete. Rental marked as returned and ready for deposit resolution.')
 
         elif action == 'propose_deposit_return' and is_lender and txn.transaction_status in (
             txn.RENTAL_RETURNED_DEPOSIT_PENDING,
@@ -1724,6 +2178,8 @@ Transaction Ref: {txn.transaction_reference}"""
                 messages.error(request, 'Deposit return amount cannot be negative.')
             elif proposed_amount > txn.deposit:
                 messages.error(request, 'Deposit return amount cannot exceed the original deposit.')
+            elif proposed_amount < txn.deposit and not resolution_notes:
+                messages.error(request, 'Please provide a reason when returning less than the full deposit.')
             elif proposal_iterations >= 5:
                 messages.error(request, 'Maximum deposit proposal iterations reached (5). Please raise a dispute to continue; disputes may incur a fee.')
             else:
@@ -2077,8 +2533,17 @@ Transaction Ref: {txn.transaction_reference}"""
 
         return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
+    messages_qs = txn.transactionmessage_set.all()
     messages_ = sorted(
-        sorted((txn.transactionmessage_set.all()), key=attrgetter('created'), reverse=True),
+        sorted(
+            messages_qs.filter(
+                models.Q(private_to_sender=False) |
+                models.Q(user_to=request.user) |
+                models.Q(include_admin=True, user_to=request.user)
+            ),
+            key=attrgetter('created'),
+            reverse=True,
+        ),
         key=attrgetter('read_by_user_to')
     )
     charges = txn.transactioncharge_set.all()
@@ -2093,6 +2558,15 @@ Transaction Ref: {txn.transaction_reference}"""
     contract_seconds_remaining = None
     if contract_deadline:
         contract_seconds_remaining = int((contract_deadline - now_ts).total_seconds())
+
+    def _format_seconds(total_seconds):
+        if total_seconds is None:
+            return '--:--:--'
+        total_seconds = max(0, int(total_seconds))
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
 
     can_collect_deposit = _can_collect_deposit(txn)
     has_verified_payment_card = _has_verified_payment_card(txn)
@@ -2181,6 +2655,20 @@ Transaction Ref: {txn.transaction_reference}"""
     ).first()
     feedback_prompt_required = feedback_stage and not feedback_left_by_me
     feedback_both_complete = bool(feedback_from_lender and feedback_from_renter)
+    active_dispute_case = txn.dispute_cases.order_by('-created').first()
+    dispute_final_statement_deadline = _dispute_final_statement_deadline(active_dispute_case)
+    dispute_final_statement_seconds_remaining = None
+    if dispute_final_statement_deadline:
+        dispute_final_statement_seconds_remaining = int((dispute_final_statement_deadline - now_ts).total_seconds())
+    dispute_final_statement_open = bool(
+        active_dispute_case
+        and dispute_final_statement_deadline
+        and timezone.now() <= dispute_final_statement_deadline
+        and (
+            (is_lender and not active_dispute_case.lender_final_statement_at)
+            or (is_renter and not active_dispute_case.borrower_final_statement_at)
+        )
+    )
 
     user_feedback_breakdowns = get_user_feedback_breakdown_map([
         txn.user_passive_id,
@@ -2210,6 +2698,7 @@ Transaction Ref: {txn.transaction_reference}"""
         'workflow_stage_label': workflow_payload['current_label'],
         'workflow_timeline': workflow_payload['timeline'],
         'workflow_payload': workflow_payload,
+        'allowed_actions': workflow_payload.get('allowed_actions', []),
         'is_lender': is_lender,
         'is_renter': is_renter,
         'today': today,
@@ -2217,6 +2706,7 @@ Transaction Ref: {txn.transaction_reference}"""
         'contract_deadline': contract_deadline,
         'contract_deadline_iso': contract_deadline.isoformat() if contract_deadline else '',
         'contract_seconds_remaining': contract_seconds_remaining,
+        'contract_seconds_remaining_display': _format_seconds(contract_seconds_remaining),
         'can_collect_deposit': can_collect_deposit,
         'has_verified_payment_card': has_verified_payment_card,
         'rental_start_blocked_by_missing_card': rental_start_blocked_by_missing_card,
@@ -2242,6 +2732,11 @@ Transaction Ref: {txn.transaction_reference}"""
         'feedback_from_lender': feedback_from_lender,
         'feedback_from_renter': feedback_from_renter,
         'missing_rental_voided': missing_rental_voided,
+        'active_dispute_case': active_dispute_case,
+        'dispute_final_statement_deadline': dispute_final_statement_deadline,
+        'dispute_final_statement_seconds_remaining': dispute_final_statement_seconds_remaining,
+        'dispute_final_statement_seconds_display': _format_seconds(dispute_final_statement_seconds_remaining),
+        'dispute_final_statement_open': dispute_final_statement_open,
         'lender_feedback_stats': lender_feedback_stats,
         'renter_feedback_stats': renter_feedback_stats,
         'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),

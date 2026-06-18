@@ -2,22 +2,33 @@ from celery import shared_task
 from django.core.mail import send_mail
 import logging
 
+from common.failures import record_site_failure
+
 logger = logging.getLogger(__name__)
 
 @shared_task
 def send_registration_verification_email(email, code, resume_link):
     """Send registration verification code email asynchronously."""
-    send_mail(
-        subject='Your rentalution verification code',
-        message=(
-            'Your rentalution registration code is: ' + code + '\n\n'
-            'This code expires in 15 minutes.\n\n'
-            'Resume verification: ' + resume_link
-        ),
-        from_email=None,
-        recipient_list=[email],
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            subject='Your rentalution verification code',
+            message=(
+                'Your rentalution registration code is: ' + code + '\n\n'
+                'This code expires in 15 minutes.\n\n'
+                'Resume verification: ' + resume_link
+            ),
+            from_email=None,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        record_site_failure(
+            'Registration verification email failed',
+            details=f'Failed to send registration verification email to {email}.',
+            exception=exc,
+            context={'email': email, 'resume_link': resume_link},
+        )
+        raise
 
 
 @shared_task

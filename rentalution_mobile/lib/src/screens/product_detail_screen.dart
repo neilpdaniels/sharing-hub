@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -59,6 +61,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _noDepositOnly = false;
   bool _deliveryOnly = false;
   bool _addingFriend = false;
+  String? _friendStatus;
 
   bool get _isAuthenticated {
     final token = widget.accessToken;
@@ -71,6 +74,47 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     _searchLocation = (widget.searchLocation ?? '').trim();
     _distanceKmFilter = widget.initialDistanceKm;
     _load();
+    _loadFriendStatus();
+  }
+
+  Future<void> _loadFriendStatus() async {
+    final friendsRepository = widget.friendsRepository;
+    final accessToken = widget.accessToken;
+    final product = _product;
+    if (friendsRepository == null ||
+        accessToken == null ||
+        accessToken.isEmpty ||
+        product == null) {
+      return;
+    }
+    try {
+      final hub = await friendsRepository.fetchHub(accessToken: accessToken);
+      if (!mounted) return;
+      final lenderId = product.activeOrders.isNotEmpty
+          ? product.activeOrders.first.lender.id
+          : null;
+      if (lenderId == null) {
+        return;
+      }
+      final accepted = hub.accepted.any((friend) => friend.userId == lenderId);
+      final pendingSent =
+          hub.pendingSent.any((friend) => friend.userId == lenderId);
+      final pendingReceived =
+          hub.pendingReceived.any((friend) => friend.userId == lenderId);
+      setState(() {
+        if (accepted) {
+          _friendStatus = 'accepted';
+        } else if (pendingSent) {
+          _friendStatus = 'pending_sent';
+        } else if (pendingReceived) {
+          _friendStatus = 'pending_received';
+        } else {
+          _friendStatus = null;
+        }
+      });
+    } catch (_) {
+      // Best effort only.
+    }
   }
 
   Future<void> _load() async {
@@ -105,6 +149,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       setState(() {
         _product = product;
       });
+      unawaited(_loadFriendStatus());
     } catch (e) {
       if (!mounted) {
         return;
@@ -200,7 +245,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           if (product.description.isNotEmpty) Text(product.description),
           const SizedBox(height: 18),
           Text(
-            'Active listings (${visibleOrders.length})',
+            'Available to rent (${visibleOrders.length})',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
@@ -210,7 +255,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('No active listings match your filters.'),
+                child: Text('Nothing currently available to rent.'),
               ),
             )
           else if (_viewMode == _viewMap)
@@ -347,12 +392,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Product Details',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            if (product.description.isNotEmpty) ...[
+              Text(
+                product.description,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              if (attrs.isNotEmpty || product.tags.isNotEmpty)
+                const SizedBox(height: 8),
+            ],
             if (product.tags.isNotEmpty) ...[
-              const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -362,6 +410,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ],
             if (attrs.isNotEmpty) ...[
+              if (product.tags.isNotEmpty) const SizedBox(height: 8),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
@@ -575,6 +624,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           catalogRepository: catalogRepository,
           friendsRepository: widget.friendsRepository,
           accessToken: widget.accessToken,
+          onRequireLogin: widget.onRequireLogin,
         ),
       ),
     );
@@ -619,6 +669,33 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         });
       }
     }
+  }
+
+  Future<bool> _confirmAddAsFriend(String displayName) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Friend Request'),
+          content: Text('Do you want to request $displayName adds you as friend?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('No, just add to my list'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Yes'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
   }
 
   Widget _productThumb(String imageUrl) {
@@ -931,23 +1008,55 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             const SizedBox(height: 8),
                             Align(
                               alignment: Alignment.centerRight,
-                              child: FilledButton.tonalIcon(
-                                onPressed: _addingFriend
-                                    ? null
-                                    : () => _addAsFriend(order.lender.id),
-                                icon: _addingFriend
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.person_add_alt_1_outlined,
+                              child: !_isAuthenticated
+                                  ? OutlinedButton.icon(
+                                      onPressed: widget.onRequireLogin,
+                                      icon: const Icon(Icons.login),
+                                      label: const Text(
+                                        'Log in to add as friend',
                                       ),
-                                label: const Text('Add as friend'),
-                              ),
+                                    )
+                                  : FilledButton.tonalIcon(
+                                      onPressed: _addingFriend
+                                          ? null
+                                          : () async {
+                                              final confirmed =
+                                                  await _confirmAddAsFriend(
+                                                order.lender.displayName.isNotEmpty
+                                                    ? order.lender.displayName
+                                                    : order.lender.username.isNotEmpty
+                                                        ? '@${order.lender.username}'
+                                                        : 'this user',
+                                              );
+                                              if (!confirmed) {
+                                                return;
+                                              }
+                                              await _addAsFriend(
+                                                order.lender.id,
+                                              );
+                                            },
+                                      icon: _addingFriend
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.person_add_alt_1_outlined,
+                                            ),
+                                      label: Text(
+                                        _friendStatus == 'accepted'
+                                            ? 'Already friends'
+                                            : _friendStatus == 'pending_sent'
+                                                ? 'Friend request sent'
+                                                : _friendStatus == 'pending_received'
+                                                    ? 'Respond in Friends'
+                                          : 'Add as friend',
+                                      ),
+                                    ),
                             ),
                           ],
                         ),
@@ -1507,24 +1616,83 @@ class _EnquiryDependencies {
   final String accessToken;
 }
 
-class _LenderDetailScreen extends StatelessWidget {
+class _LenderDetailScreen extends StatefulWidget {
   const _LenderDetailScreen({
     required this.lender,
     required this.catalogRepository,
     required this.friendsRepository,
     required this.accessToken,
+    required this.onRequireLogin,
   });
 
   final OrderLenderSummary lender;
   final CatalogRepository catalogRepository;
   final FriendsRepository? friendsRepository;
   final String? accessToken;
+  final VoidCallback? onRequireLogin;
+
+  @override
+  State<_LenderDetailScreen> createState() => _LenderDetailScreenState();
+}
+
+class _LenderDetailScreenState extends State<_LenderDetailScreen> {
+  String? _friendStatus;
+  bool _loadingFriendStatus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFriendStatus();
+  }
+
+  bool get _isAuthenticated {
+    final token = widget.accessToken;
+    return token != null && token.isNotEmpty;
+  }
+
+  Future<void> _loadFriendStatus() async {
+    final friendsRepository = widget.friendsRepository;
+    final accessToken = widget.accessToken;
+    if (friendsRepository == null || accessToken == null || accessToken.isEmpty) {
+      return;
+    }
+    setState(() {
+      _loadingFriendStatus = true;
+    });
+    try {
+      final hub = await friendsRepository.fetchHub(accessToken: accessToken);
+      if (!mounted) return;
+      final lenderId = widget.lender.id;
+      final accepted = hub.accepted.any((friend) => friend.userId == lenderId);
+      final pendingSent = hub.pendingSent.any((friend) => friend.userId == lenderId);
+      final pendingReceived = hub.pendingReceived.any((friend) => friend.userId == lenderId);
+      setState(() {
+        if (accepted) {
+          _friendStatus = 'accepted';
+        } else if (pendingSent) {
+          _friendStatus = 'pending_sent';
+        } else if (pendingReceived) {
+          _friendStatus = 'pending_received';
+        } else {
+          _friendStatus = null;
+        }
+      });
+    } catch (_) {
+      // Best effort only.
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingFriendStatus = false;
+        });
+      }
+    }
+  }
 
   String _verificationSummary() {
     final labels = <String>[
-      if (lender.emailConfirmed) 'Email verified',
-      if (lender.mobileVerified) 'Mobile verified',
-      if (lender.addressVerified) 'Address verified',
+      if (widget.lender.emailConfirmed) 'Email verified',
+      if (widget.lender.mobileVerified) 'Mobile verified',
+      if (widget.lender.addressVerified) 'Address verified',
     ];
     if (labels.isEmpty) {
       return 'No checks shown';
@@ -1542,8 +1710,57 @@ class _LenderDetailScreen extends StatelessWidget {
     );
   }
 
+  Future<bool> _confirmAddAsFriend(BuildContext context, String displayName) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Friend Request'),
+          content: Text('Do you want to request $displayName adds you as friend?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('No, just add to my list'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Yes'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Future<void> _showFriendRequestSent(BuildContext context, String displayName) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Friend request sent'),
+          content: Text('Your request to add $displayName has been sent.'),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final canRequestFriend = _isAuthenticated &&
+        widget.friendsRepository != null &&
+        _friendStatus == null &&
+        !_loadingFriendStatus;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lender details'),
@@ -1566,13 +1783,13 @@ class _LenderDetailScreen extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 32,
-                        backgroundImage: lender.avatarUrl.isNotEmpty
-                            ? NetworkImage(lender.avatarUrl)
+                        backgroundImage: widget.lender.avatarUrl.isNotEmpty
+                            ? NetworkImage(widget.lender.avatarUrl)
                             : null,
-                        child: lender.avatarUrl.isEmpty
+                        child: widget.lender.avatarUrl.isEmpty
                             ? Text(
-                                lender.displayName.isNotEmpty
-                                    ? lender.displayName[0].toUpperCase()
+                                widget.lender.displayName.isNotEmpty
+                                    ? widget.lender.displayName[0].toUpperCase()
                                     : '?',
                                 style: Theme.of(context).textTheme.titleLarge,
                               )
@@ -1584,12 +1801,12 @@ class _LenderDetailScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              lender.displayName,
+                              widget.lender.displayName,
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
-                            if (lender.username.isNotEmpty)
+                            if (widget.lender.username.isNotEmpty)
                               Text(
-                                '@${lender.username}',
+                                '@${widget.lender.username}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                           ],
@@ -1601,34 +1818,90 @@ class _LenderDetailScreen extends StatelessWidget {
                   _metaRow(
                     context,
                     'Rating',
-                    '${lender.rating.toStringAsFixed(1)} / 5',
+                    '${widget.lender.rating.toStringAsFixed(1)} / 5',
                   ),
                   _metaRow(
                     context,
                     'Successful bookings',
-                    lender.successfulTxns.toString(),
+                    widget.lender.successfulTxns.toString(),
                   ),
                   _metaRow(
                     context,
                     'Postcode',
-                    lender.postcode.isEmpty ? '-' : lender.postcode,
+                    widget.lender.postcode.isEmpty ? '-' : widget.lender.postcode,
                   ),
                   _metaRow(context, 'Verification', _verificationSummary()),
                   const SizedBox(height: 8),
-                  if (friendsRepository != null &&
-                      accessToken != null &&
-                      accessToken!.isNotEmpty) ...[
+                  if (!_isAuthenticated) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onRequireLogin,
+                        icon: const Icon(Icons.login),
+                        label: const Text('Log in to add as friend'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (_friendStatus == 'accepted') ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed: null,
+                        icon: const Icon(Icons.verified_user_outlined),
+                        label: const Text('Already friends'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (_friendStatus == 'pending_sent') ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed: null,
+                        icon: const Icon(Icons.hourglass_top_outlined),
+                        label: const Text('Friend request pending'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (_friendStatus == 'pending_received') ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed: null,
+                        icon: const Icon(Icons.inbox_outlined),
+                        label: const Text('Respond in Friends'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (canRequestFriend) ...[
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.tonalIcon(
                         onPressed: () async {
+                          final confirmed = await _confirmAddAsFriend(
+                            context,
+                            widget.lender.displayName.isNotEmpty
+                                ? widget.lender.displayName
+                                : widget.lender.username.isNotEmpty
+                                    ? '@${widget.lender.username}'
+                                    : 'this user',
+                          );
+                          if (!confirmed) {
+                            return;
+                          }
                           try {
-                            final message =
-                                await friendsRepository!.sendFriendRequest(
-                              accessToken: accessToken!,
-                              userId: lender.id,
+                            final message = await widget.friendsRepository!.sendFriendRequest(
+                              accessToken: widget.accessToken!,
+                              userId: widget.lender.id,
                             );
                             if (context.mounted) {
+                              await _showFriendRequestSent(
+                                context,
+                                widget.lender.displayName.isNotEmpty
+                                    ? widget.lender.displayName
+                                    : widget.lender.username.isNotEmpty
+                                        ? '@${widget.lender.username}'
+                                        : 'this user',
+                              );
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text(message)),
                               );
@@ -1642,7 +1915,15 @@ class _LenderDetailScreen extends StatelessWidget {
                           }
                         },
                         icon: const Icon(Icons.person_add_alt_1_outlined),
-                        label: const Text('Add as friend'),
+                        label: Text(
+                          _friendStatus == 'accepted'
+                              ? 'Already friends'
+                              : _friendStatus == 'pending_sent'
+                                  ? 'Friend request sent'
+                                  : _friendStatus == 'pending_received'
+                                      ? 'Respond in Friends'
+                                      : 'Add as friend',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1652,14 +1933,14 @@ class _LenderDetailScreen extends StatelessWidget {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => _LenderListingsScreen(
-                              lender: lender,
-                              catalogRepository: catalogRepository,
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => _LenderListingsScreen(
+                                lender: widget.lender,
+                                catalogRepository: widget.catalogRepository,
+                              ),
                             ),
-                          ),
-                        );
+                          );
                       },
                       icon: const Icon(Icons.inventory_2_outlined),
                       label: const Text('View all listings from this lender'),
@@ -1773,7 +2054,7 @@ class _LenderListingsScreen extends StatelessWidget {
                   const Card(
                     child: Padding(
                       padding: EdgeInsets.all(16),
-                      child: Text('No active listings found for this lender.'),
+                      child: Text('Nothing currently available to rent.'),
                     ),
                   ),
                 for (final order in orders) ...[

@@ -38,6 +38,7 @@ class OrderAddForm(forms.ModelForm):
         model = Order
         fields = (
             'let_visibility',
+            'verified_users_only',
             'expiry_date',
             'price',
             'radius_km',
@@ -60,6 +61,7 @@ class OrderAddForm(forms.ModelForm):
         )
         labels = {
             'let_visibility': 'Who can rent this listing?',
+            'verified_users_only': 'Verified users only',
             'price': 'Price per day (£)',
             'radius_km': 'Maximum let radius (km)',
             'deposit': 'Deposit (£)',
@@ -99,6 +101,10 @@ class OrderAddForm(forms.ModelForm):
         self.fields['max_rental_days'].help_text = (
             'If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. '
             'Payment cards can still be different.'
+        )
+        self.fields['verified_users_only'].help_text = (
+            'This means the renter must have completed Stripe identity verification. '
+            'It checks identity, not a payment card.'
         )
 
     def clean(self):
@@ -267,20 +273,36 @@ class OrderImageForm(forms.ModelForm):
         model = OrderImage
         fields = ('image', )
 
-class TransactionCreateForm(forms.ModelForm):
+class TransactionCreateForm(forms.Form):
     """Form for creating a new transaction with pricing and delivery terms."""
-    class Meta:
-        from transaction.models import Transaction
-        model = Transaction
-        fields = ('quantity', 'price', 'friend_price', 'deposit', 'friend_deposit', 'delivery_distance_km')
-        widgets = {
-            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
-            'price': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
-            'friend_price': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
-            'deposit': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
-            'friend_deposit': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
-            'delivery_distance_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 1000}),
-        }
+
+    quantity = forms.IntegerField(
+        min_value=1,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
+    )
+    price = forms.FloatField(
+        min_value=0,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
+    )
+    friend_price = forms.FloatField(
+        min_value=0,
+        required=False,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
+    )
+    deposit = forms.FloatField(
+        min_value=0,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
+    )
+    friend_deposit = forms.FloatField(
+        min_value=0,
+        required=False,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01}),
+    )
+    delivery_distance_km = forms.IntegerField(
+        min_value=1,
+        max_value=1000,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 1000}),
+    )
 
 class TransactionMessageAddForm(forms.ModelForm):
     class Meta:

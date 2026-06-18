@@ -1004,6 +1004,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     fontWeight: FontWeight.w700,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -1012,6 +1014,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     fontWeight: FontWeight.w700,
                     color: theme.colorScheme.onSurface,
                   ),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -1041,18 +1045,15 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 8),
-          Text(
-            '$label ',
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          Text(
-            value,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: theme.colorScheme.onSurface,
+          Flexible(
+            child: Text(
+              '$label: $value',
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -1992,7 +1993,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 1.9,
+              mainAxisExtent: 112,
               children: [
                 _summaryTile(
                   label: 'Dates',
@@ -2016,7 +2017,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 1.9,
+              mainAxisExtent: 156,
               children: [
                 _summaryTile(
                   label: 'Price / day',

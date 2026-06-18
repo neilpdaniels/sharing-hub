@@ -30,6 +30,7 @@ from common.decorators import ajax_required
 from common.helpers import is_profile_kyc_verified
 from common.models import Category, Order, OrderBlockedDate, OrderImage, Product, TransactionFee
 from common.security import verify_turnstile_token
+from common.failures import record_site_failure
 from .forms import (
     LetPriceBandFormSet,
     OrderAddForm,
@@ -49,6 +50,7 @@ from .helpers import (
 )
 from .models import (
     DisputeCase,
+    PaymentAttempt,
     Transaction,
     TransactionFeedback,
     TransactionImage,
@@ -126,6 +128,76 @@ def _release_transaction_dates(txn):
                 date=date_value,
                 reason=OrderBlockedDate.BOOKED,
             ).delete()
+
+
+def _friendly_message_title(message):
+    transaction = message.transaction
+    product_name = ''
+    if transaction and transaction.order_passive and transaction.order_passive.product:
+        product_name = transaction.order_passive.product.name
+
+    rental_window = ''
+    if transaction:
+        start = transaction.rental_start_date
+        end = transaction.rental_end_date
+        if start and end:
+            rental_window = f"{start.strftime('%d %b')} - {end.strftime('%d %b %Y')}"
+        elif start:
+            rental_window = f"from {start.strftime('%d %b %Y')}"
+        elif end:
+            rental_window = f"until {end.strftime('%d %b %Y')}"
+
+    if product_name and rental_window:
+        return f"Rental: {product_name} ({rental_window})"
+    if product_name:
+        return f"Rental: {product_name}"
+    if rental_window:
+        return f"Rental ({rental_window})"
+    return (message.subject or 'Message').strip() or 'Message'
+
+
+def _message_preview_text(message, max_lines=2, max_chars=180):
+    body = (message.description or '').strip()
+    if not body:
+        return ''
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    preview = ' '.join(lines[:max_lines]) if lines else body
+    preview = ' '.join(preview.split())
+    if len(preview) > max_chars:
+        preview = preview[:max_chars].rsplit(' ', 1)[0].rstrip() + '...'
+    return preview
+
+
+def _message_alignment_class(message, user):
+    if message.is_system_generated:
+        return 'message-card--center'
+    if message.user_from_id == user.id:
+        return 'message-card--outgoing'
+    if message.user_to_id == user.id:
+        return 'message-card--incoming'
+    return 'message-card--center'
+
+
+def _message_order_thumbnail_url(message):
+    transaction = message.transaction
+    if not transaction or not transaction.order_passive:
+        return ''
+
+    order = transaction.order_passive
+    order_images = list(order.images.all())
+    if order_images:
+        preferred = next((img for img in order_images if img.is_main and img.active), None)
+        if not preferred:
+            preferred = next((img for img in order_images if img.first_image and img.active), None)
+        if not preferred:
+            preferred = next((img for img in order_images if img.active), None)
+        if not preferred:
+            preferred = order_images[0]
+        return preferred.image.url if preferred and preferred.image else ''
+
+    if order.product and order.product.image:
+        return order.product.image.url
+    return ''
 
 
 def _require_mobile_verification(request):
@@ -1136,6 +1208,15 @@ def hit_order(request, order_id=None):
             if order.expiry_date <= timezone.now() or order.status != Order.ACTIVE:
                 messages.error(request, 'This listing is no longer available.')
                 return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
+            if order.verified_users_only:
+                renter_profile = getattr(request.user, 'profile', None)
+                if not is_profile_kyc_verified(renter_profile):
+                    messages.error(
+                        request,
+                        'This listing is for verified users only. Complete Stripe identity verification first. '
+                        'That is an identity check, not a payment-card check.',
+                    )
+                    return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
             start_date = order_hit_form.cleaned_data['rental_start_date']
             end_date = order_hit_form.cleaned_data['rental_end_date']
@@ -1270,7 +1351,7 @@ def hit_order(request, order_id=None):
 @login_required
 def view_transaction(request, transaction_reference=None):
     txn = get_object_or_404(Transaction, transaction_reference=transaction_reference)
-    if txn.user_passive != request.user and txn.user_aggressive != request.user:
+    if txn.user_passive != request.user and txn.user_aggressive != request.user and not request.user.is_staff:
         raise Http404
 
     message_turnstile_required = txn.transactionmessage_set.count() > 20
@@ -1311,14 +1392,18 @@ def view_transaction(request, transaction_reference=None):
             return False
         return timezone.now().date() >= transaction.rental_start_date
 
-    def _has_verified_payment_card(transaction):
-        payment_card_required = (
-            transaction.deposit > 0
-            or transaction.price > 0
-            or (transaction.delivery_cost or 0) > 0
-            or (transaction.rentalution_fee or 0) > 0
+    def _transaction_needs_payment_card(transaction):
+        return any(
+            (
+                transaction.deposit > 0,
+                transaction.price > 0,
+                (transaction.delivery_cost or 0) > 0,
+                (transaction.rentalution_fee or 0) > 0,
+            )
         )
-        if not payment_card_required:
+
+    def _has_verified_payment_card(transaction):
+        if not _transaction_needs_payment_card(transaction):
             return True
         return (
             transaction.deposit_card_setup_status == transaction.CARD_READY
@@ -1368,6 +1453,8 @@ def view_transaction(request, transaction_reference=None):
         transaction.refresh_feedback_deadline()
 
     if request.method == 'POST':
+        if not (is_lender or is_renter):
+            raise Http404
         action = request.POST.get('action', '').strip()
 
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
@@ -1846,6 +1933,27 @@ Transaction Ref: {txn.transaction_reference}"""
 
             payment_capture_result = stripe_connect_service.collect_rental_payment(transaction=txn)
             if not payment_capture_result.get('ok'):
+                record_site_failure(
+                    'Rental payment capture failed',
+                    details=f'Rental payment capture failed for transaction {txn.transaction_reference}. Handover PIN withheld.',
+                    context={
+                        'transaction_id': txn.id,
+                        'transaction_reference': txn.transaction_reference,
+                        'error': payment_capture_result.get('error', ''),
+                        'provider': payment_capture_result.get('provider', 'stripe'),
+                    },
+                )
+                try:
+                    request.user.email_user(
+                        f'Payment retry needed for {txn.transaction_reference}',
+                        (
+                            f'We could not capture the rental payment for transaction {txn.transaction_reference}.\n\n'
+                            f'Error: {payment_capture_result.get("error") or ""}\n\n'
+                            'Please retry the payment before the PIN is released.'
+                        ),
+                    )
+                except Exception:
+                    logger.exception('Failed to email rental payment retry notice to user %s', request.user.id)
                 messages.error(
                     request,
                     f'Rental payment capture failed. Handover PIN will not be shown until payment succeeds. {payment_capture_result.get("error") or ""}'.strip(),
@@ -2546,6 +2654,11 @@ Transaction Ref: {txn.transaction_reference}"""
         ),
         key=attrgetter('read_by_user_to')
     )
+    for message in messages_:
+        message.display_subject = _friendly_message_title(message)
+        message.order_thumbnail_url = _message_order_thumbnail_url(message)
+        message.preview_text = _message_preview_text(message)
+        message.message_alignment_class = _message_alignment_class(message, request.user)
     charges = txn.transactioncharge_set.all()
     txn_images = txn.transactionimage_set.all()
     total_items = txn.quantity * txn.price
@@ -2558,6 +2671,14 @@ Transaction Ref: {txn.transaction_reference}"""
     contract_seconds_remaining = None
     if contract_deadline:
         contract_seconds_remaining = int((contract_deadline - now_ts).total_seconds())
+    lender_contract_resend_available = bool(
+        is_lender
+        and txn.transaction_status == txn.RENTAL_AGREED
+        and txn.lender_agreed_at
+        and not txn.renter_agreed_at
+        and contract_deadline
+        and now_ts > contract_deadline
+    )
 
     def _format_seconds(total_seconds):
         if total_seconds is None:
@@ -2570,11 +2691,13 @@ Transaction Ref: {txn.transaction_reference}"""
 
     can_collect_deposit = _can_collect_deposit(txn)
     has_verified_payment_card = _has_verified_payment_card(txn)
+    needs_payment_card = _transaction_needs_payment_card(txn)
     rental_start_blocked_by_missing_card = (
         is_lender
         and txn.transaction_status == txn.RENTAL_AGREED
         and bool(txn.lender_agreed_at)
         and bool(txn.renter_agreed_at)
+        and needs_payment_card
         and not has_verified_payment_card
     )
 
@@ -2584,7 +2707,7 @@ Transaction Ref: {txn.transaction_reference}"""
     if (
         is_renter
         and txn.transaction_status in card_setup_allowed_statuses
-        and (txn.deposit > 0 or txn.price > 0)
+        and needs_payment_card
         and txn.deposit_card_setup_status != txn.CARD_READY
         and not txn.deposit_collected_placeholder
     ):
@@ -2596,7 +2719,7 @@ Transaction Ref: {txn.transaction_reference}"""
     can_setup_deposit_card = (
         is_renter
         and txn.transaction_status in card_setup_allowed_statuses
-        and (txn.deposit > 0 or txn.price > 0)
+        and needs_payment_card
         and not txn.deposit_collected_placeholder
     )
 
@@ -2683,11 +2806,13 @@ Transaction Ref: {txn.transaction_reference}"""
         user_payment_methods = request.user.payment_methods.all()
 
     workflow_payload = txn.get_workflow_payload()
+    user_allowed_actions = txn.get_allowed_actions_for_user(request.user)
 
     context = {
         'transaction': txn,
         'charges': charges,
         'messages_': messages_,
+        'show_message_subject': False,
         'total_px': total_px,
         'txnImages': txn_images,
         'total_items': total_items,
@@ -2698,7 +2823,8 @@ Transaction Ref: {txn.transaction_reference}"""
         'workflow_stage_label': workflow_payload['current_label'],
         'workflow_timeline': workflow_payload['timeline'],
         'workflow_payload': workflow_payload,
-        'allowed_actions': workflow_payload.get('allowed_actions', []),
+        'allowed_actions': user_allowed_actions,
+        'workflow_allowed_actions': workflow_payload.get('allowed_actions', []),
         'is_lender': is_lender,
         'is_renter': is_renter,
         'today': today,
@@ -2707,8 +2833,10 @@ Transaction Ref: {txn.transaction_reference}"""
         'contract_deadline_iso': contract_deadline.isoformat() if contract_deadline else '',
         'contract_seconds_remaining': contract_seconds_remaining,
         'contract_seconds_remaining_display': _format_seconds(contract_seconds_remaining),
+        'lender_contract_resend_available': lender_contract_resend_available,
         'can_collect_deposit': can_collect_deposit,
         'has_verified_payment_card': has_verified_payment_card,
+        'needs_payment_card': needs_payment_card,
         'rental_start_blocked_by_missing_card': rental_start_blocked_by_missing_card,
         'setup_intent_client_secret': setup_intent_client_secret,
         'setup_intent_id': setup_intent_id,
@@ -2912,6 +3040,50 @@ def transpact_refresh(request):
         'message': 'Transpact refresh is disabled in the new rental workflow.',
     }
     return JsonResponse(content)
+
+
+@staff_member_required
+def transaction_scenario_dashboard(request):
+    if getattr(settings, 'ENVIRONMENT_NAME', '').lower() == 'production':
+        raise Http404
+    scenarios = (
+        Transaction.objects.filter(transpact_text_status__startswith='SCENARIO:')
+        .select_related('user_passive', 'user_aggressive', 'order_passive', 'product')
+        .order_by('-amended', '-created')
+    )
+    payment_attempts = PaymentAttempt.objects.all()
+    payment_totals = {
+        'success': payment_attempts.filter(status=PaymentAttempt.STATUS_SUCCESS).count(),
+        'failure': payment_attempts.filter(status=PaymentAttempt.STATUS_FAILURE).count(),
+        'pending': payment_attempts.filter(status=PaymentAttempt.STATUS_PENDING).count(),
+    }
+    return render(request, 'transaction/scenario_dashboard.html', {
+        'scenarios': scenarios,
+        'payment_totals': payment_totals,
+    })
+
+
+@staff_member_required
+def payment_summary(request):
+    if getattr(settings, 'ENVIRONMENT_NAME', '').lower() == 'production':
+        raise Http404
+    attempts = PaymentAttempt.objects.all()
+    totals = {
+        'success': attempts.filter(status=PaymentAttempt.STATUS_SUCCESS).count(),
+        'failure': attempts.filter(status=PaymentAttempt.STATUS_FAILURE).count(),
+        'pending': attempts.filter(status=PaymentAttempt.STATUS_PENDING).count(),
+    }
+    by_point = (
+        attempts.values('failure_point')
+        .annotate(total=models.Count('id'))
+        .order_by('failure_point')
+    )
+    latest = attempts.select_related('transaction').order_by('-created_at')[:100]
+    return render(request, 'transaction/payment_summary.html', {
+        'attempts': latest,
+        'totals': totals,
+        'by_point': by_point,
+    })
 
 
 @csrf_exempt

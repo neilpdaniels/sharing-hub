@@ -99,6 +99,72 @@ class LenderListingsViewTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class VerifiedUsersOnlyEnquiryTests(TestCase):
+    def setUp(self):
+        self.category = Category.objects.create(title='Tools')
+        self.product = Product.objects.create(
+            category_id=self.category,
+            name='Camera',
+        )
+        self.lender = User.objects.create_user(
+            username='verified-lender',
+            email='verified-lender@example.com',
+            password='x',
+        )
+        self.renter = User.objects.create_user(
+            username='unverified-renter',
+            email='unverified-renter@example.com',
+            password='x',
+        )
+        Profile.objects.create(
+            user=self.lender,
+            email_confirmed=True,
+            mobile_verified=True,
+            address_verified=True,
+            date_of_birth='1990-01-01',
+            mobile_number='07123456789',
+            address_line_1='1 Main St',
+            town='London',
+            postcode='SW1A1AA',
+        )
+        Profile.objects.create(
+            user=self.renter,
+            email_confirmed=False,
+            mobile_verified=False,
+            address_verified=False,
+            date_of_birth='1990-01-01',
+            mobile_number='07123456780',
+            address_line_1='2 Main St',
+            town='London',
+            postcode='SW1A1AA',
+        )
+        self.order = Order.objects.create(
+            product=self.product,
+            user=self.lender,
+            direction=Order.TO_LET,
+            expiry_date=timezone.now() + timedelta(days=30),
+            status=Order.ACTIVE,
+            price=25,
+            postcode='SW1A1AA',
+            verified_users_only=True,
+        )
+
+    def test_mobile_transaction_create_blocks_unverified_renter(self):
+        self.client.force_login(self.renter)
+        response = self.client.post(
+            reverse('mobile_api:transactions_list'),
+            {
+                'order_reference': self.order.order_reference,
+                'rental_start_date': (timezone.now().date() + timedelta(days=5)).isoformat(),
+                'rental_end_date': (timezone.now().date() + timedelta(days=7)).isoformat(),
+                'enquiry_message': 'Please let me rent this.',
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Transaction.objects.filter(order_passive=self.order).count(), 0)
+
+
 class MobilePasswordAuthTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(

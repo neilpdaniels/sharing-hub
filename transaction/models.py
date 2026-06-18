@@ -5,7 +5,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator, FileExt
 from django.core.exceptions import ValidationError
 import random
 import string
-from common.helpers import RandomFileName 
+from common.helpers import RandomFileName
 from PIL import Image
 from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -269,7 +269,6 @@ class Transaction(models.Model):
     deposit_test_hold_amount = models.FloatField(default=0)
     deposit_test_hold_reference = models.CharField(max_length=120, blank=True)
     deposit_test_hold_at = models.DateTimeField(blank=True, null=True)
-
     COLLECT_NOT_RUN = 'NOT_RUN'
     COLLECT_SUCCESS = 'SUCCESS'
     COLLECT_FAILED = 'FAILED'
@@ -637,9 +636,17 @@ class Transaction(models.Model):
                 actions.extend(['confirm_lender_contract', 'reinitiate_lender_contract'])
             if is_renter and self.lender_agreed_at and not self.renter_agreed_at:
                 actions.extend(['confirm_renter_contract', 'reject_rental_agreement'])
-            if is_renter:
+            payment_card_required = any(
+                (
+                    self.deposit > 0,
+                    self.price > 0,
+                    (self.delivery_cost or 0) > 0,
+                    (self.rentalution_fee or 0) > 0,
+                )
+            )
+            if is_renter and payment_card_required:
                 actions.extend(['add_deposit_card', 'use_existing_card', 'confirm_stripe_card'])
-            if is_lender and self.deposit_card_setup_status == self.CARD_READY:
+            if is_lender and payment_card_required and self.deposit_card_setup_status == self.CARD_READY:
                 actions.append('collect_deposit')
             if is_lender or is_renter:
                 actions.append('send_message')
@@ -740,6 +747,48 @@ class Transaction(models.Model):
 
     def __str__(self):
         return self.transaction_reference
+
+
+class PaymentAttempt(models.Model):
+    STATUS_SUCCESS = 'SUCCESS'
+    STATUS_FAILURE = 'FAILURE'
+    STATUS_PENDING = 'PENDING'
+    STATUS_CHOICES = (
+        (STATUS_SUCCESS, 'Success'),
+        (STATUS_FAILURE, 'Failure'),
+        (STATUS_PENDING, 'Pending'),
+    )
+
+    POINT_CARD_SETUP = 'card_setup'
+    POINT_DEPOSIT_AUTH = 'deposit_auth'
+    POINT_RENTAL_CAPTURE = 'rental_capture'
+    POINT_DEPOSIT_SETTLEMENT = 'deposit_settlement'
+    POINT_VERIFICATION = 'verification_charge'
+    POINT_CHOICES = (
+        (POINT_CARD_SETUP, 'Card setup'),
+        (POINT_DEPOSIT_AUTH, 'Deposit authorization'),
+        (POINT_RENTAL_CAPTURE, 'Rental capture'),
+        (POINT_DEPOSIT_SETTLEMENT, 'Deposit settlement'),
+        (POINT_VERIFICATION, 'Verification charge'),
+    )
+
+    transaction = models.ForeignKey('Transaction', on_delete=models.CASCADE, related_name='payment_attempts')
+    created_at = models.DateTimeField(auto_now_add=True)
+    stripe_object_id = models.CharField(max_length=120, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    failure_point = models.CharField(max_length=32, choices=POINT_CHOICES)
+    card_brand = models.CharField(max_length=40, blank=True)
+    card_funding = models.CharField(max_length=20, blank=True)
+    amount = models.FloatField(default=0)
+    currency = models.CharField(max_length=8, default='gbp')
+    error_message = models.TextField(blank=True)
+    context = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'{self.transaction.transaction_reference} {self.failure_point} {self.status}'
 
 
 class DisputeCase(models.Model):

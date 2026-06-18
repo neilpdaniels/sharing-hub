@@ -2188,8 +2188,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: Text(product.name),
                       subtitle: Text(
                         product.nearestDistanceKm != null
-                            ? '${product.activeOrderCount} active listings | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
-                            : '${product.activeOrderCount} active listings',
+                            ? '${product.activeOrderCount} available to rent | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
+                            : '${product.activeOrderCount} available to rent',
                       ),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _openProduct(product.slug),

@@ -102,6 +102,17 @@ class AccountRepository {
     );
   }
 
+  Future<Map<String, dynamic>> startPaidKycVerification({
+    required String accessToken,
+    required int paymentMethodId,
+  }) async {
+    return _apiClient.postJson(
+      '/kyc/start/',
+      {'payment_method_id': paymentMethodId},
+      accessToken: accessToken,
+    );
+  }
+
   Future<String> fetchStripePublishableKey({
     required String accessToken,
   }) async {

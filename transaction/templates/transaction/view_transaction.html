@@ -13,6 +13,11 @@
 {% block content %}
 <div class="container mt-4 mb-5">
     {% if transaction %}
+    {% if request.user.is_staff and not is_lender and not is_renter %}
+    <div class="alert alert-warning border-warning mb-3">
+        Staff view only. You can inspect this transaction, but only the lender and borrower can submit transaction actions.
+    </div>
+    {% endif %}
     <div class="row">
         <div class="col-lg-8">
             <h3 class="mb-1">Rental Transaction</h3>
@@ -334,7 +339,7 @@
                 <div class="card-body">
                     <h5 class="card-title">Messages</h5>
                     <div class="transaction-messages transaction-messages--compact">
-                        {% include "my_rentalution/messages.html" with messages_=messages_ %}
+                        {% include "transaction/message_thread.html" with messages_=messages_ %}
                     </div>
                 </div>
             </div>
@@ -606,35 +611,26 @@
             </div>
             {% endif %}
 
-            {% if 'confirm_lender_contract' in allowed_actions or 'reinitiate_lender_contract' in allowed_actions %}
+            {% if 'confirm_lender_contract' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Confirm Contract</h5>
-                    <p class="mb-2">Review and accept the rental terms and conditions to confirm this contract.</p>
-                    {% if 'confirm_lender_contract' in allowed_actions %}
+                    <p class="mb-2">Review and accept the rental terms and conditions to confirm this contract. Once you confirm, the other party will have 24 hours from now to accept their side too.</p>
                     <form method="post" id="confirmRentalForm">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_lender_contract">
                         <button class="btn btn-success btn-block" type="button" data-toggle="modal" data-target="#rentalTcsModal">Review Terms & Confirm</button>
                     </form>
-                    {% endif %}
                     {% include "transaction/rental_tcs_modal.html" %}
-                    {% if 'reinitiate_lender_contract' in allowed_actions %}
-                    <form method="post" class="mt-2">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="reinitiate_lender_contract">
-                        <button class="btn btn-outline-info btn-block" type="submit">Re-send Confirmation Request</button>
-                    </form>
-                    {% endif %}
                 </div>
             </div>
             {% endif %}
 
-            {% if 'reinitiate_lender_contract' in allowed_actions %}
+            {% if lender_contract_resend_available %}
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Awaiting Borrower</h5>
-                    <p class="mb-2">Borrower has not confirmed yet. You can re-send and restart their confirmation window.</p>
+                    <p class="mb-2">The borrower confirmation window has expired. You can re-send the request and start a fresh 24-hour window.</p>
                     <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="reinitiate_lender_contract">
@@ -1086,6 +1082,11 @@
                 </div>
             </div>
             {% endif %}
+            {% if request.user.is_staff and not is_lender and not is_renter %}
+            <div class="alert alert-warning border-warning mt-3 mb-0">
+                Staff view only. You can inspect this transaction, but only the lender and borrower can submit transaction actions.
+            </div>
+            {% endif %}
         </div>
     </div>
     {% else %}
@@ -1406,6 +1407,15 @@ document.querySelectorAll('.star-rating-widget').forEach((widget) => {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;  // 5 MB
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
 
+const imageInput = document.getElementById('id_message_image');
+const videoInput = document.getElementById('id_message_video');
+const dropZone = document.getElementById('messageDropZone');
+const mediaList = document.getElementById('messageMediaList');
+const addImagesBtn = document.getElementById('addImagesBtn');
+const addVideosBtn = document.getElementById('addVideosBtn');
+const messageForm = document.getElementById('messageForm');
+const messageFeedback = document.getElementById('messageFeedback');
+
 if (imageInput && videoInput && dropZone && mediaList && addImagesBtn && addVideosBtn) {
     const imageTransfer = new DataTransfer();
     const videoTransfer = new DataTransfer();
@@ -1571,6 +1581,53 @@ if (messageForm) {
 
 const expandMessageUrl = "{% url 'my_rentalution:expand_message' %}";
 
+const showMessageModal = () => {
+    const modal = document.getElementById('messageModal');
+    if (!modal) {
+        return;
+    }
+
+    if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
+        window.jQuery(modal).modal('show');
+        return;
+    }
+
+    modal.classList.add('show');
+    modal.style.display = 'block';
+    modal.removeAttribute('aria-hidden');
+    modal.setAttribute('aria-modal', 'true');
+    document.body.classList.add('modal-open');
+
+    let backdrop = document.getElementById('messageModalBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'messageModalBackdrop';
+        backdrop.className = 'modal-backdrop fade show';
+        document.body.appendChild(backdrop);
+    }
+};
+
+const hideMessageModal = () => {
+    const modal = document.getElementById('messageModal');
+    if (!modal) {
+        return;
+    }
+
+    if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
+        window.jQuery(modal).modal('hide');
+        return;
+    }
+
+    modal.classList.remove('show');
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open');
+    const backdrop = document.getElementById('messageModalBackdrop');
+    if (backdrop && backdrop.parentNode) {
+        backdrop.parentNode.removeChild(backdrop);
+    }
+};
+
 const setMessageAsRead = (messageRef) => {
     const row = document.getElementById(`message_row_${messageRef}`);
     if (row) {
@@ -1598,6 +1655,27 @@ const setMessageAsRead = (messageRef) => {
 };
 
 const openMessageModal = (messageRef) => {
+    const errorNode = document.getElementById('messageModalError');
+    const bodyNode = document.getElementById('messageModalContent');
+    const titleNode = document.getElementById('messageModalLabel');
+    const fromNode = document.getElementById('messageModalFrom');
+    const toNode = document.getElementById('messageModalTo');
+    const dateNode = document.getElementById('messageModalDateTime');
+
+    if (errorNode) {
+        errorNode.textContent = '';
+        errorNode.classList.add('d-none');
+    }
+    if (bodyNode) {
+        bodyNode.textContent = 'Loading message...';
+    }
+    if (titleNode) titleNode.textContent = 'Loading...';
+    if (fromNode) fromNode.textContent = '';
+    if (toNode) toNode.textContent = '';
+    if (dateNode) dateNode.textContent = '';
+
+    showMessageModal();
+
     fetch(`${expandMessageUrl}?message_id=${encodeURIComponent(messageRef)}`, {
         headers: {
             'X-Requested-With': 'XMLHttpRequest'
@@ -1612,32 +1690,35 @@ const openMessageModal = (messageRef) => {
         .then((data) => {
             setMessageAsRead(messageRef);
 
-            const bodyNode = document.getElementById('messageModalContent');
             if (bodyNode) {
                 bodyNode.textContent = data.body || '';
                 bodyNode.style.wordWrap = 'break-word';
             }
 
-            const titleNode = document.getElementById('messageModalLabel');
             if (titleNode) titleNode.textContent = data.subject || '';
 
-            const fromNode = document.getElementById('messageModalFrom');
             if (fromNode) fromNode.textContent = data.from || '';
 
-            const toNode = document.getElementById('messageModalTo');
             if (toNode) toNode.textContent = data.to || '';
 
-            const dateNode = document.getElementById('messageModalDateTime');
             if (dateNode) dateNode.textContent = data.created || '';
-
-            if (window.jQuery && jQuery('#messageModal').length) {
-                jQuery('#messageModal').modal('show');
-            }
         })
-        .catch(() => {
-            // Keep failure silent in UI.
+        .catch((error) => {
+            if (errorNode) {
+                errorNode.textContent = 'Unable to load this message. Check your connection and try again.';
+                errorNode.classList.remove('d-none');
+            }
+            if (bodyNode) {
+                bodyNode.textContent = '';
+            }
         });
 };
+
+window.openTransactionMessageModal = openMessageModal;
+
+document.querySelectorAll('#messageModal [data-dismiss="modal"]').forEach((button) => {
+    button.addEventListener('click', hideMessageModal);
+});
 
 document.querySelectorAll('.transaction-messages [id^="expand_message_"]').forEach((button) => {
     button.addEventListener('click', (event) => {
@@ -1663,6 +1744,18 @@ document.querySelectorAll('.transaction-messages .message-row[data-message-id]')
             return;
         }
         event.preventDefault();
+        const messageRef = row.getAttribute('data-message-id');
+        if (messageRef) {
+            openMessageModal(messageRef);
+        }
+    });
+});
+
+document.querySelectorAll('.transaction-messages .message-row[data-message-id]').forEach((row) => {
+    row.addEventListener('touchend', (event) => {
+        if (event.target.closest('a, button, input, textarea, select, label')) {
+            return;
+        }
         const messageRef = row.getAttribute('data-message-id');
         if (messageRef) {
             openMessageModal(messageRef);

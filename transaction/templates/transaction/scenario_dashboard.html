@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="mb-1">Transaction Scenario Dashboard</h3>
+      <div class="text-muted">Seeded walkthrough cases for web, mobile, and Stripe test mode.</div>
+    </div>
+    <a class="btn btn-outline-primary" href="{% url 'transaction:transaction_scenario_dashboard' %}">Refresh</a>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Payment attempts</strong></div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-4"><strong>Success</strong><div>{{ payment_totals.success }}</div></div>
+        <div class="col-md-4"><strong>Failure</strong><div>{{ payment_totals.failure }}</div></div>
+        <div class="col-md-4"><strong>Pending</strong><div>{{ payment_totals.pending }}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body table-responsive">
+      <table class="table table-sm table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Status</th>
+            <th>Buyer</th>
+            <th>Lender</th>
+            <th>Order</th>
+            <th>Updated</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for txn in scenarios %}
+          <tr>
+            <td>{{ txn.transpact_text_status|default:'-' }}</td>
+            <td>{{ txn.get_transaction_status_display }}</td>
+            <td>{{ txn.user_aggressive.username }}</td>
+            <td>{{ txn.user_passive.username }}</td>
+            <td>{% if txn.order_passive %}{{ txn.order_passive.product.name }}{% else %}-{% endif %}</td>
+            <td>{{ txn.amended|date:'d M Y' }}</td>
+            <td>
+              <div><a href="{% url 'transaction:view_transaction' txn.transaction_reference %}">{{ txn.transaction_reference }}</a></div>
+              <div class="text-muted small mt-1">Only the lender and borrower can submit transaction actions.</div>
+              <div class="text-muted small">{{ txn.deposit_resolution_notes|default:txn.enquiry_message }}</div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-muted">No seeded scenarios yet. Run the seed command first.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

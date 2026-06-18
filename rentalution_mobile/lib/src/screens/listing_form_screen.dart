@@ -63,6 +63,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
 
   DateTime? _expiryDate;
   String _letVisibility = 'BOTH';
+  bool _verifiedUsersOnly = false;
   String _collectionPolicy = 'MC';
 
   bool _saving = false;
@@ -167,6 +168,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     _letVisibility = order.letVisibility.isNotEmpty
         ? order.letVisibility
         : 'BOTH';
+    _verifiedUsersOnly = order.verifiedUsersOnly;
     _collectionPolicy = order.collectionPolicy.isNotEmpty
         ? order.collectionPolicy
         : 'MC';
@@ -493,6 +495,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
       'price': double.parse(_priceController.text.trim()),
       'radius_km': int.tryParse(_radiusController.text.trim()) ?? 10,
       'let_visibility': _letVisibility,
+      'verified_users_only': _verifiedUsersOnly,
       'collection_policy': _collectionPolicy,
       'description': _descriptionController.text.trim(),
       'additional_comments': _additionalCommentsController.text.trim(),
@@ -1025,6 +1028,21 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                   setState(() => _letVisibility = value);
                 }
               },
+            ),
+            const SizedBox(height: 12),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _verifiedUsersOnly,
+              onChanged: (value) {
+                setState(() {
+                  _verifiedUsersOnly = value ?? false;
+                });
+              },
+              title: const Text('Verified users only'),
+              subtitle: const Text(
+                'Renter must have completed Stripe identity verification. This is an identity check, not a payment-card check.',
+              ),
+              controlAffinity: ListTileControlAffinity.leading,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(

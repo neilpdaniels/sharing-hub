@@ -1,4 +1,5 @@
 from datetime import timedelta
+import logging
 import random
 import re
 
@@ -22,6 +23,7 @@ from account.models import PaymentMethod, Profile
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
 from common.geocoding import PostcodeGeocoder
+from common.failures import record_site_failure
 from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, OrderImage, Product
 from friends.models import BlockedUser, Friendship, FriendsHelper
 from mobile_api.models import MobileDevice
@@ -62,6 +64,8 @@ from .serializers import (
     TransactionMessageSerializer,
     UserSummarySerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_txn_pin(length=6):
@@ -1095,6 +1099,24 @@ class MobilePaymentMethodConfirmView(APIView):
         return Response(result, status=status.HTTP_200_OK)
 
 
+class MobileIdentityVerificationStartView(APIView):
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (JSONParser,)
+
+    def post(self, request, *args, **kwargs):
+        payment_method_id = (request.data.get('payment_method_id') or '').strip()
+        if not payment_method_id:
+            raise ValidationError('payment_method_id is required.')
+
+        result = stripe_connect_service.charge_user_for_identity_verification(
+            user=request.user,
+            payment_method_id=payment_method_id,
+        )
+        if not result.get('ok'):
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
+
+
 class OrderAccessMixin:
     def _get_order(self):
         order = generics.get_object_or_404(Order, id=self.kwargs['order_id'])
@@ -1508,6 +1530,21 @@ class TransactionListView(generics.ListAPIView):
             return Response(
                 {'error': 'Cannot create transaction for your own order'},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            renter_profile = user.profile
+        except Profile.DoesNotExist:
+            renter_profile = None
+        if order.verified_users_only and not is_profile_kyc_verified(renter_profile):
+            return Response(
+                {
+                    'error': (
+                        'This listing is for verified users only. '
+                        'Complete Stripe identity verification first. '
+                        'That is an identity check, not a payment-card check.'
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         blocked_dates = set(
@@ -2037,7 +2074,14 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             if txn.deposit_collected_placeholder:
                 raise ValidationError('Card setup is no longer available once deposit is collected.')
 
-            payment_card_required = (txn.deposit > 0 or txn.price > 0)
+            payment_card_required = any(
+                (
+                    txn.deposit > 0,
+                    txn.price > 0,
+                    (txn.delivery_cost or 0) > 0,
+                    (txn.rentalution_fee or 0) > 0,
+                )
+            )
             if not payment_card_required:
                 raise ValidationError('Card setup is not required for this transaction.')
 
@@ -2122,6 +2166,27 @@ class TransactionActionView(TransactionAccessMixin, APIView):
 
             payment_capture_result = stripe_connect_service.collect_rental_payment(transaction=txn)
             if not payment_capture_result.get('ok'):
+                record_site_failure(
+                    'Mobile rental payment capture failed',
+                    details=f'Mobile rental payment capture failed for transaction {txn.transaction_reference}. Handover PIN withheld.',
+                    context={
+                        'transaction_id': txn.id,
+                        'transaction_reference': txn.transaction_reference,
+                        'error': payment_capture_result.get('error', ''),
+                        'provider': payment_capture_result.get('provider', 'stripe'),
+                    },
+                )
+                try:
+                    request.user.email_user(
+                        f'Payment retry needed for {txn.transaction_reference}',
+                        (
+                            f'We could not capture the rental payment for transaction {txn.transaction_reference}.\n\n'
+                            f'Error: {payment_capture_result.get("error") or ""}\n\n'
+                            'Please retry the payment before the PIN is released.'
+                        ),
+                    )
+                except Exception:
+                    logger.exception('Failed to email rental payment retry notice to user %s', request.user.id)
                 raise ValidationError(
                     f'Rental payment capture failed. Handover PIN will not be shown until payment succeeds. {payment_capture_result.get("error") or ""}'.strip()
                 )

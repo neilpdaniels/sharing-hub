@@ -16,9 +16,25 @@ from common.models import Order
 from account.models import Profile
 from .models import DisputeCase, Transaction
 from .stripe_connect import stripe_connect_service
+from common.failures import record_site_failure
 
 
 logger = logging.getLogger(__name__)
+
+
+def _notify_payment_failure_parties(transaction, error_message, *, point):
+    subject = f'Payment issue on transaction {transaction.transaction_reference}'
+    message = (
+        f'There was a payment issue during {point} for transaction {transaction.transaction_reference}.\n\n'
+        f'Error: {error_message}\n\n'
+        'Please review the transaction and try again if needed.'
+    )
+    for user in (transaction.user_passive, transaction.user_aggressive):
+        if user and user.email:
+            try:
+                user.email_user(subject, message)
+            except Exception:
+                logger.exception('Failed to email payment failure notice to user %s', user.id)
 
 
 def _in_reminder_window(now):
@@ -761,6 +777,17 @@ def async_collect_deposit_hold(transaction_id):
             transaction.deposit_collection_status = transaction.COLLECT_FAILED
             transaction.save()
             logger.error(f'Deposit collection failed for transaction {transaction.transaction_reference}: {result.get("error")}')
+            record_site_failure(
+                'Deposit hold failed',
+                details=f'Deposit hold failed for transaction {transaction.transaction_reference}.',
+                context={
+                    'transaction_id': transaction.id,
+                    'transaction_reference': transaction.transaction_reference,
+                    'error': result.get('error', ''),
+                    'provider': result.get('provider', 'stripe'),
+                },
+            )
+            _notify_payment_failure_parties(transaction, result.get('error', ''), point='deposit hold')
             
     except Transaction.DoesNotExist:
         logger.error(f'Transaction {transaction_id} not found for deposit collection')
@@ -769,6 +796,13 @@ def async_collect_deposit_hold(transaction_id):
         if transaction is not None:
             transaction.deposit_collection_status = transaction.COLLECT_FAILED
             transaction.save(update_fields=['deposit_collection_status', 'amended'])
+            record_site_failure(
+                'Deposit hold task exception',
+                details=f'Exception while collecting deposit hold for transaction {transaction.transaction_reference}.',
+                exception=e,
+                context={'transaction_id': transaction.id, 'transaction_reference': transaction.transaction_reference},
+            )
+            _notify_payment_failure_parties(transaction, str(e), point='deposit hold')
 
 
 @shared_task

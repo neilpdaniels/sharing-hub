@@ -18,6 +18,12 @@ def get_transaction_notification_payload(user, session=None):
 
     from transaction.models import Transaction, TransactionMessage
 
+    def _lender_agreed_at(txn):
+        return getattr(txn, 'lender_agreed_at', None)
+
+    def _renter_agreed_at(txn):
+        return getattr(txn, 'renter_agreed_at', None)
+
     show_login_notice = bool(session.pop('show_txn_login_notice', False)) if session is not None else False
     today = timezone.localdate()
 
@@ -30,8 +36,8 @@ def get_transaction_notification_payload(user, session=None):
             return True, 'Respond to enquiry'
 
         if status == txn.RENTAL_AGREED:
-            lender_done = bool(txn.lender_agreed_at)
-            renter_done = bool(txn.renter_agreed_at)
+            lender_done = bool(_lender_agreed_at(txn))
+            renter_done = bool(_renter_agreed_at(txn))
 
             if not lender_done and is_lender:
                 return True, 'Confirm contract'
@@ -77,23 +83,13 @@ def get_transaction_notification_payload(user, session=None):
 
     lender_pending = Q(user_passive=user) & (
         Q(transaction_status=Transaction.RENTAL_ENQUIRY) |
-        Q(transaction_status=Transaction.RENTAL_AGREED, lender_agreement_pending_at__isnull=False, lender_agreed_at__isnull=True) |
-        Q(transaction_status=Transaction.RENTAL_AGREED, lender_agreed_at__isnull=False, renter_agreed_at__isnull=False) |
+        Q(transaction_status=Transaction.RENTAL_AGREED) |
         Q(transaction_status=Transaction.RENTAL_RETURNED_DEPOSIT_PENDING)
     )
 
     renter_pending = Q(user_aggressive=user) & (
-        Q(transaction_status=Transaction.RENTAL_AGREED, renter_agreed_at__isnull=True) |
-        Q(
-            transaction_status=Transaction.RENTAL_AGREED,
-            renter_agreed_at__isnull=False,
-            deposit__gt=0,
-        ) & ~Q(deposit_card_setup_status=Transaction.CARD_READY) |
-        Q(
-            transaction_status=Transaction.RENTAL_AGREED,
-            renter_agreed_at__isnull=False,
-            price__gt=0,
-        ) & ~Q(deposit_card_setup_status=Transaction.CARD_READY) |
+        Q(transaction_status=Transaction.RENTAL_AGREED) &
+        ~Q(deposit_card_setup_status=Transaction.CARD_READY) |
         Q(transaction_status=Transaction.RENTAL_DAY_AWAITING_VERIFICATION) |
         Q(transaction_status=Transaction.RENTAL_ONGOING) |
         Q(transaction_status=Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION)

@@ -618,6 +618,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     is_favourite = serializers.SerializerMethodField()
     money_earned = serializers.SerializerMethodField()
     money_pending = serializers.SerializerMethodField()
+    verified_users_only = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Order
@@ -652,6 +653,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'mates_rates',
             'mates_deposit',
             'let_visibility',
+            'verified_users_only',
             'collection_policy',
             'delivery_cost',
             'delivery_within_km',
@@ -790,6 +792,7 @@ class OrderAmendSerializer(serializers.ModelSerializer):
             'radius_km',
             'guaranteed',
             'let_visibility',
+            'verified_users_only',
             'deposit',
             'mates_rates',
             'mates_deposit',
@@ -830,6 +833,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             'latitude',
             'longitude',
             'let_visibility',
+            'verified_users_only',
             'price_bands',
         )
 

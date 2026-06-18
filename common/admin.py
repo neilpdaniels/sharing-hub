@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Order, Category, CategoryAttribute, CategoryTag, Product, OrderImage, System
+from .models import Order, Category, CategoryAttribute, CategoryTag, Product, OrderImage, System, SiteFailure
 from .models import BestPricedForCategory, BestPricedForProduct
 from .models import TransactionFee, TransactionFeeBand
 from simple_history.admin import SimpleHistoryAdmin
@@ -57,6 +57,15 @@ class TransactionFeeAdmin(admin.ModelAdmin):
 @admin.register(TransactionFeeBand)
 class TransactionFeeBandAdmin(admin.ModelAdmin):
     list_display = ('transaction_fee', 'price', 'max_weight', 'max_price')
+
+
+@admin.register(SiteFailure)
+class SiteFailureAdmin(admin.ModelAdmin):
+    list_display = ('title', 'created_at', 'resolved')
+    list_filter = ('resolved', 'created_at')
+    search_fields = ('title', 'details')
+    readonly_fields = ('title', 'details', 'context', 'created_at')
+    ordering = ('-created_at',)
 
 # admin.site.register(Order)
 # admin.site.register(Category)

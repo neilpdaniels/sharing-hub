@@ -2,8 +2,11 @@ from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
 
 from account.forms import AvatarEditForm, UserRegistrationStartForm
+from account.models import Profile
 
 
 class UserRegistrationStartFormTests(TestCase):
@@ -88,3 +91,59 @@ class UsernameCheckTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertFalse(response.json()['available'])
 		self.assertEqual(response.json()['error'], 'Username not available.')
+
+
+class StripeIdentityVerificationTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(
+			username='kyc-user',
+			email='kyc-user@example.com',
+			password='secret',
+			first_name='Kyc',
+			last_name='User',
+		)
+		self.profile = Profile.objects.create(
+			user=self.user,
+			email_confirmed=True,
+			mobile_verified=True,
+			address_verified=True,
+			date_of_birth=date(1990, 1, 1),
+			mobile_number='07123456789',
+			address_line_1='1 Old Street',
+			address_line_2='',
+			town='London',
+			county='',
+			postcode='SW1A1AA',
+			stripe_identity_verified=False,
+		)
+
+	def test_address_change_resets_stripe_identity_verification(self):
+		self.profile.stripe_identity_verified = True
+		self.profile.stripe_identity_verified_at = timezone.now()
+		self.profile.stripe_identity_verification_id = 'verif_123'
+		self.profile.save(update_fields=[
+			'stripe_identity_verified',
+			'stripe_identity_verified_at',
+			'stripe_identity_verification_id',
+		])
+
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse('edit'),
+			{
+				'first_name': 'Kyc',
+				'last_name': 'User',
+				'date_of_birth': '01/01/1990',
+				'mobile_number': '07123456789',
+				'address_line_1': '2 New Street',
+				'address_line_2': '',
+				'town': 'London',
+				'county': '',
+				'postcode': 'SW1A1AA',
+			},
+		)
+
+		self.assertEqual(response.status_code, 302)
+		self.profile.refresh_from_db()
+		self.assertFalse(self.profile.stripe_identity_verified)
+		self.assertFalse(bool(self.profile.stripe_identity_verification_id))

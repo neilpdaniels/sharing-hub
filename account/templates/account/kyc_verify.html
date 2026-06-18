@@ -17,7 +17,8 @@
             {% else %}
             <div class="alert alert-warning">
                 <strong>⚠️ Verification Pending</strong>
-                <p>KYC verification via Stripe is currently being configured for our platform.</p>
+                <p>KYC verification via Stripe is available once you have a saved payment method on your account.</p>
+                <p>You will be charged before the verification session begins. If you stop part-way through, the charge still applies.</p>
                 <p>Once enabled, you'll be able to verify your identity to rent high-risk items like electronics, jewelry, and other valuable goods.</p>
             </div>
 
@@ -68,17 +69,40 @@
                 <div class="card-body">
                     <h5 class="card-title">How It Works</h5>
                     <ol>
-                        <li>Click the button below to start verification</li>
-                        <li>Follow the Stripe Identity verification process</li>
-                        <li>Your information will be securely verified</li>
+                        <li>Add a payment method to your account</li>
+                        <li>Start verification and pay the verification fee</li>
+                        <li>Follow the Stripe verification process</li>
                         <li>Once verified, you can immediately start renting high-risk items</li>
                     </ol>
                 </div>
             </div>
 
-            <a href="https://support.stripe.com/questions/about-stripe-identity" target="_blank" class="btn btn-primary btn-lg">
-                Start Verification (Coming Soon)
+            <div class="alert alert-info mb-3">
+                <strong>Important:</strong> verification is charged before it begins. If your address changes later, you will need to verify again.
+            </div>
+            {% if user_payment_methods %}
+            <form method="post" class="card card-body mb-3">
+                {% csrf_token %}
+                <h5 class="card-title">Start paid verification</h5>
+                <p class="mb-2">Select a saved card. We will charge the verification fee before Stripe Identity starts.</p>
+                <div class="form-group">
+                    <label for="payment_method_id">Saved payment method</label>
+                    <select id="payment_method_id" name="payment_method_id" class="form-control" required>
+                        <option value="">-- Choose a card --</option>
+                        {% for pm in user_payment_methods %}
+                        <option value="{{ pm.id }}" {% if pm.is_default %}selected{% endif %}>
+                            {{ pm.card_brand }} ending {{ pm.card_last4 }}{% if pm.is_default %} (Default){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg">Pay and start verification</button>
+            </form>
+            {% else %}
+            <a href="{% url 'account:edit' %}" class="btn btn-primary btn-lg">
+                Add a payment method first
             </a>
+            {% endif %}
             {% endif %}
         </div>
     </div>

@@ -22,6 +22,7 @@ class OrderSummary {
     required this.latitude,
     required this.longitude,
     required this.letVisibility,
+    required this.verifiedUsersOnly,
     required this.collectionPolicy,
     required this.deposit,
     required this.matesRates,
@@ -65,6 +66,7 @@ class OrderSummary {
   final double? latitude;
   final double? longitude;
   final String letVisibility;
+  final bool verifiedUsersOnly;
   final String collectionPolicy;
   final double deposit;
   final double matesRates;
@@ -121,6 +123,7 @@ class OrderSummary {
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
       letVisibility: json['let_visibility'] as String? ?? '',
+      verifiedUsersOnly: json['verified_users_only'] as bool? ?? false,
       collectionPolicy: json['collection_policy'] as String? ?? '',
       deposit: (json['deposit'] as num?)?.toDouble() ?? 0,
       matesRates: (json['mates_rates'] as num?)?.toDouble() ?? 0,

@@ -2,6 +2,8 @@ import logging
 
 from django.conf import settings
 from django.utils import timezone
+from common.failures import record_site_failure
+from .models import PaymentAttempt
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,26 @@ class StripeConnectService:
             return int(round(max(0, float(amount or 0)) * 100))
         except (TypeError, ValueError):
             return 0
+
+    def _identity_verification_minor_amount(self):
+        return self._to_minor_units(getattr(settings, 'STRIPE_IDENTITY_VERIFICATION_AMOUNT', 1.50))
+
+    def _record_payment_attempt(self, *, transaction, status, failure_point, amount=0, currency='gbp', stripe_object_id='', card_brand='', card_funding='', error_message='', context=None):
+        try:
+            PaymentAttempt.objects.create(
+                transaction=transaction,
+                status=status,
+                failure_point=failure_point,
+                amount=amount,
+                currency=currency,
+                stripe_object_id=stripe_object_id or '',
+                card_brand=card_brand or '',
+                card_funding=card_funding or '',
+                error_message=error_message or '',
+                context=context or {},
+            )
+        except Exception:
+            logger.exception('Unable to record payment attempt for %s', getattr(transaction, 'transaction_reference', 'unknown'))
 
     def _rental_total_minor(self, transaction):
         rental_amount = (transaction.quantity or 0) * (transaction.price or 0)
@@ -223,7 +245,7 @@ class StripeConnectService:
             )
 
             verify_intent = stripe.PaymentIntent.create(
-                amount=30,
+                amount=self._identity_verification_minor_amount(),
                 currency='gbp',
                 customer=customer_id,
                 payment_method=payment_method_id,
@@ -261,6 +283,16 @@ class StripeConnectService:
                 },
             )
 
+            profile = user.profile
+            profile.stripe_identity_verified = True
+            profile.stripe_identity_verified_at = timezone.now()
+            profile.stripe_identity_verification_id = test_reference
+            profile.save(update_fields=[
+                'stripe_identity_verified',
+                'stripe_identity_verified_at',
+                'stripe_identity_verification_id',
+            ])
+
             return {
                 'ok': True,
                 'provider': 'stripe',
@@ -269,17 +301,96 @@ class StripeConnectService:
                 'card_last4': card_last4,
                 'cardholder_name': cardholder_name,
                 'test_hold_status': 'success',
-                'test_hold_amount': 0.30,
+                'test_hold_amount': self._identity_verification_minor_amount() / 100,
                 'test_hold_reference': test_reference,
                 'stripe_customer_id': customer_id,
                 'stripe_setup_intent_id': stripe_setup_intent_id,
                 'stripe_payment_method_id': stripe_payment_method_id,
+                'stripe_identity_verified': True,
             }
         except Exception as exc:
             logger.exception('Stripe user card confirmation failed: %s', exc)
             return {
                 'ok': False,
                 'error': f'Failed to confirm Stripe card setup: {str(exc)}'
+            }
+
+    def charge_user_for_identity_verification(self, *, user, payment_method_id):
+        """
+        Charge the user before starting Stripe identity verification.
+        """
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+
+        payment_method_id = (payment_method_id or '').strip()
+        if not payment_method_id:
+            return {
+                'ok': False,
+                'error': 'A saved payment method is required before starting verification.'
+            }
+
+        try:
+            payment_method = stripe.PaymentMethod.retrieve(payment_method_id)
+            card_data = getattr(payment_method, 'card', {}) or {}
+            card_brand = (getattr(card_data, 'brand', None) or 'Card').title()
+            card_funding = (getattr(card_data, 'funding', None) or '').lower()
+            card_last4 = getattr(card_data, 'last4', None) or 'xxxx'
+
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.get_full_name() or user.username,
+                metadata={'user_id': str(user.id)},
+            )
+            customer_id = getattr(customer, 'id', None)
+            stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
+
+            charge_intent = stripe.PaymentIntent.create(
+                amount=self._identity_verification_minor_amount(),
+                currency='gbp',
+                customer=customer_id,
+                payment_method=payment_method_id,
+                confirmation_method='automatic',
+                confirm=True,
+                off_session=True,
+                metadata={
+                    'user_id': str(user.id),
+                    'purpose': 'identity_verification_fee',
+                },
+            )
+            pi_status = getattr(charge_intent, 'status', None)
+            if pi_status not in ('succeeded', 'processing'):
+                return {
+                    'ok': False,
+                    'error': f'Identity verification payment failed (status: {pi_status}).'
+                }
+
+            profile = user.profile
+            profile.stripe_identity_verification_id = getattr(charge_intent, 'id', '') or ''
+            profile.stripe_identity_verified = False
+            profile.stripe_identity_verified_at = None
+            profile.save(update_fields=[
+                'stripe_identity_verification_id',
+                'stripe_identity_verified',
+                'stripe_identity_verified_at',
+            ])
+
+            return {
+                'ok': True,
+                'provider': 'stripe',
+                'charged_amount': self._identity_verification_minor_amount() / 100,
+                'payment_intent_status': pi_status,
+                'payment_intent_id': getattr(charge_intent, 'id', '') or '',
+                'payment_method_id': payment_method_id,
+                'card_brand': card_brand,
+                'card_funding': card_funding,
+                'card_last4': card_last4,
+            }
+        except Exception as exc:
+            logger.exception('Stripe identity verification charge failed: %s', exc)
+            return {
+                'ok': False,
+                'error': f'Failed to charge for verification: {str(exc)}'
             }
 
     def confirm_card_setup(self, *, transaction, setup_intent_id, payment_method_id):
@@ -455,6 +566,14 @@ class StripeConnectService:
                 existing_intent = stripe.PaymentIntent.retrieve(existing_reference)
                 existing_status = getattr(existing_intent, 'status', '')
                 if existing_status in ('requires_capture', 'succeeded', 'processing'):
+                    self._record_payment_attempt(
+                        transaction=transaction,
+                        status=PaymentAttempt.STATUS_SUCCESS,
+                        failure_point=PaymentAttempt.POINT_DEPOSIT_AUTH,
+                        amount=deposit_minor / 100.0,
+                        stripe_object_id=existing_reference,
+                        context={'payment_intent_status': existing_status, 'existing_reference': True},
+                    )
                     return {
                         'ok': True,
                         'provider': 'stripe',
@@ -491,10 +610,40 @@ class StripeConnectService:
 
             status = getattr(intent, 'status', '')
             if status not in ('requires_capture', 'succeeded', 'processing'):
+                self._record_payment_attempt(
+                    transaction=transaction,
+                    status=PaymentAttempt.STATUS_FAILURE,
+                    failure_point=PaymentAttempt.POINT_DEPOSIT_AUTH,
+                    amount=deposit_minor / 100.0,
+                    stripe_object_id=getattr(intent, 'id', ''),
+                    error_message=f'Deposit authorization failed (status: {status}).',
+                    context={'payment_intent_status': status},
+                )
                 return {
                     'ok': False,
                     'error': f'Deposit authorization failed (status: {status}).'
                 }
+
+            card_brand = ''
+            card_funding = ''
+            try:
+                pm = stripe.PaymentMethod.retrieve(payment_method_id)
+                card = getattr(pm, 'card', {}) or {}
+                card_brand = getattr(card, 'brand', '') or ''
+                card_funding = getattr(card, 'funding', '') or ''
+            except Exception:
+                pass
+
+            self._record_payment_attempt(
+                transaction=transaction,
+                status=PaymentAttempt.STATUS_SUCCESS,
+                failure_point=PaymentAttempt.POINT_DEPOSIT_AUTH,
+                amount=deposit_minor / 100.0,
+                stripe_object_id=getattr(intent, 'id', ''),
+                card_brand=card_brand,
+                card_funding=card_funding,
+                context={'payment_intent_status': status},
+            )
 
             return {
                 'ok': True,
@@ -507,6 +656,13 @@ class StripeConnectService:
             }
         except Exception as exc:
             logger.exception('Stripe deposit hold collection failed: %s', exc)
+            self._record_payment_attempt(
+                transaction=transaction,
+                status=PaymentAttempt.STATUS_FAILURE,
+                failure_point=PaymentAttempt.POINT_DEPOSIT_AUTH,
+                amount=deposit_minor / 100.0,
+                error_message=str(exc),
+            )
             return {
                 'ok': False,
                 'error': f'Failed to collect deposit hold: {str(exc)}'
@@ -575,10 +731,40 @@ class StripeConnectService:
 
             status = getattr(intent, 'status', '')
             if status not in ('succeeded', 'processing', 'requires_capture'):
+                self._record_payment_attempt(
+                    transaction=transaction,
+                    status=PaymentAttempt.STATUS_FAILURE,
+                    failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+                    amount=total_minor / 100.0,
+                    stripe_object_id=getattr(intent, 'id', ''),
+                    error_message=f'Rental payment capture failed (status: {status}).',
+                    context={'payment_intent_status': status},
+                )
                 return {
                     'ok': False,
                     'error': f'Rental payment capture failed (status: {status}).'
                 }
+
+            card_brand = ''
+            card_funding = ''
+            try:
+                pm = stripe.PaymentMethod.retrieve(payment_method_id)
+                card = getattr(pm, 'card', {}) or {}
+                card_brand = getattr(card, 'brand', '') or ''
+                card_funding = getattr(card, 'funding', '') or ''
+            except Exception:
+                pass
+
+            self._record_payment_attempt(
+                transaction=transaction,
+                status=PaymentAttempt.STATUS_SUCCESS,
+                failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+                amount=total_minor / 100.0,
+                stripe_object_id=getattr(intent, 'id', ''),
+                card_brand=card_brand,
+                card_funding=card_funding,
+                context={'payment_intent_status': status},
+            )
 
             return {
                 'ok': True,
@@ -592,6 +778,13 @@ class StripeConnectService:
             }
         except Exception as exc:
             logger.exception('Stripe rental payment capture failed: %s', exc)
+            self._record_payment_attempt(
+                transaction=transaction,
+                status=PaymentAttempt.STATUS_FAILURE,
+                failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+                amount=total_minor / 100.0,
+                error_message=str(exc),
+            )
             return {
                 'ok': False,
                 'error': f'Failed to capture rental payment: {str(exc)}'
@@ -629,6 +822,14 @@ class StripeConnectService:
             if status == 'requires_capture':
                 if charge_minor == 0:
                     canceled = stripe.PaymentIntent.cancel(reference)
+                    self._record_payment_attempt(
+                        transaction=transaction,
+                        status=PaymentAttempt.STATUS_SUCCESS,
+                        failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+                        amount=0,
+                        stripe_object_id=getattr(canceled, 'id', reference),
+                        context={'resolution_action': 'release_hold'},
+                    )
                     return {
                         'ok': True,
                         'provider': 'stripe',
@@ -644,6 +845,14 @@ class StripeConnectService:
                     amount_to_capture=charge_minor,
                 )
                 capture_action = 'capture_full' if charge_minor == deposit_minor else 'capture_partial'
+                self._record_payment_attempt(
+                    transaction=transaction,
+                    status=PaymentAttempt.STATUS_SUCCESS,
+                    failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+                    amount=charge_minor / 100.0,
+                    stripe_object_id=getattr(captured, 'id', reference),
+                    context={'resolution_action': capture_action},
+                )
                 return {
                     'ok': True,
                     'provider': 'stripe',
@@ -680,6 +889,14 @@ class StripeConnectService:
                     },
                 )
                 refund_action = 'refund_full' if charge_minor == 0 else 'refund_partial'
+                self._record_payment_attempt(
+                    transaction=transaction,
+                    status=PaymentAttempt.STATUS_SUCCESS,
+                    failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+                    amount=charge_minor / 100.0,
+                    stripe_object_id=getattr(refund, 'id', reference),
+                    context={'resolution_action': refund_action},
+                )
                 return {
                     'ok': True,
                     'provider': 'stripe',
@@ -712,6 +929,13 @@ class StripeConnectService:
             }
         except Exception as exc:
             logger.exception('Stripe deposit settlement failed: %s', exc)
+            self._record_payment_attempt(
+                transaction=transaction,
+                status=PaymentAttempt.STATUS_FAILURE,
+                failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+                amount=charge_minor / 100.0,
+                error_message=str(exc),
+            )
             return {
                 'ok': False,
                 'error': f'Failed to resolve deposit hold: {str(exc)}'

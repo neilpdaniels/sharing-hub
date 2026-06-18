@@ -179,6 +179,21 @@ class CategoryAttribute(models.Model):
         label = self.name or f'Attribute {self.order}'
         return f'{self.category.title}: {label}'
 
+
+class SiteFailure(models.Model):
+    title = models.CharField(max_length=255)
+    details = models.TextField(blank=True)
+    context = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'{self.title} ({self.created_at:%d %b %Y %H:%M})'
+
 class Product(models.Model):
     category_id = models.ForeignKey(Category, on_delete=models.CASCADE)
     tags = models.ManyToManyField(CategoryTag, blank=True, related_name='products')
@@ -332,6 +347,10 @@ class Order(models.Model):
         default=FRIENDS_AND_PUBLIC,
         db_index=True,
         help_text='Who can see and rent this listing'
+    )
+    verified_users_only = models.BooleanField(
+        default=False,
+        help_text='Only users who have completed Stripe identity verification can enquire on this listing.',
     )
 
     # Letting-specific fields

@@ -45,10 +45,11 @@ from .forms import (
     UserRegistrationStartForm,
     UserRegistrationVerifyForm,
 )
-from .models import Profile, RegistrationVerification
+from .models import PaymentMethod, Profile, RegistrationVerification
 from .services import RegistrationService
 from .tasks import send_random_mail
 from .tokens import account_activation_token
+from transaction.stripe_connect import stripe_connect_service
 
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,25 @@ def kyc_verify(request):
     """Render KYC verification status page."""
     profile = get_object_or_404(Profile, user=request.user)
     is_verified = is_profile_kyc_verified(profile)
+    user_payment_methods = PaymentMethod.objects.filter(user=request.user).order_by('-is_default', '-created_at')
+
+    if request.method == 'POST':
+        payment_method_id = (request.POST.get('payment_method_id') or '').strip()
+        if not payment_method_id:
+            messages.error(request, 'Please select a saved payment method first.')
+        else:
+            result = stripe_connect_service.charge_user_for_identity_verification(
+                user=request.user,
+                payment_method_id=payment_method_id,
+            )
+            if not result.get('ok'):
+                messages.error(request, result.get('error') or 'Could not start verification.')
+            else:
+                messages.success(
+                    request,
+                    'Verification fee charged. Your Stripe verification can now begin.',
+                )
+                return redirect(reverse('kyc_verify'))
 
     context = {
         'is_verified': is_verified,
@@ -228,6 +248,8 @@ def kyc_verify(request):
         'email_confirmed': profile.email_confirmed,
         'mobile_verified': profile.mobile_verified,
         'address_verified': profile.address_verified,
+        'user_payment_methods': user_payment_methods,
+        'can_start_paid_verification': bool(user_payment_methods),
     }
     return render(request, 'account/kyc_verify.html', context)
 
@@ -542,6 +564,14 @@ def edit(request):
                 if address_changed and profile.address_verified:
                     updated_profile.address_verified = False
                     messages.warning(request, 'Address verification has been reset because your address changed.')
+                if address_changed and profile.stripe_identity_verified:
+                    updated_profile.stripe_identity_verified = False
+                    updated_profile.stripe_identity_verified_at = None
+                    updated_profile.stripe_identity_verification_id = ''
+                    messages.warning(
+                        request,
+                        'Stripe identity verification has been reset because your address changed.',
+                    )
 
                 updated_profile.save()
             else:

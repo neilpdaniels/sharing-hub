@@ -21,8 +21,11 @@ class KycScreen extends StatefulWidget {
 
 class _KycScreenState extends State<KycScreen> {
   bool _loading = true;
+  bool _submitting = false;
   String? _error;
   KycStatus? _status;
+  List<PaymentMethodSummary> _paymentMethods = const [];
+  int? _selectedPaymentMethodId;
 
   @override
   void initState() {
@@ -43,11 +46,21 @@ class _KycScreenState extends State<KycScreen> {
       final status = await widget.accountRepository.fetchKycStatus(
         accessToken: token,
       );
+      final paymentMethods = await widget.accountRepository.fetchPaymentMethods(
+        accessToken: token,
+      );
       if (!mounted) {
         return;
       }
       setState(() {
         _status = status;
+        _paymentMethods = paymentMethods;
+        _selectedPaymentMethodId ??= paymentMethods.isEmpty
+            ? null
+            : paymentMethods.firstWhere(
+                (pm) => pm.isDefault,
+                orElse: () => paymentMethods.first,
+              ).id;
       });
     } catch (e) {
       if (!mounted) {
@@ -77,6 +90,55 @@ class _KycScreenState extends State<KycScreen> {
         Expanded(child: Text(label)),
       ],
     );
+  }
+
+  Future<void> _startVerification() async {
+    final token = widget.accessToken;
+    if (token == null || token.isEmpty) {
+      return;
+    }
+    final paymentMethodId = _selectedPaymentMethodId;
+    if (paymentMethodId == null) {
+      setState(() {
+        _error = 'Please add and select a saved payment method first.';
+      });
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.accountRepository.startPaidKycVerification(
+        accessToken: token,
+        paymentMethodId: paymentMethodId,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['message']?.toString() ??
+                'Verification fee charged. You can now continue with verification.',
+          ),
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -123,7 +185,7 @@ class _KycScreenState extends State<KycScreen> {
                         Text(
                           status?.isVerified == true
                               ? 'Your identity currently satisfies the platform verification requirement.'
-                              : 'KYC is still being configured on the web flow, but these checks already matter for rentals that need extra trust.',
+                              : 'Stripe verification is paid and must be charged before the verification session begins. If you stop part-way through, the charge still applies. If your address changes later, you will need to verify again.',
                         ),
                         const SizedBox(height: 16),
                         _checkRow('Email confirmed', status?.emailConfirmed ?? false),
@@ -143,14 +205,57 @@ class _KycScreenState extends State<KycScreen> {
                 ),
                 const SizedBox(height: 12),
                 Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.open_in_browser),
-                    title: const Text('Open web verification'),
-                    subtitle: const Text('Continue in the existing web KYC page'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: status?.webUrl == null || status!.webUrl.isEmpty
-                        ? null
-                        : () {},
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pay and start verification',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Pick a saved card. We charge the fee before the Stripe verification session begins.',
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int>(
+                          initialValue: _selectedPaymentMethodId,
+                          decoration: const InputDecoration(
+                            labelText: 'Saved payment method',
+                          ),
+                          items: _paymentMethods
+                              .map(
+                                (pm) => DropdownMenuItem(
+                                  value: pm.id,
+                                  child: Text(
+                                    '${pm.cardBrand} ending ${pm.cardLast4}${pm.isDefault ? ' (Default)' : ''}',
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: _submitting
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _selectedPaymentMethodId = value;
+                                  });
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: _submitting || _selectedPaymentMethodId == null
+                                ? null
+                                : _startVerification,
+                            child: Text(
+                              _submitting ? 'Charging...' : 'Pay and start verification',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

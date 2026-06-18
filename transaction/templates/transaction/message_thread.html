@@ -1,0 +1,323 @@
+{% if messages_|length > 0 %}
+<div class="transaction-thread" aria-live="polite">
+    {% for message in messages_ %}
+    <div
+        class="message-row thread-message {{ message.message_alignment_class|default:'message-card--center' }} {% if message.include_admin or message.is_system_generated %}thread-message--admin{% endif %} {% if message.read_by_user_to %}is-read{% else %}is-unread{% endif %}"
+        id="message_row_{{ message.id }}"
+        data-message-id="{{ message.id }}"
+        role="button"
+        tabindex="0"
+        aria-label="Open message {{ message.id }}"
+        onclick="const btn=document.getElementById('expand_message_{{ message.id }}'); if (btn) { btn.click(); return false; }"
+        onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); const btn=document.getElementById('expand_message_{{ message.id }}'); if (btn) { btn.click(); return false; } }"
+    >
+        <button
+            type="button"
+            class="d-none"
+            id="expand_message_{{ message.id }}"
+            data-message-id="{{ message.id }}"
+            aria-hidden="true"
+            tabindex="-1"
+            onclick="if (window.openTransactionMessageModal) { window.openTransactionMessageModal('{{ message.id }}'); return false; }"
+        ></button>
+        <div class="thread-message-time">{{ message.created|date:'d/m/Y H:i' }}</div>
+        <div class="thread-message-sender">
+            {% if message.include_admin or message.is_system_generated %}
+                Admin
+            {% else %}
+                {{ message.user_from.first_name|default:message.user_from.get_full_name|default:message.user_from.username }}
+            {% endif %}
+        </div>
+        {% if message.preview_text %}
+        <div class="thread-message-body">{{ message.preview_text }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-light border">No messages yet.</div>
+{% endif %}
+
+<div class="modal fade" id="messageModal" tabindex="-1" role="dialog" aria-labelledby="messageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="messageModalLabel"></h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="container-fluid">
+                    <div id="messageModalError" class="alert alert-danger d-none mb-3" role="alert"></div>
+                    <div class="message-meta-grid">
+                        <div class="message-meta-item">
+                            <div class="message-meta-label">Date / time</div>
+                            <div class="message-meta-value" id="messageModalDateTime"></div>
+                        </div>
+                        <div class="message-meta-item">
+                            <div class="message-meta-label">From</div>
+                            <div class="message-meta-value" id="messageModalFrom"></div>
+                        </div>
+                        <div class="message-meta-item">
+                            <div class="message-meta-label">To</div>
+                            <div class="message-meta-value" id="messageModalTo"></div>
+                        </div>
+                    </div>
+                    <div class="message-body-shell">
+                        <span id="messageModalContent"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .transaction-thread {
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+    }
+
+    .thread-message {
+        position: relative;
+        max-width: 76%;
+        padding: 0.9rem 1rem 0.85rem;
+        border: 1px solid #cfe0ef;
+        border-radius: 18px;
+        background: linear-gradient(180deg, #fff8ef 0%, #fffdf8 100%);
+        box-shadow: 0 8px 22px rgba(25, 44, 64, 0.05);
+        overflow: hidden;
+        cursor: pointer;
+    }
+
+    .thread-message::after {
+        content: '';
+        position: absolute;
+        bottom: 0.75rem;
+        width: 0;
+        height: 0;
+        border: 0.55rem solid transparent;
+        pointer-events: none;
+    }
+
+    .thread-message--center,
+    .thread-message--admin {
+        align-self: center;
+        max-width: 70%;
+    }
+
+    .thread-message--outgoing {
+        align-self: flex-end;
+        border-color: #f0c07b;
+        background: linear-gradient(180deg, #fff1e2 0%, #fffaf3 100%);
+        border-radius: 18px 18px 4px 18px;
+    }
+
+    .thread-message--incoming {
+        align-self: flex-start;
+        border-color: #8fd7d0;
+        background: linear-gradient(180deg, #e7fbf8 0%, #f6fffd 100%);
+        border-radius: 18px 18px 18px 4px;
+    }
+
+    .thread-message--outgoing::after {
+        right: -1.05rem;
+        border-left-color: #fff7ea;
+        border-right: 0;
+    }
+
+    .thread-message--incoming::after {
+        left: -1.05rem;
+        border-right-color: #e8fbf8;
+        border-left: 0;
+    }
+
+    .thread-message--admin {
+        border-radius: 6px;
+        background: linear-gradient(180deg, #f1f3f5 0%, #e5e8ec 100%);
+        border-color: #cbd4dd;
+    }
+
+    .thread-message--admin::after {
+        display: none;
+    }
+
+    .thread-message-time {
+        font-size: 0.78rem;
+        color: #5b6672;
+        text-align: right;
+        margin-bottom: 0.15rem;
+    }
+
+    .thread-message-sender {
+        font-size: 0.86rem;
+        font-weight: 700;
+        color: #2b4863;
+        margin-bottom: 0.35rem;
+    }
+
+    .thread-message-body {
+        font-size: 1rem;
+        line-height: 1.55;
+        color: #24384f;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+    }
+
+    @media (max-width: 767.98px) {
+        .thread-message,
+        .thread-message--center,
+        .thread-message--admin {
+            max-width: 100%;
+            align-self: stretch;
+        }
+    }
+
+    #messageModal .modal-dialog {
+        max-width: min(940px, 92vw);
+    }
+
+    #messageModal .modal-content {
+        border: 0;
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 24px 80px rgba(11, 26, 39, 0.28);
+        background: #fff;
+    }
+
+    #messageModal .modal-header {
+        padding: 1.05rem 1.35rem;
+        background: linear-gradient(135deg, #2ec4b6 0%, #22b8cf 100%);
+        color: #fff;
+        border-bottom: 0;
+        align-items: center;
+    }
+
+    #messageModal .modal-title {
+        font-size: 1.08rem;
+        font-weight: 800;
+        line-height: 1.25;
+        margin: 0;
+        padding-right: 1rem;
+    }
+
+    #messageModal .modal-header .close {
+        color: #fff;
+        opacity: 0.95;
+        text-shadow: none;
+        font-size: 1.8rem;
+        padding: 0.25rem 0.5rem;
+        margin: -0.25rem -0.25rem -0.25rem auto;
+    }
+
+    #messageModal .modal-header .close:hover,
+    #messageModal .modal-header .close:focus {
+        opacity: 1;
+        color: #fff;
+    }
+
+    #messageModal .modal-body {
+        padding: 1.35rem 1.35rem 1.15rem;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+
+    #messageModalError {
+        border-radius: 14px;
+    }
+
+    #messageModal .message-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e4edf3;
+    }
+
+    #messageModal .message-meta-item {
+        min-width: 0;
+    }
+
+    #messageModal .message-meta-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #728393;
+        margin-bottom: 0.25rem;
+    }
+
+    #messageModal .message-meta-value {
+        color: #17324a;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+        line-height: 1.45;
+    }
+
+    #messageModal .message-body-shell {
+        padding: 1rem 1.05rem;
+        border-radius: 18px;
+        background: linear-gradient(180deg, #f8fbfd 0%, #ffffff 100%);
+        border: 1px solid #dfeaf1;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    #messageModalContent {
+        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 1rem;
+        line-height: 1.7;
+        color: #24384f;
+        max-height: 58vh;
+        overflow-y: auto;
+    }
+
+    #messageModal .modal-footer {
+        padding: 1rem 1.35rem 1.15rem;
+        border-top: 1px solid #e8eef3;
+        background: #fff;
+    }
+
+    #messageModal .modal-footer .btn-secondary {
+        border-radius: 999px;
+        padding: 0.7rem 1.45rem;
+        font-weight: 700;
+        border-color: #efd58f;
+        background: #fffdf5;
+        color: #1f2f43;
+    }
+
+    #messageModal .modal-footer .btn-secondary:hover,
+    #messageModal .modal-footer .btn-secondary:focus {
+        background: #fff7df;
+        border-color: #e4c56c;
+        color: #17324a;
+    }
+
+    @media (max-width: 767.98px) {
+        #messageModal .modal-dialog {
+            max-width: 96vw;
+            margin: 0.75rem auto;
+        }
+
+        #messageModal .modal-body {
+            padding: 1rem 1rem 0.95rem;
+        }
+
+        #messageModal .message-meta-grid {
+            grid-template-columns: 1fr;
+        }
+
+        #messageModal .modal-footer {
+            padding: 0.9rem 1rem 1rem;
+        }
+    }
+</style>

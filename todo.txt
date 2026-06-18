@@ -90,6 +90,11 @@ delivery fee (within x km / price per km or single surplus)
     - define shared source-of-truth patterns (copy, state-to-step mapping, action labels) and apply across both platforms.
     - prioritize high-impact mismatches in transaction flow first, then expand to account/profile and navigation surfaces.
 
+12) verified users only + card gating:
+    - DONE: add a listing-level `verified_users_only` flag backed by Stripe identity verification.
+    - DONE: block enquiries on verified-only listings unless the renter has completed Stripe identity verification.
+    - DONE: hide deposit/payment card setup when a transaction has no actual payment to secure.
+
 
 workflow parity gaps to implement next
 
@@ -117,6 +122,13 @@ workflow parity gaps to implement next
     - keep the mobile feedback window, one-sided completion, and final closeout states aligned with the web workflow.
     - surface the same reminders, pending states, and completion states in both apps.
     - add tests to lock down the expiry behavior and one-sided feedback path.
+
+6) transaction testing harness:
+    - create repeatable seeded scenarios for enquiry, contract, handover, return, deposit, dispute, and feedback flows.
+    - make the same scenarios visible in web and mobile so UI parity can be checked side by side.
+    - add a human-readable CSV tracker for scenario state, expected outcome, and current status.
+    - wire Stripe test mode and webhook inspection into the harness so pending/delivered/failed events are visible.
+    - add a safe reset/reseed path that never touches real data.
 
 
 feature backlog from app/site comparison

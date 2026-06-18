@@ -2,6 +2,7 @@ from celery import shared_task
 from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.conf import settings
+from common.failures import record_site_failure
 
 
 @shared_task
@@ -22,13 +23,27 @@ def send_friend_request_notification(from_user_id, to_user_id):
         f"{getattr(settings, 'SITE_URL', 'https://rentalution.com')}/friends/\n\n"
         f"The rentalution team"
     )
-    send_mail(
-        subject,
-        message,
-        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.com'),
-        [to_user.email],
-        fail_silently=True,
-    )
+    try:
+        send_mail(
+            subject,
+            message,
+            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.com'),
+            [to_user.email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        record_site_failure(
+            'Friend request notification email failed',
+            details=f'Failed to notify {to_user.email} about a friend request from {from_user.id}.',
+            exception=exc,
+            context={
+                'from_user_id': from_user.id,
+                'from_user_email': from_user.email,
+                'to_user_id': to_user.id,
+                'to_user_email': to_user.email,
+            },
+        )
+        raise
 
 
 @shared_task
@@ -49,10 +64,23 @@ def send_friend_invite_email(from_user_id, invitee_email):
         f"Sign up for free at:\n{site_url}/account/register/\n\n"
         f"The rentalution team"
     )
-    send_mail(
-        subject,
-        message,
-        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.com'),
-        [invitee_email],
-        fail_silently=True,
-    )
+    try:
+        send_mail(
+            subject,
+            message,
+            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.com'),
+            [invitee_email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        record_site_failure(
+            'Friend invite email failed',
+            details=f'Failed to send invite email to {invitee_email} from user {from_user.id}.',
+            exception=exc,
+            context={
+                'from_user_id': from_user.id,
+                'from_user_email': from_user.email,
+                'invitee_email': invitee_email,
+            },
+        )
+        raise

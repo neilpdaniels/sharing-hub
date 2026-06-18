@@ -17,6 +17,21 @@ class Profile(models.Model):
     email_confirmed = models.BooleanField(default=False)
     mobile_verified = models.BooleanField(default=False)
     address_verified = models.BooleanField(default=False)
+    stripe_identity_verification_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text='Stripe Identity verification session ID',
+    )
+    stripe_identity_verified = models.BooleanField(
+        default=False,
+        help_text='Whether user has completed KYC verification via Stripe',
+    )
+    stripe_identity_verified_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text='When user completed KYC verification',
+    )
     date_of_birth = models.DateField(validators=[MinAgeValidator])
     mobile_number = models.CharField(max_length=20)
     address_line_1 = models.CharField(max_length=255)

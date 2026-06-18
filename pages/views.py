@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.core.mail import send_mail
 from django.shortcuts import render
 
+from common.failures import record_site_failure
 from common.security import verify_turnstile_token
 
 
@@ -36,23 +37,37 @@ def help_and_support(request):
             messages.error(request, 'Please complete all fields before submitting.')
         elif not captcha_error:
             support_to = 'admin@rentalution.com'
-            send_mail(
-                subject=f'Help & Support: {subject}',
-                message=(
-                    f'From: {name}\n'
-                    f'Email: {email}\n\n'
-                    f'Message:\n{message}'
-                ),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
-                recipient_list=[support_to],
-                fail_silently=True,
-            )
-            messages.success(request, 'Thanks. Your message has been sent and we’ll get back to you soon.')
-            return render(request, 'pages/help_and_support.html', {
-                'show_turnstile': True,
-                'support_email': support_to,
-                'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
-            })
+            try:
+                send_mail(
+                    subject=f'Help & Support: {subject}',
+                    message=(
+                        f'From: {name}\n'
+                        f'Email: {email}\n\n'
+                        f'Message:\n{message}'
+                    ),
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                    recipient_list=[support_to],
+                    fail_silently=False,
+                )
+            except Exception as exc:
+                record_site_failure(
+                    'Help & Support email failed',
+                    details=f'Failed to send support email from {email or "unknown sender"}.',
+                    exception=exc,
+                    context={
+                        'name': name,
+                        'email': email,
+                        'subject': subject,
+                    },
+                )
+                messages.error(request, 'We could not send your message right now. Please try again.')
+            else:
+                messages.success(request, 'Thanks. Your message has been sent and we’ll get back to you soon.')
+                return render(request, 'pages/help_and_support.html', {
+                    'show_turnstile': True,
+                    'support_email': support_to,
+                    'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+                })
 
     context = {
         'show_turnstile': True,

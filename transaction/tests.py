@@ -9,7 +9,7 @@ from django.utils import timezone
 from common.models import Category, Order, OrderBlockedDate, Product
 from account.models import Profile
 from common.models import System
-from transaction.models import Transaction, TransactionFeedback, TransactionMessage
+from transaction.models import PaymentAttempt, Transaction, TransactionFeedback, TransactionMessage
 from transaction.tasks import (
     auto_cancel_overdue_first_day_bookings,
     auto_close_feedback_windows,
@@ -114,6 +114,132 @@ class WebTransactionDateHoldTests(TestCase):
 			date__lte=end,
 		).count()
 		self.assertEqual(released_count, 0)
+
+	@patch('transaction.views.verify_turnstile_token', return_value=True)
+	def test_verified_users_only_listing_blocks_unverified_renter(self, _mock_turnstile):
+		Profile.objects.create(
+			user=self.lender,
+			email_confirmed=True,
+			mobile_verified=True,
+			address_verified=True,
+			date_of_birth=timezone.now().date() - timedelta(days=365 * 20),
+			mobile_number='07123456789',
+			address_line_1='1 Main St',
+			town='London',
+			postcode='SW1A1AA',
+		)
+		Profile.objects.create(
+			user=self.renter_one,
+			email_confirmed=False,
+			mobile_verified=False,
+			address_verified=False,
+			date_of_birth=timezone.now().date() - timedelta(days=365 * 20),
+			mobile_number='07123456780',
+			address_line_1='2 Main St',
+			town='London',
+			postcode='SW1A1AA',
+		)
+		self.order.verified_users_only = True
+		self.order.save(update_fields=['verified_users_only'])
+
+		start, end = self._date_range(5, 7)
+		self.client.force_login(self.renter_one)
+		response = self.client.post(
+			reverse('transaction:hit_order', kwargs={'order_id': self.order.id}),
+			{
+				'rental_start_date': start.isoformat(),
+				'rental_end_date': end.isoformat(),
+				'enquiry_message': 'Let me rent this.',
+				'cf-turnstile-response': 'ok',
+			},
+		)
+
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(Transaction.objects.filter(order_passive=self.order).count(), 0)
+
+
+@override_settings(MOBILE_VERIFICATION_ENABLED=False, ENVIRONMENT_NAME='dev server')
+class PaymentSummaryTests(TestCase):
+	def setUp(self):
+		self.category = Category.objects.create(title='Payments')
+		self.product = Product.objects.create(category_id=self.category, name='Pay Drill')
+		self.lender = User.objects.create_user(username='pay-lender', email='pay-lender@example.com', password='x')
+		self.renter = User.objects.create_user(username='pay-renter', email='pay-renter@example.com', password='x')
+		self.staff = User.objects.create_user(username='pay-admin', email='pay-admin@example.com', password='x', is_staff=True)
+		self.order = Order.objects.create(
+			product=self.product,
+			user=self.lender,
+			direction=Order.TO_LET,
+			expiry_date=timezone.now() + timedelta(days=30),
+			status=Order.ACTIVE,
+			price=25,
+			deposit=60,
+			postcode='SW1A1AA',
+		)
+		self.txn = Transaction.objects.create(
+			user_passive=self.lender,
+			user_aggressive=self.renter,
+			order_passive=self.order,
+			product=self.product,
+			transaction_status=Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
+			prev_transaction_status=Transaction.RENTAL_AGREED,
+			rental_start_date=timezone.localdate(),
+			rental_end_date=timezone.localdate() + timedelta(days=2),
+			quantity=1,
+			price=25,
+			deposit=60,
+			current_spot_value=100,
+			price_as_pct_spot_value=25,
+		)
+
+	def test_payment_attempt_ledger_counts_success_and_failure(self):
+		PaymentAttempt.objects.create(
+			transaction=self.txn,
+			status=PaymentAttempt.STATUS_SUCCESS,
+			failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+			amount=25,
+			card_brand='visa',
+			card_funding='credit',
+		)
+		PaymentAttempt.objects.create(
+			transaction=self.txn,
+			status=PaymentAttempt.STATUS_FAILURE,
+			failure_point=PaymentAttempt.POINT_DEPOSIT_AUTH,
+			amount=60,
+			card_brand='mastercard',
+			card_funding='debit',
+			error_message='insufficient_funds',
+		)
+
+		self.client.force_login(self.staff)
+		response = self.client.get(reverse('transaction:payment_summary'))
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Success')
+		self.assertContains(response, 'Failure')
+		self.assertContains(response, 'rental_capture')
+		self.assertContains(response, 'deposit_auth')
+
+	def test_payment_summary_is_hidden_in_production(self):
+		with override_settings(ENVIRONMENT_NAME='Production'):
+			self.client.force_login(self.staff)
+			response = self.client.get(reverse('transaction:payment_summary'))
+			self.assertEqual(response.status_code, 404)
+
+	@patch('transaction.views.stripe_connect_service.collect_rental_payment')
+	def test_rental_payment_failure_records_attempt_and_blocks_pin(self, mock_collect):
+		mock_collect.return_value = {'ok': False, 'error': 'card_declined', 'provider': 'stripe'}
+		self.client.force_login(self.renter)
+		response = self.client.post(
+			reverse('transaction:view_transaction', kwargs={'transaction_reference': self.txn.transaction_reference}),
+			{'action': 'confirm_stripe_card', 'payment_method_id': 'pm_test', 'setup_intent_id': 'seti_test'},
+		)
+		self.assertIn(response.status_code, (200, 302))
+		self.assertTrue(PaymentAttempt.objects.filter(
+			transaction=self.txn,
+			status=PaymentAttempt.STATUS_FAILURE,
+			failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+		).exists())
+
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)

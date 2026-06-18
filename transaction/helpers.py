@@ -343,8 +343,8 @@ def getTransactionStepAndAction(txn, request):
         step = 1
         next_action = is_lender
     elif txn.transaction_status == txn.RENTAL_AGREED:
-        lender_done = bool(txn.lender_agreed_at)
-        renter_done = bool(txn.renter_agreed_at)
+        lender_done = bool(getattr(txn, 'lender_agreed_at', None))
+        renter_done = bool(getattr(txn, 'renter_agreed_at', None))
 
         if not lender_done and not renter_done:
             # Both parties can confirm in parallel

@@ -81,23 +81,18 @@
         </div>
       </details>
       {% if request.user.is_authenticated %}
-      <a href="{% url 'my_rentalution:messages_received' %}" class="rh-nav-link{% if '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-comment-dots rh-nav-icon"></i><span>Messages</span>
-        {% if unread_message_count > 0 %}
-        <span class="rh-nav-count" title="{{ unread_message_count }} unread message{{ unread_message_count|pluralize }}">{{ unread_message_count }}</span>
-        {% endif %}
-      </a>
-      <a href="{% url 'my_rentalution:notifications' %}" class="rh-nav-link{% if '/notifications/' in request.path %} rh-nav-link--active{% endif %}">
-        <i class="fas fa-bell rh-nav-icon"></i><span>Notifications</span>
-      </a>
-      <details class="rh-nav-group" {% if request.resolver_match.namespace == 'my_rentalution' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %}open{% endif %}>
-        <summary class="rh-nav-link rh-nav-toggle{% if request.resolver_match.namespace == 'my_rentalution' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path %} rh-nav-link--active{% endif %}">
+      <details class="rh-nav-group" {% if request.resolver_match.namespace == 'my_rentalution' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path or '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path or '/notifications/' in request.path %}open{% endif %}>
+        <summary class="rh-nav-link rh-nav-toggle{% if request.resolver_match.namespace == 'my_rentalution' or request.resolver_match.namespace == 'friends' or '/account/edit/' in request.path or '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path or '/notifications/' in request.path %} rh-nav-link--active{% endif %}">
           <span class="rh-nav-toggle-main">
             <i class="fas fa-user-circle rh-nav-icon"></i><span>My account</span>
           </span>
           <i class="fas fa-chevron-down rh-nav-caret" aria-hidden="true"></i>
         </summary>
         <div class="rh-nav-submenu">
+          <a href="{% url 'my_rentalution:notifications' %}" class="rh-nav-sublink{% if '/notifications/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-bell"></i></span>
+            <span>Notifications</span>
+          </a>
           <a href="{% url 'my_rentalution:open_transactions' %}" class="rh-nav-sublink{% if '/open_transactions/' in request.path or '/closed_transactions/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-calendar-check"></i></span>
             <span>Bookings</span>
@@ -125,10 +120,23 @@
             <span class="rh-subicon"><i class="fas fa-user-slash"></i></span>
             <span>Blocked users</span>
           </a>
+          <a href="{% url 'my_rentalution:messages_received' %}" class="rh-nav-sublink{% if '/messages_received/' in request.path or '/messages_sent/' in request.path or '/inbox/' in request.path %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-comment-dots"></i></span>
+            <span>Messages</span>
+            {% if unread_message_count > 0 %}
+            <span class="rh-nav-count" title="{{ unread_message_count }} unread message{{ unread_message_count|pluralize }}">{{ unread_message_count }}</span>
+            {% endif %}
+          </a>
           <a href="{% url 'my_rentalution:my_details' %}" class="rh-nav-sublink{% if '/my_details/' in request.path or '/account/edit/' in request.path or '/payment_methods/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-id-card"></i></span>
             <span>My details</span>
           </a>
+          {% if request.user.is_staff %}
+          <a href="{% url 'transaction:payment_summary' %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'transaction' and request.resolver_match.url_name == 'payment_summary' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-credit-card"></i></span>
+            <span>Payment summary</span>
+          </a>
+          {% endif %}
           <a href="{% url 'edit' %}" class="rh-nav-sublink{% if '/account/edit/' in request.path %} rh-nav-sublink--active{% endif %}">
             <span class="rh-subicon"><i class="fas fa-cog"></i></span>
             <span>Settings</span>
@@ -155,6 +163,16 @@
             <span class="rh-subicon"><i class="fas fa-gavel"></i></span>
             <span>Disputes</span>
           </a>
+          {% if settings.ENVIRONMENT_NAME != 'Production' %}
+          <a href="{% url 'transaction:transaction_scenario_dashboard' %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'transaction' and request.resolver_match.url_name == 'transaction_scenario_dashboard' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-vials"></i></span>
+            <span>Scenario dashboard</span>
+          </a>
+          <a href="{% url 'transaction:payment_summary' %}" class="rh-nav-sublink{% if request.resolver_match.namespace == 'transaction' and request.resolver_match.url_name == 'payment_summary' %} rh-nav-sublink--active{% endif %}">
+            <span class="rh-subicon"><i class="fas fa-credit-card"></i></span>
+            <span>Payment summary</span>
+          </a>
+          {% endif %}
         </div>
       </details>
       {% endif %}

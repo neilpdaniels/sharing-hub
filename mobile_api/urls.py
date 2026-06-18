@@ -27,6 +27,7 @@ from .views import (
     MobilePaymentMethodListView,
     MobileAppConfigView,
     MobilePaymentMethodConfirmView,
+    MobileIdentityVerificationStartView,
     MobilePaymentMethodSetDefaultView,
     MobilePaymentMethodSetupIntentView,
     MobileTokenRefreshView,
@@ -79,6 +80,7 @@ urlpatterns = [
     path('payment-methods/', MobilePaymentMethodListView.as_view(), name='payment_methods_list'),
     path('payment-methods/setup-intent/', MobilePaymentMethodSetupIntentView.as_view(), name='payment_methods_setup_intent'),
     path('payment-methods/confirm/', MobilePaymentMethodConfirmView.as_view(), name='payment_methods_confirm'),
+    path('kyc/start/', MobileIdentityVerificationStartView.as_view(), name='kyc_start'),
     path(
         'payment-methods/<int:payment_method_id>/set-default/',
         MobilePaymentMethodSetDefaultView.as_view(),

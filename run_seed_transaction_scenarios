@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
+
+if [[ "${1:-}" == "--reset" ]]; then
+  shift
+  if [[ "${ENVIRONMENT_NAME:-}" == "Production" ]]; then
+    echo "Refusing to reset scenarios in production." >&2
+    exit 1
+  fi
+  uv run python manage.py seed_transaction_scenarios --reset --settings="$SETTINGS_MODULE" "$@"
+else
+  uv run python manage.py seed_transaction_scenarios --settings="$SETTINGS_MODULE" "$@"
+fi
+
+echo "Seed users:"
+echo "  scenario-lender / scenario-lender"
+echo "  scenario-renter / scenario-renter"

@@ -13,7 +13,6 @@ from django.core.paginator import Paginator, EmptyPage,\
 from transaction.models import Transaction, TransactionMessage, TransactionCharge
 from itertools import chain
 from operator import attrgetter
-from common.decorators import ajax_required
 from django.db.models import Q, Prefetch
 from transaction.tasks import getUserTransactions
 from common.models import FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, OrderImage
@@ -56,6 +55,28 @@ def _friendly_message_title(message):
     if rental_window:
         return f"Rental ({rental_window})"
     return (message.subject or 'Message').strip() or 'Message'
+
+
+def _message_preview_text(message, max_lines=2, max_chars=180):
+    body = (message.description or '').strip()
+    if not body:
+        return ''
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    preview = ' '.join(lines[:max_lines]) if lines else body
+    preview = ' '.join(preview.split())
+    if len(preview) > max_chars:
+        preview = preview[:max_chars].rsplit(' ', 1)[0].rstrip() + '...'
+    return preview
+
+
+def _message_alignment_class(message, user):
+    if message.is_system_generated:
+        return 'message-card--center'
+    if message.user_from_id == user.id:
+        return 'message-card--outgoing'
+    if message.user_to_id == user.id:
+        return 'message-card--incoming'
+    return 'message-card--center'
 
 
 def _message_order_thumbnail_url(message):
@@ -157,6 +178,8 @@ def messages_received(request):
     for message in messages_:
         message.display_subject = _friendly_message_title(message)
         message.order_thumbnail_url = _message_order_thumbnail_url(message)
+        message.preview_text = _message_preview_text(message)
+        message.message_alignment_class = _message_alignment_class(message, user)
 
     context = {
         'messages_': messages_,
@@ -256,6 +279,8 @@ def messages_sent(request):
     for message in messages_:
         message.display_subject = _friendly_message_title(message)
         message.order_thumbnail_url = _message_order_thumbnail_url(message)
+        message.preview_text = _message_preview_text(message)
+        message.message_alignment_class = _message_alignment_class(message, user)
 
     context = {
         'messages_': messages_,
@@ -903,13 +928,14 @@ def closed_transactions(request):
     return render(request, 'my_rentalution/x_transactions.html', context)
 
 @login_required
-@ajax_required
 def expand_message(request):
     message_id = request.GET.get('message_id', None)
     message = get_object_or_404(
         TransactionMessage.objects.select_related('transaction', 'transaction__order_passive__product', 'user_from', 'user_to'),
         id=message_id,
     )
+    if not request.user.is_staff and request.user not in (message.user_from, message.user_to):
+        raise Http404
     if request.user == message.user_to and message.read_by_user_to == False:
         message.read_by_user_to = True
         message.save()

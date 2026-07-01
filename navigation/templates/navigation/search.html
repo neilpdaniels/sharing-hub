@@ -234,12 +234,29 @@
             </div>
             <div class="col-md-3">
               <select name="sort_by" class="form-control">
-                <option value="newest" {% if sort_by == 'newest' %}selected{% endif %}>Newest</option>
-                <option value="distance" {% if sort_by == 'distance' %}selected{% endif %}>Nearest first</option>
-                <option value="price" {% if sort_by == 'price' %}selected{% endif %}>Lowest price</option>
+                {% for option in search_sort_options %}
+                <option value="{{ option.value }}" {% if sort_by == option.value %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
               </select>
             </div>
           </div>
+
+          {% if attribute_filters %}
+          <div class="form-row mb-2">
+            {% for attribute_filter in attribute_filters %}
+            {% if attribute_filter.values %}
+            <div class="col-md-4 mb-2">
+              <select name="{{ attribute_filter.query_param }}" class="form-control">
+                <option value="">All {{ attribute_filter.name|lower }}</option>
+                {% for value in attribute_filter.values %}
+                <option value="{{ value }}" {% if chosen_attribute_filters|get_item:attribute_filter.query_param == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
 
           <button type="submit" class="btn btn-primary">Search</button>
 
@@ -285,7 +302,7 @@
           • Within <strong>{{ max_distance }} km</strong> of <strong>{{ display_location }}</strong>
         {% endif %}
       {% endif %}
-      {% if sort_by %}• Sorted by <strong>{{ sort_by|capfirst }}</strong>{% endif %}
+      {% if sort_by %}• Sorted by <strong>{{ selected_sort_label }}</strong>{% endif %}
     </p>
 
     {# Results #}
@@ -308,6 +325,15 @@
               </span>
               <strong class="ml-2">£{{ order.price|format_price }}</strong>
             </p>
+            {% with listing_attributes=order.get_attribute_pairs %}
+            {% if listing_attributes %}
+            <p class="card-text mb-2">
+              {% for attribute in listing_attributes|slice:":3" %}
+              <span class="badge badge-light border mr-1 mb-1">{{ attribute.name }}: {{ attribute.value }}</span>
+              {% endfor %}
+            </p>
+            {% endif %}
+            {% endwith %}
             {% if order.distance is not None %}
             <p class="card-text text-muted small">
               <span class="fas fa-map-marker-alt"></span> {{ order.distance }} km away
@@ -343,13 +369,13 @@
       <ul class="pagination justify-content-center">
         {% if orders.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?q={{ q }}&location={{ location }}&distance={{ max_distance }}&category={{ category_slug }}&sort_by={{ sort_by }}&page={{ orders.previous_page_number }}">Previous</a>
+          <a class="page-link" href="?{{ search_query_string }}&page={{ orders.previous_page_number }}">Previous</a>
         </li>
         {% endif %}
         <li class="page-item disabled"><span class="page-link">Page {{ orders.number }} of {{ orders.paginator.num_pages }}</span></li>
         {% if orders.has_next %}
         <li class="page-item">
-          <a class="page-link" href="?q={{ q }}&location={{ location }}&distance={{ max_distance }}&category={{ category_slug }}&sort_by={{ sort_by }}&page={{ orders.next_page_number }}">Next</a>
+          <a class="page-link" href="?{{ search_query_string }}&page={{ orders.next_page_number }}">Next</a>
         </li>
         {% endif %}
       </ul>

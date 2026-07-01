@@ -378,13 +378,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _productMetaCard(ProductDetail product) {
-    final attrs = [
-      product.attributeOneValue,
-      product.attributeTwoValue,
-      product.attributeThreeValue,
-      product.attributeFourValue,
-      product.attributeFiveValue,
-    ].where((value) => value.trim().isNotEmpty).toList(growable: false);
+    final attrs = product.attributes
+        .where(
+          (attribute) =>
+              attribute.name.trim().isNotEmpty && attribute.value.trim().isNotEmpty,
+        )
+        .toList(growable: false);
 
     return Card(
       child: Padding(
@@ -416,7 +415,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 spacing: 6,
                 runSpacing: 6,
                 children: attrs
-                    .map((value) => Chip(label: Text(value)))
+                    .map(
+                      (attribute) => Chip(
+                        label: Text('${attribute.name}: ${attribute.value}'),
+                      ),
+                    )
                     .toList(growable: false),
               ),
             ],
@@ -1162,11 +1165,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   return;
                 }
 
+                final pickedRange = DateTimeRange(
+                  start: _dateOnly(picked.start),
+                  end: _dateOnly(picked.end),
+                );
+                if (_selectedRangeIsTooLong(pickedRange)) {
+                  setDialogState(() {
+                    selectedRange = pickedRange;
+                  });
+                  return;
+                }
+
                 setDialogState(() {
-                  selectedRange = DateTimeRange(
-                    start: _dateOnly(picked.start),
-                    end: _dateOnly(picked.end),
-                  );
+                  selectedRange = pickedRange;
                 });
               }
 
@@ -1205,6 +1216,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             : 'Max rental days: not set',
                         style: Theme.of(dialogContext).textTheme.bodySmall,
                       ),
+                      if (order.maxRentalDays > 30) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Rentals over 30 days are not supported yet. Please choose 30 days or fewer.',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
                       if (_selectedRangeHasLongRental(selectedRange)) ...[
                         const SizedBox(height: 8),
                         const Text(
@@ -1248,7 +1266,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     child: const Text('Cancel'),
                   ),
                   ElevatedButton(
-                    onPressed: () => Navigator.pop(dialogContext, true),
+                    onPressed: _selectedRangeIsTooLong(selectedRange)
+                        ? null
+                        : () => Navigator.pop(dialogContext, true),
                     child: const Text('Send Enquiry'),
                   ),
                 ],
@@ -1393,6 +1413,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   bool _selectedRangeHasLongRental(DateTimeRange range) {
     return range.duration.inDays + 1 > 5;
+  }
+
+  bool _selectedRangeIsTooLong(DateTimeRange range) {
+    return range.duration.inDays + 1 > 30;
   }
 
   String _formatDate(DateTime value) {

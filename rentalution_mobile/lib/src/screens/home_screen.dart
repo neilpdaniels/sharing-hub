@@ -127,6 +127,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _selectedDistance;
   String _browseSortBy = 'az';
   String _searchSortBy = 'nearest';
+  Map<String, String> _browseAttributeFilters = const {};
+  Map<String, String> _searchAttributeFilters = const {};
   final bool _includeZeroListings = false;
 
   bool _categoriesLoading = false;
@@ -235,10 +237,137 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _backendSortValue(String sortBy) {
-    if (sortBy == 'az' || sortBy == 'za') {
-      return 'name';
-    }
     return sortBy;
+  }
+
+  CategorySummary? _selectedCategorySummary() {
+    final slug = _selectedCategorySlug;
+    if (slug == null) {
+      return null;
+    }
+    for (final category in _categories) {
+      if (category.slug == slug) {
+        return category;
+      }
+    }
+    return null;
+  }
+
+  List<CategoryAttributeDefinition> _selectedCategoryAttributeDefinitions() {
+    return _selectedCategorySummary()?.attributeDefinitions ?? const [];
+  }
+
+  List<CategoryAttributeDefinition> _filterableCategoryAttributes() {
+    return _selectedCategoryAttributeDefinitions()
+        .where((definition) => definition.filterable && definition.name.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<CategoryAttributeDefinition> _sortableCategoryAttributes() {
+    return _selectedCategoryAttributeDefinitions()
+        .where((definition) => definition.sortable && definition.name.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+
+  String _attributeValueForProduct(
+    ProductSummary product,
+    CategoryAttributeDefinition definition,
+  ) {
+    for (final attribute in product.attributes) {
+      if (attribute.order == definition.order) {
+        return attribute.value.trim();
+      }
+    }
+    switch (definition.order) {
+      case 1:
+        return product.attributeOneValue.trim();
+      case 2:
+        return product.attributeTwoValue.trim();
+      case 3:
+        return product.attributeThreeValue.trim();
+      case 4:
+        return product.attributeFourValue.trim();
+      case 5:
+        return product.attributeFiveValue.trim();
+      default:
+        return '';
+    }
+  }
+
+  List<String> _attributeOptionsForDefinition(
+    CategoryAttributeDefinition definition,
+  ) {
+    final configured = definition.allowedValues
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (configured.isNotEmpty) {
+      return configured;
+    }
+
+    final values = <String>{};
+    for (final product in [..._browseProducts, ..._searchResults]) {
+      final value = _attributeValueForProduct(product, definition);
+      if (value.isNotEmpty) {
+        values.add(value);
+      }
+    }
+    final sorted = values.toList(growable: false)..sort();
+    return sorted;
+  }
+
+  Map<String, String> _activeAttributeFilters(bool isSearchFilters) {
+    return isSearchFilters ? _searchAttributeFilters : _browseAttributeFilters;
+  }
+
+  void _setActiveAttributeFilter(
+    bool isSearchFilters,
+    String queryParam,
+    String? value,
+  ) {
+    final nextValue = (value ?? '').trim();
+    setState(() {
+      final nextFilters = Map<String, String>.from(
+        isSearchFilters ? _searchAttributeFilters : _browseAttributeFilters,
+      );
+      if (nextValue.isEmpty) {
+        nextFilters.remove(queryParam);
+      } else {
+        nextFilters[queryParam] = nextValue;
+      }
+      if (isSearchFilters) {
+        _searchAttributeFilters = nextFilters;
+      } else {
+        _browseAttributeFilters = nextFilters;
+      }
+    });
+  }
+
+  String _sortLabel(String sortBy) {
+    switch (sortBy) {
+      case 'nearest':
+        return 'Nearest';
+      case 'az':
+        return 'Name A-Z';
+      case 'za':
+        return 'Name Z-A';
+      case 'newest':
+        return 'Newest';
+      case 'price_asc':
+        return 'Price low';
+      case 'price_desc':
+        return 'Price high';
+      default:
+        for (final definition in _sortableCategoryAttributes()) {
+          if (sortBy == definition.sortKeyAsc) {
+            return '${definition.name} A-Z';
+          }
+          if (sortBy == definition.sortKeyDesc) {
+            return '${definition.name} Z-A';
+          }
+        }
+        return 'Sort';
+    }
   }
 
   String _categoryLabel(String? slug) {
@@ -254,20 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _searchSortLabel(String sortBy) {
-    switch (sortBy) {
-      case 'nearest':
-        return 'Nearest';
-      case 'az':
-        return 'Name A-Z';
-      case 'za':
-        return 'Name Z-A';
-      case 'price_asc':
-        return 'Price low';
-      case 'price_desc':
-        return 'Price high';
-      default:
-        return 'Sort';
-    }
+    return _sortLabel(sortBy);
   }
 
   Future<void> _pickSearchCategory() async {
@@ -311,6 +427,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() {
       _selectedCategorySlug = selected;
+      _browseAttributeFilters = const {};
+      _searchAttributeFilters = const {};
+      _browseSortBy = 'az';
+      _searchSortBy = 'nearest';
     });
   }
 
@@ -318,6 +438,19 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_searchLoading) {
       return;
     }
+    final sortOptions = <(String, String)>[
+      ('nearest', 'Nearest first'),
+      ('az', 'Name (A-Z)'),
+      ('za', 'Name (Z-A)'),
+      ('price_asc', 'Lowest price'),
+      ('price_desc', 'Highest price'),
+      ..._sortableCategoryAttributes().expand(
+        (definition) => [
+          (definition.sortKeyAsc, '${definition.name} (A-Z)'),
+          (definition.sortKeyDesc, '${definition.name} (Z-A)'),
+        ],
+      ),
+    ];
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -329,13 +462,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text('Sort by', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              ...const [
-                ('nearest', 'Nearest first'),
-                ('az', 'Name (A-Z)'),
-                ('za', 'Name (Z-A)'),
-                ('price_asc', 'Lowest price'),
-                ('price_desc', 'Highest price'),
-              ].map(
+              ...sortOptions.map(
                 (option) => RadioListTile<String>(
                   value: option.$1,
                   groupValue: _searchSortBy,
@@ -374,7 +501,36 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return sorted;
     }
+    for (final definition in _sortableCategoryAttributes()) {
+      if (sortBy == definition.sortKeyAsc) {
+        sorted.sort(
+          (a, b) => _attributeValueForProduct(a, definition)
+              .toLowerCase()
+              .compareTo(_attributeValueForProduct(b, definition).toLowerCase()),
+        );
+        return sorted;
+      }
+      if (sortBy == definition.sortKeyDesc) {
+        sorted.sort(
+          (a, b) => _attributeValueForProduct(b, definition)
+              .toLowerCase()
+              .compareTo(_attributeValueForProduct(a, definition).toLowerCase()),
+        );
+        return sorted;
+      }
+    }
     return sorted;
+  }
+
+  List<String> _productAttributeSummaries(ProductSummary product) {
+    return product.attributes
+        .where(
+          (attribute) =>
+              attribute.name.trim().isNotEmpty && attribute.value.trim().isNotEmpty,
+        )
+        .take(3)
+        .map((attribute) => '${attribute.name}: ${attribute.value}')
+        .toList(growable: false);
   }
 
   String _distanceLabel(int? value) {
@@ -435,6 +591,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeLocationController = isSearchFilters
         ? _searchLocationController
         : _browseLocationController;
+    final activeAttributeFilters = _activeAttributeFilters(isSearchFilters);
+    final filterableAttributes = _filterableCategoryAttributes();
+    final sortableAttributes = _sortableCategoryAttributes();
 
     return Drawer(
       child: SafeArea(
@@ -527,6 +686,48 @@ class _HomeScreenState extends State<HomeScreen> {
                 });
               },
             ),
+            for (final definition in sortableAttributes) ...[
+              RadioListTile<String>(
+                value: definition.sortKeyAsc,
+                groupValue: selectedSort,
+                title: Text('${definition.name} (A-Z)'),
+                dense: true,
+                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                contentPadding: EdgeInsets.zero,
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    if (isSearchFilters) {
+                      _searchSortBy = value;
+                    } else {
+                      _browseSortBy = value;
+                    }
+                  });
+                },
+              ),
+              RadioListTile<String>(
+                value: definition.sortKeyDesc,
+                groupValue: selectedSort,
+                title: Text('${definition.name} (Z-A)'),
+                dense: true,
+                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                contentPadding: EdgeInsets.zero,
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    if (isSearchFilters) {
+                      _searchSortBy = value;
+                    } else {
+                      _browseSortBy = value;
+                    }
+                  });
+                },
+              ),
+            ],
             if (!isSearchFilters) ...[
               const SizedBox(height: 2),
               Text('Location', style: Theme.of(context).textTheme.titleSmall),
@@ -647,6 +848,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 onChanged: (value) => setState(() => _selectedDistance = value),
               ),
             ],
+            if (filterableAttributes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Attributes', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              for (final definition in filterableAttributes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: DropdownButtonFormField<String>(
+                    value: activeAttributeFilters[definition.queryParam],
+                    decoration: InputDecoration(
+                      labelText: definition.name,
+                      isDense: true,
+                    ),
+                    items: [
+                      DropdownMenuItem<String>(
+                        value: '',
+                        child: Text('All ${definition.name.toLowerCase()}'),
+                      ),
+                      ..._attributeOptionsForDefinition(definition).map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => _setActiveAttributeFilter(
+                      isSearchFilters,
+                      definition.queryParam,
+                      value,
+                    ),
+                  ),
+                ),
+            ],
             const SizedBox(height: 4),
             FilledButton.icon(
               onPressed: _applyHomeFilters,
@@ -765,6 +999,7 @@ class _HomeScreenState extends State<HomeScreen> {
         location: _effectiveBrowseLocation(),
         distanceKm: _selectedDistance,
         sortBy: _backendSortValue(_browseSortBy),
+        attributeFilters: _browseAttributeFilters,
         includeZeroListings: _includeZeroListings,
       );
       final sortedProducts = _applyLocalProductSort(products, _browseSortBy);
@@ -956,6 +1191,7 @@ class _HomeScreenState extends State<HomeScreen> {
         categorySlug: _selectedCategorySlug,
         distanceKm: _selectedDistance,
         sortBy: _backendSortValue(_searchSortBy),
+        attributeFilters: _searchAttributeFilters,
       );
       final sortedResults = _applyLocalProductSort(results, _searchSortBy);
       if (!mounted) {
@@ -999,6 +1235,7 @@ class _HomeScreenState extends State<HomeScreen> {
           categorySlug: _selectedCategorySlug,
           distanceKm: _selectedDistance,
           sortBy: 'name',
+          attributeFilters: _searchAttributeFilters,
         );
         if (!mounted || requestId != _searchSuggestionRequestId) {
           return;
@@ -2180,19 +2417,40 @@ class _HomeScreenState extends State<HomeScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final product = _browseProducts[index];
+                  final attributeSummary = _productAttributeSummaries(product);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: _productThumb(product.imageUrl),
-                      title: Text(product.name),
-                      subtitle: Text(
-                        product.nearestDistanceKm != null
-                            ? '${product.activeOrderCount} available to rent | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
-                            : '${product.activeOrderCount} available to rent',
+                    child: Card(
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        leading: _productThumb(product.imageUrl),
+                        title: Text(product.name),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product.nearestDistanceKm != null
+                                  ? '${product.activeOrderCount} available to rent | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
+                                  : '${product.activeOrderCount} available to rent',
+                            ),
+                            if (attributeSummary.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: attributeSummary
+                                    .map(_searchMetaChip)
+                                    .toList(growable: false),
+                              ),
+                            ],
+                          ],
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _openProduct(product.slug),
                       ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openProduct(product.slug),
                     ),
                   );
                 },
@@ -2325,6 +2583,7 @@ class _HomeScreenState extends State<HomeScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final product = _searchResults[index];
+                  final attributeSummary = _productAttributeSummaries(product);
                   final details = <String>[
                     product.categoryTitle,
                     '${product.activeOrderCount} active listing${product.activeOrderCount == 1 ? '' : 's'}',
@@ -2376,8 +2635,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                     Wrap(
                                       spacing: 6,
                                       runSpacing: 6,
-                                      children: product.tags
-                                          .take(3)
+                                      children: [
+                                        ...product.tags.take(3),
+                                        ...attributeSummary,
+                                      ]
+                                          .take(4)
                                           .map((tag) => _searchMetaChip(tag))
                                           .toList(growable: false),
                                     ),

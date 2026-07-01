@@ -29,6 +29,7 @@ class CatalogRepository {
     String? location,
     int? distanceKm,
     String? sortBy,
+    Map<String, String>? attributeFilters,
     bool includeZeroListings = false,
   }) async {
     final params = <String, String>{};
@@ -40,6 +41,14 @@ class CatalogRepository {
     }
     if (sortBy != null && sortBy.isNotEmpty) {
       params['sort_by'] = sortBy;
+    }
+    if (attributeFilters != null) {
+      for (final entry in attributeFilters.entries) {
+        final value = entry.value.trim();
+        if (value.isNotEmpty) {
+          params[entry.key] = value;
+        }
+      }
     }
     if (includeZeroListings) {
       params['include_zero_listings'] = 'true';
@@ -119,6 +128,7 @@ class CatalogRepository {
     String? categorySlug,
     int? distanceKm,
     String? sortBy,
+    Map<String, String>? attributeFilters,
     bool includeZeroListings = false,
   }) async {
     final params = <String, String>{};
@@ -138,6 +148,14 @@ class CatalogRepository {
     }
     if (sortBy != null && sortBy.isNotEmpty) {
       params['sort_by'] = sortBy;
+    }
+    if (attributeFilters != null) {
+      for (final entry in attributeFilters.entries) {
+        final value = entry.value.trim();
+        if (value.isNotEmpty) {
+          params[entry.key] = value;
+        }
+      }
     }
     if (includeZeroListings) {
       params['include_zero_listings'] = 'true';

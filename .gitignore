@@ -11,6 +11,8 @@ logs/
 db.sqlite3
 .rentalution_mobile.env
 rentalution_mobile/.env
+media/images/
+media/cache/
 
 # Virtual environments
 .venv

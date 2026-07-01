@@ -14,6 +14,12 @@ class OrderSummary {
     required this.price,
     required this.currency,
     required this.description,
+    required this.attributeOneValue,
+    required this.attributeTwoValue,
+    required this.attributeThreeValue,
+    required this.attributeFourValue,
+    required this.attributeFiveValue,
+    required this.attributes,
     required this.postcode,
     required this.collectionIsHomeAddress,
     required this.collectionAddress,
@@ -58,6 +64,12 @@ class OrderSummary {
   final double price;
   final String currency;
   final String description;
+  final String attributeOneValue;
+  final String attributeTwoValue;
+  final String attributeThreeValue;
+  final String attributeFourValue;
+  final String attributeFiveValue;
+  final List<OrderAttributeValue> attributes;
   final String postcode;
   final bool collectionIsHomeAddress;
   final String collectionAddress;
@@ -115,6 +127,15 @@ class OrderSummary {
       price: (json['price'] as num?)?.toDouble() ?? 0,
       currency: json['currency'] as String? ?? 'GBP',
       description: json['description'] as String? ?? '',
+      attributeOneValue: json['attribute_one_value'] as String? ?? '',
+      attributeTwoValue: json['attribute_two_value'] as String? ?? '',
+      attributeThreeValue: json['attribute_three_value'] as String? ?? '',
+      attributeFourValue: json['attribute_four_value'] as String? ?? '',
+      attributeFiveValue: json['attribute_five_value'] as String? ?? '',
+      attributes: (json['attributes'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(OrderAttributeValue.fromJson)
+          .toList(growable: false),
       postcode: json['postcode'] as String? ?? '',
       collectionIsHomeAddress: json['collection_is_home_address'] as bool? ?? true,
       collectionAddress: json['collection_address'] as String? ?? '',
@@ -178,6 +199,29 @@ class OrderSummary {
       return value.toDouble();
     }
     return double.tryParse(value.toString());
+  }
+}
+
+class OrderAttributeValue {
+  OrderAttributeValue({
+    required this.order,
+    required this.name,
+    required this.value,
+    required this.valueSource,
+  });
+
+  final int order;
+  final String name;
+  final String value;
+  final String valueSource;
+
+  factory OrderAttributeValue.fromJson(Map<String, dynamic> json) {
+    return OrderAttributeValue(
+      order: json['order'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+      valueSource: json['value_source'] as String? ?? 'product',
+    );
   }
 }
 

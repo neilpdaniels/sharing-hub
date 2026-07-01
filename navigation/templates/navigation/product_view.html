@@ -11,6 +11,15 @@
     <div class="media-body ">
     <h5 class="card-title">{{ product.name | title }}</h5>
     <p class="card-text">{{ product.description|default_if_none:''|safe }}</p>
+    {% with product_attributes=product.get_attribute_pairs %}
+    {% if product_attributes %}
+    <div class="mt-2">
+        {% for attribute in product_attributes|slice:":3" %}
+        <span class="badge badge-light border mr-1 mb-1">{{ attribute.name }}: {{ attribute.value }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
     </div>
 </div>
 </a>

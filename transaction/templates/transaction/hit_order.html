@@ -132,6 +132,7 @@
                                                     <div><strong>Band:</strong> <span id="price-band-note">Base daily price</span></div>
                                                     <div><strong>Estimated rental subtotal:</strong> £<span id="price-subtotal">{{ order.price|floatformat:2 }}</span></div>
                                                     <div id="pricing-long-rental-note" class="mt-2 font-weight-bold text-warning" style="display:none;">Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.</div>
+                                                    <div id="pricing-very-long-rental-note" class="mt-2 font-weight-bold text-danger" style="display:none;">Rentals over 30 days are not supported yet. Please choose 30 days or fewer.</div>
                                                     {% if order.max_rental_days %}
                                                     <div class="text-muted">Maximum booking length: {{ order.max_rental_days }} day(s)</div>
                                                     {% endif %}
@@ -230,9 +231,12 @@
         document.getElementById('price-band-note').textContent = pricing.label;
         document.getElementById('price-subtotal').textContent = (days > 0 ? (days * pricing.rate) : pricing.rate).toFixed(2);
         var longRental = days > 5;
+        var veryLongRental = days > 30;
         var note = document.getElementById('pricing-long-rental-note');
+        var hardStop = document.getElementById('pricing-very-long-rental-note');
         var banner = document.getElementById('long-rental-deposit-note');
         if (note) note.style.display = longRental ? 'block' : 'none';
+        if (hardStop) hardStop.style.display = veryLongRental ? 'block' : 'none';
         if (banner) banner.style.display = longRental ? 'block' : 'none';
     }
 
@@ -255,6 +259,7 @@
             cur.setDate(cur.getDate() + 1);
         }
         var days = dayCount(start, end);
+        if (days > 30) return false;
         if (maxRentalDays && days > maxRentalDays) return false;
         if (isHandover(start) || isHandover(end)) return false;
         return true;

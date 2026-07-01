@@ -2,6 +2,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+PROJECT_ROOT="/home/neil/Projects/rentalution"
+VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
+source "$VENV_PATH"
 
 SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
 

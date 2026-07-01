@@ -791,91 +791,28 @@
                                 <div class="browse-control-right">
                                 <label for="sort_by" class="mb-0 text-muted" style="font-size:0.78rem;">Sort:</label>
                                 <select name="sort_by" id="sort_by" class="form-control">
-                                    <option value="active" {% if sort_by == 'active' %}selected{% endif %}>Most active</option>
-                                    <option value="az" {% if sort_by == 'az' %}selected{% endif %}>A-Z</option>
-                                    <option value="za" {% if sort_by == 'za' %}selected{% endif %}>Z-A</option>
+                                    {% for option in sort_options %}
+                                    <option value="{{ option.value }}" {% if sort_by == option.value %}selected{% endif %}>{{ option.label }}</option>
+                                    {% endfor %}
                                 </select>
                                 </div>
                             </div>
 
                             <div id="browse-filter-popup" class="browse-filter-popup" role="dialog" aria-label="Browse filters" aria-hidden="false">
-                                    {% if filterable_attributes_count == 1 %}
-                                        {% if all_attributes.attribute_one_values %}
-                                        <div>
-                                            <div class="form-group">
-                                                <select class="form-control" id="attribute_one" name="attribute_one">
-                                                    <option>filter {{ category.attribute_one_name }}</option>
-                                                    {% for a in all_attributes.attribute_one_values %}
-                                                    <option {% if chosen_attributes.attribute_one == a %}selected="selected"{% endif %}>{{ a }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
+                                    {% for attribute_filter in attribute_filters %}
+                                    {% if attribute_filter.values %}
+                                    <div>
+                                        <div class="form-group">
+                                            <select class="form-control" id="{{ attribute_filter.query_param }}" name="{{ attribute_filter.query_param }}">
+                                                <option value="">All {{ attribute_filter.name|lower }}</option>
+                                                {% for value in attribute_filter.values %}
+                                                <option value="{{ value }}" {% if chosen_attributes|get_item:attribute_filter.query_param == value %}selected="selected"{% endif %}>{{ value }}</option>
+                                                {% endfor %}
+                                            </select>
                                         </div>
-                                        {% endif %}
-                                    {% elif filterable_attributes_count == 2 %}
-                                        {% if all_attributes.attribute_one_values %}
-                                        <div>
-                                            <div class="form-group">
-                                                <select class="form-control" id="attribute_one" name="attribute_one">
-                                                    <option>filter {{ category.attribute_one_name }}</option>
-                                                    {% for a in all_attributes.attribute_one_values %}
-                                                    <option {% if chosen_attributes.attribute_one == a %}selected="selected"{% endif %}>{{ a }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {% endif %}
-                                        {% if all_attributes.attribute_two_values %}
-                                        <div>
-                                            <div class="form-group">
-                                                <select class="form-control" id="attribute_two" name="attribute_two">
-                                                    <option {% if chosen_attributes.attribute_two == "No filter" %}selected="selected"{% endif %}>filter {{ category.attribute_two_name }}</option>
-                                                    {% for a in all_attributes.attribute_two_values %}
-                                                    <option {% if chosen_attributes.attribute_two == a %}selected="selected"{% endif %}>{{ a }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {% endif %}
-                                    {% elif filterable_attributes_count == 3 %}
-                                        {% if all_attributes.attribute_one_values %}
-                                        <div>
-                                            <div class="form-group">
-                                                <select class="form-control" id="attribute_one" name="attribute_one">
-                                                    <option>filter {{ category.attribute_one_name }}</option>
-                                                    {% for a in all_attributes.attribute_one_values %}
-                                                    <option {% if chosen_attributes.attribute_one == a %}selected="selected"{% endif %}>{{ a }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {% endif %}
-                                        {% if all_attributes.attribute_two_values %}
-                                        <div>
-                                            <div class="form-group">
-                                                <select class="form-control" id="attribute_two" name="attribute_two">
-                                                    <option {% if chosen_attributes.attribute_two == "No filter" %}selected="selected"{% endif %}>filter {{ category.attribute_two_name }}</option>
-                                                    {% for a in all_attributes.attribute_two_values %}
-                                                    <option {% if chosen_attributes.attribute_two == a %}selected="selected"{% endif %}>{{ a }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {% endif %}
-                                        {% if all_attributes.attribute_three_values %}
-                                        <div>
-                                            <div class="form-group">
-                                                <select class="form-control" id="attribute_three" name="attribute_three">
-                                                    <option {% if chosen_attributes.attribute_three == "No filter" %}selected="selected"{% endif %}>filter {{ category.attribute_three_name }}</option>
-                                                    {% for a in all_attributes.attribute_three_values %}
-                                                    <option {% if chosen_attributes.attribute_three == a %}selected="selected"{% endif %}>{{ a }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {% endif %}
+                                    </div>
                                     {% endif %}
-
+                                    {% endfor %}
                             </div>
                         </div>
                     </div>

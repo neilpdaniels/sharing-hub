@@ -50,6 +50,15 @@ class Transaction(models.Model):
         6: 'Return evidence + confirmation/counter + deposit proposal cycle + lender PIN to borrower',
         7: 'Feedback (both parties): star ratings + commentary',
     }
+    WORKFLOW_STAGE_HELP_TEXT = {
+        1: 'Please discuss any specifics around the rental before progressing.',
+        2: 'The lender confirms the rental agreement and prepares the contract.',
+        3: 'The borrower reviews and confirms the rental agreement.',
+        4: 'The borrower sets up the payment card needed for deposits and charges.',
+        5: 'Checkout evidence is reviewed and the handover PIN is used to start the rental.',
+        6: 'Return evidence is reviewed, deposit return is agreed, and the return PIN is used to complete the rental.',
+        7: 'Both parties leave feedback to close the transaction cleanly.',
+    }
 
     # objects = models.DjongoManager()
 
@@ -726,6 +735,7 @@ class Transaction(models.Model):
             {
                 'step': step,
                 'label': self.WORKFLOW_STAGE_LABELS.get(step, 'Workflow step'),
+                'help_text': self.WORKFLOW_STAGE_HELP_TEXT.get(step, ''),
                 'current': step == current,
                 'done': step < current,
                 'display_date': self._format_workflow_step_display_date(

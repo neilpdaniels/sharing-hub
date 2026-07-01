@@ -10,13 +10,110 @@ from transaction.models import Transaction
 
 
 SCENARIOS = [
-    ('scenario-enquiry', Transaction.RENTAL_ENQUIRY, 'Initial enquiry'),
-    ('scenario-agreed', Transaction.RENTAL_AGREED, 'Agreement signed'),
-    ('scenario-checkout', Transaction.RENTAL_DAY_AWAITING_VERIFICATION, 'Checkout evidence pending'),
-    ('scenario-ongoing', Transaction.RENTAL_ONGOING, 'Rental ongoing'),
-    ('scenario-return', Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION, 'Return evidence pending'),
-    ('scenario-deposit', Transaction.RENTAL_RETURNED_DEPOSIT_PENDING, 'Deposit review pending'),
-    ('scenario-feedback', Transaction.AWAITING_FEEDBACK, 'Feedback window open'),
+    {
+        'name': 'scenario-enquiry',
+        'status': Transaction.RENTAL_ENQUIRY,
+        'note': 'Initial enquiry',
+    },
+    {
+        'name': 'scenario-agreed',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'Agreement signed',
+    },
+    {
+        'name': 'scenario-checkout',
+        'status': Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
+        'note': 'Checkout evidence pending',
+    },
+    {
+        'name': 'scenario-ongoing',
+        'status': Transaction.RENTAL_ONGOING,
+        'note': 'Rental ongoing',
+    },
+    {
+        'name': 'scenario-return',
+        'status': Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+        'note': 'Return evidence pending',
+    },
+    {
+        'name': 'scenario-deposit',
+        'status': Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+        'note': 'Deposit review pending',
+    },
+    {
+        'name': 'scenario-feedback',
+        'status': Transaction.AWAITING_FEEDBACK,
+        'note': 'Feedback window open',
+    },
+    {
+        'name': 'scenario-long-rental',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'Long rental over 5 days; deposit card should require Visa or Mastercard credit card',
+        'order_overrides': {'max_rental_days': 14},
+        'transaction_overrides': {
+            'rental_start_delta_days': 7,
+            'rental_end_delta_days': 23,
+            'price': 42,
+            'deposit': 120,
+        },
+    },
+    {
+        'name': 'scenario-31-day-rental',
+        'status': Transaction.RENTAL_AGREED,
+        'note': '31+ day rental; no separate blocker found for rentals over 30 days in the current code',
+        'order_overrides': {'max_rental_days': 31},
+        'transaction_overrides': {
+            'rental_start_delta_days': 10,
+            'rental_end_delta_days': 41,
+            'price': 55,
+            'deposit': 150,
+        },
+    },
+    {
+        'name': 'scenario-zero-deposit',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'No deposit, payment still applies',
+        'transaction_overrides': {
+            'price': 25,
+            'deposit': 0,
+        },
+    },
+    {
+        'name': 'scenario-zero-payment',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'No payment, deposit only',
+        'transaction_overrides': {
+            'price': 0,
+            'deposit': 75,
+        },
+    },
+    {
+        'name': 'scenario-zero-cost',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'No rental charges at all',
+        'transaction_overrides': {
+            'price': 0,
+            'deposit': 0,
+            'delivery_cost': 0,
+            'rentalution_fee': 0,
+        },
+    },
+    {
+        'name': 'scenario-friends-free',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'Friends-only rental with no cost',
+        'order_overrides': {
+            'let_visibility': Order.FRIENDS_ONLY,
+            'mates_rates': 0,
+            'mates_deposit': 0,
+            'deposit': 0,
+            'price': 0,
+        },
+        'transaction_overrides': {
+            'price': 0,
+            'deposit': 0,
+        },
+    },
 ]
 
 
@@ -35,26 +132,32 @@ class Command(BaseCommand):
 
         lender = self._ensure_user('scenario-lender', 'scenario-lender@example.com')
         renter = self._ensure_user('scenario-renter', 'scenario-renter@example.com')
-        category = Category.objects.create(title=f'Scenario Tools {timezone.now().strftime("%Y%m%d%H%M%S")}')
-        product = Product.objects.create(category_id=category, name='Scenario Drill')
-        order = Order.objects.create(
-            product=product,
-            user=lender,
-            direction=Order.TO_LET,
-            expiry_date=timezone.now() + timedelta(days=30),
-            status=Order.ACTIVE,
-            price=30,
-            deposit=80,
-            postcode='SW1A1AA',
-            max_rental_days=7,
-        )
-
         created = 0
-        for scenario_name, status, note in SCENARIOS:
-            marker = f'SCENARIO:{scenario_name}'
+        for scenario in SCENARIOS:
+            scenario_name = scenario['name']
+            status = scenario['status']
+            note = scenario['note']
+            order_overrides = scenario.get('order_overrides', {})
+            txn_overrides = scenario.get('transaction_overrides', {})
+            marker = f"SCENARIO:{scenario_name}"
             txn = Transaction.objects.filter(transpact_text_status=marker).first()
             was_created = txn is None
             if was_created:
+                category = Category.objects.create(title=f'Scenario Tools {scenario_name} {timezone.now().strftime("%Y%m%d%H%M%S")}')
+                product = Product.objects.create(category_id=category, name=f'Scenario Drill {scenario_name}')
+                order_defaults = {
+                    'product': product,
+                    'user': lender,
+                    'direction': Order.TO_LET,
+                    'expiry_date': timezone.now() + timedelta(days=30),
+                    'status': Order.ACTIVE,
+                    'price': 30,
+                    'deposit': 80,
+                    'postcode': 'SW1A1AA',
+                    'max_rental_days': 7,
+                }
+                order_defaults.update(order_overrides)
+                order = Order.objects.create(**order_defaults)
                 txn = Transaction.objects.create(
                     user_passive=lender,
                     user_aggressive=renter,
@@ -62,18 +165,18 @@ class Command(BaseCommand):
                     product=product,
                     transaction_status=status,
                     prev_transaction_status=Transaction.RENTAL_ENQUIRY,
-                    rental_start_date=timezone.localdate() + timedelta(days=1),
-                    rental_end_date=timezone.localdate() + timedelta(days=3),
+                    rental_start_date=timezone.localdate() + timedelta(days=txn_overrides.get('rental_start_delta_days', 1)),
+                    rental_end_date=timezone.localdate() + timedelta(days=txn_overrides.get('rental_end_delta_days', 3)),
                     quantity=1,
-                    price=30,
-                    deposit=80,
-                    current_spot_value=100,
-                    price_as_pct_spot_value=30,
+                    price=txn_overrides.get('price', 30),
+                    deposit=txn_overrides.get('deposit', 80),
+                    current_spot_value=txn_overrides.get('current_spot_value', 100),
+                    price_as_pct_spot_value=txn_overrides.get('price_as_pct_spot_value', 30),
                     deposit_resolution_notes=note,
                     enquiry_message=note,
-                    delivery_distance_km=5,
-                    delivery_cost=0,
-                    rentalution_fee=0,
+                    delivery_distance_km=txn_overrides.get('delivery_distance_km', 5),
+                    delivery_cost=txn_overrides.get('delivery_cost', 0),
+                    rentalution_fee=txn_overrides.get('rentalution_fee', 0),
                     transpact_text_status=marker,
                 )
             if was_created:
@@ -97,6 +200,6 @@ class Command(BaseCommand):
 
     def _reset(self):
         Transaction.objects.filter(transpact_text_status__startswith='SCENARIO:').delete()
-        Product.objects.filter(name='Scenario Drill').delete()
+        Product.objects.filter(name__startswith='Scenario Drill').delete()
         Category.objects.filter(title__startswith='Scenario Tools ').delete()
         User.objects.filter(username__in=['scenario-lender', 'scenario-renter']).delete()

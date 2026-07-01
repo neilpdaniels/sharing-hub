@@ -352,6 +352,13 @@ class MyOrdersScreen extends StatelessWidget {
     final maxRentalDaysController = TextEditingController(
       text: order.maxRentalDays > 0 ? order.maxRentalDays.toString() : '7',
     );
+    final listingAttributes = order.attributes
+        .where((attribute) => attribute.valueSource == 'listing')
+        .toList(growable: false);
+    final listingAttributeControllers = <int, TextEditingController>{
+      for (final attribute in listingAttributes)
+        attribute.order: TextEditingController(text: attribute.value),
+    };
 
     var letVisibility = order.letVisibility.isEmpty
         ? 'BOTH'
@@ -596,6 +603,8 @@ class MyOrdersScreen extends StatelessWidget {
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'Max rental days',
+                          helperText:
+                              'Rentals over 30 days are not supported yet.',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -614,6 +623,30 @@ class MyOrdersScreen extends StatelessWidget {
                           labelText: 'Additional comments',
                         ),
                       ),
+                      if (listingAttributes.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'This listing\'s details',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...listingAttributes.map((attribute) {
+                          final controller =
+                              listingAttributeControllers[attribute.order]!;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: TextField(
+                              controller: controller,
+                              decoration: InputDecoration(
+                                labelText: attribute.name,
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
                     ],
                   ),
                 ),
@@ -626,6 +659,19 @@ class MyOrdersScreen extends StatelessWidget {
                 ElevatedButton(
                   onPressed: () async {
                     final fields = <String, dynamic>{};
+                    final maxRentalDays = int.tryParse(
+                      maxRentalDaysController.text.trim(),
+                    );
+                    if (maxRentalDays != null && maxRentalDays > 30) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Please keep the rental length to 30 days or fewer.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
                     final price = double.tryParse(priceController.text.trim());
                     if (price != null) {
                       fields['price'] = price;
@@ -670,9 +716,6 @@ class MyOrdersScreen extends StatelessWidget {
                     if (deliveryCostPerKm != null) {
                       fields['delivery_cost_per_km'] = deliveryCostPerKm;
                     }
-                    final maxRentalDays = int.tryParse(
-                      maxRentalDaysController.text.trim(),
-                    );
                     if (maxRentalDays != null) {
                       fields['max_rental_days'] = maxRentalDays;
                     }
@@ -697,6 +740,13 @@ class MyOrdersScreen extends StatelessWidget {
                           collectionDetailsController.text.trim(),
                           availableWeekdays,
                         );
+                    for (final attribute in listingAttributes) {
+                      final value =
+                          listingAttributeControllers[attribute.order]?.text
+                              .trim() ??
+                          '';
+                      fields['attribute_${attribute.order}_value'] = value;
+                    }
                     await onAmendOrder(order, fields);
                     if (context.mounted) {
                       Navigator.of(context).pop();

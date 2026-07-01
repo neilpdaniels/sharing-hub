@@ -7,6 +7,89 @@ String _asString(dynamic value) {
   return value.toString();
 }
 
+class CategoryAttributeDefinition {
+  CategoryAttributeDefinition({
+    required this.order,
+    required this.name,
+    required this.valueSource,
+    required this.sortable,
+    required this.filterable,
+    required this.defaultFilteredValue,
+    required this.allowedValues,
+    required this.fieldName,
+    required this.queryParam,
+    required this.sortKeyAsc,
+    required this.sortKeyDesc,
+    required this.inputType,
+  });
+
+  final int order;
+  final String name;
+  final String valueSource;
+  final bool sortable;
+  final bool filterable;
+  final String defaultFilteredValue;
+  final List<String> allowedValues;
+  final String fieldName;
+  final String queryParam;
+  final String sortKeyAsc;
+  final String sortKeyDesc;
+  final String inputType;
+
+  factory CategoryAttributeDefinition.fromJson(Map<String, dynamic> json) {
+    return CategoryAttributeDefinition(
+      order: (json['order'] as num?)?.toInt() ?? 0,
+      name: _asString(json['name']),
+      valueSource: _asString(json['value_source']),
+      sortable: json['sortable'] as bool? ?? false,
+      filterable: json['filterable'] as bool? ?? false,
+      defaultFilteredValue: _asString(json['default_filtered_value']),
+      allowedValues: (json['allowed_values'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .toList(growable: false),
+      fieldName: _asString(json['field_name']),
+      queryParam: _asString(json['query_param']),
+      sortKeyAsc: _asString(json['sort_key_asc']),
+      sortKeyDesc: _asString(json['sort_key_desc']),
+      inputType: _asString(json['input_type']),
+    );
+  }
+}
+
+class ProductAttributeValue {
+  ProductAttributeValue({
+    required this.order,
+    required this.name,
+    required this.value,
+    required this.valueSource,
+    required this.filterable,
+    required this.sortable,
+    required this.allowedValues,
+  });
+
+  final int order;
+  final String name;
+  final String value;
+  final String valueSource;
+  final bool filterable;
+  final bool sortable;
+  final List<String> allowedValues;
+
+  factory ProductAttributeValue.fromJson(Map<String, dynamic> json) {
+    return ProductAttributeValue(
+      order: (json['order'] as num?)?.toInt() ?? 0,
+      name: _asString(json['name']),
+      value: _asString(json['value']),
+      valueSource: _asString(json['value_source']),
+      filterable: json['filterable'] as bool? ?? false,
+      sortable: json['sortable'] as bool? ?? false,
+      allowedValues: (json['allowed_values'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .toList(growable: false),
+    );
+  }
+}
+
 class CategorySummary {
   CategorySummary({
     required this.id,
@@ -15,6 +98,7 @@ class CategorySummary {
     required this.parentSlug,
     required this.description,
     required this.imageUrl,
+    required this.attributeDefinitions,
   });
 
   final int id;
@@ -23,6 +107,7 @@ class CategorySummary {
   final String parentSlug;
   final String description;
   final String imageUrl;
+  final List<CategoryAttributeDefinition> attributeDefinitions;
 
   factory CategorySummary.fromJson(Map<String, dynamic> json) {
     return CategorySummary(
@@ -32,6 +117,11 @@ class CategorySummary {
       parentSlug: _asString(json['parent_slug']),
       description: _asString(json['description']),
       imageUrl: _asString(json['image_url']),
+      attributeDefinitions:
+          (json['attribute_definitions'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(CategoryAttributeDefinition.fromJson)
+              .toList(growable: false),
     );
   }
 }
@@ -53,6 +143,8 @@ class ProductSummary {
     required this.attributeThreeValue,
     required this.attributeFourValue,
     required this.attributeFiveValue,
+    required this.attributeDefinitions,
+    required this.attributes,
     required this.riskRating,
     required this.nearestDistanceKm,
     required this.activeOrderCount,
@@ -74,6 +166,8 @@ class ProductSummary {
   final String attributeThreeValue;
   final String attributeFourValue;
   final String attributeFiveValue;
+  final List<CategoryAttributeDefinition> attributeDefinitions;
+  final List<ProductAttributeValue> attributes;
   final int riskRating;
   final double? nearestDistanceKm;
   final int activeOrderCount;
@@ -95,6 +189,15 @@ class ProductSummary {
       attributeThreeValue: _asString(json['attribute_three_value']),
       attributeFourValue: _asString(json['attribute_four_value']),
       attributeFiveValue: _asString(json['attribute_five_value']),
+      attributeDefinitions:
+          (json['attribute_definitions'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(CategoryAttributeDefinition.fromJson)
+              .toList(growable: false),
+      attributes: (json['attributes'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(ProductAttributeValue.fromJson)
+          .toList(growable: false),
       riskRating: (json['risk_rating'] as num?)?.toInt() ?? 0,
       nearestDistanceKm: (json['nearest_distance_km'] as num?)?.toDouble(),
       activeOrderCount: json['active_order_count'] as int? ?? 0,
@@ -119,6 +222,8 @@ class ProductDetail extends ProductSummary {
     required super.attributeThreeValue,
     required super.attributeFourValue,
     required super.attributeFiveValue,
+    required super.attributeDefinitions,
+    required super.attributes,
     required super.riskRating,
     required super.nearestDistanceKm,
     required super.activeOrderCount,
@@ -144,6 +249,15 @@ class ProductDetail extends ProductSummary {
       attributeThreeValue: _asString(json['attribute_three_value']),
       attributeFourValue: _asString(json['attribute_four_value']),
       attributeFiveValue: _asString(json['attribute_five_value']),
+      attributeDefinitions:
+          (json['attribute_definitions'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(CategoryAttributeDefinition.fromJson)
+              .toList(growable: false),
+      attributes: (json['attributes'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(ProductAttributeValue.fromJson)
+          .toList(growable: false),
       riskRating: (json['risk_rating'] as num?)?.toInt() ?? 0,
       nearestDistanceKm: (json['nearest_distance_km'] as num?)?.toDouble(),
       activeOrderCount: json['active_order_count'] as int? ?? 0,

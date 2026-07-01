@@ -619,6 +619,12 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     money_earned = serializers.SerializerMethodField()
     money_pending = serializers.SerializerMethodField()
     verified_users_only = serializers.BooleanField(read_only=True)
+    attribute_one_value = serializers.CharField(read_only=True, allow_blank=True)
+    attribute_two_value = serializers.CharField(read_only=True, allow_blank=True)
+    attribute_three_value = serializers.CharField(read_only=True, allow_blank=True)
+    attribute_four_value = serializers.CharField(read_only=True, allow_blank=True)
+    attribute_five_value = serializers.CharField(read_only=True, allow_blank=True)
+    attributes = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -641,6 +647,12 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'quantity',
             'description',
             'additional_comments',
+            'attribute_one_value',
+            'attribute_two_value',
+            'attribute_three_value',
+            'attribute_four_value',
+            'attribute_five_value',
+            'attributes',
             'postcode',
             'collection_is_home_address',
             'collection_address',
@@ -668,6 +680,9 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'money_earned',
             'money_pending',
         )
+
+    def get_attributes(self, obj):
+        return obj.get_attribute_pairs()
 
     def get_listing_image_url(self, obj):
         urls = self.get_listing_image_urls(obj)
@@ -786,6 +801,11 @@ class OrderAmendSerializer(serializers.ModelSerializer):
             'quantity',
             'description',
             'additional_comments',
+            'attribute_one_value',
+            'attribute_two_value',
+            'attribute_three_value',
+            'attribute_four_value',
+            'attribute_five_value',
             'postcode',
             'latitude',
             'longitude',
@@ -829,6 +849,11 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             'max_rental_days',
             'description',
             'additional_comments',
+            'attribute_one_value',
+            'attribute_two_value',
+            'attribute_three_value',
+            'attribute_four_value',
+            'attribute_five_value',
             'postcode',
             'latitude',
             'longitude',
@@ -919,6 +944,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 class CategorySummarySerializer(serializers.ModelSerializer):
     parent_slug = serializers.CharField(source='parent_category.slug', allow_null=True, read_only=True)
     image_url = serializers.SerializerMethodField()
+    attribute_definitions = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
@@ -929,6 +955,7 @@ class CategorySummarySerializer(serializers.ModelSerializer):
             'parent_slug',
             'description',
             'image_url',
+            'attribute_definitions',
         )
 
     def get_image_url(self, obj):
@@ -938,6 +965,13 @@ class CategorySummarySerializer(serializers.ModelSerializer):
         if request is None:
             return obj.image.url
         return request.build_absolute_uri(obj.image.url)
+
+    def get_attribute_definitions(self, obj):
+        return [
+            definition
+            for definition in obj.get_attribute_definitions()
+            if (definition.get('name') or '').strip()
+        ]
 
 
 class ProductSummarySerializer(serializers.ModelSerializer):
@@ -954,6 +988,8 @@ class ProductSummarySerializer(serializers.ModelSerializer):
     attribute_five_value = serializers.CharField(read_only=True, allow_blank=True)
     risk_rating = serializers.IntegerField(read_only=True, allow_null=True)
     nearest_distance_km = serializers.FloatField(read_only=True, allow_null=True)
+    attribute_definitions = serializers.SerializerMethodField()
+    attributes = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -973,6 +1009,8 @@ class ProductSummarySerializer(serializers.ModelSerializer):
             'attribute_three_value',
             'attribute_four_value',
             'attribute_five_value',
+            'attribute_definitions',
+            'attributes',
             'risk_rating',
             'nearest_distance_km',
             'active_order_count',
@@ -988,6 +1026,19 @@ class ProductSummarySerializer(serializers.ModelSerializer):
 
     def get_tags(self, obj):
         return list(obj.tags.values_list('name', flat=True))
+
+    def get_attribute_definitions(self, obj):
+        category = getattr(obj, 'category_id', None)
+        if category is None:
+            return []
+        return [
+            definition
+            for definition in category.get_attribute_definitions()
+            if (definition.get('name') or '').strip()
+        ]
+
+    def get_attributes(self, obj):
+        return obj.get_attribute_pairs()
 
 
 class ProductDetailSerializer(ProductSummarySerializer):

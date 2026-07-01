@@ -262,11 +262,16 @@
                                     </td>
                                     <td>
                                         {% if workflow_step.current %}
-                                            <span class="badge badge-danger">Current</span>
+                                            <div class="workflow-help workflow-help--current">
+                                                <div class="workflow-help-title">Current step</div>
+                                                <div class="workflow-help-body">{{ workflow_step.help_text }}</div>
+                                            </div>
                                         {% elif workflow_step.done %}
                                             <span class="badge badge-success">Completed</span>
                                         {% else %}
-                                            <span class="badge badge-secondary">Pending</span>
+                                            <div class="workflow-help workflow-help--pending">
+                                                <div class="workflow-help-body">{{ workflow_step.help_text }}</div>
+                                            </div>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -1166,6 +1171,43 @@
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         margin: 0 auto;
         border: 2px solid #1565c0;
+    }
+
+    .workflow-help {
+        border-radius: 12px;
+        padding: 0.6rem 0.75rem;
+        line-height: 1.35;
+    }
+
+    .workflow-help-title {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 0.2rem;
+    }
+
+    .workflow-help-body {
+        font-size: 0.9rem;
+        color: #203040;
+    }
+
+    .workflow-help--current {
+        background: #fff4e9;
+        border: 1px solid #f1c08f;
+    }
+
+    .workflow-help--current .workflow-help-title {
+        color: #c25522;
+    }
+
+    .workflow-help--pending {
+        background: #f7f9fb;
+        border: 1px solid #d9e4ec;
+    }
+
+    .workflow-help--pending .workflow-help-title {
+        color: #627387;
     }
 
     .transaction-messages .messages-table {

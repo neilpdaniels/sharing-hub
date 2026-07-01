@@ -44,6 +44,20 @@
           </div>
         </div>
 
+        {% with listing_attribute_fields=order_form.get_listing_attribute_fields %}
+        {% if listing_attribute_fields %}
+        <div class="card mb-3">
+          <div class="card-header font-weight-bold">This listing's details</div>
+          <div class="card-body">
+            <p class="text-muted small mb-3">These are details for this specific listing, not the product type in general.</p>
+            {% for bound_field in listing_attribute_fields %}
+              {% bootstrap_field bound_field %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+
         {# ── Location ── #}
         <div class="card mb-3">
           <div class="card-header font-weight-bold">Location &amp; reach</div>
@@ -107,6 +121,7 @@
           <div class="alert alert-warning mt-2 mb-3" style="display:block;">
             <strong>Long rental note</strong><br/>
             If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. Payment cards can still be different.
+            Rentals over 30 days are not supported yet.
           </div>
           {% bootstrap_field order_form.deposit %}
           <div class="alert alert-info mt-3 mb-0" style="display:block;">

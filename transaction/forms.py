@@ -55,6 +55,11 @@ class OrderAddForm(forms.ModelForm):
             'max_rental_days',
             'description',
             'additional_comments',
+            'attribute_one_value',
+            'attribute_two_value',
+            'attribute_three_value',
+            'attribute_four_value',
+            'attribute_five_value',
             'postcode',
             'latitude',
             'longitude',
@@ -90,6 +95,7 @@ class OrderAddForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.listing_attribute_field_names = []
         if self.instance and self.instance.pk:
             self.fields['collection_is_not_home_address'].initial = not self.instance.collection_is_home_address
         self.fields['delivery_within_km'].help_text = 'Delivery is charged per km up to this distance.'
@@ -100,12 +106,59 @@ class OrderAddForm(forms.ModelForm):
         self.fields['collection_postcode'].help_text = 'Collection postcode for this listing.'
         self.fields['max_rental_days'].help_text = (
             'If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. '
-            'Payment cards can still be different.'
+            'Payment cards can still be different. Rentals over 30 days are not supported yet.'
         )
         self.fields['verified_users_only'].help_text = (
             'This means the renter must have completed Stripe identity verification. '
             'It checks identity, not a payment card.'
         )
+        self._configure_listing_attribute_fields()
+
+    def _configure_listing_attribute_fields(self):
+        product = getattr(self.instance, 'product', None)
+        category = getattr(product, 'category_id', None)
+        field_map = {
+            1: 'attribute_one_value',
+            2: 'attribute_two_value',
+            3: 'attribute_three_value',
+            4: 'attribute_four_value',
+            5: 'attribute_five_value',
+        }
+
+        for field_name in field_map.values():
+            if field_name not in self.fields:
+                continue
+            self.fields[field_name].required = False
+            self.fields[field_name].widget = forms.HiddenInput()
+            self.fields[field_name].help_text = ''
+
+        if category is None:
+            return
+
+        for definition in category.get_attribute_definitions():
+            if definition.get('value_source') != 'listing':
+                continue
+            field_name = field_map.get(definition['order'])
+            if not field_name or field_name not in self.fields:
+                continue
+            label = (definition.get('name') or '').strip()
+            if not label:
+                continue
+            field = self.fields[field_name]
+            field.label = label
+            allowed_values = definition.get('allowed_values') or []
+            if allowed_values:
+                field.widget = forms.Select(
+                    choices=[('', f'Select {label.lower()}')] + [(value, value) for value in allowed_values]
+                )
+                field.help_text = 'Choose the value for this specific listing.'
+            else:
+                field.widget = forms.TextInput(attrs={'placeholder': label})
+                field.help_text = 'Enter the value for this specific listing.'
+            self.listing_attribute_field_names.append(field_name)
+
+    def get_listing_attribute_fields(self):
+        return [self[field_name] for field_name in self.listing_attribute_field_names if field_name in self.fields]
 
     def clean(self):
         cleaned_data = super().clean()
@@ -146,6 +199,13 @@ class OrderAddForm(forms.ModelForm):
 
         collection_is_not_home_address = cleaned_data.get('collection_is_not_home_address')
         cleaned_data['collection_is_home_address'] = not collection_is_not_home_address
+
+        max_rental_days = cleaned_data.get('max_rental_days')
+        if max_rental_days and int(max_rental_days) > 30:
+            self.add_error(
+                'max_rental_days',
+                'Please keep the maximum rental duration to 30 days or fewer for now.',
+            )
 
         if not collection_is_not_home_address:
             cleaned_data['collection_address'] = ''
@@ -197,8 +257,30 @@ class OrderEditForm(forms.ModelForm):
 
     class Meta:
         model = Order
-        fields = ('direction','quantity', 'expiry_date',
-        'price', 'description', 'postcode', 'latitude', 'longitude', 'radius_km')
+        fields = (
+            'direction',
+            'quantity',
+            'expiry_date',
+            'price',
+            'description',
+            'attribute_one_value',
+            'attribute_two_value',
+            'attribute_three_value',
+            'attribute_four_value',
+            'attribute_five_value',
+            'postcode',
+            'latitude',
+            'longitude',
+            'radius_km',
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.listing_attribute_field_names = []
+        OrderAddForm._configure_listing_attribute_fields(self)
+
+    def get_listing_attribute_fields(self):
+        return [self[field_name] for field_name in self.listing_attribute_field_names if field_name in self.fields]
 
     def clean_quantity(self):
         quantity = self.cleaned_data['quantity'] 
@@ -255,6 +337,8 @@ class RentalEnquiryForm(forms.Form):
         rental_days = (end - start).days + 1
         if self.max_rental_days and rental_days > int(self.max_rental_days):
             raise forms.ValidationError(f'This listing allows a maximum of {self.max_rental_days} day(s) per booking.')
+        if rental_days > 30:
+            raise forms.ValidationError('Rentals over 30 days are not supported yet. Please choose 30 days or fewer.')
 
         if start in self.handover_dates or end in self.handover_dates:
             raise forms.ValidationError('Selected start/end date is unavailable for collection or drop-off.')

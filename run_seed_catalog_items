@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+PROJECT_ROOT="/home/neil/Projects/rentalution"
+VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
+source "$VENV_PATH"
+
+SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
+
+uv run python manage.py seed_catalog_items --settings="$SETTINGS_MODULE" "$@"

@@ -22,6 +22,14 @@ from account.forms import UserRegistrationStartForm, UserRegistrationVerifyForm
 from account.models import PaymentMethod, Profile
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
+from common.catalog_attributes import (
+    apply_attribute_filters,
+    collect_attribute_filter_options,
+    default_sort_value,
+    field_name_for_definition,
+    sortable_attribute_definitions,
+)
+from common.helpers import get_ordered_top_categories
 from common.geocoding import PostcodeGeocoder
 from common.failures import record_site_failure
 from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, OrderImage, Product
@@ -147,6 +155,11 @@ def _price_per_day_for_days(order, rental_days):
     if bands:
         return float(bands[-1].price_per_day)
     return float(order.price or 0)
+
+
+def _apply_product_attribute_filters(queryset, category, params):
+    filtered_queryset, _ = apply_attribute_filters(queryset, category, params, source='product')
+    return filtered_queryset
 
 
 def _filter_orders_by_distance(orders, origin_lat, origin_lon, max_distance_km=None):
@@ -1240,12 +1253,13 @@ class CategoryListView(generics.ListAPIView):
     def get_queryset(self):
         parent_slug = (self.request.GET.get('parent_slug') or '').strip()
         include_top = (self.request.GET.get('include_top') or '').strip().lower() == 'true'
-        queryset = Category.objects.select_related('parent_category').order_by('title')
+        queryset = Category.objects.select_related('parent_category').order_by('parent_category__title', 'title', 'id')
 
         if parent_slug:
             queryset = queryset.filter(parent_category__slug=parent_slug)
         elif not include_top:
-            queryset = queryset.exclude(slug='top')
+            top_ids = list(get_ordered_top_categories().values_list('id', flat=True))
+            queryset = queryset.filter(id__in=top_ids)
 
         return queryset
 
@@ -1258,7 +1272,7 @@ class CategoryProductsView(generics.ListAPIView):
         category = generics.get_object_or_404(Category, slug=self.kwargs['category_slug'])
         location = (self.request.GET.get('location') or '').strip()
         distance_raw = (self.request.GET.get('distance') or '').strip()
-        sort_by = (self.request.GET.get('sort_by') or 'name').strip().lower()
+        sort_by = (self.request.GET.get('sort_by') or '').strip().lower() or default_sort_value(category, fallback='name')
         include_zero_listings = (self.request.GET.get('include_zero_listings') or '').strip().lower() == 'true'
 
         max_distance_km = None
@@ -1276,6 +1290,26 @@ class CategoryProductsView(generics.ListAPIView):
             .prefetch_related('order_set', 'order_set__blocked_dates', 'tags')
             .order_by('name')
         )
+        queryset = _apply_product_attribute_filters(queryset, category, self.request.GET)
+        active_orders_queryset = Order.objects.filter(
+            product__category_id__in=_category_descendant_ids(category),
+            status=Order.ACTIVE,
+        ).select_related('product', 'product__category_id')
+        filtered_orders_queryset, _ = apply_attribute_filters(
+            active_orders_queryset,
+            category,
+            self.request.GET,
+            source='order',
+        )
+        has_listing_filter = any(
+            (self.request.GET.get(definition['query_param']) or '').strip()
+            for definition in category.get_attribute_definitions()
+            if definition.get('value_source') == 'listing'
+        )
+        if has_listing_filter:
+            queryset = queryset.filter(
+                id__in=filtered_orders_queryset.values_list('product_id', flat=True).distinct()
+            )
 
         products = []
         for product in queryset:
@@ -1309,8 +1343,34 @@ class CategoryProductsView(generics.ListAPIView):
             products.sort(key=lambda p: (p.nearest_distance_km is None, p.nearest_distance_km or 0))
         elif sort_by == 'newest':
             products.sort(key=lambda p: p.create_date, reverse=True)
-        else:
+        elif sort_by == 'za':
+            products.sort(key=lambda p: p.name.lower(), reverse=True)
+        elif sort_by == 'az':
             products.sort(key=lambda p: p.name.lower())
+        else:
+            matched_attribute_sort = False
+            for definition in sortable_attribute_definitions(category):
+                if sort_by == definition['sort_key_asc']:
+                    if definition.get('value_source') == 'listing':
+                        continue
+                    sort_field = field_name_for_definition(definition, source='product')
+                    products.sort(
+                        key=lambda p: ((getattr(p, sort_field, '') or '').lower(), p.name.lower()),
+                    )
+                    matched_attribute_sort = True
+                    break
+                if sort_by == definition['sort_key_desc']:
+                    if definition.get('value_source') == 'listing':
+                        continue
+                    sort_field = field_name_for_definition(definition, source='product')
+                    products.sort(
+                        key=lambda p: ((getattr(p, sort_field, '') or '').lower(), p.name.lower()),
+                        reverse=True,
+                    )
+                    matched_attribute_sort = True
+                    break
+            if not matched_attribute_sort:
+                products.sort(key=lambda p: p.name.lower())
 
         return products
 
@@ -1437,6 +1497,28 @@ class SearchProductsView(generics.ListAPIView):
         if category_slug:
             category = generics.get_object_or_404(Category, slug=category_slug)
             products = products.filter(category_id__in=_category_descendant_ids(category))
+            products = _apply_product_attribute_filters(products, category, self.request.GET)
+            active_orders_queryset = Order.objects.filter(
+                product__category_id__in=_category_descendant_ids(category),
+                status=Order.ACTIVE,
+            ).select_related('product', 'product__category_id')
+            filtered_orders_queryset, _ = apply_attribute_filters(
+                active_orders_queryset,
+                category,
+                self.request.GET,
+                source='order',
+            )
+            has_listing_filter = any(
+                (self.request.GET.get(definition['query_param']) or '').strip()
+                for definition in category.get_attribute_definitions()
+                if definition.get('value_source') == 'listing'
+            )
+            if has_listing_filter:
+                products = products.filter(
+                    id__in=filtered_orders_queryset.values_list('product_id', flat=True).distinct()
+                )
+        else:
+            category = None
 
         if q:
             products = products.filter(
@@ -1479,6 +1561,32 @@ class SearchProductsView(generics.ListAPIView):
             matched.sort(key=lambda p: (p.nearest_distance_km is None, p.nearest_distance_km or 0))
         elif sort_by == 'newest':
             matched.sort(key=lambda p: p.create_date, reverse=True)
+        elif sort_by == 'za':
+            matched.sort(key=lambda p: p.name.lower(), reverse=True)
+        elif category is not None:
+            matched_attribute_sort = False
+            for definition in sortable_attribute_definitions(category):
+                if sort_by == definition['sort_key_asc']:
+                    if definition.get('value_source') == 'listing':
+                        continue
+                    sort_field = field_name_for_definition(definition, source='product')
+                    matched.sort(
+                        key=lambda p: ((getattr(p, sort_field, '') or '').lower(), p.name.lower()),
+                    )
+                    matched_attribute_sort = True
+                    break
+                if sort_by == definition['sort_key_desc']:
+                    if definition.get('value_source') == 'listing':
+                        continue
+                    sort_field = field_name_for_definition(definition, source='product')
+                    matched.sort(
+                        key=lambda p: ((getattr(p, sort_field, '') or '').lower(), p.name.lower()),
+                        reverse=True,
+                    )
+                    matched_attribute_sort = True
+                    break
+            if not matched_attribute_sort:
+                matched.sort(key=lambda p: p.name.lower())
         else:
             matched.sort(key=lambda p: p.name.lower())
 

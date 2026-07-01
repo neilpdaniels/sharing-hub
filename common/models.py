@@ -16,6 +16,21 @@ import random
 import string
 from common.tasks import updateSummaryPrices
 
+
+IMAGE_REVIEW_PENDING = 'pending'
+IMAGE_REVIEW_AWAITING = 'awaiting_review'
+IMAGE_REVIEW_REVIEWED = 'reviewed'
+IMAGE_REVIEW_SKIPPED = 'skipped'
+IMAGE_REVIEW_DONE_ELSEWHERE = 'done_elsewhere'
+
+IMAGE_REVIEW_STATUS_CHOICES = (
+    (IMAGE_REVIEW_PENDING, 'Pending'),
+    (IMAGE_REVIEW_AWAITING, 'Awaiting review'),
+    (IMAGE_REVIEW_REVIEWED, 'Reviewed'),
+    (IMAGE_REVIEW_SKIPPED, 'Skipped'),
+    (IMAGE_REVIEW_DONE_ELSEWHERE, 'Done elsewhere'),
+)
+
 def unique_order_ref_generator():
     new_order_ref= ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(14))
     qs_exists= Order.objects.filter(order_reference = new_order_ref).exists()
@@ -42,6 +57,14 @@ class Category(models.Model):
     title = models.CharField(max_length=200)
     slug = models.SlugField(max_length=250, blank=True )
     image = models.ImageField(upload_to=RandomFileName('images/categories/'), blank=True, null=True)
+    image_review_status = models.CharField(
+        max_length=20,
+        choices=IMAGE_REVIEW_STATUS_CHOICES,
+        default=IMAGE_REVIEW_PENDING,
+        db_index=True,
+    )
+    image_review_notes = models.CharField(max_length=255, blank=True, default='')
+    image_reviewed_at = models.DateTimeField(blank=True, null=True)
     create_date = models.DateTimeField('date created', auto_now_add=True)
     # parent_category_id = models.PositiveIntegerField() # perhaps need to be foreign key - what about root category though?
     parent_category = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True)
@@ -109,15 +132,16 @@ class Category(models.Model):
         This keeps legacy behavior (attribute_one_* ... attribute_five_*) while allowing
         new rows from CategoryAttribute to overlay/extend definitions.
         """
+        suffix_map = {
+            1: 'one',
+            2: 'two',
+            3: 'three',
+            4: 'four',
+            5: 'five',
+        }
         attributes = []
         for order in range(1, 6):
-            suffix = {
-                1: 'one',
-                2: 'two',
-                3: 'three',
-                4: 'four',
-                5: 'five',
-            }[order]
+            suffix = suffix_map[order]
             attributes.append(
                 {
                     'order': order,
@@ -128,6 +152,8 @@ class Category(models.Model):
                         self,
                         f'attribute_{suffix}_default_filtered_value',
                     ),
+                    'allowed_values': [],
+                    'value_source': CategoryAttribute.VALUE_SOURCE_PRODUCT,
                 }
             )
 
@@ -141,6 +167,8 @@ class Category(models.Model):
                     'sortable': attr.sortable,
                     'filterable': attr.filterable,
                     'default_filtered_value': attr.default_filtered_value,
+                    'allowed_values': attr.get_allowed_values(),
+                    'value_source': attr.value_source or CategoryAttribute.VALUE_SOURCE_PRODUCT,
                 }
             else:
                 attributes.append(
@@ -150,13 +178,37 @@ class Category(models.Model):
                         'sortable': attr.sortable,
                         'filterable': attr.filterable,
                         'default_filtered_value': attr.default_filtered_value,
+                        'allowed_values': attr.get_allowed_values(),
+                        'value_source': attr.value_source or CategoryAttribute.VALUE_SOURCE_PRODUCT,
                     }
                 )
 
-        return sorted(attributes, key=lambda item: item['order'])
+        normalized = []
+        for item in sorted(attributes, key=lambda item: item['order']):
+            order = item['order']
+            suffix = suffix_map.get(order)
+            field_name = f'attribute_{suffix}_value' if suffix else ''
+            normalized.append(
+                {
+                    **item,
+                    'field_name': field_name,
+                    'query_param': f'attribute_{order}',
+                    'sort_key_asc': f'attribute_{order}_asc',
+                    'sort_key_desc': f'attribute_{order}_desc',
+                    'input_type': 'select' if item.get('allowed_values') else 'text',
+                }
+            )
+        return normalized
 
 
 class CategoryAttribute(models.Model):
+    VALUE_SOURCE_PRODUCT = 'product'
+    VALUE_SOURCE_LISTING = 'listing'
+    VALUE_SOURCE_CHOICES = (
+        (VALUE_SOURCE_PRODUCT, 'Product'),
+        (VALUE_SOURCE_LISTING, 'Listing'),
+    )
+
     category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
@@ -167,9 +219,20 @@ class CategoryAttribute(models.Model):
         help_text='Display order for the attribute (starts at 1)',
     )
     name = models.CharField(max_length=200, null=True, blank=True)
+    value_source = models.CharField(
+        max_length=20,
+        choices=VALUE_SOURCE_CHOICES,
+        default=VALUE_SOURCE_PRODUCT,
+        help_text='Choose whether the value belongs to the product itself or to each individual listing.',
+    )
     sortable = models.BooleanField(default=False)
     filterable = models.BooleanField(default=False)
     default_filtered_value = models.CharField(max_length=200, null=True, blank=True)
+    allowed_values_text = models.TextField(
+        blank=True,
+        default='',
+        help_text='Optional fixed choices, one per line. Leave blank to allow free text.',
+    )
 
     class Meta:
         ordering = ('order',)
@@ -178,6 +241,14 @@ class CategoryAttribute(models.Model):
     def __str__(self):
         label = self.name or f'Attribute {self.order}'
         return f'{self.category.title}: {label}'
+
+    def get_allowed_values(self):
+        values = []
+        for raw_line in (self.allowed_values_text or '').splitlines():
+            value = raw_line.strip()
+            if value and value not in values:
+                values.append(value)
+        return values
 
 
 class SiteFailure(models.Model):
@@ -198,6 +269,14 @@ class Product(models.Model):
     category_id = models.ForeignKey(Category, on_delete=models.CASCADE)
     tags = models.ManyToManyField(CategoryTag, blank=True, related_name='products')
     image = models.ImageField(upload_to=RandomFileName('images/products/'), blank=True, null=True)
+    image_review_status = models.CharField(
+        max_length=20,
+        choices=IMAGE_REVIEW_STATUS_CHOICES,
+        default=IMAGE_REVIEW_PENDING,
+        db_index=True,
+    )
+    image_review_notes = models.CharField(max_length=255, blank=True, default='')
+    image_reviewed_at = models.DateTimeField(blank=True, null=True)
     description = models.TextField(null=True, blank=True)
     name = models.CharField(max_length=400)
     short_name = models.CharField(max_length=200, null=True, blank=True)
@@ -243,6 +322,45 @@ class Product(models.Model):
         super(Product, self).save(*args, **kwargs)
         bestPrices, created = BestPricedForProduct.objects.get_or_create(product=self)
 
+    def get_attribute_value(self, order):
+        field_name = {
+            1: 'attribute_one_value',
+            2: 'attribute_two_value',
+            3: 'attribute_three_value',
+            4: 'attribute_four_value',
+            5: 'attribute_five_value',
+        }.get(order)
+        if not field_name:
+            return ''
+        return getattr(self, field_name, '') or ''
+
+    def get_attribute_pairs(self):
+        category = self.category_id
+        if category is None:
+            return []
+
+        pairs = []
+        for definition in category.get_attribute_definitions():
+            name = (definition.get('name') or '').strip()
+            if not name:
+                continue
+            if definition.get('value_source') != CategoryAttribute.VALUE_SOURCE_PRODUCT:
+                continue
+            value = (self.get_attribute_value(definition['order']) or '').strip()
+            if not value:
+                continue
+            pairs.append(
+                {
+                    'order': definition['order'],
+                    'name': name,
+                    'value': value,
+                    'filterable': bool(definition.get('filterable')),
+                    'sortable': bool(definition.get('sortable')),
+                    'allowed_values': definition.get('allowed_values') or [],
+                }
+            )
+        return pairs
+
 class Order(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -262,6 +380,11 @@ class Order(models.Model):
     expiry_date = models.DateTimeField('datetime of order expiry (UK time)', db_index=True) # remove default=timezone.now
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(0), MaxValueValidator(9999)], default=1)
     productIsNew = models.BooleanField('New product', default=False)
+    attribute_one_value = models.CharField(max_length=200, null=True, blank=True)
+    attribute_two_value = models.CharField(max_length=200, null=True, blank=True)
+    attribute_three_value = models.CharField(max_length=200, null=True, blank=True)
+    attribute_four_value = models.CharField(max_length=200, null=True, blank=True)
+    attribute_five_value = models.CharField(max_length=200, null=True, blank=True)
 
     MARKET = 'MKT'
     LIMIT = 'LMT'
@@ -279,6 +402,48 @@ class Order(models.Model):
         choices=PRICE_CHOICES,
         default=LIMIT,
     )
+
+    def get_attribute_value(self, order):
+        field_name = {
+            1: 'attribute_one_value',
+            2: 'attribute_two_value',
+            3: 'attribute_three_value',
+            4: 'attribute_four_value',
+            5: 'attribute_five_value',
+        }.get(order)
+        if not field_name:
+            return ''
+        return getattr(self, field_name, '') or ''
+
+    def get_attribute_pairs(self):
+        category = getattr(getattr(self, 'product', None), 'category_id', None)
+        product = getattr(self, 'product', None)
+        if category is None or product is None:
+            return []
+
+        pairs = []
+        for definition in category.get_attribute_definitions():
+            name = (definition.get('name') or '').strip()
+            if not name:
+                continue
+            if definition.get('value_source') == CategoryAttribute.VALUE_SOURCE_LISTING:
+                value = (self.get_attribute_value(definition['order']) or '').strip()
+            else:
+                value = (product.get_attribute_value(definition['order']) or '').strip()
+            if not value:
+                continue
+            pairs.append(
+                {
+                    'order': definition['order'],
+                    'name': name,
+                    'value': value,
+                    'filterable': bool(definition.get('filterable')),
+                    'sortable': bool(definition.get('sortable')),
+                    'allowed_values': definition.get('allowed_values') or [],
+                    'value_source': definition.get('value_source') or CategoryAttribute.VALUE_SOURCE_PRODUCT,
+                }
+            )
+        return pairs
 
 
 

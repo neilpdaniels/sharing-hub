@@ -24,6 +24,15 @@ from haystack.query import SearchQuerySet
 import common.helpers
 from common.decorators import ajax_required
 from common.geocoding import PostcodeGeocoder
+from common.catalog_attributes import (
+    apply_attribute_filters,
+    attribute_sort_options,
+    collect_attribute_filter_options,
+    default_sort_value,
+    field_name_for_definition,
+    filterable_attribute_definitions,
+    sortable_attribute_definitions,
+)
 from common.models import (
     BestPricedForCategory, BestPricedForProduct, Category, CategoryTag,
     FavouriteOrder, Order, Product, System,
@@ -90,6 +99,8 @@ def search(request):
         except (ValueError, TypeError):
             max_distance_km = 25
     sort_by = request.GET.get('sort_by', 'newest')
+    chosen_attribute_filters = {}
+    attribute_filters = []
 
     latitude = None
     longitude = None
@@ -99,8 +110,8 @@ def search(request):
 
     # Top-level categories for the filter dropdown
     try:
-        top_cat = Category.objects.get(slug='top')
-        top_categories = Category.objects.filter(parent_category=top_cat).order_by('title')
+        Category.objects.get(slug='top')
+        top_categories = common.helpers.get_ordered_top_categories()
     except Category.DoesNotExist:
         top_categories = Category.objects.none()
 
@@ -180,6 +191,30 @@ def search(request):
         except Category.DoesNotExist:
             pass
 
+    search_sort_options = [
+        {'value': 'newest', 'label': 'Newest'},
+        {'value': 'distance', 'label': 'Nearest first'},
+        {'value': 'price', 'label': 'Lowest price'},
+    ]
+    if selected_category is not None:
+        attribute_filters = collect_attribute_filter_options(
+            selected_category,
+            Product.objects.filter(category_id__in=category_ids),
+            source='product',
+        )
+        orders, chosen_attribute_filters = apply_attribute_filters(
+            orders,
+            selected_category,
+            request.GET,
+            source='order',
+        )
+        search_sort_options += attribute_sort_options(selected_category)
+        valid_sorts = {option['value'] for option in search_sort_options}
+        if sort_by not in valid_sorts:
+            sort_by = default_sort_value(selected_category, fallback='newest')
+    elif sort_by not in {'newest', 'distance', 'price'}:
+        sort_by = 'newest'
+
     # Text search — filter by product name / description
     if q:
         orders = orders.filter(
@@ -190,6 +225,20 @@ def search(request):
         )
         if category_slug and selected_category:
             orders = orders.filter(product__category_id__in=category_ids)
+            if chosen_attribute_filters:
+                for key, value in chosen_attribute_filters.items():
+                    order_index = int(key.split('_')[-1])
+                    definition = next(
+                        (
+                            item
+                            for item in selected_category.get_attribute_definitions()
+                            if int(item.get('order') or 0) == order_index
+                        ),
+                        None,
+                    )
+                    field_name = field_name_for_definition(definition or {}, source='order')
+                    if field_name:
+                        orders = orders.filter(**{field_name: value})
 
     # Distance filtering
     if max_distance_km == 0:
@@ -225,6 +274,29 @@ def search(request):
         nearby_orders.sort(key=lambda o: (o.distance is None, o.distance or 0))
     elif sort_by == 'price':
         nearby_orders.sort(key=lambda o: o.price or 0)
+    elif sort_by.startswith('attribute_') and selected_category is not None:
+        definition = next(
+            (
+                item
+                for item in selected_category.get_attribute_definitions()
+                if sort_by in {item.get('sort_key_asc'), item.get('sort_key_desc')}
+            ),
+            None,
+        )
+        reverse = sort_by.endswith('_desc')
+        field_name = field_name_for_definition(definition or {}, source='order')
+        if field_name:
+            nearby_orders.sort(
+                key=lambda o: (
+                    (
+                        getattr(o.product, field_name.split('product__', 1)[1], '')
+                        if field_name.startswith('product__')
+                        else getattr(o, field_name, '')
+                    ) or '',
+                    (o.product.name or ''),
+                ),
+                reverse=reverse,
+            )
     else:  # newest
         nearby_orders.sort(key=lambda o: o.create_date, reverse=True)
 
@@ -263,6 +335,21 @@ def search(request):
                 | Q(category_id__title__icontains=q)
             )
 
+        if selected_category is not None and chosen_attribute_filters:
+            for key, value in chosen_attribute_filters.items():
+                order_index = int(key.split('_')[-1])
+                definition = next(
+                    (
+                        item
+                        for item in selected_category.get_attribute_definitions()
+                        if int(item.get('order') or 0) == order_index
+                    ),
+                    None,
+                )
+                field_name = field_name_for_definition(definition or {}, source='product')
+                if field_name:
+                    related_products = related_products.filter(**{field_name: value})
+
         related_products = (
             related_products
             .annotate(active_order_count=Count('order', filter=Q(order__status=Order.ACTIVE), distinct=True))
@@ -280,6 +367,17 @@ def search(request):
         'category_slug': category_slug,
         'top_categories': top_categories,
         'selected_category': selected_category,
+        'attribute_filters': attribute_filters,
+        'chosen_attribute_filters': chosen_attribute_filters,
+        'search_sort_options': search_sort_options,
+        'selected_sort_label': next(
+            (
+                option['label']
+                for option in search_sort_options
+                if option['value'] == sort_by
+            ),
+            sort_by,
+        ),
         'orders': orders_page,
         'related_products': related_products,
         'total_results': len(nearby_orders),
@@ -287,6 +385,13 @@ def search(request):
         'location_not_found': location_not_found,
         'location_active': bool(latitude and longitude and not location_not_found),
         'is_logged_in': request.user.is_authenticated,
+        'search_query_string': urllib.parse.urlencode(
+            {
+                key: value
+                for key, value in request.GET.items()
+                if key != 'page' and value not in (None, '')
+            }
+        ),
     }
     template = loader.get_template('navigation/search.html')
     return HttpResponse(template.render(context, request))

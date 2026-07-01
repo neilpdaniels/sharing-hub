@@ -1,0 +1,898 @@
+[
+  {
+    "title": "Costumes and fancy dress",
+    "slug": "costumes-and-fancy-dress",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "costumes-and-fancy-dress.png",
+    "midjourney_prompt": "Costumes and fancy dress: 1920s flapper costume, Banana costume, and Chef costume. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Adult fancy dress",
+    "slug": "adult-fancy-dress",
+    "parent_title": "Costumes and fancy dress",
+    "parent_slug": "costumes-and-fancy-dress",
+    "image_filename": "costumes-and-fancy-dress-adult-fancy-dress.png",
+    "midjourney_prompt": "Adult fancy dress: 1920s flapper costume, Banana costume, and Chef costume in the costumes and fancy dress category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Kids fancy dress",
+    "slug": "kids-fancy-dress",
+    "parent_title": "Costumes and fancy dress",
+    "parent_slug": "costumes-and-fancy-dress",
+    "image_filename": "costumes-and-fancy-dress-kids-fancy-dress.png",
+    "midjourney_prompt": "Kids fancy dress: Astronaut costume, Dinosaur costume, and Doctor costume in the costumes and fancy dress category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Mascots and character suits",
+    "slug": "mascots-and-character-suits",
+    "parent_title": "Costumes and fancy dress",
+    "parent_slug": "costumes-and-fancy-dress",
+    "image_filename": "costumes-and-fancy-dress-mascots-and-character-suits.png",
+    "midjourney_prompt": "Mascots and character suits: Bear mascot suit, Character head and paws set, and Chicken mascot suit in the costumes and fancy dress category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Costume accessories and props",
+    "slug": "costume-accessories-and-props",
+    "parent_title": "Costumes and fancy dress",
+    "parent_slug": "costumes-and-fancy-dress",
+    "image_filename": "costumes-and-fancy-dress-costume-accessories-and-props.png",
+    "midjourney_prompt": "Costume accessories and props: Animal tail set, Cape bundle, and Cowboy hat and holster set in the costumes and fancy dress category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Themed group costumes",
+    "slug": "themed-group-costumes",
+    "parent_title": "Costumes and fancy dress",
+    "parent_slug": "costumes-and-fancy-dress",
+    "image_filename": "costumes-and-fancy-dress-themed-group-costumes.png",
+    "midjourney_prompt": "Themed group costumes: ABBA tribute group costume set, Circus troupe costume set, and Construction crew costume set in the costumes and fancy dress category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Event hire",
+    "slug": "event-hire",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "event-hire.png",
+    "midjourney_prompt": "Event hire: DJ controller, Karaoke machine, and Lighting bar. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Marquees and shelters",
+    "slug": "marquees-and-shelters",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-marquees-and-shelters.png",
+    "midjourney_prompt": "Marquees and shelters: Clearspan marquee, Entrance matting, and Event flooring in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Event furniture",
+    "slug": "event-furniture",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-event-furniture.png",
+    "midjourney_prompt": "Event furniture: Bar stools, Chiavari chairs, and Coat rail in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Catering equipment",
+    "slug": "catering-equipment",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-catering-equipment.png",
+    "midjourney_prompt": "Catering equipment: Candy floss machine, Chafing dish set, and Coffee urn in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Event lighting and decor",
+    "slug": "event-lighting-and-decor",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-event-lighting-and-decor.png",
+    "midjourney_prompt": "Event lighting and decor: Backdrop frame, Bistro lighting, and Festoon lighting in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Audio, music and AV",
+    "slug": "audio-music-and-av",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-audio-music-and-av.png",
+    "midjourney_prompt": "Audio, music and AV: DJ controller, Karaoke machine, and Lighting bar in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Games and crowd pleasers",
+    "slug": "games-and-crowd-pleasers",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-games-and-crowd-pleasers.png",
+    "midjourney_prompt": "Games and crowd pleasers: Ball pit, Beer pong table, and Bouncy castle in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Stages and crowd control",
+    "slug": "stages-and-crowd-control",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-stages-and-crowd-control.png",
+    "midjourney_prompt": "Stages and crowd control: Backstage screen divider, Cable ramp set, and Crowd control fencing in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Wedding extras and finishing touches",
+    "slug": "wedding-extras-and-finishing-touches",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-wedding-extras-and-finishing-touches.png",
+    "midjourney_prompt": "Wedding extras and finishing touches: Aisle runner, Blanket basket station, and Cake stand set in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Toilet and welfare hire",
+    "slug": "toilet-and-welfare-hire",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-toilet-and-welfare-hire.png",
+    "midjourney_prompt": "Toilet and welfare hire: Accessible toilet unit, Baby changing station, and Generator for welfare unit in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Linen and table styling",
+    "slug": "linen-and-table-styling",
+    "parent_title": "Event hire",
+    "parent_slug": "event-hire",
+    "image_filename": "event-hire-linen-and-table-styling.png",
+    "midjourney_prompt": "Linen and table styling: Bar front drape set, Bud vase collection, and Cake table skirt in the event hire category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Garden",
+    "slug": "garden",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "garden.png",
+    "midjourney_prompt": "Garden: electric electric Petrol Scarifier and aerator. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Lawn care and aeration",
+    "slug": "lawn-care-and-aeration",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-lawn-care-and-aeration.png",
+    "midjourney_prompt": "Lawn care and aeration: Broadcast spreader, Cylinder mower, and Drop spreader in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Soil cultivation and tilling",
+    "slug": "soil-cultivation-and-tilling",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-soil-cultivation-and-tilling.png",
+    "midjourney_prompt": "Soil cultivation and tilling: Broadfork, Compost shredder, and Garden cultivator in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Groundworks and compaction",
+    "slug": "groundworks-and-compaction",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-groundworks-and-compaction.png",
+    "midjourney_prompt": "Groundworks and compaction: Floor saw, Forward plate compactor, and Line marker in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Tree and hedge care",
+    "slug": "tree-and-hedge-care",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-tree-and-hedge-care.png",
+    "midjourney_prompt": "Tree and hedge care: Brush cutter, Chainsaw, and Chainsaw sharpening kit in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Log splitting and firewood",
+    "slug": "log-splitting-and-firewood",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-log-splitting-and-firewood.png",
+    "midjourney_prompt": "Log splitting and firewood: Firewood processor, Horizontal log splitter, and Kindling splitter in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Digging and site clearance",
+    "slug": "digging-and-site-clearance",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-digging-and-site-clearance.png",
+    "midjourney_prompt": "Digging and site clearance: Earth auger, Garden shredder, and Micro digger in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Watering and washdown",
+    "slug": "watering-and-washdown",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-watering-and-washdown.png",
+    "midjourney_prompt": "Watering and washdown: electric Fogger mister, Gutter vacuum, and Hot water pressure washer in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Fencing and postwork",
+    "slug": "fencing-and-postwork",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-fencing-and-postwork.png",
+    "midjourney_prompt": "Fencing and postwork: Fence stapler, Fence wire tensioner, and Gate hanging kit in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Pruning and orchard tools",
+    "slug": "pruning-and-orchard-tools",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-pruning-and-orchard-tools.png",
+    "midjourney_prompt": "Pruning and orchard tools: Anvil lopper, Bypass lopper, and Fruit picker in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Greenhouse and propagation",
+    "slug": "greenhouse-and-propagation",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-greenhouse-and-propagation.png",
+    "midjourney_prompt": "Greenhouse and propagation: Capillary matting roll, Compost sieve, and Greenhouse heater in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Pest control and spraying",
+    "slug": "pest-control-and-spraying",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-pest-control-and-spraying.png",
+    "midjourney_prompt": "Pest control and spraying: Backpack sprayer, Bird scarer kite, and Fruit cage frame in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Estate maintenance and paddock care",
+    "slug": "estate-maintenance-and-paddock-care",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-estate-maintenance-and-paddock-care.png",
+    "midjourney_prompt": "Estate maintenance and paddock care: ATV flail mower, ATV trailer, and Brash drag mat in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Composting and waste handling",
+    "slug": "composting-and-waste-handling",
+    "parent_title": "Garden",
+    "parent_slug": "garden",
+    "image_filename": "garden-composting-and-waste-handling.png",
+    "midjourney_prompt": "Composting and waste handling: Bagging chute kit, Branch bundling frame, and Chip collection bag set in the garden category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Sports equipment",
+    "slug": "sports-equipment",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "sports-equipment.png",
+    "midjourney_prompt": "Sports equipment: American football sled, Ball launcher, and Basketball hoop. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Ball sports",
+    "slug": "ball-sports",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-ball-sports.png",
+    "midjourney_prompt": "Ball sports: American football sled, Ball launcher, and Basketball hoop in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Racquet sports",
+    "slug": "racquet-sports",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-racquet-sports.png",
+    "midjourney_prompt": "Racquet sports: Badminton net, Ball collection tube, and Ball hopper in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Watersports",
+    "slug": "watersports",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-watersports.png",
+    "midjourney_prompt": "Watersports: Bodyboard, Canoe, and Dry bag set in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Camping and hiking gear",
+    "slug": "camping-and-hiking-gear",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-camping-and-hiking-gear.png",
+    "midjourney_prompt": "Camping and hiking gear: Bell tent, Camp kitchen stand, and Camping kit in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Fitness and training",
+    "slug": "fitness-and-training",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-fitness-and-training.png",
+    "midjourney_prompt": "Fitness and training: Adjustable bench, Agility ladder set, and Barbell set in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Winter sports",
+    "slug": "winter-sports",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-winter-sports.png",
+    "midjourney_prompt": "Winter sports: Adult skis, Avalanche safety pack, and Heated glove pack in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Cycling and bike gear",
+    "slug": "cycling-and-bike-gear",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-cycling-and-bike-gear.png",
+    "midjourney_prompt": "Cycling and bike gear: Bike repair stand, Bike wash stand, and Bikepacking bag set in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Recovery and physio gear",
+    "slug": "recovery-and-physio-gear",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-recovery-and-physio-gear.png",
+    "midjourney_prompt": "Recovery and physio gear: Balance board, Compression boots, and Cupping therapy kit in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Matchday and coaching equipment",
+    "slug": "matchday-and-coaching-equipment",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-matchday-and-coaching-equipment.png",
+    "midjourney_prompt": "Matchday and coaching equipment: Ball pump station, Coaching cone mega pack, and Corner flags in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Climbing and adventure training",
+    "slug": "climbing-and-adventure-training",
+    "parent_title": "Sports equipment",
+    "parent_slug": "sports-equipment",
+    "image_filename": "sports-equipment-climbing-and-adventure-training.png",
+    "midjourney_prompt": "Climbing and adventure training: Adventure race checkpoint flags, Assault course wall module, and Bouldering mat in the sports equipment category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Vehicle and accessories",
+    "slug": "vehicle-and-accessories",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "vehicle-and-accessories.png",
+    "midjourney_prompt": "Vehicle and accessories: electric Bike repair stand, Boot-mounted bike rack, and E-bike rack. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Roof storage and roof racks",
+    "slug": "roof-storage-and-roof-racks",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-roof-storage-and-roof-racks.png",
+    "midjourney_prompt": "Roof storage and roof racks: Awning side carrier, Kayak roof cradle, and Ladder roof rack in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Bike transport",
+    "slug": "bike-transport",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-bike-transport.png",
+    "midjourney_prompt": "Bike transport: Bike repair stand, Boot-mounted bike rack, and E-bike rack in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Trailers and towing",
+    "slug": "trailers-and-towing",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-trailers-and-towing.png",
+    "midjourney_prompt": "Trailers and towing: Box trailer, Caged trailer, and Car transporter trailer in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Travel and utility accessories",
+    "slug": "travel-and-utility-accessories",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-travel-and-utility-accessories.png",
+    "midjourney_prompt": "Travel and utility accessories: Camping table for tailgate use, Dash-mounted phone holder, and Dog guard in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Recovery and workshop gear",
+    "slug": "recovery-and-workshop-gear",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-recovery-and-workshop-gear.png",
+    "midjourney_prompt": "Recovery and workshop gear: electric Axle stands, Battery charger, and Hydraulic trolley jack in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Van and load management",
+    "slug": "van-and-load-management",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-van-and-load-management.png",
+    "midjourney_prompt": "Van and load management: Beacon light bar, Load restraint poles, and Load securing track kit in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Winter and touring accessories",
+    "slug": "winter-and-touring-accessories",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-winter-and-touring-accessories.png",
+    "midjourney_prompt": "Winter and touring accessories: 12v heated blanket, Camping power hook-up lead, and Drive-away awning in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Cleaning and detailing gear",
+    "slug": "cleaning-and-detailing-gear",
+    "parent_title": "Vehicle and accessories",
+    "parent_slug": "vehicle-and-accessories",
+    "image_filename": "vehicle-and-accessories-cleaning-and-detailing-gear.png",
+    "midjourney_prompt": "Cleaning and detailing gear: Canopy wash stand, Carpet extractor for vehicles, and Drying blower in the vehicle and accessories category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "DIY and power tools",
+    "slug": "diy-and-power-tools",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "diy-and-power-tools.png",
+    "midjourney_prompt": "DIY and power tools: electric Air blow gun kit, Air hose and reel kit, and Air impact wrench. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Drills and drivers",
+    "slug": "drills-and-drivers",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-drills-and-drivers.png",
+    "midjourney_prompt": "Drills and drivers: electric Collated screw gun, Combi drill, and Cordless screwdriver in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Saws and cutting",
+    "slug": "saws-and-cutting",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-saws-and-cutting.png",
+    "midjourney_prompt": "Saws and cutting: Bandsaw, Chainsaw mill, and Circular saw in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Sanders",
+    "slug": "sanders",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-sanders.png",
+    "midjourney_prompt": "Sanders: electric Air orbital sander, Belt sander, and Cordless random orbital sander in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Nail guns and staplers",
+    "slug": "nail-guns-and-staplers",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-nail-guns-and-staplers.png",
+    "midjourney_prompt": "Nail guns and staplers: 16 gauge finish nailer, 18 gauge brad nailer, and 23 gauge pin nailer in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Grinders and metalwork",
+    "slug": "grinders-and-metalwork",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-grinders-and-metalwork.png",
+    "midjourney_prompt": "Grinders and metalwork: 4.5 inch angle grinder, 9 inch angle grinder, and Bench grinder in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Site access and support",
+    "slug": "site-access-and-support",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-site-access-and-support.png",
+    "midjourney_prompt": "Site access and support: Acro props, Extension ladder, and Hop-up work platform in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Measuring and layout tools",
+    "slug": "measuring-and-layout-tools",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-measuring-and-layout-tools.png",
+    "midjourney_prompt": "Measuring and layout tools: Cable detector, Chalk line set, and Cross-line laser in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Routing and woodworking benches",
+    "slug": "routing-and-woodworking-benches",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-routing-and-woodworking-benches.png",
+    "midjourney_prompt": "Routing and woodworking benches: electric Biscuit jointer, Domino joiner, and Electric planer in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Fastening and fixings tools",
+    "slug": "fastening-and-fixings-tools",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-fastening-and-fixings-tools.png",
+    "midjourney_prompt": "Fastening and fixings tools: electric Battery rivet gun, Bolt cropper, and Cable tie tension tool in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Dust extraction and workshop cleanup",
+    "slug": "dust-extraction-and-workshop-cleanup",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-dust-extraction-and-workshop-cleanup.png",
+    "midjourney_prompt": "Dust extraction and workshop cleanup: electric Air filtration unit, Bench sweep vacuum, and Chip extractor in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Air tools and compressors",
+    "slug": "air-tools-and-compressors",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-air-tools-and-compressors.png",
+    "midjourney_prompt": "Air tools and compressors: electric Air blow gun kit, Air hose and reel kit, and Air impact wrench in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Masonry, concrete and demolition",
+    "slug": "masonry-concrete-and-demolition",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-masonry-concrete-and-demolition.png",
+    "midjourney_prompt": "Masonry, concrete and demolition: electric Block splitter, Breaker, and Compactor plate in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Welding, soldering and heat tools",
+    "slug": "welding-soldering-and-heat-tools",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-welding-soldering-and-heat-tools.png",
+    "midjourney_prompt": "Welding, soldering and heat tools: Arc welder, Auto-darkening welding helmet, and Brazing torch set in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Generators and site power",
+    "slug": "generators-and-site-power",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-generators-and-site-power.png",
+    "midjourney_prompt": "Generators and site power: electric 110v extension lead, Battery power station, and Cable protector ramp in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Workshop metalworking tools",
+    "slug": "workshop-metalworking-tools",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-workshop-metalworking-tools.png",
+    "midjourney_prompt": "Workshop metalworking tools: Arbor press, Bead roller, and Bench grinder in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Lifting and material handling",
+    "slug": "lifting-and-material-handling",
+    "parent_title": "DIY and power tools",
+    "parent_slug": "diy-and-power-tools",
+    "image_filename": "diy-and-power-tools-lifting-and-material-handling.png",
+    "midjourney_prompt": "Lifting and material handling: electric Beam trolley, Chain hoist, and Engine crane in the diy and power tools category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Home and furniture",
+    "slug": "home-and-furniture",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "home-and-furniture.png",
+    "midjourney_prompt": "Home and furniture: Bed end bench, Bedside chest pair, and Blanket ladder. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Guest beds and sleepovers",
+    "slug": "guest-beds-and-sleepovers",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-guest-beds-and-sleepovers.png",
+    "midjourney_prompt": "Guest beds and sleepovers: Air bed, Bedside table pair, and Double guest bed in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Dining tables and seating",
+    "slug": "dining-tables-and-seating",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-dining-tables-and-seating.png",
+    "midjourney_prompt": "Dining tables and seating: Bench seating pair, Breakfast bar stools, and Buffet sideboard in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Sofas, armchairs and lounge furniture",
+    "slug": "sofas-armchairs-and-lounge-furniture",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-sofas-armchairs-and-lounge-furniture.png",
+    "midjourney_prompt": "Sofas, armchairs and lounge furniture: Armchair, Bean bag lounger, and Coffee table in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Storage and shelving",
+    "slug": "storage-and-shelving",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-storage-and-shelving.png",
+    "midjourney_prompt": "Storage and shelving: Bookcase, Chest of drawers, and Clothes rail in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Office desks and chairs",
+    "slug": "office-desks-and-chairs",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-office-desks-and-chairs.png",
+    "midjourney_prompt": "Office desks and chairs: Corner desk, Desk lamp, and Ergonomic office chair in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Nursery and baby furniture",
+    "slug": "nursery-and-baby-furniture",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-nursery-and-baby-furniture.png",
+    "midjourney_prompt": "Nursery and baby furniture: Baby wardrobe, Changing table, and High chair in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Garden furniture",
+    "slug": "garden-furniture",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-garden-furniture.png",
+    "midjourney_prompt": "Garden furniture: Bistro set, Corner garden lounge set, and Garden storage bench in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Display and retail furniture",
+    "slug": "display-and-retail-furniture",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-display-and-retail-furniture.png",
+    "midjourney_prompt": "Display and retail furniture: Display riser set, Folding changing screen, and Folding display table in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Bedroom storage and dressing",
+    "slug": "bedroom-storage-and-dressing",
+    "parent_title": "Home and furniture",
+    "parent_slug": "home-and-furniture",
+    "image_filename": "home-and-furniture-bedroom-storage-and-dressing.png",
+    "midjourney_prompt": "Bedroom storage and dressing: Bed end bench, Bedside chest pair, and Blanket ladder in the home and furniture category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Moving and storage",
+    "slug": "moving-and-storage",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "moving-and-storage.png",
+    "midjourney_prompt": "Moving and storage: Appliance roller bars, Appliance slider pads, and Door removal trolley. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Boxes, crates and totes",
+    "slug": "boxes-crates-and-totes",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-boxes-crates-and-totes.png",
+    "midjourney_prompt": "Boxes, crates and totes: Archive box bundle, Book boxes, and Bottle divider boxes in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Dollies, skates and lifters",
+    "slug": "dollies-skates-and-lifters",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-dollies-skates-and-lifters.png",
+    "midjourney_prompt": "Dollies, skates and lifters: Appliance trolley, Door lifter, and Furniture dolly in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Wrapping, covers and protection",
+    "slug": "wrapping-covers-and-protection",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-wrapping-covers-and-protection.png",
+    "midjourney_prompt": "Wrapping, covers and protection: Bubble wrap bundle, Corner foam pack, and Door frame protector set in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Ratchets, ropes and securing",
+    "slug": "ratchets-ropes-and-securing",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-ratchets-ropes-and-securing.png",
+    "midjourney_prompt": "Ratchets, ropes and securing: Bungee cord pack, Cam buckle strap set, and Cargo net in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Temporary storage and organisation",
+    "slug": "temporary-storage-and-organisation",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-temporary-storage-and-organisation.png",
+    "midjourney_prompt": "Temporary storage and organisation: Clear tote set, Folding storage cage, and Hanging garment rail in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Appliance moving and install helpers",
+    "slug": "appliance-moving-and-install-helpers",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-appliance-moving-and-install-helpers.png",
+    "midjourney_prompt": "Appliance moving and install helpers: Appliance roller bars, Appliance slider pads, and Door removal trolley in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Event and exhibition transport gear",
+    "slug": "event-and-exhibition-transport-gear",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-event-and-exhibition-transport-gear.png",
+    "midjourney_prompt": "Event and exhibition transport gear: Cable trunk case, Exhibition case trolley, and Fold-flat platform trolley in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Cleaning and handover kit",
+    "slug": "cleaning-and-handover-kit",
+    "parent_title": "Moving and storage",
+    "parent_slug": "moving-and-storage",
+    "image_filename": "moving-and-storage-cleaning-and-handover-kit.png",
+    "midjourney_prompt": "Cleaning and handover kit: Adhesive residue wheel, Dustpan contractor set, and End-of-tenancy cleaning kit in the moving and storage category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Outdoor and leisure",
+    "slug": "outdoor-and-leisure",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "outdoor-and-leisure.png",
+    "midjourney_prompt": "Outdoor and leisure: Beach shelter, Beach trolley, and Beach wagon. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Gazebos, awnings and shade",
+    "slug": "gazebos-awnings-and-shade",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-gazebos-awnings-and-shade.png",
+    "midjourney_prompt": "Gazebos, awnings and shade: Beach shelter, Camping awning, and Garden pergola in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Fire pits and outdoor heat",
+    "slug": "fire-pits-and-outdoor-heat",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-fire-pits-and-outdoor-heat.png",
+    "midjourney_prompt": "Fire pits and outdoor heat: Chiminea, Fire bowl grill combo, and Fire pit in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Cool boxes and picnic kit",
+    "slug": "cool-boxes-and-picnic-kit",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-cool-boxes-and-picnic-kit.png",
+    "midjourney_prompt": "Cool boxes and picnic kit: electric Camping cutlery bundle, Cool box, and Electric cool box in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Garden games and party play",
+    "slug": "garden-games-and-party-play",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-garden-games-and-party-play.png",
+    "midjourney_prompt": "Garden games and party play: Boules set, Cornhole set, and Croquet set in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Hot tubs and celebration extras",
+    "slug": "hot-tubs-and-celebration-extras",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-hot-tubs-and-celebration-extras.png",
+    "midjourney_prompt": "Hot tubs and celebration extras: Champagne wall, Confetti cannon stand, and Garden projector screen in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "BBQs and outdoor cooking",
+    "slug": "bbqs-and-outdoor-cooking",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-bbqs-and-outdoor-cooking.png",
+    "midjourney_prompt": "BBQs and outdoor cooking: BBQ tool bundle, Camping cook station, and Charcoal BBQ in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Adventure and beach gear",
+    "slug": "adventure-and-beach-gear",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-adventure-and-beach-gear.png",
+    "midjourney_prompt": "Adventure and beach gear: Beach shelter, Beach trolley, and Beach wagon in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Play equipment and family fun",
+    "slug": "play-equipment-and-family-fun",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-play-equipment-and-family-fun.png",
+    "midjourney_prompt": "Play equipment and family fun: Ball game target wall, Climbing dome, and Garden slide in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Water play and pool gear",
+    "slug": "water-play-and-pool-gear",
+    "parent_title": "Outdoor and leisure",
+    "parent_slug": "outdoor-and-leisure",
+    "image_filename": "outdoor-and-leisure-water-play-and-pool-gear.png",
+    "midjourney_prompt": "Water play and pool gear: Chlorine floater kit, Floating drinks cooler, and Garden mist arch in the outdoor and leisure category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Home improvement",
+    "slug": "home-improvement",
+    "parent_title": "",
+    "parent_slug": "",
+    "image_filename": "home-improvement.png",
+    "midjourney_prompt": "Home improvement: electric Air mover fan, Dehumidifier, and Drain camera. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Carpet and floor cleaning",
+    "slug": "carpet-and-floor-cleaning",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-carpet-and-floor-cleaning.png",
+    "midjourney_prompt": "Carpet and floor cleaning: Air mover fan, Commercial dehumidifier, and Fabric deodorising sprayer in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Upright carpet cleaners",
+    "slug": "upright-carpet-cleaners",
+    "parent_title": "Carpet and floor cleaning",
+    "parent_slug": "carpet-and-floor-cleaning",
+    "image_filename": "carpet-and-floor-cleaning-upright-carpet-cleaners.png",
+    "midjourney_prompt": "Upright carpet cleaners: electric Carpet brush agitator, Commercial carpet cleaner, and Dual-tank carpet washer in the carpet and floor cleaning category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Spot and upholstery cleaners",
+    "slug": "spot-and-upholstery-cleaners",
+    "parent_title": "Carpet and floor cleaning",
+    "parent_slug": "carpet-and-floor-cleaning",
+    "image_filename": "carpet-and-floor-cleaning-spot-and-upholstery-cleaners.png",
+    "midjourney_prompt": "Spot and upholstery cleaners: electric Car seat upholstery cleaner, Fabric drying fan, and Handheld stain remover in the carpet and floor cleaning category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Hard floor and extractor cleaners",
+    "slug": "hard-floor-and-extractor-cleaners",
+    "parent_title": "Carpet and floor cleaning",
+    "parent_slug": "carpet-and-floor-cleaning",
+    "image_filename": "carpet-and-floor-cleaning-hard-floor-and-extractor-cleaners.png",
+    "midjourney_prompt": "Hard floor and extractor cleaners: Commercial floor dryer, Hard floor scrubber, and Rotary floor polisher in the carpet and floor cleaning category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Drying, deodorising and restoration",
+    "slug": "drying-deodorising-and-restoration",
+    "parent_title": "Carpet and floor cleaning",
+    "parent_slug": "carpet-and-floor-cleaning",
+    "image_filename": "carpet-and-floor-cleaning-drying-deodorising-and-restoration.png",
+    "midjourney_prompt": "Drying, deodorising and restoration: Air mover fan, Commercial dehumidifier, and Fabric deodorising sprayer in the carpet and floor cleaning category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Decorating and painting",
+    "slug": "decorating-and-painting",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-decorating-and-painting.png",
+    "midjourney_prompt": "Decorating and painting: Airless paint sprayer, Caulking gun set, and Detail spray gun in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Flooring and wallpaper tools",
+    "slug": "flooring-and-wallpaper-tools",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-flooring-and-wallpaper-tools.png",
+    "midjourney_prompt": "Flooring and wallpaper tools: Carpet knee kicker, Carpet stretcher, and Floor roller in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Cleaning and restoration",
+    "slug": "cleaning-and-restoration",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-cleaning-and-restoration.png",
+    "midjourney_prompt": "Cleaning and restoration: Air mover fan, Dehumidifier, and Drain camera in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Plumbing and drain tools",
+    "slug": "plumbing-and-drain-tools",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-plumbing-and-drain-tools.png",
+    "midjourney_prompt": "Plumbing and drain tools: Drain auger, Drain rods, and PEX crimp tool in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "General access and ladders",
+    "slug": "general-access-and-ladders",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-general-access-and-ladders.png",
+    "midjourney_prompt": "General access and ladders: Decorators platform, Extension ladder, and Ladder in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Electrical test and install tools",
+    "slug": "electrical-test-and-install-tools",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-electrical-test-and-install-tools.png",
+    "midjourney_prompt": "Electrical test and install tools: Cable detector, Cable pull rods, and Conduit bender in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Windows, doors and glazing tools",
+    "slug": "windows-doors-and-glazing-tools",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-windows-doors-and-glazing-tools.png",
+    "midjourney_prompt": "Windows, doors and glazing tools: Bead removal tool, Door lifter, and Door trimming stand in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Tiling and finishing tools",
+    "slug": "tiling-and-finishing-tools",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-tiling-and-finishing-tools.png",
+    "midjourney_prompt": "Tiling and finishing tools: Corner finishing trowel, Grout float kit, and Jointing knife set in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  },
+  {
+    "title": "Joinery installation tools",
+    "slug": "joinery-installation-tools",
+    "parent_title": "Home improvement",
+    "parent_slug": "home-improvement",
+    "image_filename": "home-improvement-joinery-installation-tools.png",
+    "midjourney_prompt": "Joinery installation tools: Cabinet clamp set, Cabinet lift jack, and Countertop seam setter in the home improvement category. Product photo with a plain light background, single subject or tight grouped scene, UK 240v mains where relevant, UK plug sockets where relevant, high detail, realistic, soft studio lighting, no text, no logo, no watermark, square composition"
+  }
+]

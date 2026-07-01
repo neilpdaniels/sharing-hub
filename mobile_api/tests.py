@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from account.models import Profile
-from common.models import Category, Order, Product
+from common.models import Category, CategoryAttribute, Order, Product
 from friends.models import Friendship
 from transaction.models import Transaction
 
@@ -97,6 +97,111 @@ class LenderListingsViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class ProductAttributeFilteringApiTests(TestCase):
+    def setUp(self):
+        self.category = Category.objects.create(title='Fancy dress')
+        CategoryAttribute.objects.create(
+            category=self.category,
+            order=1,
+            name='Theme',
+            filterable=True,
+            sortable=True,
+            allowed_values_text='Halloween\nHistory\nSuperhero',
+        )
+        CategoryAttribute.objects.create(
+            category=self.category,
+            order=2,
+            name='Listing size',
+            value_source='listing',
+            filterable=True,
+            sortable=False,
+            allowed_values_text='Age 5-6\nAdult M\nOne size\nAge 7-8',
+        )
+        self.adult_product = Product.objects.create(
+            category_id=self.category,
+            name='Adult fancy dress',
+            attribute_one_value='Halloween',
+        )
+        self.kids_product = Product.objects.create(
+            category_id=self.category,
+            name='Kids costume',
+            attribute_one_value='Halloween',
+        )
+        self.adult_order = Order.objects.create(
+            product=self.adult_product,
+            user=User.objects.create_user(
+                username='adult-lender',
+                email='adult-lender@example.com',
+                password='x',
+            ),
+            direction=Order.TO_LET,
+            expiry_date=timezone.now() + timedelta(days=7),
+            status=Order.ACTIVE,
+            price=10,
+            postcode='SW1A1AA',
+            attribute_two_value='Adult M',
+        )
+        self.kids_order = Order.objects.create(
+            product=self.kids_product,
+            user=User.objects.create_user(
+                username='kids-lender',
+                email='kids-lender@example.com',
+                password='x',
+            ),
+            direction=Order.TO_LET,
+            expiry_date=timezone.now() + timedelta(days=7),
+            status=Order.ACTIVE,
+            price=9,
+            postcode='SW1A1AA',
+            attribute_two_value='Age 5-6',
+        )
+
+    def test_category_products_support_attribute_filtering_and_metadata(self):
+        response = self.client.get(
+            reverse(
+                'mobile_api:categories_products',
+                kwargs={'category_slug': self.category.slug},
+            ),
+            {'attribute_2': 'Age 5-6', 'include_zero_listings': 'true'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]['name'], 'Kids costume')
+        self.assertEqual(payload[0]['attribute_definitions'][0]['name'], 'Theme')
+        self.assertEqual(payload[0]['attribute_definitions'][1]['value_source'], 'listing')
+        self.assertEqual(payload[0]['attributes'][0]['value'], 'Halloween')
+
+    def test_search_products_support_attribute_sorting_for_selected_category(self):
+        response = self.client.get(
+            reverse('mobile_api:search_products'),
+            {
+                'category': self.category.slug,
+                'sort_by': 'attribute_1_desc',
+                'include_zero_listings': 'true',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item['name'] for item in payload], ['Kids costume', 'Adult fancy dress'])
+
+    def test_search_products_support_listing_level_attribute_filtering(self):
+        response = self.client.get(
+            reverse('mobile_api:search_products'),
+            {
+                'category': self.category.slug,
+                'attribute_2': 'Adult M',
+                'include_zero_listings': 'true',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item['name'] for item in payload], ['Adult fancy dress'])
 
 
 class VerifiedUsersOnlyEnquiryTests(TestCase):

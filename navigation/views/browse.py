@@ -23,6 +23,16 @@ from haystack.query import SearchQuerySet
 import common.helpers
 from common.decorators import ajax_required
 from common.geocoding import PostcodeGeocoder
+from common.catalog_attributes import (
+    apply_attribute_filters,
+    attribute_sort_options,
+    collect_attribute_filter_options,
+    default_sort_value,
+    field_name_for_definition,
+    filterable_attribute_definitions,
+    matches_attribute_sort,
+    sortable_attribute_definitions,
+)
 from common.models import (
     BestPricedForCategory, BestPricedForProduct, Category, CategoryTag,
     FavouriteOrder, Order, Product, System,
@@ -39,10 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_homepage_categories(limit=12):
-    top_category = Category.objects.filter(slug='top').first()
-    if top_category:
-        return list(Category.objects.filter(parent_category=top_category).order_by('title')[:limit])
-    return list(Category.objects.filter(parent_category__isnull=True).exclude(slug='top').order_by('title')[:limit])
+    return list(common.helpers.get_ordered_top_categories()[:limit])
 
 
 def _get_homepage_popular_orders(request, limit=8):
@@ -182,21 +189,29 @@ def browseCategory(request, cat_slug=None):
         cat = get_object_or_404(Category, slug=cat_slug)
 
 
-    categories = None
-    categories = cat.category_set.all()
+    categories = common.helpers.get_ordered_child_categories(cat)
     
     chosen_attributes = {}
     all_attributes = {}
-    filterable_attributes = [cat.attribute_one_filterable, cat.attribute_two_filterable, cat.attribute_three_filterable, cat.attribute_four_filterable, cat.attribute_five_filterable]
-    filterable_attributes_count = filterable_attributes.count(True)
-    sortable_attributes = [cat.attribute_one_sortable, cat.attribute_two_sortable, cat.attribute_three_sortable, cat.attribute_four_sortable, cat.attribute_five_sortable]
-    sortable_attributes_count = sortable_attributes.count(True)
+    attribute_definitions = cat.get_attribute_definitions()
+    active_orders = Order.objects.filter(
+        product__category_id=cat,
+        status=Order.ACTIVE,
+        direction=Order.TO_LET,
+    ).select_related('product', 'product__category_id')
+    attribute_filters = collect_attribute_filter_options(cat, active_orders, source='order')
+    filterable_attributes_count = len(filterable_attribute_definitions(cat))
+    sortable_attributes_count = len(sortable_attribute_definitions(cat))
+    sort_options = [
+        {'value': 'active', 'label': 'Most active'},
+        {'value': 'az', 'label': 'A-Z'},
+        {'value': 'za', 'label': 'Z-A'},
+    ] + attribute_sort_options(cat)
 
-
-    sort_by = request.GET.get('sort_by', 'active')
-    VALID_SORTS = {'active', 'az', 'za'}
-    if sort_by not in VALID_SORTS:
-        sort_by = 'active'
+    sort_by = request.GET.get('sort_by', '').strip() or default_sort_value(cat, fallback='active')
+    valid_sorts = {'active', 'az', 'za'} | {option['value'] for option in sort_options}
+    if sort_by not in valid_sorts:
+        sort_by = default_sort_value(cat, fallback='active')
     location = request.GET.get('location', '').strip()
     distance_filter_raw = request.GET.get('distance_filter', 'any')
     if distance_filter_raw in ('any', '-'):
@@ -239,12 +254,6 @@ def browseCategory(request, cat_slug=None):
             distinct=True,
         )
     )
-    if sort_by == 'az':
-        products = products.order_by('name')
-    elif sort_by == 'za':
-        products = products.order_by('-name')
-    else:
-        products = products.order_by('-active_lend_orders', 'name')
 
     available_tags = CategoryTag.objects.filter(
         Q(categories=cat) |
@@ -265,89 +274,63 @@ def browseCategory(request, cat_slug=None):
         ).distinct()
         chosen_attributes['tag'] = selected_tag
 
+    filter_source_orders = Order.objects.filter(
+        product__in=products,
+        status=Order.ACTIVE,
+        direction=Order.TO_LET,
+    ).select_related('product', 'product__category_id')
+    attribute_filters = collect_attribute_filter_options(cat, filter_source_orders, source='order')
+    products, chosen_product_attribute_filters = apply_attribute_filters(products, cat, request.GET, source='product')
+    chosen_attributes.update(chosen_product_attribute_filters)
+    filtered_orders, chosen_order_attribute_filters = apply_attribute_filters(
+        Order.objects.filter(
+            product__in=products,
+            status=Order.ACTIVE,
+            direction=Order.TO_LET,
+        ).select_related('product', 'product__category_id'),
+        cat,
+        request.GET,
+        source='order',
+    )
+    chosen_attributes.update(chosen_order_attribute_filters)
+    selected_listing_filters = {}
+    for definition in attribute_definitions:
+        if definition.get('value_source') != 'listing':
+            continue
+        selected = (request.GET.get(definition['query_param']) or '').strip()
+        if selected:
+            selected_listing_filters[definition['query_param']] = selected
+    if selected_listing_filters:
+        matching_product_ids = filtered_orders.values_list('product_id', flat=True).distinct()
+        products = products.filter(id__in=matching_product_ids)
+
+    if sort_by == 'az':
+        products = products.order_by('name')
+    elif sort_by == 'za':
+        products = products.order_by('-name')
+    else:
+        matched_attribute_sort = False
+        for definition in sortable_attribute_definitions(cat):
+            if sort_by == definition['sort_key_asc']:
+                sort_field = field_name_for_definition(definition, source='product')
+                if not sort_field or sort_field.startswith('product__'):
+                    continue
+                products = products.order_by(sort_field, 'name')
+                matched_attribute_sort = True
+                break
+            if sort_by == definition['sort_key_desc']:
+                sort_field = field_name_for_definition(definition, source='product')
+                if not sort_field or sort_field.startswith('product__'):
+                    continue
+                products = products.order_by(f"-{sort_field}", 'name')
+                matched_attribute_sort = True
+                break
+        if not matched_attribute_sort:
+            products = products.order_by('-active_lend_orders', 'name')
+
     # make ajax call skip unnecessary info
     if not request.is_ajax():
         biscuit = _build_biscuit(cat)
-       
-        # if any category attributes are filterable, collect them all
-        if filterable_attributes_count > 0:
-            attribute_one_set = set()
-            attribute_two_set = set()
-            attribute_three_set = set()
-            attribute_four_set = set()
-            attribute_five_set = set()
-            for product in products:
-                attribute_one_set.add(product.attribute_one_value)
-                attribute_two_set.add(product.attribute_two_value)
-                attribute_three_set.add(product.attribute_three_value)
-                attribute_four_set.add(product.attribute_four_value)
-                attribute_five_set.add(product.attribute_five_value)
-
-            all_attributes['attribute_one_values'] = sorted(attribute_one_set)
-            all_attributes['attribute_two_values'] = sorted(attribute_two_set)
-            all_attributes['attribute_three_values'] = sorted(attribute_three_set)
-            all_attributes['attribute_four_values'] = sorted(attribute_four_set)
-            all_attributes['attribute_five_values'] = sorted(attribute_five_set)
-
-    urlencode_string = ""
-    attribute_one_filter = request.GET.get('attribute_one',None)
-    if attribute_one_filter is None:
-        # gets will always be present on user filtering
-        if cat.attribute_one_default_filtered_value is not None:
-            attribute_one_filter = cat.attribute_one_default_filtered_value
-    if cat.attribute_one_name is not None:
-        no_filter = "filter " + cat.attribute_one_name
-    if attribute_one_filter != None and attribute_one_filter != no_filter:
-        products = products.filter(attribute_one_value=attribute_one_filter)
-        chosen_attributes['attribute_one'] = attribute_one_filter
-
-    attribute_two_filter = request.GET.get('attribute_two',None)
-    if attribute_two_filter is None:
-        # gets will always be present on user filtering
-        if cat.attribute_two_default_filtered_value is not None:
-            attribute_two_filter = cat.attribute_two_default_filtered_value
-    if cat.attribute_two_name is not None:
-        no_filter = "filter " + cat.attribute_two_name
-    
-    if attribute_two_filter != None and attribute_two_filter != no_filter:
-        products = products.filter(attribute_two_value=attribute_two_filter)
-        chosen_attributes['attribute_two'] = attribute_two_filter
-
-    attribute_three_filter = request.GET.get('attribute_three',None)
-    if attribute_three_filter is None:
-        # gets will always be present on user filtering
-        if cat.attribute_three_default_filtered_value is not None:
-            attribute_three_filter = cat.attribute_three_default_filtered_value
-    if cat.attribute_three_name is not None:
-        no_filter = "filter " + cat.attribute_three_name
-    
-    if attribute_three_filter != None and attribute_three_filter != no_filter:
-        products = products.filter(attribute_three_value=attribute_three_filter)
-        chosen_attributes['attribute_three'] = attribute_three_filter
-
-    attribute_four_filter = request.GET.get('attribute_four',None)
-    if attribute_four_filter is None:
-        # gets will always be present on user filtering
-        if cat.attribute_four_default_filtered_value is not None:
-            attribute_four_filter = cat.attribute_four_default_filtered_value
-    if cat.attribute_four_name is not None:
-        no_filter = "filter " + cat.attribute_four_name
-    
-    if attribute_four_filter != None and attribute_four_filter != no_filter:
-        products = products.filter(attribute_four_value=attribute_four_filter)
-        chosen_attributes['attribute_four'] = attribute_four_filter
-
-    attribute_five_filter = request.GET.get('attribute_five',None)
-    if attribute_five_filter is None:
-        # gets will always be present on user filtering
-        if cat.attribute_five_default_filtered_value is not None:
-            attribute_five_filter = cat.attribute_five_default_filtered_value
-    if cat.attribute_five_name is not None:
-        no_filter = "filter " + cat.attribute_five_name
-    
-    if attribute_five_filter != None and attribute_five_filter != no_filter:
-        products = products.filter(attribute_five_value=attribute_five_filter)
-        chosen_attributes['attribute_five'] = attribute_five_filter
 
     active_only = request.GET.get('active_only', None)
     if active_only in ('True', '1', 'on'):
@@ -449,11 +432,14 @@ def browseCategory(request, cat_slug=None):
     else:
         # add additional, non-ajax, parameters
         context['all_attributes'] = all_attributes
+        context['attribute_definitions'] = attribute_definitions
+        context['attribute_filters'] = attribute_filters
         # context['filterable_attributes'] = filterable_attributes
         context['filterable_attributes_count'] = filterable_attributes_count
         # context['sortable_attributes'] = sortable_attributes
         context['sortable_attributes_count'] = sortable_attributes_count
         context['sort_by'] = sort_by
+        context['sort_options'] = sort_options
         context['location'] = location
         context['distance_filter'] = distance_filter
         context['browse_lat'] = browse_lat

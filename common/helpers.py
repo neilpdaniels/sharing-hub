@@ -69,6 +69,19 @@ def get_all_products_under_category(category):
 def getAllProductsUnderCategory(category):
     return get_all_products_under_category(category)
 
+
+def get_ordered_child_categories(parent_category):
+    return parent_category.category_set.order_by('title', 'id')
+
+
+def get_ordered_top_categories():
+    from common.models import Category
+
+    top_category = Category.objects.filter(slug='top').first()
+    if top_category:
+        return Category.objects.filter(parent_category=top_category).order_by('title', 'id')
+    return Category.objects.filter(parent_category__isnull=True).exclude(slug='top').order_by('title', 'id')
+
 @deconstructible
 class RandomFileName(object):
     def __init__(self, path):

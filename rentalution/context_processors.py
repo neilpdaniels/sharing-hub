@@ -153,9 +153,10 @@ def from_settings(request):
 
 def top_categories(request):
     from common.models import Category
+    from common.helpers import get_ordered_top_categories
     try:
-        top_cat = Category.objects.get(slug='top')
-        cats = list(Category.objects.filter(parent_category=top_cat).order_by('title'))
+        Category.objects.get(slug='top')
+        cats = list(get_ordered_top_categories())
     except Category.DoesNotExist:
         cats = []
     return {'top_categories': cats}

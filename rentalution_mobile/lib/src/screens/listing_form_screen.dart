@@ -60,6 +60,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   final _maxRentalDaysController = TextEditingController(text: '7');
   final _descriptionController = TextEditingController();
   final _additionalCommentsController = TextEditingController();
+  final Map<int, TextEditingController> _listingAttributeControllers = {};
 
   DateTime? _expiryDate;
   String _letVisibility = 'BOTH';
@@ -80,6 +81,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   String _selectedProductName = '';
   String? _productSearchStatus;
   String? _validationSummary;
+  List<CategoryAttributeDefinition> _listingAttributeDefinitions = const [];
 
   static const _availabilityMarker = '[AVAILABILITY_DAYS]';
   static const _weekdayLabels = <int, String>{
@@ -96,6 +98,9 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   void initState() {
     super.initState();
     _initFromExistingOrder();
+    if (widget.existingOrder != null) {
+      unawaited(_loadListingAttributeDefinitionsForExistingOrder());
+    }
   }
 
   void _initFromExistingOrder() {
@@ -109,6 +114,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
         _productSearchController.text = initialProductName;
         _productSearchStatus =
             'Using selected product: $initialProductName. You can clear this to choose another item.';
+        unawaited(_loadListingAttributeDefinitionsForInitialProduct());
       }
       _expiryDate = DateTime.now().add(const Duration(days: 30));
       return;
@@ -177,6 +183,111 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
 
     _selectedProductId = order.productId;
     _selectedProductName = order.productName;
+  }
+
+  Future<void> _loadListingAttributeDefinitionsForExistingOrder() async {
+    final order = widget.existingOrder;
+    if (order == null || order.productSlug.isEmpty) {
+      return;
+    }
+    try {
+      final detail = await widget.catalogRepository.fetchProductDetail(
+        productSlug: order.productSlug,
+        accessToken: widget.accessToken,
+      );
+      if (!mounted) {
+        return;
+      }
+      _applyListingAttributeDefinitions(
+        detail.attributeDefinitions,
+        initialAttributes: order.attributes,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _applyListingAttributeDefinitions(
+        const [],
+        initialAttributes: order.attributes,
+      );
+    }
+  }
+
+  Future<void> _loadListingAttributeDefinitionsForInitialProduct() async {
+    final initialProductId = _selectedProductId;
+    final initialProductName = _selectedProductName.trim();
+    if (initialProductId == null || initialProductName.isEmpty) {
+      return;
+    }
+    try {
+      final results = await widget.catalogRepository.searchProducts(
+        query: initialProductName,
+        includeZeroListings: true,
+        sortBy: 'name',
+      );
+      if (!mounted) {
+        return;
+      }
+      for (final product in results) {
+        if (product.id == initialProductId) {
+          _applyListingAttributeDefinitions(product.attributeDefinitions);
+          break;
+        }
+      }
+    } catch (_) {
+      // Leave the form usable even if we cannot prefetch attribute metadata.
+    }
+  }
+
+  void _applyListingAttributeDefinitions(
+    List<CategoryAttributeDefinition> definitions, {
+    List<OrderAttributeValue> initialAttributes = const [],
+  }) {
+    final listingDefs = definitions
+        .where(
+          (definition) =>
+              definition.valueSource == 'listing' &&
+              definition.name.trim().isNotEmpty,
+        )
+        .toList(growable: false);
+    final initialValues = <int, String>{
+      for (final attribute in initialAttributes)
+        if (attribute.valueSource == 'listing') attribute.order: attribute.value,
+    };
+
+    for (final definition in listingDefs) {
+      final controller = _listingAttributeControllers.putIfAbsent(
+        definition.order,
+        () => TextEditingController(),
+      );
+      final initialValue = initialValues[definition.order];
+      if (initialValue != null && controller.text.trim().isEmpty) {
+        controller.text = initialValue;
+      }
+    }
+
+    final obsoleteOrders = _listingAttributeControllers.keys
+        .where((order) => !listingDefs.any((definition) => definition.order == order))
+        .toList(growable: false);
+    for (final order in obsoleteOrders) {
+      _listingAttributeControllers.remove(order)?.dispose();
+    }
+
+    setState(() {
+      _listingAttributeDefinitions = listingDefs;
+    });
+  }
+
+  Future<void> _handleProductSelected(ProductSummary product) async {
+    setState(() {
+      _selectedProductId = product.id;
+      _selectedProductName = product.name;
+      _productSearchController.text = product.name;
+      _productSearchResults = const [];
+      _productSearchStatus =
+          'Selected "$_selectedProductName" for your listing.';
+    });
+    _applyListingAttributeDefinitions(product.attributeDefinitions);
   }
 
   Future<void> _searchProductsForListing() async {
@@ -327,6 +438,12 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     if (_collectionIsNotHomeAddress &&
         _collectionPostcodeController.text.trim().isEmpty) {
       messages.add('Enter a collection postcode.');
+    }
+    for (final definition in _listingAttributeDefinitions) {
+      final value = _listingAttributeControllers[definition.order]?.text.trim() ?? '';
+      if (value.isEmpty) {
+        messages.add('Choose ${definition.name.toLowerCase()}.');
+      }
     }
     return messages;
   }
@@ -516,6 +633,13 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
           : '',
       'price_bands': priceBands,
     };
+
+    for (final definition in _listingAttributeDefinitions) {
+      final value = _listingAttributeControllers[definition.order]?.text.trim() ?? '';
+      if (value.isNotEmpty) {
+        payload['attribute_${definition.order}_value'] = value;
+      }
+    }
 
     if (_canIncludeDeliveryInfo) {
       payload['delivery_cost'] =
@@ -774,16 +898,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         trailing: const Icon(Icons.check_circle_outline),
-                        onTap: () {
-                          setState(() {
-                            _selectedProductId = product.id;
-                            _selectedProductName = product.name;
-                            _productSearchController.text = product.name;
-                            _productSearchResults = const [];
-                            _productSearchStatus =
-                                'Selected "$_selectedProductName" for your listing.';
-                          });
-                        },
+                        onTap: () => _handleProductSelected(product),
                       );
                     },
                   ),
@@ -830,7 +945,64 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
               if (_productSearchResults.isNotEmpty) ...[
                 const SizedBox(height: 8),
               ],
-              const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            ],
+            if (_listingAttributeDefinitions.isNotEmpty) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'This listing\'s details',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'These values describe this specific listing rather than the product type overall.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              ..._listingAttributeDefinitions.map((definition) {
+                final controller = _listingAttributeControllers.putIfAbsent(
+                  definition.order,
+                  () => TextEditingController(),
+                );
+                if (definition.allowedValues.isNotEmpty) {
+                  final currentValue = controller.text.trim();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: DropdownButtonFormField<String>(
+                      initialValue: definition.allowedValues.contains(currentValue)
+                          ? currentValue
+                          : '',
+                      decoration: InputDecoration(labelText: definition.name),
+                      items: [
+                        DropdownMenuItem<String>(
+                          value: '',
+                          child: Text('Select ${definition.name.toLowerCase()}'),
+                        ),
+                        ...definition.allowedValues.map(
+                          (value) => DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        controller.text = value ?? '';
+                        _clearValidationSummary();
+                      },
+                    ),
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TextFormField(
+                    controller: controller,
+                    decoration: InputDecoration(labelText: definition.name),
+                    onChanged: (_) => _clearValidationSummary(),
+                  ),
+                );
+              }),
             ],
             TextFormField(
               controller: _descriptionController,
@@ -906,8 +1078,18 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
               decoration: const InputDecoration(
                 labelText: 'Maximum rental duration (days)',
                 helperText:
-                    'If you allow rentals over 5 days, deposits must be on Visa or Mastercard credit cards.',
+                    'If you allow rentals over 5 days, deposits must be on Visa or Mastercard credit cards. Rentals over 30 days are not supported yet.',
               ),
+              validator: (value) {
+                final parsed = int.tryParse((value ?? '').trim());
+                if (parsed == null || parsed < 1) {
+                  return 'Enter a valid number of days';
+                }
+                if (parsed > 30) {
+                  return 'Keep the rental length to 30 days or fewer';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 18),
             Align(
@@ -1332,6 +1514,9 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     _maxRentalDaysController.dispose();
     _descriptionController.dispose();
     _additionalCommentsController.dispose();
+    for (final controller in _listingAttributeControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 

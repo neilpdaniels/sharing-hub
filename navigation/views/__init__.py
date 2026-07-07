@@ -1,6 +1,8 @@
 from .browse import (  # noqa: F401
     _build_biscuit,
     browseCategory,
+    delete_category,
+    delete_product,
     expandOrder,
     index,
     productPage,

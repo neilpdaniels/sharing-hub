@@ -22,7 +22,7 @@ from account.forms import UserRegistrationStartForm, UserRegistrationVerifyForm
 from account.models import PaymentMethod, Profile
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
-from common.catalog_attributes import (
+from common.catalog.attributes import (
     apply_attribute_filters,
     collect_attribute_filter_options,
     default_sort_value,

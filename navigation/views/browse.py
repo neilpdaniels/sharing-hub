@@ -21,9 +21,10 @@ from haystack.generic_views import SearchView
 from haystack.query import SearchQuerySet
 
 import common.helpers
+from common.catalog_exclusions import exclude_category_slug, exclude_product
 from common.decorators import ajax_required
 from common.geocoding import PostcodeGeocoder
-from common.catalog_attributes import (
+from common.catalog.attributes import (
     apply_attribute_filters,
     attribute_sort_options,
     collect_attribute_filter_options,
@@ -177,6 +178,66 @@ def _build_biscuit(cat):
         biscuit.append(biscuit_cat.parent_category)
         biscuit_cat = biscuit_cat.parent_category
     return [item for item in biscuit[::-1] if item.slug != 'top']
+
+
+def _iter_category_and_descendants(category):
+    yield category
+    for child in Category.objects.filter(parent_category=category):
+        yield from _iter_category_and_descendants(child)
+
+
+@staff_member_required
+def delete_category(request, cat_slug):
+    category = get_object_or_404(Category, slug=cat_slug)
+    product_count = Product.objects.filter(category_id=category).count()
+    child_count = Category.objects.filter(parent_category=category).count()
+
+    if request.method == 'POST':
+        for descendant in _iter_category_and_descendants(category):
+            exclude_category_slug(descendant.slug)
+        category.delete()
+        messages.success(
+            request,
+            f'Category "{category.title}" deleted.',
+        )
+        return redirect('navigation:seeAll')
+
+    return render(
+        request,
+        'navigation/delete_category_confirm.html',
+        {
+            'category': category,
+            'product_count': product_count,
+            'child_count': child_count,
+        },
+    )
+
+
+@staff_member_required
+def delete_product(request, product_slug):
+    product = get_object_or_404(Product, slug=product_slug)
+
+    if request.method == 'POST':
+        category_slug = product.category_id.slug if product.category_id else None
+        product_name = product.name
+        if category_slug:
+            exclude_product(category_slug, product_name)
+        product.delete()
+        messages.success(
+            request,
+            f'Product "{product_name}" deleted.',
+        )
+        if category_slug:
+            return redirect('navigation:browseCategory', cat_slug=category_slug)
+        return redirect('navigation:seeAll')
+
+    return render(
+        request,
+        'navigation/delete_product_confirm.html',
+        {
+            'product': product,
+        },
+    )
 
 # @cache_page(60 * 30)
 def browseCategory(request, cat_slug=None):

@@ -1,0 +1,15 @@
+{
+  "categories": [
+    "scenario-tools-20260620064205"
+  ],
+  "products": [
+    {
+      "category_slug": "watering-and-washdown",
+      "name": "Water butt pump"
+    },
+    {
+      "category_slug": "watering-and-washdown",
+      "name": "Sprinkler set"
+    }
+  ]
+}

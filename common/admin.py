@@ -8,8 +8,9 @@ from django_summernote.admin import SummernoteModelAdmin
 
 @admin.register(Category)
 class CategoryAdmin(SummernoteModelAdmin):
-    list_display = ('title','slug', 'image_review_status', 'create_date','parent_category_id')
-    list_filter = ('image_review_status',)
+    list_display = ('title', 'slug', 'image_review_status', 'create_date', 'parent_category_id')
+    list_filter = ('image_review_status', 'parent_category')
+    search_fields = ('title', 'slug', 'description')
     fields = (
         'title',
         'slug',
@@ -23,6 +24,8 @@ class CategoryAdmin(SummernoteModelAdmin):
     )
     filter_horizontal = ('tags',)
     summernote_fields = ('description',)
+
+    actions = ['delete_selected']
 
 
 @admin.register(CategoryAttribute)

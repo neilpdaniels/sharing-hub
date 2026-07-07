@@ -24,7 +24,7 @@ from haystack.query import SearchQuerySet
 import common.helpers
 from common.decorators import ajax_required
 from common.geocoding import PostcodeGeocoder
-from common.catalog_attributes import (
+from common.catalog.attributes import (
     apply_attribute_filters,
     attribute_sort_options,
     collect_attribute_filter_options,

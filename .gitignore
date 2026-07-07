@@ -1,6 +1,9 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyo
+*.pyd
+*.so
 build/
 dist/
 wheels/
@@ -11,8 +14,12 @@ logs/
 db.sqlite3
 .rentalution_mobile.env
 rentalution_mobile/.env
-media/images/
-media/cache/
+media/
+tmp/midjourney_catalog_workflow/
+tmp/midjourney_category_prompts/
+tmp/*.log
+tmp/*.tmp
+tmp/.DS_Store
 
 # Virtual environments
 .venv

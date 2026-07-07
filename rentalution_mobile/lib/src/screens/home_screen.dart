@@ -116,9 +116,12 @@ class _HomeScreenState extends State<HomeScreen> {
   int _searchSuggestionRequestId = 0;
 
   List<CategorySummary> _categories = const [];
+  List<CategorySummary> _categoryTrail = const [];
+  List<CategorySummary> _allCategories = const [];
   List<ProductSummary> _browseProducts = const [];
   List<ProductSummary> _searchResults = const [];
   List<ProductSummary> _searchSuggestions = const [];
+  List<CategorySummary> _searchCategorySuggestions = const [];
   List<OrderSummary> _orders = const [];
   List<OrderSummary> _favouriteOrders = const [];
   List<InboxMessage> _inboxMessages = const [];
@@ -251,6 +254,100 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     return null;
+  }
+
+  List<CategorySummary> _currentBrowseCategories() => _categories;
+
+  String _browseBreadcrumbLabel() {
+    if (_categoryTrail.isEmpty) {
+      return 'Browse';
+    }
+    return ['Browse', ..._categoryTrail.map((category) => category.title)]
+        .join(' / ');
+  }
+
+  Widget _buildBrowseBreadcrumb() {
+    final items = <Widget>[
+      TextButton(
+        onPressed: _resetBrowseToTop,
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: const Text('Browse'),
+      ),
+    ];
+
+    for (var i = 0; i < _categoryTrail.length; i++) {
+      final category = _categoryTrail[i];
+      items.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            '/',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.black38,
+                ),
+          ),
+        ),
+      );
+      items.add(
+        TextButton(
+          onPressed: i == _categoryTrail.length - 1
+              ? null
+              : () async {
+                  final nextTrail = _categoryTrail.sublist(0, i + 1);
+                  final categories = await widget.catalogRepository
+                      .fetchCategories(parentSlug: category.slug);
+                  if (!mounted) {
+                    return;
+                  }
+                  setState(() {
+                    _categoryTrail = nextTrail;
+                    _categories = categories;
+                    _selectedCategorySlug = null;
+                    _browseProducts = const [];
+                  });
+                },
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          ),
+          child: Text(
+            category.title,
+            style: TextStyle(
+              color: i == _categoryTrail.length - 1
+                  ? Colors.black87
+                  : RentalutionPalette.brandTeal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: items,
+    );
+  }
+
+  Future<void> _resetBrowseToTop() async {
+    final topCategories = await widget.catalogRepository.fetchCategories(
+      parentSlug: 'top',
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _categoryTrail = const [];
+      _categories = topCategories;
+      _selectedCategorySlug = null;
+      _browseProducts = const [];
+    });
   }
 
   List<CategoryAttributeDefinition> _selectedCategoryAttributeDefinitions() {
@@ -959,18 +1056,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      var categories = await widget.catalogRepository.fetchCategories(
-        parentSlug: 'top',
-      );
-      if (categories.isEmpty) {
-        categories = await widget.catalogRepository.fetchCategories();
-      }
+      final allCategories = await _fetchAllCategories();
+      final topCategories = allCategories.where((category) {
+        return category.parentSlug == 'top' || category.parentSlug.isEmpty;
+      }).toList(growable: false);
       if (!mounted) {
         return;
       }
       setState(() {
-        _categories = categories;
+        _allCategories = allCategories;
+        _categories = topCategories.isEmpty ? allCategories : topCategories;
+        _categoryTrail = const [];
         _selectedCategorySlug = null;
+        _browseProducts = const [];
       });
     } catch (e) {
       if (mounted) {
@@ -985,6 +1083,51 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  Future<List<CategorySummary>> _fetchAllCategories() async {
+    final visited = <String>{};
+    final queue = <String>['top'];
+    final categories = <CategorySummary>[];
+
+    while (queue.isNotEmpty) {
+      final parentSlug = queue.removeAt(0);
+      final children = await widget.catalogRepository.fetchCategories(
+        parentSlug: parentSlug,
+      );
+      for (final category in children) {
+        if (visited.add(category.slug)) {
+          categories.add(category);
+          queue.add(category.slug);
+        }
+      }
+    }
+
+    return categories;
+  }
+
+  List<CategorySummary> _descendantCategories(String parentSlug) {
+    final childrenByParent = <String, List<CategorySummary>>{};
+    for (final category in _allCategories) {
+      childrenByParent.putIfAbsent(category.parentSlug, () => <CategorySummary>[]).add(category);
+    }
+
+    final descendants = <CategorySummary>[];
+    final visited = <String>{};
+    final queue = <CategorySummary>[
+      ...?childrenByParent[parentSlug],
+    ];
+
+    while (queue.isNotEmpty) {
+      final category = queue.removeAt(0);
+      if (!visited.add(category.slug)) {
+        continue;
+      }
+      descendants.add(category);
+      queue.addAll(childrenByParent[category.slug] ?? const <CategorySummary>[]);
+    }
+
+    return descendants;
   }
 
   Future<void> _loadBrowseProducts(String categorySlug) async {
@@ -1022,6 +1165,72 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  Future<void> _openBrowseCategory(CategorySummary category) async {
+    final directChildren = await widget.catalogRepository.fetchCategories(
+      parentSlug: category.slug,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    final products = await widget.catalogRepository.fetchCategoryProducts(
+      categorySlug: category.slug,
+      location: _effectiveBrowseLocation(),
+      distanceKm: _selectedDistance,
+      sortBy: _backendSortValue(_browseSortBy),
+      attributeFilters: _browseAttributeFilters,
+      includeZeroListings: _includeZeroListings,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _categoryTrail = [..._categoryTrail, category];
+      _categories = directChildren;
+      _selectedCategorySlug = category.slug;
+      _browseProducts = _applyLocalProductSort(products, _browseSortBy);
+    });
+  }
+
+  Future<void> _goBackBrowseCategory() async {
+    if (_selectedCategorySlug != null) {
+      setState(() {
+        _selectedCategorySlug = null;
+        _browseProducts = const [];
+        if (_categoryTrail.isNotEmpty) {
+          _categoryTrail = _categoryTrail.sublist(0, _categoryTrail.length - 1);
+        }
+      });
+      return;
+    }
+    if (_categoryTrail.isEmpty) {
+      return;
+    }
+
+    final nextTrail = List<CategorySummary>.from(_categoryTrail)..removeLast();
+    final parent = nextTrail.isEmpty ? null : nextTrail.last;
+    List<CategorySummary> categories;
+    if (parent == null) {
+      categories = await widget.catalogRepository.fetchCategories(parentSlug: 'top');
+    } else {
+      final directChildren = await widget.catalogRepository.fetchCategories(
+        parentSlug: parent.slug,
+      );
+      categories = directChildren.isNotEmpty
+          ? directChildren
+          : _descendantCategories(parent.slug);
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _categoryTrail = nextTrail;
+      _categories = categories;
+      _browseProducts = const [];
+    });
   }
 
   Future<void> _loadOrders() async {
@@ -1176,6 +1385,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (query.isEmpty && !hasFilters) {
       setState(() {
         _searchResults = const [];
+        _searchCategorySuggestions = const [];
       });
       return;
     }
@@ -1200,6 +1410,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _searchResults = sortedResults;
         _searchSuggestions = const [];
+        _searchCategorySuggestions = _matchSearchCategories(query);
       });
     } catch (e) {
       if (mounted) {
@@ -1222,6 +1433,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (trimmed.length < 2) {
       setState(() {
         _searchSuggestions = const [];
+        _searchCategorySuggestions = const [];
       });
       return;
     }
@@ -1242,6 +1454,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         setState(() {
           _searchSuggestions = results;
+          _searchCategorySuggestions = _matchSearchCategories(trimmed);
         });
       } catch (_) {
         if (!mounted || requestId != _searchSuggestionRequestId) {
@@ -1249,9 +1462,25 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         setState(() {
           _searchSuggestions = const [];
+          _searchCategorySuggestions = const [];
         });
       }
     });
+  }
+
+  List<CategorySummary> _matchSearchCategories(String query) {
+    final lowered = query.trim().toLowerCase();
+    if (lowered.length < 2) {
+      return const [];
+    }
+
+    final matches = _allCategories.where((category) {
+      return category.title.toLowerCase().contains(lowered) ||
+          category.description.toLowerCase().contains(lowered);
+    }).toList(growable: false);
+
+    matches.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    return matches.take(5).toList(growable: false);
   }
 
   Future<void> _selectSearchSuggestion(ProductSummary product) async {
@@ -1263,6 +1492,29 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchSuggestions = const [];
     });
     await _searchProducts();
+  }
+
+  Widget _searchSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+
+  Future<void> _selectSearchCategory(CategorySummary category) async {
+    await _openBrowseCategory(category);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedIndex = _browseTabIndex;
+    });
   }
 
   String _effectiveBrowseLocation() {
@@ -1801,6 +2053,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 _selectedIndex = index;
                 _navBarOpacity = 1.0;
               });
+              if (index == _browseTabIndex) {
+                _resetBrowseToTop();
+              }
             },
             type: BottomNavigationBarType.fixed,
             items: _isAuthenticated
@@ -1973,6 +2228,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBrowse() {
     final locationLabel = _browseLocationController.text.trim();
+    final currentCategories = _currentBrowseCategories();
 
     if (_selectedCategorySlug == null) {
       return SingleChildScrollView(
@@ -2011,7 +2267,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            _buildCategoryCardsWrap(),
+            _buildCategoryCardsWrap(currentCategories),
           ],
         ),
       );
@@ -2024,6 +2280,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final currentCategories = _currentBrowseCategories();
     final textTheme = Theme.of(context).textTheme;
 
     return SingleChildScrollView(
@@ -2116,7 +2373,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 18),
           _sectionTitle('Browse categories'),
           const SizedBox(height: 10),
-          _buildCategoryCardsWrap(),
+          _buildCategoryCardsWrap(currentCategories),
           const SizedBox(height: 22),
           Center(
             child: Image.asset(
@@ -2174,8 +2431,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCategoryCardsWrap() {
-    if (_categories.isEmpty) {
+  Widget _buildCategoryCardsWrap(List<CategorySummary> categories) {
+    if (categories.isEmpty) {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(16),
@@ -2205,11 +2462,11 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSpacing: 10,
             childAspectRatio: 1.0,
           ),
-          itemCount: _categories.length,
+          itemCount: categories.length,
           itemBuilder: (context, index) {
-            final cat = _categories[index];
+            final cat = categories[index];
             return GestureDetector(
-              onTap: () => _loadBrowseProducts(cat.slug),
+              onTap: () => _openBrowseCategory(cat),
               child: Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(
@@ -2243,9 +2500,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCategoryProducts() {
-    final selectedCat = _categories
-        .where((c) => c.slug == _selectedCategorySlug)
-        .firstOrNull;
+    final selectedCat = _categoryTrail.isNotEmpty
+        ? _categoryTrail.last
+        : _categories.where((c) => c.slug == _selectedCategorySlug).firstOrNull;
     final locationLabel = _browseLocationController.text.trim();
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -2283,10 +2540,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: SafeArea(
                           bottom: false,
                           child: IconButton(
-                            onPressed: () => setState(() {
-                              _selectedCategorySlug = null;
-                              _browseProducts = const [];
-                            }),
+                            onPressed: _goBackBrowseCategory,
                             style: IconButton.styleFrom(
                               backgroundColor: Colors.white.withOpacity(0.78),
                               foregroundColor: const Color(0xFF1A2A3F),
@@ -2350,6 +2604,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         if (selectedCat != null) const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        if (_currentBrowseCategories().isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: _sectionTitle('Categories'),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: _buildCategoryCardsWrap(_currentBrowseCategories()),
+            ),
+          ),
+        ],
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -2357,18 +2625,25 @@ class _HomeScreenState extends State<HomeScreen> {
               margin: EdgeInsets.zero,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: Text(_browseDistanceHeading(locationLabel))),
-                    IconButton(
-                      onPressed: _locating ? null : _useCurrentLocation,
-                      icon: const Icon(Icons.my_location),
-                      tooltip: 'Use my location',
-                    ),
-                    IconButton(
-                      onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                      icon: const Icon(Icons.tune),
-                      tooltip: 'Filters',
+                    _buildBrowseBreadcrumb(),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: Text(_browseDistanceHeading(locationLabel))),
+                        IconButton(
+                          onPressed: _locating ? null : _useCurrentLocation,
+                          icon: const Icon(Icons.my_location),
+                          tooltip: 'Use my location',
+                        ),
+                        IconButton(
+                          onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                          icon: const Icon(Icons.tune),
+                          tooltip: 'Filters',
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -2380,12 +2655,9 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: TextButton.icon(
-              onPressed: () => setState(() {
-                _selectedCategorySlug = null;
-                _browseProducts = const [];
-              }),
+              onPressed: _goBackBrowseCategory,
               icon: const Icon(Icons.arrow_back),
-              label: const Text('All categories'),
+              label: const Text('Up one level'),
             ),
           ),
         ),
@@ -2401,14 +2673,32 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        if (_currentBrowseCategories().isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: _sectionTitle('Categories'),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _buildCategoryCardsWrap(_currentBrowseCategories()),
+            ),
+          ),
+        ],
         if (_browseLoading)
           const SliverFillRemaining(
             child: Center(child: CircularProgressIndicator()),
           )
         else if (_browseProducts.isEmpty)
-          const SliverFillRemaining(
+          SliverFillRemaining(
             hasScrollBody: false,
-            child: Center(child: Text('No items listed in this category.')),
+            child: Center(
+              child: Text(
+                'No products listed in this category.',
+              ),
+            ),
           )
         else
           SliverPadding(
@@ -2523,6 +2813,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 if (_searchSuggestions.isNotEmpty) ...[
                   const SizedBox(height: 10),
+                  _searchSectionHeader('Products'),
                   ..._searchSuggestions.take(5).map(
                     (product) => Card(
                       elevation: 0,
@@ -2533,6 +2824,42 @@ class _HomeScreenState extends State<HomeScreen> {
                         onTap: _searchLoading
                             ? null
                             : () => _selectSearchSuggestion(product),
+                      ),
+                    ),
+                  ),
+                ],
+                if (_searchCategorySuggestions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _searchSectionHeader('Categories'),
+                  ..._searchCategorySuggestions.map(
+                    (category) => Card(
+                      elevation: 0,
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 2,
+                        ),
+                        leading: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: _categoryThumb(category.imageUrl),
+                        ),
+                        title: Text(
+                          category.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          category.parentSlug.isEmpty
+                              ? 'Top level category'
+                              : 'Category',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: _searchLoading
+                            ? null
+                            : () => _selectSearchCategory(category),
                       ),
                     ),
                   ),

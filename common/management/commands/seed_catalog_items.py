@@ -1,6 +1,8 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction as db_transaction
+from django.utils.text import slugify
 
+from common.catalog_exclusions import load_catalog_exclusions
 from common.models import Category, CategoryAttribute, Product
 
 
@@ -15,6 +17,10 @@ LEGACY_CATEGORY_MERGES = {
     'Compressors and air tools': 'Air tools and compressors',
     'Demolition and breakers': 'Masonry, concrete and demolition',
     'Masonry and concrete tools': 'Masonry, concrete and demolition',
+}
+
+UK_REWRITE_PRODUCTS = {
+    'American football sled': 'Rugby tackle sled',
 }
 
 
@@ -187,6 +193,10 @@ def upsert_product(category, product_name, defaults):
         setattr(product, field_name, value)
     product.save()
     return product, created
+
+
+def normalise_product_name(name):
+    return UK_REWRITE_PRODUCTS.get(name, name)
 
 
 def delete_obsolete_products(category, desired_names):
@@ -954,7 +964,7 @@ def category_payload():
                     'Netball post set',
                     'Basketball hoop',
                     'Portable basketball stand',
-                    'American football sled',
+                    'Rugby tackle sled',
                     'Volleyball net set',
                     'Handball goal',
                 ],
@@ -1433,6 +1443,28 @@ def category_payload():
             ),
         ),
         category_node(
+            'Kids party',
+            'Sleepovers, birthdays and loud living-room victories.',
+            'Borrow the fun without filling the house with one-use plastic.',
+            products=make_products(
+                [
+                    'Sleepover kit',
+                    'Kids party tent',
+                    'Indoor teepee set',
+                    'Foam dart blaster set',
+                    'Ball pit',
+                    'Bouncy castle',
+                    'Soft play set',
+                    'Glow party light set',
+                    'Kids cinema pack',
+                    'Mini disco speaker',
+                    'Popcorn machine',
+                    'Party table and chair set',
+                ],
+                'Useful for birthdays, sleepovers and weekend sugar-fuelled chaos.',
+            ),
+        ),
+        category_node(
             'Toilet and welfare hire',
             'The practical event bits nobody posts about but everybody absolutely needs.',
             'Quietly essential, deeply appreciated.',
@@ -1472,8 +1504,8 @@ def category_payload():
                 },
                 {
                     'order': 2,
-                    'name': 'Listing size',
-                    'filterable': False,
+                    'name': 'Size',
+                    'filterable': True,
                     'sortable': False,
                     'allowed_values': ['Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'One size'],
                     'value_source': 'listing',
@@ -1481,26 +1513,26 @@ def category_payload():
             ],
             products=attributed_products(
                 [
-                    ('Superhero bodysuit', 'Superhero'),
-                    ('Superhero cape set', 'Superhero'),
-                    ('Roman gladiator costume', 'History'),
-                    ('Medieval knight costume', 'History'),
-                    ('Viking costume', 'History'),
-                    ('Pirate captain costume', 'Fantasy'),
-                    ('Wizard robe set', 'Fantasy'),
-                    ('Witch costume', 'Halloween'),
-                    ('Zombie costume', 'Halloween'),
-                    ('Skeleton morph suit', 'Halloween'),
-                    ('Inflatable dinosaur suit', 'Animals'),
-                    ('Banana costume', 'Animals'),
-                    ('Cow costume', 'Animals'),
-                    ('Pilot costume', 'Uniform'),
-                    ('Police costume', 'Uniform'),
-                    ('Firefighter costume', 'Uniform'),
-                    ('Chef costume', 'Uniform'),
-                    ('1920s flapper costume', 'History'),
-                    ('Disco jumpsuit', 'Fantasy'),
-                    ('Grease-style leather look costume', 'Fantasy'),
+                    ('Superhero bodysuit', 'Superhero', 'Adult M'),
+                    ('Superhero cape set', 'Superhero', 'One size'),
+                    ('Roman gladiator costume', 'History', 'Adult L'),
+                    ('Medieval knight costume', 'History', 'Adult L'),
+                    ('Viking costume', 'History', 'Adult L'),
+                    ('Pirate captain costume', 'Fantasy', 'Adult M'),
+                    ('Wizard robe set', 'Fantasy', 'Adult M'),
+                    ('Witch costume', 'Halloween', 'Adult M'),
+                    ('Zombie costume', 'Halloween', 'Adult M'),
+                    ('Skeleton morph suit', 'Halloween', 'Adult M'),
+                    ('Inflatable dinosaur suit', 'Animals', 'One size'),
+                    ('Banana costume', 'Animals', 'One size'),
+                    ('Cow costume', 'Animals', 'One size'),
+                    ('Pilot costume', 'Uniform', 'Adult M'),
+                    ('Police costume', 'Uniform', 'Adult M'),
+                    ('Firefighter costume', 'Uniform', 'Adult L'),
+                    ('Chef costume', 'Uniform', 'Adult M'),
+                    ('1920s flapper costume', 'History', 'Adult S'),
+                    ('Disco jumpsuit', 'Fantasy', 'Adult M'),
+                    ('Grease-style leather look costume', 'Fantasy', 'Adult M'),
                 ],
                 'Built for parties, laughs and at least one unexpectedly good photo.',
             ),
@@ -1520,8 +1552,8 @@ def category_payload():
                 },
                 {
                     'order': 2,
-                    'name': 'Listing size',
-                    'filterable': False,
+                    'name': 'Age range',
+                    'filterable': True,
                     'sortable': False,
                     'allowed_values': ['Age 2-3', 'Age 3-4', 'Age 5-6', 'Age 7-8', 'Age 9-10', 'Age 11-12'],
                     'value_source': 'listing',
@@ -1529,26 +1561,26 @@ def category_payload():
             ],
             products=attributed_products(
                 [
-                    ('Mini superhero cape set', 'Superhero'),
-                    ('Superhero jumpsuit', 'Superhero'),
-                    ('Princess gown', 'Fantasy'),
-                    ('Dragon costume', 'Fantasy'),
-                    ('Knight costume', 'History'),
-                    ('Pharaoh costume', 'History'),
-                    ('Astronaut costume', 'Uniform'),
-                    ('Doctor costume', 'Uniform'),
-                    ('Police costume', 'Uniform'),
-                    ('Lion costume', 'Animals'),
-                    ('Shark costume', 'Animals'),
-                    ('Unicorn costume', 'Fantasy'),
-                    ('Pumpkin costume', 'Halloween'),
-                    ('Little witch costume', 'Halloween'),
-                    ('Little vampire costume', 'Halloween'),
-                    ('Skeleton costume', 'Halloween'),
-                    ('Robin Hood costume', 'History'),
-                    ('Fairy costume', 'Fantasy'),
-                    ('Pirate costume', 'Fantasy'),
-                    ('Dinosaur costume', 'Animals'),
+                    ('Mini superhero cape set', 'Superhero', 'Age 2-3'),
+                    ('Superhero jumpsuit', 'Superhero', 'Age 3-4'),
+                    ('Princess gown', 'Fantasy', 'Age 5-6'),
+                    ('Dragon costume', 'Fantasy', 'Age 5-6'),
+                    ('Knight costume', 'History', 'Age 7-8'),
+                    ('Pharaoh costume', 'History', 'Age 7-8'),
+                    ('Astronaut costume', 'Uniform', 'Age 5-6'),
+                    ('Doctor costume', 'Uniform', 'Age 3-4'),
+                    ('Police costume', 'Uniform', 'Age 5-6'),
+                    ('Lion costume', 'Animals', 'Age 2-3'),
+                    ('Shark costume', 'Animals', 'Age 3-4'),
+                    ('Unicorn costume', 'Fantasy', 'Age 5-6'),
+                    ('Pumpkin costume', 'Halloween', 'Age 3-4'),
+                    ('Little witch costume', 'Halloween', 'Age 3-4'),
+                    ('Little vampire costume', 'Halloween', 'Age 3-4'),
+                    ('Skeleton costume', 'Halloween', 'Age 5-6'),
+                    ('Robin Hood costume', 'History', 'Age 7-8'),
+                    ('Fairy costume', 'Fantasy', 'Age 5-6'),
+                    ('Pirate costume', 'Fantasy', 'Age 5-6'),
+                    ('Dinosaur costume', 'Animals', 'Age 3-4'),
                 ],
                 'Designed for maximum imagination and minimum wardrobe commitment.',
             ),
@@ -1557,20 +1589,38 @@ def category_payload():
             'Mascots and character suits',
             'Larger-than-life costumes for clubs, schools and gloriously silly entrances.',
             'High impact, occasionally warm, always memorable.',
-            products=make_products(
+            attributes=[
+                {
+                    'order': 1,
+                    'name': 'Theme',
+                    'filterable': True,
+                    'sortable': True,
+                    'allowed_values': ['Animals', 'Character', 'Fantasy', 'Sports', 'Uniform'],
+                    'value_source': 'product',
+                },
+                {
+                    'order': 2,
+                    'name': 'Size',
+                    'filterable': True,
+                    'sortable': False,
+                    'allowed_values': ['One size', 'Adult S', 'Adult M', 'Adult L', 'Adult XL'],
+                    'value_source': 'listing',
+                },
+            ],
+            products=attributed_products(
                 [
-                    'Mascot suit',
-                    'Bear mascot suit',
-                    'Lion mascot suit',
-                    'Panda mascot suit',
-                    'Dinosaur mascot suit',
-                    'Chicken mascot suit',
-                    'Rabbit mascot suit',
-                    'Dog mascot suit',
-                    'Character head and paws set',
-                    'Inflatable mascot blower costume',
-                    'Sports team mascot outfit',
-                    'Walkabout parade costume',
+                    ('Mascot suit', 'Character', 'One size'),
+                    ('Bear mascot suit', 'Animals', 'One size'),
+                    ('Lion mascot suit', 'Animals', 'One size'),
+                    ('Panda mascot suit', 'Animals', 'One size'),
+                    ('Dinosaur mascot suit', 'Fantasy', 'One size'),
+                    ('Chicken mascot suit', 'Animals', 'One size'),
+                    ('Rabbit mascot suit', 'Animals', 'One size'),
+                    ('Dog mascot suit', 'Animals', 'One size'),
+                    ('Character head and paws set', 'Character', 'One size'),
+                    ('Inflatable mascot blower costume', 'Character', 'One size'),
+                    ('Sports team mascot outfit', 'Sports', 'One size'),
+                    ('Walkabout parade costume', 'Uniform', 'One size'),
                 ],
                 'Made to charm crowds and test your step count.',
             ),
@@ -1579,20 +1629,38 @@ def category_payload():
             'Themed group costumes',
             'For coordinated entrances, office teams and friendship groups who really commit.',
             'Better together, usually louder too.',
-            products=make_products(
+            attributes=[
+                {
+                    'order': 1,
+                    'name': 'Theme',
+                    'filterable': True,
+                    'sortable': True,
+                    'allowed_values': ['Animals', 'Fantasy', 'History', 'Seasonal', 'Superhero', 'Uniform'],
+                    'value_source': 'product',
+                },
+                {
+                    'order': 2,
+                    'name': 'Size',
+                    'filterable': True,
+                    'sortable': False,
+                    'allowed_values': ['One size', 'Adult S', 'Adult M', 'Adult L', 'Adult XL'],
+                    'value_source': 'listing',
+                },
+            ],
+            products=attributed_products(
                 [
-                    'ABBA tribute group costume set',
-                    'Superhero squad costume set',
-                    'Prisoner and police costume set',
-                    'Safari explorer group costume set',
-                    'Construction crew costume set',
-                    'Circus troupe costume set',
-                    'Wizard school costume set',
-                    'Zombie school group costume set',
-                    'Greek gods costume set',
-                    'Festival glitter gang costume set',
-                    'Toy soldiers costume set',
-                    'Wild west posse costume set',
+                    ('ABBA tribute group costume set', 'Fantasy', 'One size'),
+                    ('Superhero squad costume set', 'Superhero', 'One size'),
+                    ('Prisoner and police costume set', 'Uniform', 'One size'),
+                    ('Safari explorer group costume set', 'Animals', 'One size'),
+                    ('Construction crew costume set', 'Uniform', 'One size'),
+                    ('Circus troupe costume set', 'Fantasy', 'One size'),
+                    ('Wizard school costume set', 'Fantasy', 'One size'),
+                    ('Zombie school group costume set', 'Halloween', 'One size'),
+                    ('Greek gods costume set', 'History', 'One size'),
+                    ('Festival glitter gang costume set', 'Fantasy', 'One size'),
+                    ('Toy soldiers costume set', 'Uniform', 'One size'),
+                    ('Wild west posse costume set', 'History', 'One size'),
                 ],
                 'Perfect when one costume simply is not enough teamwork.',
             ),
@@ -2273,6 +2341,13 @@ class Command(BaseCommand):
         deleted_categories = 0
         skipped_category_deletes = 0
         prune_categories = bool(options.get('prune_categories'))
+        exclusions = load_catalog_exclusions()
+        excluded_category_slugs = set(exclusions.get('categories', []))
+        excluded_products = {
+            (item.get('category_slug'), item.get('name'))
+            for item in exclusions.get('products', [])
+            if isinstance(item, dict)
+        }
 
         with db_transaction.atomic():
             top_category, _ = Category.objects.get_or_create(
@@ -2284,6 +2359,8 @@ class Command(BaseCommand):
             desired_products_by_category_id = {}
 
             for category_data in category_payload():
+                if slugify(category_data['title']) in excluded_category_slugs:
+                    continue
                 category_attributes = category_data.get('attributes', [])
                 parent_category = resolve_parent_category(category_data, top_category)
                 category, created = upsert_category(
@@ -2323,6 +2400,9 @@ class Command(BaseCommand):
                         product_name = product_data['name']
                         product_description = product_data['description']
                         product_attributes = product_data.get('attributes', {})
+                    product_name = normalise_product_name(product_name)
+                    if (category.slug, product_name) in excluded_products:
+                        continue
                     desired_names.append(product_name)
                     _, product_created = upsert_product(
                         category,

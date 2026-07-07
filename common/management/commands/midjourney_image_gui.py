@@ -20,6 +20,7 @@ from common.management.commands.manage_midjourney_catalog_images import (
     item_label,
     print_item,
     refresh_state_prompts,
+    refresh_state_items,
     save_state,
     update_item,
 )
@@ -204,6 +205,8 @@ class UnsavedItemBatchRunner:
         self.gui = gui
         self.items = list(items)
         self.index = 0
+        self.in_flight = 0
+        self.max_parallel = max(1, min(10, gui.get_batch_parallelism()))
         self.stopped = False
         self.photo_ref = None
 
@@ -275,20 +278,26 @@ class UnsavedItemBatchRunner:
     def process_next(self):
         if self.stopped or not self.window.winfo_exists():
             return
-        item = self.current_item()
-        if not item:
-            self.render_item()
-            save_state(self.gui.state)
-            self.gui._populate_list()
-            return
-        if item_existing_image_path(item):
-            update_item(item, status='awaiting_review', notes='Already had image; marked for review')
-            save_state(self.gui.state)
-            self.gui._populate_list()
-            self.index += 1
-            self.window.after(10, self.process_next)
-            return
+        while not self.stopped and self.in_flight < self.max_parallel:
+            item = self.current_item()
+            if not item:
+                if self.in_flight == 0:
+                    self.render_item()
+                    save_state(self.gui.state)
+                    self.gui._populate_list()
+                return
+            if item_existing_image_path(item):
+                update_item(item, status='awaiting_review', notes='Already had image; marked for review')
+                save_state(self.gui.state)
+                self.gui._populate_list()
+                self.index += 1
+                continue
 
+            self.index += 1
+            self.in_flight += 1
+            self._launch_generation(item)
+
+    def _launch_generation(self, item):
         prompt = build_openai_prompt(item)
         item['prompt'] = prompt
         save_state(self.gui.state)
@@ -297,9 +306,11 @@ class UnsavedItemBatchRunner:
         def do_generate():
             def log_message(message):
                 print(message)
-                self.status_var.set(message[:180])
+                if self.window.winfo_exists():
+                    self.window.after(0, lambda: self.status_var.set(message[:180]))
 
-            return prompt, generate_openai_images(
+            return prompt, self.gui._generate_openai_with_retries(
+                item,
                 prompt,
                 count=1,
                 model=self.gui.openai_image_model,
@@ -309,14 +320,15 @@ class UnsavedItemBatchRunner:
             )
 
         def done(result, error):
+            self.in_flight = max(0, self.in_flight - 1)
             if error:
-                self.status_var.set(f'OpenAI error: {error}')
-                self.stopped = True
+                self.status_var.set(f'bad response x5, skipping: {error}')
+                self.window.after(25, self.process_next)
                 return
             _prompt_value, paths = result
             if not paths:
-                self.status_var.set('OpenAI returned no images')
-                self.stopped = True
+                self.status_var.set('bad response x5, skipping')
+                self.window.after(25, self.process_next)
                 return
             archived = self.gui.apply_image_to_item(item, paths[0], note_prefix='Auto batch')
             update_item(item, status='awaiting_review', notes=f'Auto batch from {archived.name}')
@@ -325,8 +337,7 @@ class UnsavedItemBatchRunner:
             self.status_var.set('Saved and queued for review')
             self._set_image(archived)
             self.gui._populate_list()
-            self.index += 1
-            self.window.after(50, self.process_next)
+            self.window.after(25, self.process_next)
 
         self.gui._run_background(do_generate, done)
 
@@ -376,6 +387,7 @@ class MidjourneyImageGUI:
         self.root = root
         self.state = state
         self.items = state['items']
+        self.filtered_items = list(self.items)
         self.current_item = None
         self.generated_paths = []
         self.preview_refs = {}
@@ -388,11 +400,15 @@ class MidjourneyImageGUI:
             self.openai_image_model = DEFAULT_OPENAI_IMAGE_MODEL
         self.openai_image_quality = state.get('openai_image_quality', DEFAULT_OPENAI_IMAGE_QUALITY)
         self.debug_openai = bool(state.get('debug_openai', False))
+        self.batch_parallelism = int(state.get('batch_parallelism', 3) or 3)
+        self.batch_parallelism = max(1, min(10, self.batch_parallelism))
         self.state['openai_image_model'] = self.openai_image_model
         self.state['openai_image_quality'] = self.openai_image_quality
         self.state['debug_openai'] = self.debug_openai
+        self.state['batch_parallelism'] = self.batch_parallelism
         self.saved_image_path = None
         self.saved_image_photo = None
+        self.search_var = tk.StringVar(value='')
 
         self.root.title('Rentalution image queue')
         self.root.geometry('1500x950')
@@ -407,11 +423,15 @@ class MidjourneyImageGUI:
 
         left = tk.Frame(self.root, padx=8, pady=8)
         left.grid(row=0, column=0, sticky='nsw')
-        left.rowconfigure(1, weight=1)
+        left.rowconfigure(2, weight=1)
 
         tk.Label(left, text='Queue').grid(row=0, column=0, sticky='w')
+        search_entry = tk.Entry(left, textvariable=self.search_var, width=44)
+        search_entry.grid(row=1, column=0, sticky='ew', pady=(6, 6))
+        search_entry.insert(0, '')
+        self.search_var.trace_add('write', lambda *_args: self._apply_queue_search())
         self.listbox = tk.Listbox(left, width=44, height=40)
-        self.listbox.grid(row=1, column=0, sticky='ns')
+        self.listbox.grid(row=2, column=0, sticky='ns')
         self.listbox.bind('<<ListboxSelect>>', self._on_select)
 
         right = tk.Frame(self.root, padx=12, pady=8)
@@ -474,6 +494,16 @@ class MidjourneyImageGUI:
         tk.Entry(batch_frame, textvariable=self.batch_size_var, width=6).grid(row=0, column=1, sticky='w', padx=(6, 12))
         tk.Button(batch_frame, text='Run next unsaved', command=self.run_next_unsaved_batch).grid(row=0, column=2, sticky='w')
         tk.Button(batch_frame, text='Generate 1', command=self.generate_openai).grid(row=0, column=3, sticky='w', padx=(8, 0))
+        tk.Label(batch_frame, text='Parallel').grid(row=0, column=4, sticky='w', padx=(12, 4))
+        self.batch_parallel_var = tk.StringVar(value=str(self.batch_parallelism))
+        tk.Spinbox(
+            batch_frame,
+            from_=1,
+            to=10,
+            width=4,
+            textvariable=self.batch_parallel_var,
+            command=self._on_batch_parallel_change,
+        ).grid(row=0, column=5, sticky='w')
 
         tk.Label(batch_frame, text='Image model').grid(row=1, column=0, sticky='w', pady=(8, 0))
         self.openai_model_var = tk.StringVar(value=self._openai_model_display(self.openai_image_model))
@@ -497,7 +527,7 @@ class MidjourneyImageGUI:
         ).grid(row=2, column=3, columnspan=3, sticky='w', pady=(8, 0))
 
         tk.Label(batch_frame, text='Run the next unsaved categories/products, one image per item. They save as awaiting review.', foreground='#888').grid(
-            row=3, column=0, columnspan=9, sticky='w', padx=(0, 0), pady=(8, 0)
+            row=3, column=0, columnspan=10, sticky='w', padx=(0, 0), pady=(8, 0)
         )
 
         tk.Button(button_row, text='Save prompt', command=self.save_prompt).grid(row=0, column=0, sticky='ew', padx=2)
@@ -509,25 +539,63 @@ class MidjourneyImageGUI:
         tk.Button(button_row, text='Mark reviewed', command=self.mark_reviewed).grid(row=0, column=6, sticky='ew', padx=2)
         tk.Button(button_row, text='Skip', command=self.skip_item).grid(row=0, column=7, sticky='ew', padx=2)
         tk.Button(button_row, text='Next awaiting', command=self.select_first_awaiting_review).grid(row=0, column=8, sticky='ew', padx=2)
+        tk.Button(button_row, text='Refresh catalog', command=self.refresh_catalog).grid(row=0, column=9, sticky='ew', padx=2)
         self.footer = tk.StringVar(value='Ready')
         tk.Label(right, textvariable=self.footer, anchor='w').grid(row=7, column=0, sticky='ew', pady=(8, 0))
 
     def _populate_list(self):
         self.listbox.delete(0, tk.END)
-        for item in self.items:
+        for item in self.filtered_items:
             marker = 'img' if item_existing_image_path(item) else '   '
             status = item.get('status', '')
-            self.listbox.insert(tk.END, f'{marker} {status:10s} {item_label(item)}')
+            bad_count = int(item.get('openai_bad_responses') or 0)
+            bad_label = f' bad response {bad_count}/5' if bad_count else ''
+            self.listbox.insert(tk.END, f'{marker} {status:10s} {item_label(item)}{bad_label}')
+
+    def _apply_queue_search(self):
+        query = self.search_var.get().strip().lower()
+        if not query:
+            self.filtered_items = list(self.items)
+        else:
+            def matches(item):
+                haystack = ' '.join(
+                    [
+                        item_label(item),
+                        item.get('type', ''),
+                        item.get('status', ''),
+                        item.get('route', ''),
+                        item.get('title', ''),
+                        item.get('parent_title', ''),
+                        item.get('category_title', ''),
+                    ]
+                ).lower()
+                return query in haystack
+
+            self.filtered_items = [item for item in self.items if matches(item)]
+        self._populate_list()
+        if self.filtered_items:
+            self.listbox.selection_set(0)
+            self.listbox.see(0)
+            self.load_item(self.filtered_items[0])
+        else:
+            self.current_item = None
+            self.title_var.set('No item selected')
+            self.status_var.set('')
+            self.image_note_var.set('No matches')
+            self._set_text(self.prompt_text, '')
+            self.saved_image_path = None
+            self._render_saved_preview()
 
     def _on_select(self, _event=None):
         selection = self.listbox.curselection()
         if not selection:
             return
         index = selection[0]
-        self.load_item(self.items[index])
+        if index < len(self.filtered_items):
+            self.load_item(self.filtered_items[index])
 
     def select_first_pending(self):
-        for index, item in enumerate(self.items):
+        for index, item in enumerate(self.filtered_items):
             if item.get('status') == 'pending':
                 self.listbox.selection_clear(0, tk.END)
                 self.listbox.selection_set(index)
@@ -539,7 +607,9 @@ class MidjourneyImageGUI:
     def load_item(self, item):
         self.current_item = item
         self.title_var.set(item_label(item))
-        self.status_var.set(f"Route: {item.get('route')} | Status: {item.get('status')}")
+        bad_count = int(item.get('openai_bad_responses') or 0)
+        bad_label = f' | bad response {bad_count}/5' if bad_count else ''
+        self.status_var.set(f"Route: {item.get('route')} | Status: {item.get('status')}{bad_label}")
         existing_path = item_existing_image_path(item)
         if existing_path:
             self.image_note_var.set(f'Existing image: {existing_path.name}')
@@ -606,6 +676,23 @@ class MidjourneyImageGUI:
         self.debug_openai = bool(self.debug_openai_var.get())
         self.state['debug_openai'] = self.debug_openai
         save_state(self.state)
+
+    def _on_batch_parallel_change(self):
+        try:
+            value = int(self.batch_parallel_var.get())
+        except Exception:
+            value = 3
+        self.batch_parallelism = max(1, min(10, value))
+        self.batch_parallel_var.set(str(self.batch_parallelism))
+        self.state['batch_parallelism'] = self.batch_parallelism
+        save_state(self.state)
+
+    def get_batch_parallelism(self):
+        try:
+            value = int(self.batch_parallel_var.get())
+        except Exception:
+            value = self.batch_parallelism
+        return max(1, min(10, value))
 
     def _on_openai_model_change(self, _value=None):
         self.openai_image_model = self._display_to_model_name(self.openai_model_var.get())
@@ -693,6 +780,34 @@ class MidjourneyImageGUI:
         threading.Thread(target=worker, daemon=True).start()
         self.root.after(100, poll)
 
+    def _mark_bad_response(self, item, error_text):
+        count = int(item.get('openai_bad_responses') or 0) + 1
+        item['openai_bad_responses'] = count
+        item['openai_last_error'] = error_text
+        item['openai_generation_state'] = 'bad response x5' if count >= 5 else f'bad response {count}/5'
+        save_state(self.state)
+        self._populate_list()
+        self.status_var.set(item['openai_generation_state'])
+        self.footer.set(item['openai_generation_state'])
+        return count
+
+    def _generate_openai_with_retries(self, item, prompt, *, count=1, model=None, quality=None, debug=False, debug_log=None):
+        last_error = None
+        for _attempt in range(5):
+            try:
+                return generate_openai_images(
+                    prompt,
+                    count=count,
+                    model=model,
+                    quality=quality,
+                    debug=debug,
+                    debug_log=debug_log,
+                )
+            except Exception as exc:
+                last_error = exc
+                self._mark_bad_response(item, str(exc))
+        raise last_error
+
     def generate_openai(self):
         if not self.current_item:
             return
@@ -706,7 +821,8 @@ class MidjourneyImageGUI:
                 print(message)
                 self.footer.set(message[:180])
 
-            return prompt, generate_openai_images(
+            paths = self._generate_openai_with_retries(
+                item,
                 prompt,
                 count=1,
                 model=self.openai_image_model,
@@ -714,11 +830,14 @@ class MidjourneyImageGUI:
                 debug=self.debug_openai,
                 debug_log=log_message,
             )
+            return prompt, paths
 
         def done(result, error):
             if error:
                 messagebox.showerror('OpenAI', str(error))
-                self.footer.set('OpenAI generation failed')
+                self.footer.set('bad response x5, skipping')
+                self.index += 1
+                self.window.after(50, self.process_next)
                 return
             prompt_value, paths = result
             self.generated_paths = paths
@@ -854,17 +973,20 @@ class MidjourneyImageGUI:
                 print(message)
                 self.footer.set(message[:180])
 
-            return prompt, generate_openai_images(
+            paths = self._generate_openai_with_retries(
+                self.current_item,
                 prompt,
                 count=1,
                 debug=self.debug_openai,
                 debug_log=log_message,
             )
+            return prompt, paths
 
         def done(result, error):
             if error:
                 messagebox.showerror('OpenAI', str(error))
-                self.footer.set('Retry failed')
+                self.footer.set('bad response x5, skipping')
+                self.window.after(50, self.process_next)
                 return
             _prompt_value, paths = result
             if not paths:
@@ -925,15 +1047,27 @@ class MidjourneyImageGUI:
         self._populate_list()
         self.select_first_pending()
 
+    def refresh_catalog(self):
+        refresh_state_items(self.state)
+        refresh_state_prompts(self.state)
+        self.items = self.state['items']
+        self._apply_queue_search()
+        self._populate_list()
+        self.select_first_pending()
+        self.footer.set('Catalog refreshed from live database')
+
 
 class Command(BaseCommand):
     help = 'Launch a simple GUI for the Midjourney/OpenAI image workflow.'
 
     def add_arguments(self, parser):
         parser.add_argument('--reset', action='store_true', help='Rebuild the workflow queue from the live database.')
+        parser.add_argument('--refresh', action='store_true', help='Refresh the saved workflow queue from the live database before opening the GUI.')
 
     def handle(self, *args, **options):
         state = ensure_state(reset=bool(options.get('reset')))
+        if options.get('refresh'):
+            refresh_state_items(state)
         if refresh_state_prompts(state):
             print('Refreshed prompts from current database state.')
         root = tk.Tk()

@@ -322,9 +322,9 @@ def build_category_prompt(item):
     power_clause = f'{power_hint}, ' if power_hint else ''
     return (
         f'{title}: {subject}. '
-        f'Product photo with {background}, {power_clause}'
+        f'Retail-ready product photo with {background}, {power_clause}'
         'if multiple products appear in the same image, use different appropriate colours for each product only where the item would naturally have a colour variation in real life, '
-        'light natural wear where appropriate, '
+        'realistic natural wear where appropriate, '
         'if there are cable or pipe ends, do not show connectors, plugs, fittings, or couplings, '
         'natural daylight, realistic materials, soft shadows, clean composition, '
         'no people, no text, no readable product logos, keep them small and illegible, no watermark --ar 1:1 --v 7'
@@ -340,9 +340,9 @@ def build_product_prompt(item):
     power_clause = f'{power_hint}, ' if power_hint else ''
     return (
         f'{product_title}: {visual_hint}. '
-        f'Product photo with {background}, {power_clause}'
+        f'Retail-ready product photo with {background}, {power_clause}'
         'if multiple products appear in the same image, use different appropriate colours for each product only where the item would naturally have a colour variation in real life, '
-        'light natural wear where appropriate, '
+        'realistic natural wear where appropriate, '
         'if there are cable or pipe ends, do not show connectors, plugs, fittings, or couplings, '
         'natural daylight, realistic materials, soft shadows, clean composition, '
         'no people, no text, no readable product logos, keep them small and illegible, no watermark --ar 1:1 --v 7'
@@ -363,10 +363,10 @@ def build_openai_prompt(item):
     else:
         subject = describe_product(item)
     return (
-        f'UK rental catalogue product photo of {subject}, with {background}, '
+        f'UK rental catalogue retail-ready product photo of {subject}, with {background}, '
         f'{power_clause}'
         'if multiple products appear in the same image, use different appropriate colours for each product only where the item would naturally have a colour variation in real life, '
-        'light natural wear where appropriate, '
+        'realistic natural wear where appropriate, '
         'if there are cable or pipe ends, do not show connectors, plugs, fittings, or couplings, '
         'natural daylight, realistic materials, soft shadows, clean composition, '
         'no people, no text, no readable product logos, keep them small and illegible, no watermark'
@@ -661,6 +661,38 @@ def build_initial_state():
         'archive_dir': str(archive_dir()),
         'items': items,
     }
+
+
+def item_refresh_key(item):
+    return (
+        item.get('type') or '',
+        item.get('slug') or '',
+        item.get('title') or '',
+    )
+
+
+def refresh_state_items(state):
+    existing_items = {
+        item_refresh_key(item): item
+        for item in state.get('items', [])
+    }
+    refreshed_items = make_queue_items()
+    changed = len(refreshed_items) != len(state.get('items', []))
+    for item in refreshed_items:
+        item['prompt'] = normalize_prompt(item['prompt'])
+        previous = existing_items.get(item_refresh_key(item))
+        if not previous:
+            continue
+        for field in ('status', 'notes', 'updated_at'):
+            if previous.get(field) is not None:
+                item[field] = previous.get(field)
+        for field in ('route',):
+            if previous.get(field):
+                item[field] = previous.get(field)
+    state['items'] = refreshed_items
+    state['refreshed_at'] = now_iso()
+    save_state(state)
+    return changed or True
 
 
 def ensure_state(reset=False):

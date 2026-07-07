@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential libjpeg62-turbo-dev zlib1g-dev \
+    && apt-get install -y --no-install-recommends build-essential libjpeg62-turbo-dev libpq-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip uv

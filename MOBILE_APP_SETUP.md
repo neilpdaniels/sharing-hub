@@ -10,7 +10,7 @@ This setup provides:
 ## Backend Setup
 
 ### 1. Install Python dependencies
-Use either the modern dependency flow (`pyproject.toml`) or requirements files.
+Use the modern dependency flow (`pyproject.toml` + `uv.lock`). The `requirements/*.txt` files are legacy and should not be used for new builds.
 
 ### 2. Ensure Django uses the split settings package
 For local runs:

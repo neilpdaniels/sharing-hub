@@ -10,9 +10,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libjpeg62-turbo-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/ /app/requirements/
-RUN pip install --upgrade pip \
-    && pip install -r /app/requirements/pro.txt
+RUN pip install --upgrade pip uv
+
+COPY pyproject.toml uv.lock /app/
+RUN uv sync --frozen --no-dev
 
 COPY . /app
 

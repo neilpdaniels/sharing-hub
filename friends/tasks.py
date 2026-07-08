@@ -20,14 +20,14 @@ def send_friend_request_notification(from_user_id, to_user_id):
         f"Hi {to_user.first_name or to_user.username},\n\n"
         f"{from_name} ({from_user.email}) has sent you a friend request on rentalution.\n\n"
         f"Log in to accept or decline:\n"
-        f"{getattr(settings, 'SITE_URL', 'https://rentalution.com')}/friends/\n\n"
+        f"{getattr(settings, 'SITE_URL', 'https://rentalution.co.uk')}/friends/\n\n"
         f"The rentalution team"
     )
     try:
         send_mail(
             subject,
             message,
-            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.com'),
+            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk'),
             [to_user.email],
             fail_silently=False,
         )
@@ -55,7 +55,7 @@ def send_friend_invite_email(from_user_id, invitee_email):
         return
 
     from_name = from_user.get_full_name() or from_user.username
-    site_url = getattr(settings, 'SITE_URL', 'https://rentalution.com')
+    site_url = getattr(settings, 'SITE_URL', 'https://rentalution.co.uk')
     subject = f"{from_name} has invited you to join rentalution"
     message = (
         f"Hi,\n\n"
@@ -68,7 +68,7 @@ def send_friend_invite_email(from_user_id, invitee_email):
         send_mail(
             subject,
             message,
-            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.com'),
+            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk'),
             [invitee_email],
             fail_silently=False,
         )

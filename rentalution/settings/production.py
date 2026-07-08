@@ -10,7 +10,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', SECRET_KEY)
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,rentalution.com,www.rentalution.com').split(',')
+    for host in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,rentalution.co.uk,www.rentalution.co.uk').split(',')
     if host.strip()
 ]
 
@@ -18,7 +18,7 @@ CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
         'DJANGO_CSRF_TRUSTED_ORIGINS',
-        'https://rentalution.com,https://www.rentalution.com',
+        'https://rentalution.co.uk,https://www.rentalution.co.uk',
     ).split(',')
     if origin.strip()
 ]

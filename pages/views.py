@@ -36,7 +36,7 @@ def help_and_support(request):
         if not captcha_error and (not name or not email or not subject or not message):
             messages.error(request, 'Please complete all fields before submitting.')
         elif not captcha_error:
-            support_to = 'admin@rentalution.com'
+            support_to = 'admin@rentalution.co.uk'
             try:
                 send_mail(
                     subject=f'Help & Support: {subject}',
@@ -72,7 +72,7 @@ def help_and_support(request):
     context = {
         'show_turnstile': True,
         'captcha_error': captcha_error,
-        'support_email': 'admin@rentalution.com',
+        'support_email': 'admin@rentalution.co.uk',
         'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
     }
     if request.method == 'POST' and not captcha_error:

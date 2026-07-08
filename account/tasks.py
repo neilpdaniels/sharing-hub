@@ -100,6 +100,6 @@ def send_random_mail():
     subject = 'blah'
     mail_sent = send_mail(subject,
                         message,
-                        'admin@rentalution.com',
-                        ['testuser@rentalution.com'])
+                        'admin@rentalution.co.uk',
+                        ['testuser@rentalution.co.uk'])
     return mail_sent

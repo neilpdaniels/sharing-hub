@@ -27,10 +27,10 @@ DEBUG = True
 
 
 # Allow local and emulator/VM access for development
-ALLOWED_HOSTS = ['10.0.2.2', '10.0.5.5', '192.168.1.155', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['10.0.2.2', '10.0.5.5', '192.168.1.155', 'localhost', '127.0.0.1', 'rentalution.com', 'www.rentalution.com']
 
 # Needed for CSRF-protected POST requests from LAN clients.
-CSRF_TRUSTED_ORIGINS = ['http://10.0.5.5:8000', 'http://192.168.1.155:8000']
+CSRF_TRUSTED_ORIGINS = ['http://10.0.5.5:8000', 'http://192.168.1.155:8000', 'https://rentalution.com', 'https://www.rentalution.com']
 
 
 # Application definition

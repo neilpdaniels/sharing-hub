@@ -28,7 +28,7 @@ CACHES = {
     }
 }
 
-ALLOWED_HOSTS = ['sharing-hub.com','www.sharing-hub.com']
+ALLOWED_HOSTS = ['sharing-hub.com','www.sharing-hub.com','rentalution.com','www.rentalution.com']
 
 ENVIRONMENT_NAME = 'Production'
 ENVIRONMENT_COLOR = 'red'

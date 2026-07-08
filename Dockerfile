@@ -12,6 +12,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip uv
+RUN pip install gunicorn
 
 COPY pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev

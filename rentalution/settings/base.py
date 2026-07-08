@@ -129,7 +129,7 @@ INSTALLED_APPS = [
     # 'django_otp.plugins.otp_totp',
     'admin_honeypot',
     'memcache_status',
-    'django_summernote',
+    'django_summernote.apps.SummernoteConfig',
     # 'floppyforms',
     # 'material',
     # 'material.frontend',

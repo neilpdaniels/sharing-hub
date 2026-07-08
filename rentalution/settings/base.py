@@ -18,6 +18,7 @@ from celery.schedules import crontab
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(os.path.join(__file__, os.pardir))))
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+SILENCED_SYSTEM_CHECKS = ['models.W042']
 
 
 # Quick-start development settings - unsuitable for production

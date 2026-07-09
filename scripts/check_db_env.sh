@@ -8,9 +8,11 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
+set +u
 set -a
 . "$ENV_FILE"
 set +a
+set -u
 
 mask() {
     value="${1:-}"

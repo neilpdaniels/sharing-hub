@@ -241,13 +241,12 @@ HAYSTACK_CONNECTIONS = {
 # for two factor authentication of Admin
 # OTP_TOTP_ISSUER = 'SharingHub'
 
-# Celery rabbitMQ 
-CELERY_BROKER_URL = 'amqp://localhost'
-# Celery redis
-# CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
-# CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
-# CELERY_ACCEPT_CONTENT = ["json"]
-# CELERY_TASK_SERIALIZER = "json"
+# Celery
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
 
 BOOTSTRAP4 = {
     'horizontal_label_class': 'col-md-2',

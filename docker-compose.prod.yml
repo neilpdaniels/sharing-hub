@@ -11,6 +11,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
   web:
     image: ${WEB_IMAGE}
     build: null
@@ -25,6 +29,7 @@ services:
       - ./staticfiles:/app/staticfiles
     depends_on:
       - db
+      - redis
     ports:
       - "8000:8000"
     restart: unless-stopped

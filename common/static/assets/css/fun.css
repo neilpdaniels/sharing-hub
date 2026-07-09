@@ -19,11 +19,11 @@
     --rh-highlight: #F6D365;
 }
 
-html {
-    font-size: 93.5%;
-}
-
 /* ─── Global ─────────────────────────────────────────────────── */
+
+#rh-layout {
+    zoom: 0.8;
+}
 
 body {
     background-color: #fbf7f1;

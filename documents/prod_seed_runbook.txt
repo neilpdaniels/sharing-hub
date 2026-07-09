@@ -1,0 +1,86 @@
+PROD SEED RUNBOOK
+
+Goal:
+- Seed production with catalog/categories/products
+- Copy media files
+- Rebuild derived summary prices
+
+When to delete the Postgres volume:
+- Delete it only if production is still empty and you want a clean start.
+- If you already care about any data in prod, do NOT delete the volume.
+
+Recommended order:
+1. Pull latest code
+2. Bring the stack up
+3. Run migrations
+4. Seed the catalog
+5. Copy media
+6. Rebuild summary prices
+7. Restart web
+
+How images are linked:
+- Category.image, Product.image and OrderImage.image store a relative path in the DB.
+- The actual file must exist under /srv/rentalution/media/ with the same relative path.
+- Copying media from dev to prod restores those DB references without needing a separate import.
+
+------------------------------
+ON PROD SERVER
+------------------------------
+
+cd /srv/rentalution
+git pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web uv run python manage.py migrate
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web uv run python manage.py seed_catalog_items
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web uv run python manage.py rebuild_summary_prices
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate web
+
+------------------------------
+ON DEV MACHINE
+------------------------------
+
+rsync -av --delete /home/neil/Projects/rentalution/media/ ubuntu@51.89.165.49:/srv/rentalution/media/
+
+If you only want the category/product images and not everything in media:
+- copy the relevant subfolders inside media/ instead of the whole directory
+- but for a first pass, copying the whole media/ tree is the simplest and least error-prone
+
+------------------------------
+OPTIONAL: WIPE POSTGRES VOLUME
+------------------------------
+
+Use this only if prod is empty and you want to start from scratch:
+
+cd /srv/rentalution
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+docker volume ls | grep rentalution
+docker volume rm rentalution_postgres_data
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d web
+
+Then continue with:
+- migrate
+- seed_catalog_items
+- copy media
+- rebuild_summary_prices
+
+------------------------------
+USEFUL CHECKS
+------------------------------
+
+Check env:
+sh scripts/check_prod_env.sh
+
+Check DB env:
+sh scripts/check_db_env.sh /srv/rentalution/.env
+
+Check DB connection from web:
+cd /srv/rentalution
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec web sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "${POSTGRES_PORT:-5432}" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\conninfo"'
+
+Check static files:
+ls -la /srv/rentalution/staticfiles
+
+Check media files:
+ls -la /srv/rentalution/media/images/categories

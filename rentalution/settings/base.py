@@ -19,6 +19,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(os.path.join(__file__
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 SILENCED_SYSTEM_CHECKS = ['models.W042']
+ENVIRONMENT_NAME = os.environ.get('ENVIRONMENT_NAME', 'Development')
+ENVIRONMENT_COLOR = os.environ.get('ENVIRONMENT_COLOR', 'blue')
+SITE_URL = os.environ.get('SITE_URL', 'https://rentalution.co.uk')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk')
 
 
 # Quick-start development settings - unsuitable for production

@@ -5,6 +5,7 @@ from django.core.files import File
 from django.core.management.base import BaseCommand, CommandError
 
 from catalog_workflow.models import ProductDraft
+from catalog_workflow.services import publish_draft
 from common.models import Category
 
 
@@ -14,6 +15,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('bundle_dir')
         parser.add_argument('--media-root', default='/app/media')
+        parser.add_argument('--publish', action='store_true')
 
     def handle(self, *args, **options):
         bundle_dir = Path(options['bundle_dir'])
@@ -26,6 +28,7 @@ class Command(BaseCommand):
 
         created = 0
         updated = 0
+        published = 0
 
         for item in payload:
             category = Category.objects.filter(slug=item.get('parent_category_slug')).first()
@@ -58,9 +61,19 @@ class Command(BaseCommand):
                     draft.image.save(image_name, File(handle), save=False)
                 draft.save(update_fields=['image', 'updated_at'])
 
+            if options['publish']:
+                product = publish_draft(draft)
+                draft.published_product = product
+                draft.status = ProductDraft.STATUS_PUBLISHED
+                draft.save(update_fields=['published_product', 'status', 'updated_at'])
+                published += 1
+
             if created_flag:
                 created += 1
             else:
                 updated += 1
 
-        self.stdout.write(self.style.SUCCESS(f'Imported {created} draft(s), updated {updated} draft(s).'))
+        message = f'Imported {created} draft(s), updated {updated} draft(s).'
+        if options['publish']:
+            message += f' Published {published} draft(s).'
+        self.stdout.write(self.style.SUCCESS(message))

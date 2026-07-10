@@ -6,6 +6,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from catalog_workflow.models import ProductDraft
+from catalog_workflow.services import publish_draft
 
 from .export_product_draft_bundle import Command as ExportBundleCommand
 
@@ -33,8 +34,19 @@ class Command(BaseCommand):
         parser.add_argument('--remote-host-media-root', default='/srv/rentalution/media')
         parser.add_argument('--container-media-root', default='/app/media')
         parser.add_argument('--remote-workdir', default='/srv/rentalution')
+        parser.add_argument(
+            '--target',
+            choices=('dev', 'prod', 'both'),
+            help='Where to publish: dev, prod, or both. If omitted, you will be prompted.',
+        )
 
     def handle(self, *args, **options):
+        target = options['target']
+        if not target:
+            target = input('Publish to dev, prod, or both? [dev/prod/both]: ').strip().lower()
+        if target not in {'dev', 'prod', 'both'}:
+            raise CommandError('Target must be dev, prod, or both.')
+
         draft_ids = [value for value in options['draft'] if str(value).strip()]
         if options['all_ready']:
             if draft_ids:
@@ -42,6 +54,9 @@ class Command(BaseCommand):
             draft_ids = list(
                 ProductDraft.objects.filter(status=ProductDraft.STATUS_READY).values_list('id', flat=True)
             )
+            if not draft_ids:
+                ready_count = ProductDraft.objects.filter(status=ProductDraft.STATUS_READY).count()
+                raise CommandError(f'No drafts are marked ready. Ready draft count: {ready_count}.')
         if not draft_ids:
             raise CommandError('Provide at least one --draft id or use --all-ready.')
 
@@ -50,6 +65,19 @@ class Command(BaseCommand):
         missing = [draft_id for draft_id in draft_ids if str(draft_id) not in found_ids]
         if missing:
             raise CommandError(f'Draft(s) not found: {", ".join(missing)}')
+
+        if target in {'dev', 'both'}:
+            published = 0
+            for draft in drafts.select_related('parent_category'):
+                product = publish_draft(draft)
+                draft.published_product = product
+                draft.status = ProductDraft.STATUS_PUBLISHED
+                draft.save(update_fields=['published_product', 'status', 'updated_at'])
+                published += 1
+            self.stdout.write(self.style.SUCCESS(f'Published {published} draft(s) locally.'))
+
+        if target == 'dev':
+            return
 
         with tempfile.TemporaryDirectory(prefix='rentalution-promo-') as tmpdir:
             bundle_dir = Path(tmpdir) / 'bundle'
@@ -113,7 +141,7 @@ class Command(BaseCommand):
                     f"docker cp {shlex.quote(remote_dir)} \"$container_id\":{shlex.quote(remote_dir)} && "
                     f"docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web "
                     f"uv run python manage.py import_product_draft_bundle {shlex.quote(remote_dir)} "
-                    f"--media-root {shlex.quote(options['container_media_root'])}"
+                    f"--media-root {shlex.quote(options['container_media_root'])} --publish"
                 )
                 subprocess.run(
                     [

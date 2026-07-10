@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec uv run python manage.py promote_product_drafts \
+  --host 51.89.165.49 \
+  --user ubuntu \
+  "$@"

@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load bootstrap4 %}
+{% load thumbnail %}
 {% load common_lib %}
 
 {% block site_search_bar %}{% endblock %}
@@ -313,8 +314,10 @@
       <div class="col-md-4 mb-4">
         <div class="card h-100 search-result-card">
           {% if order.images.first %}
-          <img src="{{ order.images.first.image.url }}" class="card-img-top"
+          {% thumbnail order.images.first.image "360x180" crop="center" as im %}
+          <img src="{{ im.url }}" class="card-img-top"
                style="height:160px; object-fit:cover;" alt="{{ order.product.name }}">
+          {% endthumbnail %}
           {% endif %}
           <div class="card-body">
             <h6 class="card-title">{{ order.product.name }}</h6>
@@ -394,8 +397,10 @@
       <div class="col-md-4 mb-4">
         <div class="card h-100 search-result-card search-empty-card">
           {% if product.image %}
-          <img src="{{ product.image.url }}" class="card-img-top"
+          {% thumbnail product.image "360x180" crop="center" as im %}
+          <img src="{{ im.url }}" class="card-img-top"
                style="height:160px; object-fit:cover;" alt="{{ product.name }}">
+          {% endthumbnail %}
           {% endif %}
           <div class="card-body">
             <h6 class="card-title">{{ product.name }}</h6>

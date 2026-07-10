@@ -1,5 +1,4 @@
 from django.contrib import admin, messages
-from django.core.files.base import ContentFile
 from django.db import transaction
 from django.template.defaultfilters import slugify
 
@@ -8,7 +7,7 @@ from common.management.commands.export_midjourney_category_prompts import (
     CATEGORY_ITEM_HINTS,
     POWERED_CATEGORY_HINTS,
 )
-from common.models import Product
+from .services import publish_draft
 
 from .models import ProductDraft
 
@@ -116,24 +115,7 @@ class ProductDraftAdmin(admin.ModelAdmin):
     def publish_selected(self, request, queryset):
         published = 0
         for draft in queryset.select_related('parent_category'):
-            product, created = Product.objects.get_or_create(
-                category_id=draft.parent_category,
-                slug=draft.slug,
-                defaults={
-                    'name': draft.title,
-                    'description': draft.description,
-                },
-            )
-            product.name = draft.title
-            product.description = draft.description
-            if draft.image:
-                draft.image.open('rb')
-                product.image.save(
-                    draft.image.name,
-                    ContentFile(draft.image.read()),
-                    save=False,
-                )
-            product.save()
+            product = publish_draft(draft)
             draft.published_product = product
             draft.status = ProductDraft.STATUS_PUBLISHED
             draft.save(update_fields=['published_product', 'status', 'updated_at'])

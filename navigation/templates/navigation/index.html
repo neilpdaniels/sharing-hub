@@ -187,7 +187,9 @@
             <a class="rh-cat-link" href="{% url 'navigation:browseCategory' category.slug %}">
                 <span class="rh-cat-icon-wrap">
                     {% if category.image %}
-                        <img class="rh-cat-image" src="{{ category.image.url }}" alt="{{ category.title }}">
+                        {% thumbnail category.image "200x200" crop="center" as im %}
+                        <img class="rh-cat-image" src="{{ im.url }}" alt="{{ category.title }}">
+                        {% endthumbnail %}
                     {% else %}
                         {% if 'tool' in category.title|lower or 'drill' in category.title|lower %}
                             <img class="rh-cat-fallback-icon" src="{% static 'assets/plugins/themify-icons/SVG/hummer.svg' %}" alt="{{ category.title }} icon">
@@ -228,9 +230,13 @@
                     <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="text-decoration-none">
                         <article class="rh-popular-card">
                             {% if order.images.first %}
-                                <img class="rh-popular-thumb" src="{{ order.images.first.image.url }}" alt="{{ order.product.name }}">
+                                {% thumbnail order.images.first.image "320x160" crop="center" as im %}
+                                <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.product.name }}">
+                                {% endthumbnail %}
                             {% elif order.product.image %}
-                                <img class="rh-popular-thumb" src="{{ order.product.image.url }}" alt="{{ order.product.name }}">
+                                {% thumbnail order.product.image "320x160" crop="center" as im %}
+                                <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.product.name }}">
+                                {% endthumbnail %}
                             {% else %}
                                 <div class="rh-popular-thumb d-flex align-items-center justify-content-center">
                                     <i class="fas fa-image text-muted"></i>

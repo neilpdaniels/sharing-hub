@@ -584,9 +584,9 @@
 <div class="container browse-page-container py-3">
     {% if category %}
     {% if category.image %}
-    {% with image_url=category.image.url %}
-        {% include "common/partials/hero_split.html" with image_url=image_url image_alt=category.title title=category.title|title body=category.description footer_note=category.virtual_depth|yesno:"This category has live buy/sell pricing available too.," breadcrumbs=breadcrumbs compact_hero=True %}
-    {% endwith %}
+    {% thumbnail category.image "1200x600" crop="center" as im %}
+        {% include "common/partials/hero_split.html" with image_url=im.url image_alt=category.title title=category.title|title body=category.description footer_note=category.virtual_depth|yesno:"This category has live buy/sell pricing available too.," breadcrumbs=breadcrumbs compact_hero=True %}
+    {% endthumbnail %}
     {% else %}
         {% include "common/partials/hero_split.html" with image_url='' image_alt=category.title title=category.title|title body=category.description footer_note=category.virtual_depth|yesno:"This category has live buy/sell pricing available too.," breadcrumbs=breadcrumbs compact_hero=True %}
     {% endif %}
@@ -703,9 +703,13 @@
                         <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="text-decoration-none">
                             <article class="rh-popular-card">
                                 {% if order.images.first %}
-                                    <img class="rh-popular-thumb" src="{{ order.images.first.image.url }}" alt="{{ order.product.name }}">
+                                    {% thumbnail order.images.first.image "320x160" crop="center" as im %}
+                                    <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.product.name }}">
+                                    {% endthumbnail %}
                                 {% elif order.product.image %}
-                                    <img class="rh-popular-thumb" src="{{ order.product.image.url }}" alt="{{ order.product.name }}">
+                                    {% thumbnail order.product.image "320x160" crop="center" as im %}
+                                    <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.product.name }}">
+                                    {% endthumbnail %}
                                 {% else %}
                                     <div class="rh-popular-thumb d-flex align-items-center justify-content-center">
                                         <i class="fas fa-image text-muted"></i>

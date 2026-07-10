@@ -116,6 +116,7 @@ INSTALLED_APPS = [
     'pages.apps.PagesConfig',
     'account.apps.AccountConfig',
     'common.apps.CommonConfig',
+    'catalog_workflow.apps.CatalogWorkflowConfig',
     'my_rentalution.apps.MySharingHubConfig',
     'transaction.apps.TransactionConfig',
     'friends.apps.FriendsConfig',

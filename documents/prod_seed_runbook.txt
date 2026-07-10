@@ -23,6 +23,11 @@ How images are linked:
 - The actual file must exist under /srv/rentalution/media/ with the same relative path.
 - Copying media from dev to prod restores those DB references without needing a separate import.
 
+For frequently promoted catalog images:
+- Use `export_catalog_image_bundle` on dev to package the image file and mapping together.
+- Copy that bundle to UAT, import the JSON mapping, then repeat for prod.
+- This is the easiest path when you are adding a new product with a new image and want to keep the file + DB link together.
+
 ------------------------------
 ON PROD SERVER
 ------------------------------
@@ -41,6 +46,10 @@ ON DEV MACHINE
 ------------------------------
 
 rsync -av --delete /home/neil/Projects/rentalution/media/ ubuntu@51.89.165.49:/srv/rentalution/media/
+
+Example bundle workflow for one product:
+cd /home/neil/Projects/rentalution
+uv run python manage.py export_catalog_image_bundle --product farm-jack --output-dir /tmp/farm-jack-bundle
 
 If you only want the category/product images and not everything in media:
 - copy the relevant subfolders inside media/ instead of the whole directory

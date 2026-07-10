@@ -89,6 +89,7 @@ class Command(BaseCommand):
 
             if options['run_import']:
                 import_cmd = (
+                    f"cd {shlex.quote(options['remote_workdir'])} && "
                     f"container_id=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q web) && "
                     f"docker cp {shlex.quote(remote_dir)} \"$container_id\":{shlex.quote(remote_dir)} && "
                     f"docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web "

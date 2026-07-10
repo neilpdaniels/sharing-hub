@@ -93,7 +93,7 @@ class Command(BaseCommand):
                     f"docker cp {shlex.quote(remote_dir)} \"$container_id\":{shlex.quote(remote_dir)} && "
                     f"docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web "
                     f"uv run python manage.py import_product_draft_bundle {shlex.quote(remote_dir)} "
-                    f"--media-root {shlex.quote(remote_media_root)}"
+                    f"--media-root {shlex.quote(options['remote_media_root'])}"
                 )
                 subprocess.run(
                     [

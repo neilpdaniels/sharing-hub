@@ -30,7 +30,8 @@ class Command(BaseCommand):
         parser.add_argument('--remote-dir', default='/tmp/rentalution-catalog-promotion', help='Remote staging directory')
         parser.add_argument('--ssh-port', default='22')
         parser.add_argument('--run-import', action='store_true', help='Run import command on the remote host after copy')
-        parser.add_argument('--remote-media-root', default='/srv/rentalution/media')
+        parser.add_argument('--remote-host-media-root', default='/srv/rentalution/media')
+        parser.add_argument('--container-media-root', default='/app/media')
         parser.add_argument('--remote-workdir', default='/srv/rentalution')
 
     def handle(self, *args, **options):
@@ -87,6 +88,24 @@ class Command(BaseCommand):
 
             self.stdout.write(self.style.SUCCESS(f'Copied bundle to {remote_target}:{remote_dir}'))
 
+            subprocess.run(
+                [
+                    'rsync',
+                    '-av',
+                    '-e',
+                    f'ssh -p {ssh_port}',
+                    f'{bundle_dir / "media"}/',
+                    f'{remote_target}:{options["remote-host-media-root"]}/',
+                ],
+                check=True,
+            )
+
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f'Synced media to {remote_target}:{options["remote-host-media-root"]}'
+                )
+            )
+
             if options['run_import']:
                 import_cmd = (
                     f"cd {shlex.quote(options['remote_workdir'])} && "
@@ -94,7 +113,7 @@ class Command(BaseCommand):
                     f"docker cp {shlex.quote(remote_dir)} \"$container_id\":{shlex.quote(remote_dir)} && "
                     f"docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web "
                     f"uv run python manage.py import_product_draft_bundle {shlex.quote(remote_dir)} "
-                    f"--media-root {shlex.quote(options['remote_media_root'])}"
+                    f"--media-root {shlex.quote(options['container_media_root'])}"
                 )
                 subprocess.run(
                     [

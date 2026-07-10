@@ -95,14 +95,14 @@ class Command(BaseCommand):
                     '-e',
                     f'ssh -p {ssh_port}',
                     f'{bundle_dir / "media"}/',
-                    f'{remote_target}:{options["remote-host-media-root"]}/',
+                    f'{remote_target}:{options["remote_host_media_root"]}/',
                 ],
                 check=True,
             )
 
             self.stdout.write(
                 self.style.SUCCESS(
-                    f'Synced media to {remote_target}:{options["remote-host-media-root"]}'
+                    f'Synced media to {remote_target}:{options["remote_host_media_root"]}'
                 )
             )
 

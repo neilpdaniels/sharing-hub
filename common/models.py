@@ -267,6 +267,7 @@ class SiteFailure(models.Model):
 
 class Product(models.Model):
     category_id = models.ForeignKey(Category, on_delete=models.CASCADE)
+    categories = models.ManyToManyField(Category, blank=True, related_name='products')
     tags = models.ManyToManyField(CategoryTag, blank=True, related_name='products')
     image = models.ImageField(upload_to=RandomFileName('images/products/'), blank=True, null=True)
     image_review_status = models.CharField(

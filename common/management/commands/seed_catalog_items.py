@@ -37,16 +37,30 @@ def category_description(title, strapline, followup):
     return html_description(f'{title}. {strapline}', followup)
 
 
-def product_item(name, description=None, attributes=None):
+def product_item(name, description=None, attributes=None, extra_categories=None):
     return {
         'name': name,
         'description': description or f'{name}. Ready to hire.',
         'attributes': attributes or {},
+        'extra_categories': extra_categories or [],
     }
 
 
 def make_products(names, suffix):
-    return [product_item(name, f'{name}. Ready to hire.') for name in names]
+    products = []
+    for item in names:
+        if isinstance(item, dict):
+            products.append(
+                product_item(
+                    item['name'],
+                    item.get('description', f"{item['name']}. Ready to hire."),
+                    item.get('attributes'),
+                    item.get('extra_categories'),
+                )
+            )
+        else:
+            products.append(product_item(item, f'{item}. Ready to hire.'))
+    return products
 
 
 def attributed_products(rows, suffix):
@@ -192,6 +206,9 @@ def upsert_product(category, product_name, defaults):
     for field_name, value in defaults.items():
         setattr(product, field_name, value)
     product.save()
+    extra_categories = defaults.get('extra_categories') or []
+    if extra_categories:
+        product.categories.add(*extra_categories)
     return product, created
 
 
@@ -1341,7 +1358,10 @@ def category_payload():
             products=make_products(
                 [
                     'Marquee',
-                    'Pop-up gazebo',
+                    {
+                        'name': 'Pop-up gazebo',
+                        'extra_categories': ['Gazebos, awnings and shade'],
+                    },
                     'Clearspan marquee',
                     'Stretch tent',
                     'Pagoda tent',
@@ -1917,7 +1937,6 @@ def category_payload():
             products=make_products(
                 [
                     'Gazebo',
-                    'Pop-up gazebo',
                     'Sail shade',
                     'Garden pergola',
                     'Patio awning',
@@ -2261,6 +2280,753 @@ def category_payload():
         ),
     ]
 
+    health_children = [
+        category_node(
+            'Mobility aids',
+            'Borrowable support for getting around with more confidence and less strain.',
+            'The practical side of staying mobile.',
+            children=[
+                category_node(
+                    'Crutches',
+                    'Lightweight support for short-term recovery and careful steps.',
+                    'Simple, useful and very often needed at exactly the wrong time.',
+                    products=make_products(
+                        [
+                            'Underarm crutches',
+                            'Forearm crutches',
+                            'Adjustable crutches',
+                            'Children\'s crutches',
+                            'Walking stick crutches',
+                        ],
+                        'A straightforward helper when walking needs a bit more support.',
+                    ),
+                ),
+                category_node(
+                    'Walking frames',
+                    'Stable support for indoor and outdoor moving about.',
+                    'A steady friend for recovery and accessibility.',
+                    products=make_products(
+                        [
+                            'Zimmer frame',
+                            'Wheeled walking frame',
+                            'Padded walking frame',
+                            'Foldable walking frame',
+                            'Rollator walker',
+                        ],
+                        'Useful when balance and confidence need a little backup.',
+                    ),
+                ),
+                category_node(
+                    'Mobility scooters',
+                    'A practical lift for errands, visits and everyday independence.',
+                    'Popular, useful and very much worth getting right.',
+                    products=make_products(
+                        [
+                            'Boot scooter',
+                            'Pavement mobility scooter',
+                            'Compact travel scooter',
+                            'Three-wheel mobility scooter',
+                            'Four-wheel mobility scooter',
+                            'Heavy-duty mobility scooter',
+                        ],
+                        'Good for keeping journeys easier without overcomplicating things.',
+                    ),
+                ),
+                category_node(
+                    'Wheelchairs',
+                    'Manual and transport chairs for when walking is not the best option.',
+                    'Comfort, support and a lot less faff.',
+                    products=make_products(
+                        [
+                            'Transit wheelchair',
+                            'Self-propel wheelchair',
+                            'Lightweight wheelchair',
+                            'Pediatric wheelchair',
+                            'Reclining wheelchair',
+                        ],
+                        'Helpful for travel, recovery and temporary accessibility needs.',
+                    ),
+                ),
+                category_node(
+                    'Rollators',
+                    'Wheeled support with a seat for when a rest stop should be nearby.',
+                    'A very practical mix of movement and pause.',
+                    products=make_products(
+                        [
+                            'Two-wheel rollator',
+                            'Four-wheel rollator',
+                            'Seat rollator',
+                            'Indoor rollator',
+                            'All-terrain rollator',
+                        ],
+                        'Useful for steadier walking and taking a breather when needed.',
+                    ),
+                ),
+            ],
+        ),
+        category_node(
+            'Daily living support',
+            'Small helpers that make day-to-day tasks simpler, safer and more comfortable.',
+            'The kind of kit people often need quietly and urgently.',
+            children=[
+                category_node(
+                    'Commodes',
+                    'Portable toilet support for home care and recovery.',
+                    'A sensible, privacy-preserving rental for the right situation.',
+                    products=make_products(
+                        [
+                            'Bedside commode',
+                            'Drop-arm commode',
+                            'Portable commode chair',
+                            'Shower commode',
+                            'Foldable commode',
+                        ],
+                        'Useful when mobility and bathroom access need a temporary solution.',
+                    ),
+                ),
+                category_node(
+                    'Shower and bath aids',
+                    'Safer bathing with better balance, grip and seating.',
+                    'A practical upgrade for everyday routines.',
+                    products=make_products(
+                        [
+                            'Shower chair',
+                            'Bath seat',
+                            'Bath board',
+                            'Bath step',
+                            'Non-slip bath mat set',
+                            'Toilet frame',
+                        ],
+                        'Helpful for safer washing and easier transfers.',
+                    ),
+                ),
+                category_node(
+                    'Bed and transfer aids',
+                    'Support for getting in, out and settled comfortably.',
+                    'Quietly essential and very rent-worthy.',
+                    products=make_products(
+                        [
+                            'Bed rail',
+                            'Bed wedge',
+                            'Transfer board',
+                            'Turning cushion',
+                            'Leg lifter strap',
+                            'Overbed table',
+                        ],
+                        'Useful for rest, recovery and making movement less awkward.',
+                    ),
+                ),
+                category_node(
+                    'Toilet aids',
+                    'Small changes that make a big difference in day-to-day comfort.',
+                    'More dignity, less strain.',
+                    products=make_products(
+                        [
+                            'Raised toilet seat',
+                            'Toilet frame',
+                            'Toilet surround rails',
+                            'Padded toilet seat',
+                            'Bottom wiper aid',
+                        ],
+                        'Useful when bathroom access needs a little more support.',
+                    ),
+                ),
+                category_node(
+                    'Reachers and dressing aids',
+                    'Helping hands for the bits that are just out of reach.',
+                    'Small tools, very useful outcome.',
+                    products=make_products(
+                        [
+                            'Grabber reacher',
+                            'Sock aid',
+                            'Button hook',
+                            'Long-handled shoe horn',
+                            'Dressing stick',
+                        ],
+                        'Handy for dressing and picking things up safely.',
+                    ),
+                ),
+            ],
+        ),
+        category_node(
+            'Recovery and physio',
+            'Support kit for rehab, pain management and getting moving again.',
+            'A strong home for short-term recovery rentals.',
+            children=[
+                category_node(
+                    'Massage guns',
+                    'Percussive recovery tools for muscles that need some encouragement.',
+                    'Yes, these are powered, and yes, people do ask for them.',
+                    products=make_products(
+                        [
+                            'Massage gun',
+                            'Mini massage gun',
+                            'Deep tissue massage gun',
+                            'Professional massage gun',
+                            'Percussion therapy gun',
+                        ],
+                        'Popular after sport, strain and the occasional overenthusiastic weekend.',
+                    ),
+                ),
+                category_node(
+                    'Compression therapy',
+                    'Circulation-friendly recovery kit for legs and tired muscles.',
+                    'Very rentable when comfort matters.',
+                    products=make_products(
+                        [
+                            'Compression boots',
+                            'Compression leg sleeves',
+                            'Lymphatic drainage boots',
+                            'Recovery compression system',
+                            'Arm compression sleeves',
+                        ],
+                        'Useful for recovery, swelling and post-exertion relief.',
+                    ),
+                ),
+                category_node(
+                    'Foam rollers and stretching',
+                    'Gentle mobility work and a bit of well-earned self-maintenance.',
+                    'The non-flashy side of feeling better.',
+                    products=make_products(
+                        [
+                            'Foam roller',
+                            'Textured foam roller',
+                            'Yoga stretch strap',
+                            'Stretch band set',
+                            'Massage ball set',
+                        ],
+                        'Handy for loosening up without a full-time gym commitment.',
+                    ),
+                ),
+                category_node(
+                    'Heat and cold therapy',
+                    'Targeted comfort for soreness, swelling and grumbly joints.',
+                    'Simple, effective and very often requested.',
+                    products=make_products(
+                        [
+                            'Heat pad',
+                            'Microwavable heat pack',
+                            'Ice pack wrap',
+                            'Cold therapy cuff',
+                            'Gel compress set',
+                        ],
+                        'Useful for recovery and day-to-day aches.',
+                    ),
+                ),
+                category_node(
+                    'Balance and rehab',
+                    'Small training tools for steadier movement and better confidence.',
+                    'Very sensible, very rentable.',
+                    products=make_products(
+                        [
+                            'Balance board',
+                            'Wobble cushion',
+                            'Physio wedge set',
+                            'Resistance band rehab kit',
+                            'Ankle exercise kit',
+                        ],
+                        'Helpful for rehab, strengthening and confidence-building.',
+                    ),
+                ),
+            ],
+        ),
+        category_node(
+            'Wellbeing and self care',
+            'A softer side of health rentals for relaxation, sleep and skin care.',
+            'A nice complement to the more clinical basics.',
+            children=[
+                category_node(
+                    'LED face masks',
+                    'Popular light-based skincare gear for at-home routines.',
+                    'Yes, a little electronic, but commercially very tempting.',
+                    products=make_products(
+                        [
+                            'LED face mask',
+                            'Red light face mask',
+                            'Blue light face mask',
+                            'Multi-light therapy mask',
+                            'Skincare light mask',
+                        ],
+                        'A high-interest option for beauty and wellness audiences.',
+                    ),
+                ),
+                category_node(
+                    'Foot spas',
+                    'Warm water and massage for tired feet and calmer evenings.',
+                    'Easy to understand, easy to want.',
+                    products=make_products(
+                        [
+                            'Foot spa bath',
+                            'Heated foot spa',
+                            'Bubble foot spa',
+                            'Foot massage bath',
+                            'Foot soak and massage unit',
+                        ],
+                        'A surprisingly popular comfort rental with broad appeal.',
+                    ),
+                ),
+                category_node(
+                    'Aromatherapy and relaxation',
+                    'Soft scents and calmer spaces for home wellbeing.',
+                    'Good for unwinding without too much effort.',
+                    products=make_products(
+                        [
+                            'Aromatherapy diffuser',
+                            'Essential oil diffuser',
+                            'Aroma mist machine',
+                            'Relaxation lamp',
+                            'Sleep sound machine',
+                        ],
+                        'Useful for sleep routines, stress relief and calm spaces.',
+                    ),
+                ),
+                category_node(
+                    'Heated comfort',
+                    'Warmth-based comfort for bedrooms, sofas and recovery days.',
+                    'Cosy without being complicated.',
+                    products=make_products(
+                        [
+                            'Electric heated blanket',
+                            'Heat wrap',
+                            'Heating pad',
+                            'Warm throw blanket',
+                            'Microwavable neck wrap',
+                        ],
+                        'Good for chilly weather and a bit of relief.',
+                    ),
+                ),
+                category_node(
+                    'Personal care devices',
+                    'A few powered self-care items that are genuinely in demand.',
+                    'Where the electronics are worth keeping.',
+                    products=make_products(
+                        [
+                            'Facial steamer',
+                            'Massage cushion',
+                            'Scalp massager',
+                            'Handheld skin scrubber',
+                            'Anti-snore device',
+                        ],
+                        'Useful for beauty routines, comfort and occasional problem-solving.',
+                    ),
+                ),
+            ],
+        ),
+        category_node(
+            'Home care and accessibility',
+            'Practical home adaptations that make everyday living easier.',
+            'Quietly useful, often essential.',
+            children=[
+                category_node(
+                    'Bathroom access',
+                    'Helpful kit for making bathrooms safer and easier to use.',
+                    'The bits people are often grateful to find quickly.',
+                    products=make_products(
+                        [
+                            'Bath lift',
+                            'Bath board',
+                            'Toilet surround',
+                            'Shower stool',
+                            'Non-slip mat set',
+                        ],
+                        'Good for safer bathing and easier transfers.',
+                    ),
+                ),
+                category_node(
+                    'Bedroom access',
+                    'Support items for easier rest, transfers and comfort.',
+                    'Small changes, big daily impact.',
+                    products=make_products(
+                        [
+                            'Adjustable bed wedge',
+                            'Overbed table',
+                            'Bed rail',
+                            'Pressure relief cushion',
+                            'Leg support pillow',
+                        ],
+                        'Useful for recovery and everyday comfort.',
+                    ),
+                ),
+                category_node(
+                    'Ramps and thresholds',
+                    'Low-profile access helpers for doorways and changes in level.',
+                    'Simple accessibility, done well.',
+                    products=make_products(
+                        [
+                            'Portable wheelchair ramp',
+                            'Threshold ramp',
+                            'Doorstep ramp',
+                            'Rubber ramp mat',
+                            'Folding access ramp',
+                        ],
+                        'Handy when steps and lips need to stop being a problem.',
+                    ),
+                ),
+                category_node(
+                    'Support seating',
+                    'Stable seating for washing, resting and transferring safely.',
+                    'A very practical category with broad use.',
+                    products=make_products(
+                        [
+                            'Shower chair',
+                            'Bath seat',
+                            'Perching stool',
+                            'Raised chair',
+                            'Armchair riser cushion',
+                        ],
+                        'Useful for comfort, access and safer daily routines.',
+                    ),
+                ),
+                category_node(
+                    'Care and monitoring',
+                    'The supportive bits that help people look after someone at home.',
+                    'A good place for thoughtful, temporary needs.',
+                    products=make_products(
+                        [
+                            'Patient monitor',
+                            'Blood pressure monitor',
+                            'Pulse oximeter',
+                            'Thermometer kit',
+                            'Room alarm call bell',
+                        ],
+                        'Useful for home support without buying every device outright.',
+                    ),
+                ),
+            ],
+        ),
+        category_node(
+            'Sleep and comfort',
+            'Comfort items for better rest, support and a gentler night.',
+            'Borrowable comfort is a real market too.',
+            children=[
+                category_node(
+                    'Pressure relief',
+                    'Soft supports for sensitive areas and recovery comfort.',
+                    'Especially helpful after surgery or injury.',
+                    products=make_products(
+                        [
+                            'Pressure relief cushion',
+                            'Memory foam pillow',
+                            'Heel protector',
+                            'Coccyx cushion',
+                            'Donut cushion',
+                        ],
+                        'Useful for pressure relief and long sits.',
+                    ),
+                ),
+                category_node(
+                    'Positioning aids',
+                    'Helping the body find a more comfortable place to land.',
+                    'Simple comfort tools that do a lot of work.',
+                    products=make_products(
+                        [
+                            'Leg wedge pillow',
+                            'Body pillow',
+                            'Back support wedge',
+                            'Sleeping wedge',
+                            'Posture pillow',
+                        ],
+                        'Handy for recovery, sleep and general comfort.',
+                    ),
+                ),
+                category_node(
+                    'Cooling and warming',
+                    'Temperature comfort for sleep and recovery.',
+                    'A small thing that can matter a lot.',
+                    products=make_products(
+                        [
+                            'Cooling blanket',
+                            'Weighted blanket',
+                            'Electric heated throw',
+                            'Bed warmer',
+                            'Cooling pillow pad',
+                        ],
+                        'Useful for warmer nights, chillier nights and everything in between.',
+                    ),
+                ),
+                category_node(
+                    'Sleep routines',
+                    'Supportive extras for calmer evenings and better rest.',
+                    'A nice, low-pressure niche.',
+                    products=make_products(
+                        [
+                            'White noise machine',
+                            'Sleep lamp',
+                            'Aromatherapy sleep diffuser',
+                            'Eye mask set',
+                            'Relaxation timer lamp',
+                        ],
+                        'Good for winding down and making a room feel more sleep-friendly.',
+                    ),
+                ),
+            ],
+        ),
+        category_node(
+            'Pregnancy and early years',
+            'Practical rentals for expecting parents, new families and little ones.',
+            'A helpful home for baby, toddler and maternity essentials.',
+            children=[
+                category_node(
+                    'Early years',
+                    'Baby and toddler gear for short-term use, growing families and easier days.',
+                    'Everything from naps to play to safer routines.',
+                    children=[
+                        category_node(
+                            'Baby play aids',
+                            'Play equipment that helps babies explore safely and happily.',
+                            'Useful for tummy time, floor play and early development.',
+                            products=make_products(
+                                [
+                                    'Baby play mat',
+                                    'Activity gym',
+                                    'Play arch',
+                                    'Sensory play panel',
+                                    'Tummy time cushion',
+                                    'Stacking toy set',
+                                ],
+                                'Handy for supervised play, early development and busy little hands.',
+                            ),
+                        ),
+                        category_node(
+                            'White noise machines',
+                            'Sleep helpers for calmer naps and more settled nights.',
+                            'Popular with sleep-deprived parents for a reason.',
+                            products=make_products(
+                                [
+                                    'White noise machine',
+                                    'Portable white noise machine',
+                                    'Baby sleep sound machine',
+                                    'Nursery sound soother',
+                                    'Travel sleep machine',
+                                ],
+                                'Useful for naps, bedtime routines and a slightly quieter room.',
+                            ),
+                        ),
+                        category_node(
+                            'Baby swings and rockers',
+                            'Gentle motion gear for soothing and settling little ones.',
+                            'A practical comfort rental for the early months.',
+                            products=make_products(
+                                [
+                                    'Baby swing',
+                                    'Electric baby swing',
+                                    'Baby rocker',
+                                    'Newborn bouncer rocker',
+                                    'Soothing cradle seat',
+                                ],
+                                'Helpful when rhythmic movement makes everything easier.',
+                            ),
+                        ),
+                        category_node(
+                            'Baby monitors',
+                            'Peace-of-mind tech for checking in from another room.',
+                            'A very common new-parent rental ask.',
+                            products=make_products(
+                                [
+                                    'Audio baby monitor',
+                                    'Video baby monitor',
+                                    'Pan and tilt monitor',
+                                    'Travel baby monitor',
+                                    'Breathing monitor',
+                                ],
+                                'Useful for daytime naps, overnight checks and sanity.',
+                            ),
+                        ),
+                        category_node(
+                            'Toddler toys and activity centres',
+                            'Play kit for energetic toddlers and growing curiosity.',
+                            'The kind of thing that keeps small people busy for longer.',
+                            products=make_products(
+                                [
+                                    'Activity centre',
+                                    'Toddler play table',
+                                    'Musical toy station',
+                                    'Learning walker',
+                                    'Shape sorter',
+                                    'Ride-on toy',
+                                    'Busy board',
+                                ],
+                                'Good for play, coordination and happy distraction.',
+                            ),
+                        ),
+                        category_node(
+                            'Travel cots',
+                            'Portable sleeping options for visits, weekends away and spare rooms.',
+                            'A classic family rental category.',
+                            products=make_products(
+                                [
+                                    'Travel cot',
+                                    'Foldable travel cot',
+                                    'Lightweight travel crib',
+                                    'Co-sleeper travel cot',
+                                    'Pop-up baby cot',
+                                ],
+                                'Useful for sleeping away from home without the permanent furniture.',
+                            ),
+                        ),
+                        category_node(
+                            'Baby bouncers',
+                            'Compact seats for calming and keeping little ones entertained.',
+                            'Small, useful and easy to place around the house.',
+                            products=make_products(
+                                [
+                                    'Baby bouncer',
+                                    'Vibrating bouncer',
+                                    'Newborn seat rocker',
+                                    'Baby seat with toy bar',
+                                    'Foldable bouncer',
+                                ],
+                                'Handy for short calm periods and supervised rest.',
+                            ),
+                        ),
+                        category_node(
+                            'High chairs',
+                            'Feeding time seating for babies and toddlers.',
+                            'One of those things people need fast, then not forever.',
+                            products=make_products(
+                                [
+                                    'High chair',
+                                    'Adjustable high chair',
+                                    'Foldable high chair',
+                                    'Booster seat',
+                                    'Travel high chair',
+                                ],
+                                'Useful for meals at home, away from home and on the move.',
+                            ),
+                        ),
+                        category_node(
+                            'Baby carriers and slings',
+                            'Hands-free carrying support for parents and carers.',
+                            'A simple way to keep little ones close.',
+                            products=make_products(
+                                [
+                                    'Baby carrier',
+                                    'Wrap sling',
+                                    'Front carrier',
+                                    'Back carrier',
+                                    'Hip carrier',
+                                ],
+                                'Useful for walks, errands and getting things done.',
+                            ),
+                        ),
+                        category_node(
+                            'Baby bath and changing aids',
+                            'Practical items for safer washing and nappy-changing routines.',
+                            'The functional side of baby care.',
+                            products=make_products(
+                                [
+                                    'Baby bath',
+                                    'Baby bath seat',
+                                    'Changing mat',
+                                    'Changing station',
+                                    'Baby bath support',
+                                ],
+                                'Helpful for everyday hygiene and more manageable routines.',
+                            ),
+                        ),
+                        category_node(
+                            'Potty training aids',
+                            'Small helpers for the transition out of nappies.',
+                            'A very real stage of family life.',
+                            products=make_products(
+                                [
+                                    'Training potty',
+                                    'Potty seat',
+                                    'Step stool for potty training',
+                                    'Toilet training seat',
+                                    'Reward chart bundle',
+                                ],
+                                'Useful when the next milestone arrives a bit sooner than expected.',
+                            ),
+                        ),
+                        category_node(
+                            'Safety gates and stair guards',
+                            'Barrier and safety items for home setup and peace of mind.',
+                            'A sensible category for crawling and climbing stages.',
+                            products=make_products(
+                                [
+                                    'Baby safety gate',
+                                    'Pressure fit gate',
+                                    'Wall mounted gate',
+                                    'Stair gate',
+                                    'Corner guard set',
+                                ],
+                                'Helpful for keeping curious toddlers in the right places.',
+                            ),
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        category_node(
+            'Therapy and pain relief',
+            'Everyday comfort tools for aches, pains and recovery routines.',
+            'A very rentable set of needs.',
+            children=[
+                category_node(
+                    'TENS and muscle therapy',
+                    'Electrical pain-relief and muscle stimulation devices.',
+                    'One of the more obviously powered parts of the section.',
+                    products=make_products(
+                        [
+                            'TENS machine',
+                            'Muscle stimulator',
+                            'EMS therapy unit',
+                            'Portable pain relief device',
+                            'Dual channel TENS machine',
+                        ],
+                        'Useful for pain relief and rehab support.',
+                    ),
+                ),
+                category_node(
+                    'Heat therapy',
+                    'Comforting warmth for stiffness and recovery.',
+                    'Easy to use and easy to rent.',
+                    products=make_products(
+                        [
+                            'Heating pad',
+                            'Microwave heat pack',
+                            'Knee heat wrap',
+                            'Shoulder heat wrap',
+                            'Electric hot water bottle',
+                        ],
+                        'Good for aches, stiffness and cold evenings.',
+                    ),
+                ),
+                category_node(
+                    'Cold therapy',
+                    'Cooling kit for swelling and recovery.',
+                    'Simple, practical and often needed.',
+                    products=make_products(
+                        [
+                            'Cold pack wrap',
+                            'Ice compression wrap',
+                            'Gel ice pack set',
+                            'Reusable cold therapy sleeve',
+                            'Instant cold pack kit',
+                        ],
+                        'Useful for sports recovery and minor injuries.',
+                    ),
+                ),
+                category_node(
+                    'Massage and soft tissue',
+                    'The calmer side of recovery and relaxation.',
+                    'A good home for non-gym recovery rentals.',
+                    products=make_products(
+                        [
+                            'Massage cushion',
+                            'Shiatsu back massager',
+                            'Foot massager',
+                            'Neck and shoulder massager',
+                            'Handheld massage roller',
+                        ],
+                        'Popular for recovery, comfort and general unwinding.',
+                    ),
+                ),
+            ],
+        ),
+    ]
+
     tree = [
         category_node(
             'Costumes and fancy dress',
@@ -2315,6 +3081,12 @@ def category_payload():
             'For refreshes, repairs and “we may as well do it properly” weekends.',
             'Decorating, fixing and restoring without buying everything outright.',
             children=home_improvement_children,
+        ),
+        category_node(
+            'Health and wellbeing',
+            'For recovery, accessibility, comfort and practical care at home.',
+            'A useful category for families, carers and older customers.',
+            children=health_children,
         ),
     ]
     return flatten_category_tree(tree)
@@ -2396,14 +3168,21 @@ class Command(BaseCommand):
                     if isinstance(product_data, tuple):
                         product_name, product_description = product_data
                         product_attributes = {}
+                        extra_categories = []
                     else:
                         product_name = product_data['name']
                         product_description = product_data['description']
                         product_attributes = product_data.get('attributes', {})
+                        extra_categories = product_data.get('extra_categories', [])
                     product_name = normalise_product_name(product_name)
                     if (category.slug, product_name) in excluded_products:
                         continue
                     desired_names.append(product_name)
+                    extra_category_objs = [
+                        Category.objects.filter(title=title).first()
+                        for title in extra_categories
+                    ]
+                    extra_category_objs = [item for item in extra_category_objs if item]
                     _, product_created = upsert_product(
                         category,
                         product_name,
@@ -2414,6 +3193,7 @@ class Command(BaseCommand):
                             'attribute_three_value': product_attributes.get(3, ''),
                             'attribute_four_value': product_attributes.get(4, ''),
                             'attribute_five_value': product_attributes.get(5, ''),
+                            'extra_categories': extra_category_objs,
                         },
                     )
                     if product_created:

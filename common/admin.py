@@ -129,11 +129,12 @@ class ProductAdminForm(forms.ModelForm):
 class ProductAdmin(SummernoteModelAdmin):
     form = ProductAdminForm
     list_display = ('name','slug', 'image_review_status', 'create_date','category_id')
-    list_filter = ('image_review_status', 'category_id')
+    list_filter = ('image_review_status', 'category_id', 'categories')
     fields = (
         'name',
         'slug',
         'category_id',
+        'categories',
         'image',
         'image_review_status',
         'image_review_notes',
@@ -143,7 +144,7 @@ class ProductAdmin(SummernoteModelAdmin):
         'short_name',
         'risk_rating',
     )
-    filter_horizontal = ('tags',)
+    filter_horizontal = ('tags', 'categories')
     summernote_fields = ('description',)
 
     class Media:

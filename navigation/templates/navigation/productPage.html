@@ -249,7 +249,7 @@
       <div class="admin-quick-actions">
         <a href="{% url 'admin:common_product_change' product.id %}">Edit product and tags</a>
         <a href="{% url 'admin:common_category_change' category.id %}">Edit category and tags</a>
-        <a href="{% url 'admin:common_product_add' %}?category_id={{ category.id }}">Add product in this category</a>
+        <a href="{% url 'admin:common_product_add' %}?category_id={{ category.id }}">Add product draft</a>
         <a href="{% url 'admin:common_category_add' %}?parent_category={{ category.id }}">Add child category</a>
         <a href="{% url 'navigation:delete_product' product.slug %}" onclick="return confirm('Delete this product? This will remove its listings too.');">Delete product</a>
         <a href="{% url 'navigation:delete_category' category.slug %}" onclick="return confirm('Delete this category? This may also remove child categories and products.');">Delete category</a>

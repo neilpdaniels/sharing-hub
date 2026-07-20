@@ -10,6 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 
+# Deprecated legacy settings module for the old Wastaco deployment path.
+# Avoid adding new configuration here; production should use the unified settings package.
+
 import os
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)

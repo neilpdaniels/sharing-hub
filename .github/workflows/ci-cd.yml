@@ -36,6 +36,9 @@ jobs:
           DJANGO_SECRET_KEY: ci-check-secret-key
         run: uv run python manage.py check
 
+      - name: Check for hardcoded config values
+        run: sh scripts/check_hardcoded_config.sh
+
   build_and_push:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: test

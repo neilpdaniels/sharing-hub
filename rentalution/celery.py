@@ -4,7 +4,7 @@ from celery.schedules import crontab
 
 os.environ.setdefault(
     "DJANGO_SETTINGS_MODULE",
-    "rentalution.settings.local"
+    "rentalution.settings.production"
 )
 
 app = Celery('rentalution')

@@ -558,7 +558,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'Rentalution',
+      title: AppConfig.appName,
       theme: rentalutionLightTheme,
       darkTheme: rentalutionDarkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,

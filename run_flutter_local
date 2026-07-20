@@ -1,3 +1,2 @@
 #!/usr/bin/env bash
-cd rentalution_mobile
-flutter run --dart-define=API_BASE_URL=http://localhost:8000/api/v1
+exec "$(dirname "$0")/run_rentalution_mobile_dev"

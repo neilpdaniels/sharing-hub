@@ -11,7 +11,9 @@ wheels/
 celerybeat-schedule.db
 logs/
 db.sqlite3
-.rentalution_mobile.env
+.rentalution_mobile.dev.env
+.rentalution_mobile.prod.env
+.rentalution_mobile.local.sh
 rentalution_mobile/.env
 media/
 tmp/midjourney_catalog_workflow/

@@ -5,6 +5,8 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from PIL import Image, ImageOps, ImageTk
 
+from common.models import Category, Product
+
 from common.management.commands.manage_midjourney_catalog_images import (
     attach_image_path_to_item,
     build_midjourney_prompt,
@@ -28,6 +30,7 @@ from common.management.commands.manage_midjourney_catalog_images import (
 
 try:
     import tkinter as tk
+    from tkinter import ttk
     from tkinter import filedialog, messagebox
 except Exception as exc:  # pragma: no cover - GUI availability depends on host
     raise CommandError(f'Tkinter is required for the GUI: {exc}')
@@ -36,6 +39,10 @@ except Exception as exc:  # pragma: no cover - GUI availability depends on host
 THUMB_SIZE = (420, 420)
 SAVED_SIZE = (512, 512)
 REVIEW_SIZE = (512, 512)
+
+
+def clean_name(value):
+    return ' '.join((value or '').strip().split())
 
 
 class LargeImageViewer:
@@ -409,6 +416,15 @@ class MidjourneyImageGUI:
         self.saved_image_path = None
         self.saved_image_photo = None
         self.search_var = tk.StringVar(value='')
+        self.tree_item_map = {}
+        self.tree_node_map = {}
+        self.tree_parent_map = {}
+        self._split_dragging = False
+        self._left_panel_width = 620
+        self._container_frame = None
+        self._left_frame = None
+        self._splitter_frame = None
+        self._right_frame = None
 
         self.root.title('Rentalution image queue')
         self.root.geometry('1500x950')
@@ -418,24 +434,51 @@ class MidjourneyImageGUI:
         self.select_first_pending()
 
     def _build_ui(self):
-        self.root.columnconfigure(1, weight=1)
         self.root.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        container = tk.Frame(self.root)
+        container.grid(row=0, column=0, sticky='nsew')
+        self._container_frame = container
 
-        left = tk.Frame(self.root, padx=8, pady=8)
-        left.grid(row=0, column=0, sticky='nsw')
+        left = tk.Frame(container, padx=8, pady=8)
+        left.grid_propagate(False)
+        left.configure(width=self._left_panel_width)
         left.rowconfigure(2, weight=1)
+        self._left_frame = left
 
         tk.Label(left, text='Queue').grid(row=0, column=0, sticky='w')
         search_entry = tk.Entry(left, textvariable=self.search_var, width=44)
         search_entry.grid(row=1, column=0, sticky='ew', pady=(6, 6))
         search_entry.insert(0, '')
         self.search_var.trace_add('write', lambda *_args: self._apply_queue_search())
-        self.listbox = tk.Listbox(left, width=44, height=40)
-        self.listbox.grid(row=2, column=0, sticky='ns')
-        self.listbox.bind('<<ListboxSelect>>', self._on_select)
+        tree_frame = tk.Frame(left)
+        tree_frame.grid(row=2, column=0, sticky='nsew')
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+        self.tree = ttk.Treeview(tree_frame, show='tree')
+        self.tree.grid(row=0, column=0, sticky='nsew')
+        tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
+        tree_scroll.grid(row=0, column=1, sticky='ns')
+        self.tree.column('#0', width=620, stretch=True)
+        self.tree.tag_configure('type_product', foreground='#1f4e79')
+        self.tree.tag_configure('type_category', foreground='#7a4f00')
+        self.tree.tag_configure('status_pending', foreground='#7a7a7a')
+        self.tree.tag_configure('status_awaiting_review', foreground='#1f6f43')
+        self.tree.tag_configure('status_uploaded', foreground='#1d6fa5')
+        self.tree.tag_configure('status_reviewed', foreground='#555555')
+        self.tree.tag_configure('status_skipped', foreground='#a56a1d')
+        self.tree.tag_configure('status_done_elsewhere', foreground='#8b3d3d')
+        self.tree.bind('<<TreeviewSelect>>', self._on_select)
 
-        right = tk.Frame(self.root, padx=12, pady=8)
-        right.grid(row=0, column=1, sticky='nsew')
+        splitter = tk.Frame(container, width=8, bg='#c4c4c4', cursor='sb_h_double_arrow')
+        self._splitter_frame = splitter
+        splitter.bind('<Button-1>', self._start_split_drag)
+        splitter.bind('<B1-Motion>', self._drag_split)
+        splitter.bind('<ButtonRelease-1>', self._end_split_drag)
+
+        right = tk.Frame(container, padx=12, pady=8)
+        self._right_frame = right
         right.columnconfigure(0, weight=1)
         right.rowconfigure(3, weight=0)
         right.rowconfigure(4, weight=12)
@@ -543,14 +586,129 @@ class MidjourneyImageGUI:
         self.footer = tk.StringVar(value='Ready')
         tk.Label(right, textvariable=self.footer, anchor='w').grid(row=7, column=0, sticky='ew', pady=(8, 0))
 
+        self._reflow_layout()
+        self.root.bind('<Configure>', lambda _event: self._reflow_layout())
+        self.root.after_idle(self._apply_splitter_width)
+
+    def _apply_splitter_width(self):
+        width = max(360, min(900, int(self._left_panel_width)))
+        self._left_panel_width = width
+        self._reflow_layout()
+
+    def _reflow_layout(self):
+        if not (self._container_frame and self._left_frame and self._splitter_frame and self._right_frame):
+            return
+        total_width = max(1, self._container_frame.winfo_width())
+        total_height = max(1, self._container_frame.winfo_height())
+        left_width = max(360, min(900, int(self._left_panel_width)))
+        splitter_width = 8
+        right_width = max(200, total_width - left_width - splitter_width)
+
+        self._left_frame.place(x=0, y=0, width=left_width, height=total_height)
+        self._splitter_frame.place(x=left_width, y=0, width=splitter_width, height=total_height)
+        self._right_frame.place(x=left_width + splitter_width, y=0, width=right_width, height=total_height)
+
+    def _start_split_drag(self, _event):
+        self._split_dragging = True
+
+    def _drag_split(self, event):
+        if not self._split_dragging:
+            return
+        left_width = event.x_root - self.root.winfo_rootx()
+        self._left_panel_width = max(360, min(900, left_width))
+        self._reflow_layout()
+
+    def _end_split_drag(self, _event):
+        self._split_dragging = False
+
     def _populate_list(self):
-        self.listbox.delete(0, tk.END)
-        for item in self.filtered_items:
-            marker = 'img' if item_existing_image_path(item) else '   '
+        self.tree.delete(*self.tree.get_children())
+        self.tree_item_map = {}
+        self.tree_node_map = {}
+        state_items_by_key = {
+            self._item_key(item): item for item in self.filtered_items
+        }
+
+        def node_text(item):
+            kind = 'P' if item.get('type') == 'product' else 'C'
             status = item.get('status', '')
-            bad_count = int(item.get('openai_bad_responses') or 0)
-            bad_label = f' bad response {bad_count}/5' if bad_count else ''
-            self.listbox.insert(tk.END, f'{marker} {status:10s} {item_label(item)}{bad_label}')
+            status_map = {
+                'pending': 'p',
+                'awaiting_review': 'a',
+                'uploaded': 'u',
+                'reviewed': 'r',
+                'skipped': 's',
+                'done_elsewhere': 'd',
+            }
+            status_badge = status_map.get(status, '?')
+            return f'[{kind}] ({status_badge}) {item["title"]}'
+
+        categories = list(Category.objects.select_related('parent_category').all().order_by('parent_category__title', 'title', 'id'))
+        products = list(Product.objects.select_related('category_id').all().order_by('category_id__title', 'name', 'id'))
+
+        children_by_parent_id = {}
+        for category in categories:
+            parent_id = category.parent_category_id or 0
+            children_by_parent_id.setdefault(parent_id, []).append(category)
+
+        products_by_category_id = {}
+        for product in products:
+            products_by_category_id.setdefault(product.category_id_id or 0, []).append(product)
+
+        def category_item(category):
+            return {
+                'type': 'category',
+                'id': category.id,
+                'title': clean_name(category.title),
+                'slug': category.slug,
+                'parent_title': clean_name(category.parent_category.title) if category.parent_category else '',
+                'category_title': clean_name(category.title),
+                'status': (state_items_by_key.get(('category', category.id)) or {}).get('status', category.image_review_status or 'pending'),
+                'route': (state_items_by_key.get(('category', category.id)) or {}).get('route', ''),
+                'notes': (state_items_by_key.get(('category', category.id)) or {}).get('notes', category.image_review_notes or ''),
+            }
+
+        def product_item(product):
+            category_title = clean_name(product.category_id.title) if product.category_id else ''
+            return {
+                'type': 'product',
+                'id': product.id,
+                'title': clean_name(product.name),
+                'slug': product.slug,
+                'parent_title': category_title,
+                'category_title': category_title,
+                'status': (state_items_by_key.get(('product', product.id)) or {}).get('status', product.image_review_status or 'pending'),
+                'route': (state_items_by_key.get(('product', product.id)) or {}).get('route', ''),
+                'notes': (state_items_by_key.get(('product', product.id)) or {}).get('notes', product.image_review_notes or ''),
+            }
+
+        def insert_category(category, parent_iid=''):
+            item = category_item(category)
+            iid = f"cat:{category.id}"
+            if iid in self.tree_item_map:
+                return iid
+            tags = ('type_category', f'status_{item.get("status", "pending")}')
+            self.tree.insert(parent_iid, 'end', iid=iid, text=node_text(item), open=False, tags=tags)
+            self.tree_item_map[iid] = item
+            self.tree_node_map[('category', category.id)] = iid
+            for child in sorted(children_by_parent_id.get(category.id, []), key=lambda child: child.title.lower()):
+                insert_category(child, iid)
+            for product in sorted(products_by_category_id.get(category.id, []), key=lambda product: product.name.lower()):
+                product_iid = f"prod:{product.id}"
+                product_dict = product_item(product)
+                tags = ('type_product', f'status_{product_dict.get("status", "pending")}')
+                self.tree.insert(iid, 'end', iid=product_iid, text=node_text(product_dict), open=False, tags=tags)
+                self.tree_item_map[product_iid] = product_dict
+                self.tree_node_map[('product', product.id)] = product_iid
+            if children_by_parent_id.get(category.id) or products_by_category_id.get(category.id):
+                self.tree.item(iid, open=False)
+            return iid
+
+        for root in sorted(children_by_parent_id.get(0, []), key=lambda item: item.title.lower()):
+            insert_category(root)
+
+    def _item_key(self, item):
+        return (item.get('type') or '', int(item.get('id') or 0))
 
     def _apply_queue_search(self):
         query = self.search_var.get().strip().lower()
@@ -574,8 +732,12 @@ class MidjourneyImageGUI:
             self.filtered_items = [item for item in self.items if matches(item)]
         self._populate_list()
         if self.filtered_items:
-            self.listbox.selection_set(0)
-            self.listbox.see(0)
+            first_item = self.filtered_items[0]
+            for iid, item in self.tree_item_map.items():
+                if item == first_item:
+                    self.tree.selection_set(iid)
+                    self.tree.see(iid)
+                    break
             self.load_item(self.filtered_items[0])
         else:
             self.current_item = None
@@ -587,19 +749,22 @@ class MidjourneyImageGUI:
             self._render_saved_preview()
 
     def _on_select(self, _event=None):
-        selection = self.listbox.curselection()
+        selection = self.tree.selection()
         if not selection:
             return
-        index = selection[0]
-        if index < len(self.filtered_items):
-            self.load_item(self.filtered_items[index])
+        iid = selection[0]
+        item = self.tree_item_map.get(iid)
+        if item:
+            self.load_item(item)
 
     def select_first_pending(self):
-        for index, item in enumerate(self.filtered_items):
+        for item in self.filtered_items:
             if item.get('status') == 'pending':
-                self.listbox.selection_clear(0, tk.END)
-                self.listbox.selection_set(index)
-                self.listbox.see(index)
+                for iid, mapped_item in self.tree_item_map.items():
+                    if mapped_item == item:
+                        self.tree.selection_set(iid)
+                        self.tree.see(iid)
+                        break
                 self.load_item(item)
                 return
         messagebox.showinfo('Rentalution', 'No pending items found.')
@@ -616,7 +781,7 @@ class MidjourneyImageGUI:
         else:
             self.image_note_var.set('Existing image: none')
 
-        self._set_text(self.prompt_text, build_openai_prompt(item))
+        self._set_text(self.prompt_text, item.get('prompt') or build_openai_prompt(item))
         self.prompt_mode = 'openai'
         self._update_prompt_buttons()
         self.saved_image_path = existing_path

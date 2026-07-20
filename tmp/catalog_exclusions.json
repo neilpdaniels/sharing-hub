@@ -1,6 +1,9 @@
 {
   "categories": [
-    "scenario-tools-20260620064205"
+    "scenario-tools-20260620064205",
+    "marquees-and-shelters",
+    "aromatherapy-diffusers",
+    "relaxation-kits"
   ],
   "products": [
     {
@@ -10,6 +13,26 @@
     {
       "category_slug": "watering-and-washdown",
       "name": "Sprinkler set"
+    },
+    {
+      "category_slug": "marquees-and-shelters",
+      "name": "Sidewall set"
+    },
+    {
+      "category_slug": "windows-doors-and-glazing-tools",
+      "name": "Sealant finishing kit"
+    },
+    {
+      "category_slug": "windows-doors-and-glazing-tools",
+      "name": "Door trimming stand"
+    },
+    {
+      "category_slug": "windows-doors-and-glazing-tools",
+      "name": "Packer shim box"
+    },
+    {
+      "category_slug": "windows-doors-and-glazing-tools",
+      "name": "Window handle installer kit"
     }
   ]
 }

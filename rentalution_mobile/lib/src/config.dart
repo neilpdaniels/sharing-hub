@@ -1,4 +1,9 @@
 class AppConfig {
+  static const String appName = String.fromEnvironment(
+    'APP_NAME',
+    defaultValue: 'Rentalution',
+  );
+
   // Override at launch: --dart-define=API_BASE_URL=http://<your-lan-ip>:8000/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',

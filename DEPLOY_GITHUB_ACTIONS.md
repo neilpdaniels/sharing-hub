@@ -7,6 +7,7 @@
 - `DEPLOY_SSH_KEY` - the private SSH key GitHub Actions should use
 - `GHCR_USERNAME` - your GitHub username
 - `GHCR_PAT` - a GitHub personal access token with `read:packages`
+- `CERTBOT_EMAIL` - the email Certbot should register for HTTPS certificate issuance and renewal
 
 ## What the workflow does
 
@@ -14,6 +15,7 @@
 - on push to `main`, builds a Docker image and pushes it to GHCR
 - on the server, logs into GHCR and pulls the new image
 - runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
+- refreshes the Nginx/Let's Encrypt certificate for `rentalution.co.uk` and `www.rentalution.co.uk` if needed
 
 ## Server expectations
 

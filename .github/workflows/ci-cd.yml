@@ -111,5 +111,6 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
             sudo install -m 0644 /tmp/rentalution-nginx/deploy/nginx/rentalution.conf /etc/nginx/sites-available/rentalution
             sudo ln -sfn /etc/nginx/sites-available/rentalution /etc/nginx/sites-enabled/rentalution
+            sudo certbot --nginx -d rentalution.co.uk -d www.rentalution.co.uk --non-interactive --agree-tos --redirect --keep-until-expiring -m "${{ secrets.CERTBOT_EMAIL }}"
             sudo nginx -t
             sudo systemctl reload nginx

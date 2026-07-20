@@ -415,6 +415,7 @@ def register(request):
         'register_stage': stage,
         'verify_email': verify_email,
         'avatar_generation_enabled': getattr(settings, 'AVATAR_GENERATION_ENABLED', False),
+        'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
     }
     return render(request, 'account/register.html', context)
 

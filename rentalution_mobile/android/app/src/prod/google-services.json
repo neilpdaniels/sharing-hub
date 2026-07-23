@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "938503213951",
+    "project_id": "rentalution-prod",
+    "storage_bucket": "rentalution-prod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:938503213951:android:4aa5a7372544762b90c04a",
+        "android_client_info": {
+          "package_name": "com.rentalution.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAn1y1tHN0Osad07rnAQI9-2nxqSBVqIDo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

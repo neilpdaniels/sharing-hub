@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd rentalution_mobile
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${ROOT_DIR}/.rentalution_mobile.prod.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+cd "$ROOT_DIR/rentalution_mobile"
 
 : "${API_BASE_URL:=https://rentalution.co.uk/api/v1}"
 : "${APP_NAME:=Rentalution}"
@@ -13,6 +21,7 @@ if [[ -z "$STRIPE_CONNECT_PUBLIC_KEY" ]]; then
 fi
 
 flutter run --release \
+  --flavor prod \
   --dart-define=APP_NAME="$APP_NAME" \
   --dart-define=API_BASE_URL="$API_BASE_URL" \
   --dart-define=STRIPE_PUBLISHABLE_KEY="$STRIPE_CONNECT_PUBLIC_KEY"

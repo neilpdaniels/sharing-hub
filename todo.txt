@@ -1,25 +1,15 @@
 todo: 
 
-mobile/web parity implementation backlog
+1) review catalog and :
+a) reduce
+b) add new categories and products
+c) reorganise
 
-priority order:
-1) finish workflow parity first, because it is core to the product and should feel nearly identical on web and mobile.
-2) reuse existing backend models, serializers, helpers, and UI patterns where possible.
-3) keep Python changes pep8-compliant and keep mobile text / labels aligned with the main site copy.
+2) check production flow
+- run through a transaction
 
-transaction + listings parity rollout
+3) work out >7d / > 30d deposit schemes
 
-1) transaction workflow contract:
-    - expose a single backend workflow payload for Django + mobile.
-    - make workflow stage, labels, pending/completed flags, and allowed actions come from the backend only.
-    - add parity tests for enquiry, contract, handover, return, dispute, and feedback states.
-
-2) listings contract:
-    - expose canonical listing payloads for product detail and lender listings.
-    - make visible count, filtered count, applied filters, and ordering consistent across web + mobile.
-    - add parity tests for listing counts, filter states, and repeat enquiry creation.
-
-transaction workflow follow-up (post-wiring, 2026-05-28)
 
 
 rentalution fee

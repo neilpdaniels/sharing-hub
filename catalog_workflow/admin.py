@@ -1,5 +1,6 @@
 from django.contrib import admin, messages
 from django.db import transaction
+from django.core.files.base import ContentFile
 from django.template.defaultfilters import slugify
 
 from common.management.commands.manage_midjourney_catalog_images import generate_openai_images
@@ -80,15 +81,32 @@ class ProductDraftAdmin(admin.ModelAdmin):
     readonly_fields = ('slug', 'published_product')
     actions = ('generate_descriptions', 'generate_images', 'publish_selected')
 
+    def _generate_description_and_prompt(self, draft):
+        if not draft.description.strip():
+            draft.description = (
+                f"{draft.title} for hire. A practical item for {draft.parent_category.title.lower()} jobs."
+            )
+        draft.prompt = build_prompt(draft)
+        draft.status = ProductDraft.STATUS_GENERATED
+        draft.save(update_fields=['description', 'prompt', 'status', 'slug', 'updated_at'])
+
+    def _generate_image(self, draft, request=None):
+        prompt = draft.prompt.strip() or build_prompt(draft)
+        paths = generate_openai_images(prompt, count=1)
+        if not paths:
+            if request is not None:
+                self.message_user(request, f'No image returned for {draft.title}.', level=messages.WARNING)
+            return False
+        image_path = paths[0]
+        with image_path.open('rb') as handle:
+            draft.image.save(f'{slugify(draft.title)}{image_path.suffix.lower()}', ContentFile(handle.read()), save=False)
+        draft.status = ProductDraft.STATUS_READY
+        draft.save(update_fields=['image', 'status', 'updated_at'])
+        return True
+
     def generate_descriptions(self, request, queryset):
         for draft in queryset:
-            if not draft.description.strip():
-                draft.description = (
-                    f"{draft.title} for hire. A practical item for {draft.parent_category.title.lower()} jobs."
-                )
-            draft.prompt = build_prompt(draft)
-            draft.status = ProductDraft.STATUS_GENERATED
-            draft.save(update_fields=['description', 'prompt', 'status', 'slug', 'updated_at'])
+            self._generate_description_and_prompt(draft)
         self.message_user(request, f'Updated {queryset.count()} draft(s).', level=messages.SUCCESS)
 
     generate_descriptions.short_description = 'Generate draft descriptions and prompts'
@@ -96,17 +114,8 @@ class ProductDraftAdmin(admin.ModelAdmin):
     def generate_images(self, request, queryset):
         count = 0
         for draft in queryset:
-            prompt = draft.prompt.strip() or build_prompt(draft)
-            paths = generate_openai_images(prompt, count=1)
-            if not paths:
-                self.message_user(request, f'No image returned for {draft.title}.', level=messages.WARNING)
-                continue
-            image_path = paths[0]
-            with image_path.open('rb') as handle:
-                draft.image.save(f'{slugify(draft.title)}{image_path.suffix.lower()}', ContentFile(handle.read()), save=False)
-            draft.status = ProductDraft.STATUS_READY
-            draft.save(update_fields=['image', 'status', 'updated_at'])
-            count += 1
+            if self._generate_image(draft, request=request):
+                count += 1
         self.message_user(request, f'Generated {count} image(s).', level=messages.SUCCESS)
 
     generate_images.short_description = 'Generate OpenAI image for selected drafts'
@@ -123,3 +132,11 @@ class ProductDraftAdmin(admin.ModelAdmin):
         self.message_user(request, f'Published {published} draft(s).', level=messages.SUCCESS)
 
     publish_selected.short_description = 'Publish selected drafts to products'
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if change:
+            return
+
+        self._generate_description_and_prompt(obj)
+        self._generate_image(obj, request=request)

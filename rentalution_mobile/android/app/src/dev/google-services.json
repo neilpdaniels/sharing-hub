@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:62956681278:android:f57ee400331f228a65396f",
+        "mobilesdk_app_id": "1:62956681278:android:fbb9677cf2f817c965396f",
         "android_client_info": {
-          "package_name": "com.rentalution.mobile"
+          "package_name": "com.rentalution.mobile.dev"
         }
       },
       "oauth_client": [],

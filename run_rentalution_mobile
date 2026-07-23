@@ -50,5 +50,6 @@ echo "Using API_BASE_URL=$API_BASE_URL"
 
 cd "$MOBILE_DIR"
 flutter run \
+  --flavor dev \
   --dart-define=API_BASE_URL="$API_BASE_URL" \
   --dart-define=STRIPE_PUBLISHABLE_KEY="$STRIPE_CONNECT_PUBLIC_KEY"

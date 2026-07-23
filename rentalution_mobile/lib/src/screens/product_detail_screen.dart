@@ -14,6 +14,46 @@ import '../services/friends_repository.dart';
 import '../services/transaction_repository.dart';
 import 'transaction_detail_screen.dart';
 
+Future<bool> _confirmAddAsFriendDialog(
+  BuildContext context,
+  String displayName,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: const Text('Confirm Friend Request'),
+        content: Text('Do you want to request $displayName adds you as friend?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('No, just add to my list'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Yes'),
+          ),
+        ],
+      );
+    },
+  );
+  return result ?? false;
+}
+
+String _lenderDisplayName(OrderLenderSummary lender) {
+  if (lender.displayName.isNotEmpty) {
+    return lender.displayName;
+  }
+  if (lender.username.isNotEmpty) {
+    return '@${lender.username}';
+  }
+  return 'this user';
+}
+
 class ProductDetailScreen extends StatefulWidget {
   const ProductDetailScreen({
     super.key,
@@ -1025,11 +1065,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                           : () async {
                                               final confirmed =
                                                   await _confirmAddAsFriend(
-                                                order.lender.displayName.isNotEmpty
-                                                    ? order.lender.displayName
-                                                    : order.lender.username.isNotEmpty
-                                                        ? '@${order.lender.username}'
-                                                        : 'this user',
+                                                _lenderDisplayName(order.lender),
                                               );
                                               if (!confirmed) {
                                                 return;
@@ -1734,31 +1770,8 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
     );
   }
 
-  Future<bool> _confirmAddAsFriend(BuildContext context, String displayName) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Friend Request'),
-          content: Text('Do you want to request $displayName adds you as friend?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('No, just add to my list'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Yes'),
-            ),
-          ],
-        );
-      },
-    );
-    return result ?? false;
+  Future<bool> _confirmAddAsFriend(String displayName) async {
+    return _confirmAddAsFriendDialog(context, displayName);
   }
 
   Future<void> _showFriendRequestSent(BuildContext context, String displayName) async {
@@ -1902,12 +1915,7 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
                       child: FilledButton.tonalIcon(
                         onPressed: () async {
                           final confirmed = await _confirmAddAsFriend(
-                            context,
-                            widget.lender.displayName.isNotEmpty
-                                ? widget.lender.displayName
-                                : widget.lender.username.isNotEmpty
-                                    ? '@${widget.lender.username}'
-                                    : 'this user',
+                            _lenderDisplayName(widget.lender),
                           );
                           if (!confirmed) {
                             return;
@@ -1920,11 +1928,7 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
                             if (context.mounted) {
                               await _showFriendRequestSent(
                                 context,
-                                widget.lender.displayName.isNotEmpty
-                                    ? widget.lender.displayName
-                                    : widget.lender.username.isNotEmpty
-                                        ? '@${widget.lender.username}'
-                                        : 'this user',
+                                _lenderDisplayName(widget.lender),
                               );
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text(message)),

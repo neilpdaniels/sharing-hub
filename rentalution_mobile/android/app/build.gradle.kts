@@ -34,9 +34,11 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            manifestPlaceholders["appName"] = "Rentalution Dev"
         }
         create("prod") {
             dimension = "environment"
+            manifestPlaceholders["appName"] = "rentalution"
         }
     }
 

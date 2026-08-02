@@ -7,6 +7,20 @@ String _asString(dynamic value) {
   return value.toString();
 }
 
+String _plainTextDescription(dynamic value) {
+  final text = _asString(value);
+  if (text.isEmpty) {
+    return '';
+  }
+
+  return text
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ' ')
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'&nbsp;', caseSensitive: false), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
 class CategoryAttributeDefinition {
   CategoryAttributeDefinition({
     required this.order,
@@ -98,6 +112,7 @@ class CategorySummary {
     required this.parentSlug,
     required this.description,
     required this.imageUrl,
+    required this.thumbnailUrl,
     required this.attributeDefinitions,
   });
 
@@ -107,6 +122,7 @@ class CategorySummary {
   final String parentSlug;
   final String description;
   final String imageUrl;
+  final String thumbnailUrl;
   final List<CategoryAttributeDefinition> attributeDefinitions;
 
   factory CategorySummary.fromJson(Map<String, dynamic> json) {
@@ -115,8 +131,9 @@ class CategorySummary {
       title: _asString(json['title']),
       slug: _asString(json['slug']),
       parentSlug: _asString(json['parent_slug']),
-      description: _asString(json['description']),
+      description: _plainTextDescription(json['description']),
       imageUrl: _asString(json['image_url']),
+      thumbnailUrl: _asString(json['thumbnail_url']),
       attributeDefinitions:
           (json['attribute_definitions'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
@@ -137,6 +154,7 @@ class ProductSummary {
     required this.categoryTitle,
     required this.categoryDescription,
     required String? imageUrl,
+    required String? thumbnailUrl,
     required this.tags,
     required this.attributeOneValue,
     required this.attributeTwoValue,
@@ -148,7 +166,8 @@ class ProductSummary {
     required this.riskRating,
     required this.nearestDistanceKm,
     required this.activeOrderCount,
-  }) : _imageUrl = imageUrl;
+  }) : _imageUrl = imageUrl,
+       _thumbnailUrl = thumbnailUrl;
 
   final int id;
   final String name;
@@ -159,7 +178,9 @@ class ProductSummary {
   final String categoryTitle;
   final String categoryDescription;
   final String? _imageUrl;
+  final String? _thumbnailUrl;
   String get imageUrl => _imageUrl ?? '';
+  String get thumbnailUrl => _thumbnailUrl ?? '';
   final List<String> tags;
   final String attributeOneValue;
   final String attributeTwoValue;
@@ -178,11 +199,12 @@ class ProductSummary {
       name: _asString(json['name']),
       shortName: _asString(json['short_name']),
       slug: _asString(json['slug']),
-      description: _asString(json['description']),
+      description: _plainTextDescription(json['description']),
       categorySlug: _asString(json['category_slug']),
       categoryTitle: _asString(json['category_title']),
-      categoryDescription: _asString(json['category_description']),
+      categoryDescription: _plainTextDescription(json['category_description']),
       imageUrl: _asString(json['image_url']),
+      thumbnailUrl: _asString(json['thumbnail_url']),
       tags: (json['tags'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList(growable: false),
       attributeOneValue: _asString(json['attribute_one_value']),
       attributeTwoValue: _asString(json['attribute_two_value']),
@@ -216,6 +238,7 @@ class ProductDetail extends ProductSummary {
     required super.categoryTitle,
     required super.categoryDescription,
     required super.imageUrl,
+    required super.thumbnailUrl,
     required super.tags,
     required super.attributeOneValue,
     required super.attributeTwoValue,
@@ -238,11 +261,12 @@ class ProductDetail extends ProductSummary {
       name: _asString(json['name']),
       shortName: _asString(json['short_name']),
       slug: _asString(json['slug']),
-      description: _asString(json['description']),
+      description: _plainTextDescription(json['description']),
       categorySlug: _asString(json['category_slug']),
       categoryTitle: _asString(json['category_title']),
-      categoryDescription: _asString(json['category_description']),
+      categoryDescription: _plainTextDescription(json['category_description']),
       imageUrl: _asString(json['image_url']),
+      thumbnailUrl: _asString(json['thumbnail_url']),
       tags: (json['tags'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList(growable: false),
       attributeOneValue: _asString(json['attribute_one_value']),
       attributeTwoValue: _asString(json['attribute_two_value']),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/order_models.dart';
 import '../theme.dart';
@@ -64,8 +65,10 @@ class FavouritesScreen extends StatelessWidget {
   }
 
   Widget _orderCard(BuildContext context, OrderSummary order) {
-    final thumbUrl = order.listingImageUrl.isNotEmpty
-        ? order.listingImageUrl
+    final thumbUrl = order.listingThumbnailUrl.isNotEmpty
+        ? order.listingThumbnailUrl
+        : order.listingImageUrl.isNotEmpty
+            ? order.listingImageUrl
         : (order.listingImageUrls.isNotEmpty ? order.listingImageUrls.first : '');
 
     return Card(
@@ -80,12 +83,21 @@ class FavouritesScreen extends StatelessWidget {
                   color: const Color(0x11000000),
                   child: const Icon(Icons.inventory_2_outlined),
                 )
-              : Image.network(
-                  thumbUrl,
+              : CachedNetworkImage(
+                  imageUrl: thumbUrl,
                   width: 60,
                   height: 60,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
+                  memCacheWidth: 120,
+                  memCacheHeight: 120,
+                  maxWidthDiskCache: 240,
+                  maxHeightDiskCache: 240,
+                  imageBuilder: (context, imageProvider) => Image(
+                    image: imageProvider,
+                    width: 60,
+                    height: 60,
+                    fit: BoxFit.cover,
+                  ),
+                  errorWidget: (context, error, stackTrace) => Container(
                     width: 60,
                     height: 60,
                     color: const Color(0x11000000),

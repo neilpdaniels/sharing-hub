@@ -3,9 +3,9 @@ import os
 
 DEBUG = False
 
-ADMINS = {
-    ('Neil D', 'neil@joandneil.co.uk'),
-}
+ADMINS = (
+    ('Rentalution Admin', 'admin@rentalution.co.uk'),
+)
 
 INSTALLED_APPS += ("djcelery_email",)
 
@@ -37,10 +37,10 @@ EMAIL_BACKEND = 'djcelery_email.backends.CeleryEmailBackend'
 EMAIL_HOST = 'smtp.zoho.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'application@sharing-hub.com'
-EMAIL_HOST_PASSWORD = os.environ.get('APP_EMAIL_PASSWORD','')
-DEFAULT_FROM_EMAIL = 'application@sharing-hub.com'
-SERVER_EMAIL = 'application@sharing-hub.com'
+EMAIL_HOST_USER = 'application@rentalution.co.uk'
+EMAIL_HOST_PASSWORD = os.environ.get('APP_EMAIL_PASSWORD', '')
+DEFAULT_FROM_EMAIL = 'application@rentalution.co.uk'
+SERVER_EMAIL = 'admin@rentalution.co.uk'
 
 SHARING_HUB_DEFAULT_ADMIN_USER = 'wastaco_admin'
 

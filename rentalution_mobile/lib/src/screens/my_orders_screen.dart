@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order_models.dart';
@@ -201,8 +202,10 @@ class MyOrdersScreen extends StatelessWidget {
   }
 
   Widget _orderCard(BuildContext context, OrderSummary order) {
-    final thumbUrl = order.listingImageUrl.isNotEmpty
-        ? order.listingImageUrl
+    final thumbUrl = order.listingThumbnailUrl.isNotEmpty
+        ? order.listingThumbnailUrl
+        : order.listingImageUrl.isNotEmpty
+            ? order.listingImageUrl
         : (order.listingImageUrls.isNotEmpty
               ? order.listingImageUrls.first
               : '');
@@ -225,12 +228,21 @@ class MyOrdersScreen extends StatelessWidget {
                           color: const Color(0x11000000),
                           child: const Icon(Icons.inventory_2_outlined),
                         )
-                      : Image.network(
-                          thumbUrl,
+                      : CachedNetworkImage(
+                          imageUrl: thumbUrl,
                           width: 72,
                           height: 72,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
+                          memCacheWidth: 144,
+                          memCacheHeight: 144,
+                          maxWidthDiskCache: 288,
+                          maxHeightDiskCache: 288,
+                          imageBuilder: (context, imageProvider) => Image(
+                            image: imageProvider,
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                          ),
+                          errorWidget: (context, error, stackTrace) =>
                               Container(
                                 width: 72,
                                 height: 72,

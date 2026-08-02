@@ -6,6 +6,7 @@ import re
 from django.conf import settings
 from django.contrib.auth.forms import PasswordChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db.models import BooleanField, Q, Value
 from django.urls import reverse
 from django.utils import timezone
@@ -74,6 +75,35 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+CATALOG_CACHE_VERSION_KEY = 'mobile_api:catalog_cache_version'
+CATALOG_CACHE_VERSION_DEFAULT = '1'
+CATALOG_CACHE_TIMEOUT_SECONDS = 60 * 30
+
+
+def _catalog_cache_version():
+    return cache.get(CATALOG_CACHE_VERSION_KEY, CATALOG_CACHE_VERSION_DEFAULT)
+
+
+def _bump_catalog_cache_version():
+    current = int(cache.get(CATALOG_CACHE_VERSION_KEY, CATALOG_CACHE_VERSION_DEFAULT))
+    cache.set(CATALOG_CACHE_VERSION_KEY, str(current + 1), None)
+
+
+def _catalog_cache_key(prefix, params=None):
+    parts = [prefix, _catalog_cache_version()]
+    if params:
+        for key in sorted(params):
+            parts.append(f'{key}={params[key]}')
+    return ':'.join(parts)
+
+
+def _cache_list_payload(cache_key, builder):
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    payload = builder()
+    cache.set(cache_key, payload, CATALOG_CACHE_TIMEOUT_SECONDS)
+    return payload
 
 
 def _generate_txn_pin(length=6):
@@ -1263,6 +1293,22 @@ class CategoryListView(generics.ListAPIView):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        cache_key = _catalog_cache_key(
+            'categories',
+            {
+                'parent_slug': (request.GET.get('parent_slug') or '').strip(),
+                'include_top': (request.GET.get('include_top') or '').strip().lower(),
+            },
+        )
+
+        def build_payload():
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return serializer.data
+
+        return Response(_cache_list_payload(cache_key, build_payload))
+
 
 class CategoryProductsView(generics.ListAPIView):
     permission_classes = (AllowAny,)
@@ -1331,7 +1377,7 @@ class CategoryProductsView(generics.ListAPIView):
                     if nearest_distance is None or distance < nearest_distance:
                         nearest_distance = distance
 
-            if max_distance_km is not None:
+            if max_distance_km is not None and active_orders:
                 if nearest_distance is None or nearest_distance > max_distance_km:
                     continue
 
@@ -1373,6 +1419,30 @@ class CategoryProductsView(generics.ListAPIView):
                 products.sort(key=lambda p: p.name.lower())
 
         return products
+
+    def list(self, request, *args, **kwargs):
+        cache_key = _catalog_cache_key(
+            'category-products',
+            {
+                'category_slug': self.kwargs['category_slug'],
+                'location': (request.GET.get('location') or '').strip(),
+                'distance': (request.GET.get('distance') or '').strip().lower(),
+                'sort_by': (request.GET.get('sort_by') or '').strip().lower(),
+                'include_zero_listings': (request.GET.get('include_zero_listings') or '').strip().lower(),
+                **{
+                    key: (request.GET.get(key) or '').strip()
+                    for key in request.GET.keys()
+                    if key.startswith('attribute_')
+                },
+            },
+        )
+
+        def build_payload():
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return serializer.data
+
+        return Response(_cache_list_payload(cache_key, build_payload))
 
 
 class ProductDetailView(generics.RetrieveAPIView):
@@ -1549,7 +1619,7 @@ class SearchProductsView(generics.ListAPIView):
                     if nearest_distance is None or distance < nearest_distance:
                         nearest_distance = distance
 
-            if origin_lat is not None and origin_lon is not None and max_distance_km is not None:
+            if origin_lat is not None and origin_lon is not None and max_distance_km is not None and active_orders:
                 if nearest_distance is None or nearest_distance > max_distance_km:
                     continue
 
@@ -1591,6 +1661,31 @@ class SearchProductsView(generics.ListAPIView):
             matched.sort(key=lambda p: p.name.lower())
 
         return matched
+
+    def list(self, request, *args, **kwargs):
+        cache_key = _catalog_cache_key(
+            'search-products',
+            {
+                'q': (request.GET.get('q') or '').strip(),
+                'category': (request.GET.get('category') or '').strip(),
+                'location': (request.GET.get('location') or '').strip(),
+                'distance': (request.GET.get('distance') or '').strip().lower(),
+                'sort_by': (request.GET.get('sort_by') or '').strip().lower(),
+                'include_zero_listings': (request.GET.get('include_zero_listings') or '').strip().lower(),
+                **{
+                    key: (request.GET.get(key) or '').strip()
+                    for key in request.GET.keys()
+                    if key.startswith('attribute_')
+                },
+            },
+        )
+
+        def build_payload():
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return serializer.data
+
+        return Response(_cache_list_payload(cache_key, build_payload))
 
 
 class TransactionListView(generics.ListAPIView):

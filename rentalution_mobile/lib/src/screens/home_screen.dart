@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/auth_models.dart';
 import '../models/catalog_models.dart';
@@ -132,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _searchSortBy = 'nearest';
   Map<String, String> _browseAttributeFilters = const {};
   Map<String, String> _searchAttributeFilters = const {};
-  final bool _includeZeroListings = false;
+  bool _includeZeroListings = true;
 
   bool _categoriesLoading = false;
   bool _browseLoading = false;
@@ -299,17 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ? null
               : () async {
                   final nextTrail = _categoryTrail.sublist(0, i + 1);
-                  final categories = await widget.catalogRepository
-                      .fetchCategories(parentSlug: category.slug);
-                  if (!mounted) {
-                    return;
-                  }
-                  setState(() {
-                    _categoryTrail = nextTrail;
-                    _categories = categories;
-                    _selectedCategorySlug = null;
-                    _browseProducts = const [];
-                  });
+                  await _showBrowseCategory(category, trail: nextTrail);
                 },
           style: TextButton.styleFrom(
             padding: EdgeInsets.zero,
@@ -619,17 +610,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return sorted;
   }
 
-  List<String> _productAttributeSummaries(ProductSummary product) {
-    return product.attributes
-        .where(
-          (attribute) =>
-              attribute.name.trim().isNotEmpty && attribute.value.trim().isNotEmpty,
-        )
-        .take(3)
-        .map((attribute) => '${attribute.name}: ${attribute.value}')
-        .toList(growable: false);
-  }
-
   String _distanceLabel(int? value) {
     if (value == null) {
       return 'Any';
@@ -859,6 +839,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ],
+            const SizedBox(height: 4),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Hide products with no listings'),
+              subtitle: const Text(
+                'Unchecked by default, so products with no listings are shown.',
+              ),
+              value: !_includeZeroListings,
+              onChanged: (value) {
+                setState(() {
+                  _includeZeroListings = !value;
+                });
+              },
+            ),
             const SizedBox(height: 4),
             Text('Distance', style: Theme.of(context).textTheme.titleSmall),
             if (activeLocationController.text.trim().isEmpty)
@@ -1168,14 +1162,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openBrowseCategory(CategorySummary category) async {
-    final directChildren = await widget.catalogRepository.fetchCategories(
-      parentSlug: category.slug,
+    await _showBrowseCategory(
+      category,
+      trail: [..._categoryTrail, category],
     );
-    if (!mounted) {
-      return;
-    }
+  }
 
-    final products = await widget.catalogRepository.fetchCategoryProducts(
+  Future<void> _loadBrowseLeafProducts({
+    required CategorySummary category,
+    required List<CategorySummary> trail,
+    List<CategorySummary> directChildren = const [],
+  }) async {
+    final productsFuture = widget.catalogRepository.fetchCategoryProducts(
       categorySlug: category.slug,
       location: _effectiveBrowseLocation(),
       distanceKm: _selectedDistance,
@@ -1183,54 +1181,103 @@ class _HomeScreenState extends State<HomeScreen> {
       attributeFilters: _browseAttributeFilters,
       includeZeroListings: _includeZeroListings,
     );
+    final products = await productsFuture;
     if (!mounted) {
       return;
     }
 
+    final sortedProducts = _applyLocalProductSort(products, _browseSortBy);
     setState(() {
-      _categoryTrail = [..._categoryTrail, category];
+      _categoryTrail = trail;
       _categories = directChildren;
       _selectedCategorySlug = category.slug;
-      _browseProducts = _applyLocalProductSort(products, _browseSortBy);
+      _browseProducts = sortedProducts;
     });
+
+    unawaited(_prefetchCategoryImages([
+      category.thumbnailUrl.isNotEmpty ? category.thumbnailUrl : category.imageUrl,
+      ...directChildren.map((child) => child.thumbnailUrl.isNotEmpty ? child.thumbnailUrl : child.imageUrl),
+      ...sortedProducts.map((product) => product.thumbnailUrl.isNotEmpty ? product.thumbnailUrl : product.imageUrl),
+    ]));
+  }
+
+  Future<void> _showBrowseCategory(
+    CategorySummary category, {
+    required List<CategorySummary> trail,
+  }) async {
+    final directChildrenFuture = widget.catalogRepository.fetchCategories(
+      parentSlug: category.slug,
+    );
+    final directChildren = await directChildrenFuture;
+    if (!mounted) {
+      return;
+    }
+
+    if (directChildren.isNotEmpty) {
+      setState(() {
+        _categoryTrail = trail;
+        _categories = directChildren;
+        _selectedCategorySlug = category.slug;
+        _browseProducts = const [];
+      });
+
+      unawaited(_prefetchCategoryImages([
+        category.thumbnailUrl.isNotEmpty ? category.thumbnailUrl : category.imageUrl,
+        ...directChildren.map((child) => child.thumbnailUrl.isNotEmpty ? child.thumbnailUrl : child.imageUrl),
+      ]));
+      return;
+    }
+
+    await _loadBrowseLeafProducts(
+      category: category,
+      trail: trail,
+    );
   }
 
   Future<void> _goBackBrowseCategory() async {
-    if (_selectedCategorySlug != null) {
-      setState(() {
-        _selectedCategorySlug = null;
-        _browseProducts = const [];
-        if (_categoryTrail.isNotEmpty) {
-          _categoryTrail = _categoryTrail.sublist(0, _categoryTrail.length - 1);
-        }
-      });
-      return;
-    }
     if (_categoryTrail.isEmpty) {
       return;
     }
 
     final nextTrail = List<CategorySummary>.from(_categoryTrail)..removeLast();
     final parent = nextTrail.isEmpty ? null : nextTrail.last;
-    List<CategorySummary> categories;
-    if (parent == null) {
-      categories = await widget.catalogRepository.fetchCategories(parentSlug: 'top');
-    } else {
-      final directChildren = await widget.catalogRepository.fetchCategories(
-        parentSlug: parent.slug,
-      );
-      categories = directChildren.isNotEmpty
-          ? directChildren
-          : _descendantCategories(parent.slug);
-    }
+    final categoriesFuture = widget.catalogRepository.fetchCategories(
+      parentSlug: parent == null ? 'top' : parent.slug,
+    );
+    final categories = await categoriesFuture;
     if (!mounted) {
       return;
     }
-    setState(() {
-      _categoryTrail = nextTrail;
-      _categories = categories;
-      _browseProducts = const [];
-    });
+
+    if (categories.isNotEmpty) {
+      setState(() {
+        _categoryTrail = nextTrail;
+        _categories = categories;
+        _selectedCategorySlug = parent?.slug;
+        _browseProducts = const [];
+      });
+
+      unawaited(_prefetchCategoryImages([
+        if (parent != null) (parent.thumbnailUrl.isNotEmpty ? parent.thumbnailUrl : parent.imageUrl),
+        ...categories.map((child) => child.thumbnailUrl.isNotEmpty ? child.thumbnailUrl : child.imageUrl),
+      ]));
+      return;
+    }
+
+    if (parent == null) {
+      setState(() {
+        _categoryTrail = nextTrail;
+        _categories = const [];
+        _selectedCategorySlug = null;
+        _browseProducts = const [];
+      });
+      return;
+    }
+
+    await _loadBrowseLeafProducts(
+      category: parent,
+      trail: nextTrail,
+    );
   }
 
   Future<void> _loadOrders() async {
@@ -1402,6 +1449,7 @@ class _HomeScreenState extends State<HomeScreen> {
         distanceKm: _selectedDistance,
         sortBy: _backendSortValue(_searchSortBy),
         attributeFilters: _searchAttributeFilters,
+        includeZeroListings: _includeZeroListings,
       );
       final sortedResults = _applyLocalProductSort(results, _searchSortBy);
       if (!mounted) {
@@ -1447,7 +1495,8 @@ class _HomeScreenState extends State<HomeScreen> {
           categorySlug: _selectedCategorySlug,
           distanceKm: _selectedDistance,
           sortBy: 'name',
-          attributeFilters: _searchAttributeFilters,
+        attributeFilters: _searchAttributeFilters,
+        includeZeroListings: _includeZeroListings,
         );
         if (!mounted || requestId != _searchSuggestionRequestId) {
           return;
@@ -1850,11 +1899,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return false;
     }
 
-    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null) {
-      setState(() {
-        _selectedCategorySlug = null;
-        _browseProducts = const [];
-      });
+    if (_selectedIndex == _browseTabIndex && _categoryTrail.isNotEmpty) {
+      await _goBackBrowseCategory();
       return false;
     }
 
@@ -1891,11 +1937,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    if (_selectedIndex == _browseTabIndex && _selectedCategorySlug != null) {
-      setState(() {
-        _selectedCategorySlug = null;
-        _browseProducts = const [];
-      });
+    if (_selectedIndex == _browseTabIndex && _categoryTrail.isNotEmpty) {
+      unawaited(_goBackBrowseCategory());
       return;
     }
 
@@ -2479,7 +2522,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(child: _categoryThumb(cat.imageUrl)),
+                      Expanded(child: _categoryThumb(cat.thumbnailUrl.isNotEmpty ? cat.thumbnailUrl : cat.imageUrl)),
                       const SizedBox(height: 8),
                       Text(
                         cat.title,
@@ -2604,20 +2647,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         if (selectedCat != null) const SliverToBoxAdapter(child: SizedBox(height: 12)),
-        if (_currentBrowseCategories().isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              child: _sectionTitle('Categories'),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: _buildCategoryCardsWrap(_currentBrowseCategories()),
-            ),
-          ),
-        ],
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -2673,25 +2702,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        if (_currentBrowseCategories().isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: _sectionTitle('Categories'),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: _buildCategoryCardsWrap(_currentBrowseCategories()),
-            ),
-          ),
-        ],
         if (_browseLoading)
           const SliverFillRemaining(
             child: Center(child: CircularProgressIndicator()),
           )
-        else if (_browseProducts.isEmpty)
+        else if (_browseProducts.isEmpty && _currentBrowseCategories().isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
@@ -2703,43 +2718,61 @@ class _HomeScreenState extends State<HomeScreen> {
         else
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            sliver: SliverList(
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.9,
+              ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final product = _browseProducts[index];
-                  final attributeSummary = _productAttributeSummaries(product);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Card(
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        leading: _productThumb(product.imageUrl),
-                        title: Text(product.name),
-                        subtitle: Column(
+                  final productImage =
+                      product.thumbnailUrl.isNotEmpty ? product.thumbnailUrl : product.imageUrl;
+                  return Card(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _openProduct(product.slug),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            SizedBox(
+                              height: 88,
+                              child: Center(
+                                child: _productThumb(
+                                  productImage,
+                                  width: 88,
+                                  height: 88,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              product.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
                             Text(
                               product.nearestDistanceKm != null
-                                  ? '${product.activeOrderCount} available to rent | ${product.nearestDistanceKm!.toStringAsFixed(1)} km away'
-                                  : '${product.activeOrderCount} available to rent',
+                                  ? '${product.activeOrderCount} listed | ${product.nearestDistanceKm!.toStringAsFixed(1)} km'
+                                  : '${product.activeOrderCount} listed',
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontSize: 11,
+                                  ),
                             ),
-                            if (attributeSummary.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: attributeSummary
-                                    .map(_searchMetaChip)
-                                    .toList(growable: false),
-                              ),
-                            ],
                           ],
                         ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _openProduct(product.slug),
                       ),
                     ),
                   );
@@ -2748,6 +2781,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+        if (_currentBrowseCategories().isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _buildCategoryCardsWrap(_currentBrowseCategories()),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2843,7 +2884,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         leading: SizedBox(
                           width: 44,
                           height: 44,
-                          child: _categoryThumb(category.imageUrl),
+                          child: _categoryThumb(category.thumbnailUrl.isNotEmpty ? category.thumbnailUrl : category.imageUrl),
                         ),
                         title: Text(
                           category.title,
@@ -2910,7 +2951,6 @@ class _HomeScreenState extends State<HomeScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final product = _searchResults[index];
-                  final attributeSummary = _productAttributeSummaries(product);
                   final details = <String>[
                     product.categoryTitle,
                     '${product.activeOrderCount} active listing${product.activeOrderCount == 1 ? '' : 's'}',
@@ -2931,7 +2971,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _productThumb(product.imageUrl),
+                              _productThumb(product.thumbnailUrl.isNotEmpty ? product.thumbnailUrl : product.imageUrl),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -2958,18 +2998,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 6,
-                                      runSpacing: 6,
-                                      children: [
-                                        ...product.tags.take(3),
-                                        ...attributeSummary,
-                                      ]
-                                          .take(4)
-                                          .map((tag) => _searchMetaChip(tag))
-                                          .toList(growable: false),
-                                    ),
+                                    if (product.tags.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: product.tags
+                                            .take(3)
+                                            .map(_searchMetaChip)
+                                            .toList(growable: false),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -3023,10 +3062,25 @@ class _HomeScreenState extends State<HomeScreen> {
       borderRadius: BorderRadius.circular(10),
       child: Container(
         color: isDarkMode ? Colors.black : Colors.grey[200],
-        child: Image.network(
-          imageUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
+        child: CachedNetworkImage(
+          imageUrl: imageUrl,
+          memCacheWidth: 240,
+          memCacheHeight: 240,
+          maxWidthDiskCache: 480,
+          maxHeightDiskCache: 480,
+          imageBuilder: (context, imageProvider) => Image(
+            image: imageProvider,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.low,
+          ),
+          placeholder: (context, url) => const Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          errorWidget: (context, error, stackTrace) {
             return const Icon(
               Icons.category_outlined,
               size: 48,
@@ -3035,6 +3089,23 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
+    );
+  }
+
+  Future<void> _prefetchCategoryImages(Iterable<String> imageUrls) async {
+    final urls = imageUrls.where((url) => url.trim().isNotEmpty).toList(growable: false);
+    if (urls.isEmpty) {
+      return;
+    }
+
+    await Future.wait(
+      urls.map((imageUrl) async {
+        try {
+          await precacheImage(NetworkImage(imageUrl), context);
+        } catch (_) {
+          // Ignore cache failures; the UI fallbacks still apply.
+        }
+      }),
     );
   }
 
@@ -3061,11 +3132,31 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return Image.network(
-      imageUrl,
-      fit: BoxFit.cover,
-      opacity: const AlwaysStoppedAnimation(0.88),
-      errorBuilder: (context, error, stackTrace) {
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      memCacheWidth: 1400,
+      memCacheHeight: 800,
+      maxWidthDiskCache: 1600,
+      maxHeightDiskCache: 1200,
+      imageBuilder: (context, imageProvider) => Opacity(
+        opacity: 0.88,
+        child: Image(
+          image: imageProvider,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+        ),
+      ),
+      placeholder: (context, url) => const ColoredBox(
+        color: Color(0xFFE8EFEA),
+        child: Center(
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      errorWidget: (context, error, stackTrace) {
         return Container(
           color: const Color(0xFFE8EFEA),
           alignment: Alignment.center,
@@ -3079,11 +3170,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _productThumb(String imageUrl) {
+  Widget _productThumb(
+    String imageUrl, {
+    double width = 52,
+    double height = 52,
+  }) {
     if (imageUrl.trim().isEmpty) {
       return Container(
-        width: 52,
-        height: 52,
+        width: width,
+        height: height,
         decoration: BoxDecoration(
           color: const Color(0xFFF0F3F4),
           borderRadius: BorderRadius.circular(8),
@@ -3094,12 +3189,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        imageUrl,
-        width: 52,
-        height: 52,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        width: width,
+        height: height,
+        memCacheWidth: (width * 2).round(),
+        memCacheHeight: (height * 2).round(),
+        maxWidthDiskCache: (width * 4).round(),
+        maxHeightDiskCache: (height * 4).round(),
+        imageBuilder: (context, imageProvider) => Image(
+          image: imageProvider,
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.low,
+        ),
+        placeholder: (context, url) => Container(
+          width: width,
+          height: height,
+          color: const Color(0xFFF0F3F4),
+          child: const Center(
+            child: SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        errorWidget: (context, error, stackTrace) {
           return const SizedBox(
             width: 52,
             height: 52,
@@ -3129,31 +3246,6 @@ class _HomeScreenState extends State<HomeScreen> {
             initialProductName: product.name,
           ),
           onRequireLogin: _openLoginTabFromDetail,
-        ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            color:
-                Theme.of(context).appBarTheme.backgroundColor ??
-                Theme.of(context).scaffoldBackgroundColor,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: onClose,
-                    ),
-                    const Spacer(),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ),
       ],
     );

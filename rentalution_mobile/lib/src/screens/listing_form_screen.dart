@@ -1401,6 +1401,9 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                           width: 90,
                           height: 90,
                           fit: BoxFit.cover,
+                          filterQuality: FilterQuality.low,
+                          cacheWidth: 180,
+                          cacheHeight: 180,
                         ),
                       ),
                       Positioned(

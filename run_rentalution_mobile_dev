@@ -9,9 +9,37 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
 fi
 
+detect_lan_ip() {
+  local ip
+
+  if command -v ip >/dev/null 2>&1; then
+    ip="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+    if [[ -n "$ip" ]]; then
+      printf '%s\n' "$ip"
+      return 0
+    fi
+  fi
+
+  if command -v hostname >/dev/null 2>&1; then
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    if [[ -n "$ip" ]]; then
+      printf '%s\n' "$ip"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 cd "$ROOT_DIR/rentalution_mobile"
 
-API_BASE_URL="${API_BASE_URL:-http://localhost:8000/api/v1}"
+if [[ -z "${API_BASE_URL:-}" ]]; then
+  if lan_ip="$(detect_lan_ip)"; then
+    API_BASE_URL="http://${lan_ip}:8000/api/v1"
+  else
+    API_BASE_URL="http://127.0.0.1:8000/api/v1"
+  fi
+fi
 APP_NAME="${APP_NAME:-Rentalution Dev}"
 STRIPE_CONNECT_PUBLIC_KEY="${STRIPE_CONNECT_PUBLIC_KEY:-}"
 
@@ -19,6 +47,8 @@ if [[ -z "$STRIPE_CONNECT_PUBLIC_KEY" ]]; then
   echo "STRIPE_CONNECT_PUBLIC_KEY is not set in your shell"
   exit 1
 fi
+
+echo "Using API_BASE_URL=$API_BASE_URL"
 
 flutter run \
   --flavor dev \

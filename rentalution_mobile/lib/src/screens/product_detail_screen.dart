@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -213,13 +214,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       key: _scaffoldKey,
       appBar: AppBar(
         title: Text(appBarTitle),
-        leading: Navigator.of(context).canPop()
-            ? IconButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.arrow_back),
-                tooltip: 'Back',
-              )
-            : null,
+        leading: null,
         actions: [
           IconButton(
             onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
@@ -249,26 +244,54 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            product.categoryTitle,
-            style: Theme.of(context).textTheme.bodyMedium,
+          Row(
+            children: [
+              IconButton(
+                onPressed: Navigator.of(context).maybePop,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  product.categoryTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
+                      ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: product.imageUrl.isNotEmpty
-                ? Image.network(
-                    product.imageUrl,
-                    height: 220,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
+                ? CachedNetworkImage(
+                    imageUrl: product.imageUrl,
+                    height: 250,
+                    memCacheWidth: 1600,
+                    memCacheHeight: 1600,
+                    maxWidthDiskCache: 1800,
+                    maxHeightDiskCache: 1800,
+                    imageBuilder: (context, imageProvider) => Image(
+                      image: imageProvider,
+                      height: 250,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                    errorWidget: (context, error, stackTrace) =>
                         _productImagePlaceholder(),
                   )
                 : _productImagePlaceholder(),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           _productMetaCard(product),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           if (_isAuthenticated && widget.onOpenListMyItem != null) ...[
             SizedBox(
               width: double.infinity,
@@ -756,12 +779,22 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        imageUrl,
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
         width: 52,
         height: 52,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
+        memCacheWidth: 104,
+        memCacheHeight: 104,
+        maxWidthDiskCache: 208,
+        maxHeightDiskCache: 208,
+        imageBuilder: (context, imageProvider) => Image(
+          image: imageProvider,
+          width: 52,
+          height: 52,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.low,
+        ),
+        errorWidget: (context, error, stackTrace) {
           return const SizedBox(
             width: 52,
             height: 52,
@@ -774,7 +807,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _productImagePlaceholder() {
     return Container(
-      height: 220,
+      height: 250,
       color: const Color(0xFFF0F3F4),
       alignment: Alignment.center,
       child: Column(
@@ -860,10 +893,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             borderRadius: BorderRadius.circular(12),
                             child: AspectRatio(
                               aspectRatio: 1.2,
-                              child: Image.network(
-                                url,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
+                              child: CachedNetworkImage(
+                                imageUrl: url,
+                                memCacheWidth: 1200,
+                                memCacheHeight: 1000,
+                                maxWidthDiskCache: 1600,
+                                maxHeightDiskCache: 1400,
+                                imageBuilder: (context, imageProvider) =>
+                                    Image(
+                                  image: imageProvider,
+                                  fit: BoxFit.cover,
+                                  filterQuality: FilterQuality.medium,
+                                ),
+                                errorWidget: (context, error, stackTrace) =>
                                     const ColoredBox(
                                       color: Color(0x11000000),
                                       child: Center(
@@ -2009,8 +2051,8 @@ class _LenderListingsScreen extends StatelessWidget {
   Widget _listingThumb(OrderSummary order) {
     if (order.listingImageUrl.trim().isEmpty) {
       return Container(
-        width: 72,
-        height: 72,
+        width: 68,
+        height: 68,
         decoration: BoxDecoration(
           color: const Color(0xFFF0F3F4),
           borderRadius: BorderRadius.circular(10),
@@ -2023,13 +2065,13 @@ class _LenderListingsScreen extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       child: Image.network(
         order.listingImageUrl,
-        width: 72,
-        height: 72,
+        width: 68,
+        height: 68,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
           return Container(
-            width: 72,
-            height: 72,
+            width: 68,
+            height: 68,
             decoration: BoxDecoration(
               color: const Color(0xFFF0F3F4),
               borderRadius: BorderRadius.circular(10),

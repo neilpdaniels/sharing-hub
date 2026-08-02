@@ -9,6 +9,7 @@ class OrderSummary {
     required this.lender,
     required this.listingImageUrl,
     required this.listingImageUrls,
+    required this.listingThumbnailUrl,
     required this.direction,
     required this.status,
     required this.price,
@@ -59,6 +60,7 @@ class OrderSummary {
   final OrderLenderSummary lender;
   final String listingImageUrl;
   final List<String> listingImageUrls;
+  final String listingThumbnailUrl;
   final String direction;
   final String status;
   final double price;
@@ -122,6 +124,7 @@ class OrderSummary {
           (json['listing_image_urls'] as List<dynamic>? ?? const [])
               .map((value) => value.toString())
               .toList(growable: false),
+      listingThumbnailUrl: json['listing_thumbnail_url'] as String? ?? '',
       direction: json['direction'] as String? ?? '',
       status: json['status'] as String? ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0,

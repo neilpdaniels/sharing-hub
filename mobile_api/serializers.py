@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
+from sorl.thumbnail import get_thumbnail
 
 from account.models import PaymentMethod, Profile
 from common.models import Category, FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, Product
@@ -612,6 +613,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     lender = serializers.SerializerMethodField()
     listing_image_url = serializers.SerializerMethodField()
     listing_image_urls = serializers.SerializerMethodField()
+    listing_thumbnail_url = serializers.SerializerMethodField()
     blocked_dates = serializers.SerializerMethodField()
     handover_unavailable_dates = serializers.SerializerMethodField()
     price_bands = LetPriceBandSerializer(many=True, read_only=True)
@@ -638,6 +640,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'lender',
             'listing_image_url',
             'listing_image_urls',
+            'listing_thumbnail_url',
             'blocked_dates',
             'handover_unavailable_dates',
             'direction',
@@ -688,6 +691,10 @@ class OrderSummarySerializer(serializers.ModelSerializer):
         urls = self.get_listing_image_urls(obj)
         return urls[0] if urls else ''
 
+    def get_listing_thumbnail_url(self, obj):
+        urls = self.get_listing_thumbnail_urls(obj)
+        return urls[0] if urls else ''
+
     def get_lender(self, obj):
         lender = obj.user
         request = self.context.get('request')
@@ -730,6 +737,27 @@ class OrderSummarySerializer(serializers.ModelSerializer):
                 urls.append(image_obj.image.url)
             else:
                 urls.append(request.build_absolute_uri(image_obj.image.url))
+        return urls
+
+    def get_listing_thumbnail_urls(self, obj):
+        request = self.context.get('request')
+        image_objs = obj.images.filter(active=True).order_by('-is_main', '-first_image', '-uploaded_at')[:8]
+        urls = []
+        for image_obj in image_objs:
+            if not image_obj.image:
+                continue
+            try:
+                thumb = get_thumbnail(image_obj.image, '320x320', crop='center', quality=75, format='JPEG')
+            except Exception:
+                if request is None:
+                    urls.append(image_obj.image.url)
+                else:
+                    urls.append(request.build_absolute_uri(image_obj.image.url))
+                continue
+            if request is None:
+                urls.append(thumb.url)
+            else:
+                urls.append(request.build_absolute_uri(thumb.url))
         return urls
 
     def get_blocked_dates(self, obj):
@@ -944,6 +972,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 class CategorySummarySerializer(serializers.ModelSerializer):
     parent_slug = serializers.CharField(source='parent_category.slug', allow_null=True, read_only=True)
     image_url = serializers.SerializerMethodField()
+    thumbnail_url = serializers.SerializerMethodField()
     attribute_definitions = serializers.SerializerMethodField()
 
     class Meta:
@@ -955,6 +984,7 @@ class CategorySummarySerializer(serializers.ModelSerializer):
             'parent_slug',
             'description',
             'image_url',
+            'thumbnail_url',
             'attribute_definitions',
         )
 
@@ -965,6 +995,18 @@ class CategorySummarySerializer(serializers.ModelSerializer):
         if request is None:
             return obj.image.url
         return request.build_absolute_uri(obj.image.url)
+
+    def get_thumbnail_url(self, obj):
+        request = self.context.get('request')
+        if not obj.image:
+            return ''
+        try:
+            thumb = get_thumbnail(obj.image, '320x320', crop='center', quality=75, format='JPEG')
+        except Exception:
+            return self.get_image_url(obj)
+        if request is None:
+            return thumb.url
+        return request.build_absolute_uri(thumb.url)
 
     def get_attribute_definitions(self, obj):
         return [
@@ -980,6 +1022,7 @@ class ProductSummarySerializer(serializers.ModelSerializer):
     category_description = serializers.CharField(source='category_id.description', read_only=True, allow_null=True)
     active_order_count = serializers.IntegerField(read_only=True)
     image_url = serializers.SerializerMethodField()
+    thumbnail_url = serializers.SerializerMethodField()
     tags = serializers.SerializerMethodField()
     attribute_one_value = serializers.CharField(read_only=True, allow_blank=True)
     attribute_two_value = serializers.CharField(read_only=True, allow_blank=True)
@@ -1003,6 +1046,7 @@ class ProductSummarySerializer(serializers.ModelSerializer):
             'category_title',
             'category_description',
             'image_url',
+            'thumbnail_url',
             'tags',
             'attribute_one_value',
             'attribute_two_value',
@@ -1023,6 +1067,18 @@ class ProductSummarySerializer(serializers.ModelSerializer):
                 return obj.image.url
             return request.build_absolute_uri(obj.image.url)
         return ''
+
+    def get_thumbnail_url(self, obj):
+        request = self.context.get('request')
+        if not obj.image:
+            return ''
+        try:
+            thumb = get_thumbnail(obj.image, '360x360', crop='center', quality=75, format='JPEG')
+        except Exception:
+            return self.get_image_url(obj)
+        if request is None:
+            return thumb.url
+        return request.build_absolute_uri(thumb.url)
 
     def get_tags(self, obj):
         return list(obj.tags.values_list('name', flat=True))

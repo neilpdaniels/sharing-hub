@@ -97,6 +97,9 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
   NotificationPreferences _notificationPreferences =
       NotificationPreferences.defaults;
 
+  bool get _showDevBanner =>
+      AppConfig.appName.toLowerCase().contains('dev');
+
   @override
   void initState() {
     super.initState();
@@ -563,6 +566,28 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
       darkTheme: rentalutionDarkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: _buildHome(),
+      builder: (context, child) {
+        if (child == null) {
+          return const SizedBox.shrink();
+        }
+
+        if (!_showDevBanner) {
+          return child;
+        }
+
+        return Banner(
+          message: 'DEV',
+          location: BannerLocation.topStart,
+          color: const Color(0xFFFFD54F),
+          textStyle: const TextStyle(
+            color: Color(0xFF1A1A1A),
+            fontWeight: FontWeight.w800,
+            fontSize: 11,
+            letterSpacing: 0.8,
+          ),
+          child: child,
+        );
+      },
       // TODO: Add Nunito font to pubspec.yaml and use logo in AppBar or login screen
     );
   }

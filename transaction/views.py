@@ -263,6 +263,7 @@ def _save_transaction_evidence(request, txn, *, evidence_stage, video_file_field
     if uploaded_video:
         evidence = TransactionMessageImage(
             txn_message=None,
+            transaction=txn,
             user=request.user,
             video=uploaded_video,
             video_raw=uploaded_video,
@@ -282,6 +283,7 @@ def _save_transaction_evidence(request, txn, *, evidence_stage, video_file_field
     if external_url:
         evidence = TransactionMessageImage(
             txn_message=None,
+            transaction=txn,
             user=request.user,
             first_image=False,
             active=True,
@@ -307,6 +309,9 @@ def _build_transaction_live_state(txn):
 
     signature_parts = [
         str(txn.id),
+        txn.workflow_today().isoformat(),
+        txn.get_workflow_message(),
+        ','.join(txn.get_allowed_actions()),
         txn.transaction_status or '',
         txn.payment_status or '',
         txn.deposit_status or '',
@@ -315,8 +320,8 @@ def _build_transaction_live_state(txn):
         str(message_count),
         str(latest_msg_id),
         latest_msg_ts,
-        txn.checkout_handover_pin or '',
-        txn.return_handover_pin or '',
+        str(bool(txn.checkout_handover_pin)),
+        str(bool(txn.return_handover_pin)),
         str(getattr(txn, 'deposit_proposal_iteration_count', 0) or 0),
     ]
 
@@ -1208,33 +1213,13 @@ def hit_order(request, order_id=None):
             if order.expiry_date <= timezone.now() or order.status != Order.ACTIVE:
                 messages.error(request, 'This listing is no longer available.')
                 return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
-            if order.verified_users_only:
-                renter_profile = getattr(request.user, 'profile', None)
-                if not is_profile_kyc_verified(renter_profile):
-                    messages.error(
-                        request,
-                        'This listing is for verified users only. Complete Stripe identity verification first. '
-                        'That is an identity check, not a payment-card check.',
-                    )
-                    return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
             start_date = order_hit_form.cleaned_data['rental_start_date']
             end_date = order_hit_form.cleaned_data['rental_end_date']
             rental_days = (end_date - start_date).days + 1
             price_per_day = _price_per_day_for_days(rental_days)
 
-            # Validate rental length for high deposits
             product = order.product
-            deposit = getattr(order, 'deposit', 0) or 0  # Get deposit from price band if available
-            
-            if deposit > 100 and rental_days > 5:
-                messages.error(
-                    request, 
-                    f'Rentals with deposits over £100 are limited to 5 days maximum. '
-                    f'Your requested rental is {rental_days} days. Please adjust your dates. '
-                    f'(Deposit will be taken and returned at the end for longer rentals.)'
-                )
-                return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
             txn = Transaction.objects.create(
                 price=price_per_day,
@@ -1361,23 +1346,7 @@ def view_transaction(request, transaction_reference=None):
     card_setup_allowed_statuses = (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED)
 
     def _get_contract_deadline(transaction):
-        """Deadline is min(lender confirmation + 24h, end of rental start day)."""
-        if not transaction.lender_agreed_at:
-            return None
-
-        deadline_24h = transaction.lender_agreed_at + timedelta(hours=24)
-        candidates = [deadline_24h]
-
-        if transaction.rental_start_date:
-            london_tz = ZoneInfo('Europe/London')
-            end_of_day_naive = (
-                datetime.combine(transaction.rental_start_date + timedelta(days=1), dt_time.min)
-                - timedelta(seconds=1)
-            )
-            end_of_day = timezone.make_aware(end_of_day_naive, london_tz)
-            candidates.append(end_of_day)
-
-        return min(candidates)
+        return transaction.get_contract_deadline()
 
     def _can_collect_deposit(transaction):
         if transaction.deposit <= 0:
@@ -1390,7 +1359,7 @@ def view_transaction(request, transaction_reference=None):
             return False
         if not transaction.rental_start_date:
             return False
-        return timezone.now().date() >= transaction.rental_start_date
+        return transaction.workflow_today() >= transaction.rental_start_date
 
     def _transaction_needs_payment_card(transaction):
         return any(
@@ -1456,6 +1425,13 @@ def view_transaction(request, transaction_reference=None):
         if not (is_lender or is_renter):
             raise Http404
         action = request.POST.get('action', '').strip()
+
+        if action in txn.GUARDED_WORKFLOW_ACTIONS and action not in txn.get_allowed_actions_for_user(request.user):
+            if action == 'propose_deposit_return' and (txn.deposit_proposal_iteration_count or 0) >= 5:
+                messages.error(request, 'Maximum deposit proposal iterations reached (5). Raise dispute to continue.')
+            else:
+                messages.error(request, 'This action is not available yet. Please follow the current transaction step.')
+            return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
             txn.prev_transaction_status = txn.transaction_status
@@ -1598,8 +1574,9 @@ Transaction Ref: {txn.transaction_reference}"""
         elif action == 'report_missing_rental' and is_renter and txn.transaction_status in (
             txn.RENTAL_ENQUIRY,
             txn.RENTAL_AGREED,
+            txn.RENTAL_DAY_AWAITING_VERIFICATION,
         ):
-            if not txn.rental_start_date or timezone.now().date() <= txn.rental_start_date:
+            if not txn.rental_start_date or txn.workflow_today() <= txn.rental_start_date:
                 messages.error(request, 'Missing rental can only be reported after the rental start date has passed.')
             elif txn.checkout_handover_verified_at:
                 messages.error(request, 'Rental handover is already verified, so missing rental cannot be reported.')
@@ -1635,7 +1612,7 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.RENTAL_ONGOING,
             txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
         ):
-            if not txn.rental_end_date or timezone.now().date() <= txn.rental_end_date:
+            if not txn.rental_end_date or txn.workflow_today() <= txn.rental_end_date:
                 messages.error(request, 'Missing return can only be reported after the rental return date has passed.')
             else:
                 reason = (request.POST.get('missing_return_reason') or '').strip()
@@ -1668,10 +1645,10 @@ Transaction Ref: {txn.transaction_reference}"""
 
             if txn.deposit <= 0 and txn.price <= 0:
                 messages.info(request, 'No payment method is required for this transaction.')
-            elif int(getattr(txn, 'max_rental_days', 0) or 0) > 5:
+            elif txn.requires_restricted_deposit_card():
                 messages.error(
                     request,
-                    'Long rentals require a Visa or Mastercard credit card for the deposit. Please use the Stripe card flow instead.',
+                    'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. Please use the Stripe card flow instead.',
                 )
             elif not cardholder_name:
                 messages.error(request, 'Please enter the cardholder name.')
@@ -1699,13 +1676,11 @@ Transaction Ref: {txn.transaction_reference}"""
             else:
                 try:
                     pm = request.user.payment_methods.get(id=payment_method_id)
-                    if int(getattr(txn, 'max_rental_days', 0) or 0) > 5:
-                        card_brand = (pm.card_brand or '').strip().lower()
-                        card_funding = (pm.card_funding or '').strip().lower()
-                        if card_brand not in ('visa', 'mastercard') or card_funding not in ('credit', 'charge'):
+                    if txn.requires_restricted_deposit_card():
+                        if not txn.is_restricted_deposit_card(pm.card_brand, pm.card_funding):
                             messages.error(
                                 request,
-                                'Long rentals require a Visa or Mastercard credit card for the deposit. Choose a different card.',
+                                'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. Choose a different card.',
                             )
                             return redirect('transaction:view_transaction', txn.transaction_reference)
                     txn.deposit_card_setup_status = txn.CARD_READY
@@ -1763,11 +1738,10 @@ Transaction Ref: {txn.transaction_reference}"""
                     'Deposit cannot be collected yet. Ensure card setup/test hold is complete and rental start date has been reached.'
                 )
             else:
-                # Trigger async task for deposit collection
-                async_collect_deposit_hold.delay(transaction_id=txn.id)
-                # Mark as processing
+                # Save queued state before a fast/eager worker can finish.
                 txn.deposit_collection_status = txn.COLLECT_NOT_RUN
-                txn.save()
+                txn.save(update_fields=['deposit_collection_status', 'amended'])
+                async_collect_deposit_hold.delay(transaction_id=txn.id)
                 messages.info(
                     request,
                     'Deposit collection in progress. You will receive email confirmation when complete.'
@@ -1890,6 +1864,14 @@ Transaction Ref: {txn.transaction_reference}"""
                     'Rental is due to begin but cannot be initiated until the borrower has provided a payment card and verification hold has succeeded.'
                 )
                 return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+            if txn.order_passive and txn.order_passive.verified_users_only:
+                renter_profile = getattr(txn.user_aggressive, 'profile', None)
+                if not is_profile_kyc_verified(renter_profile):
+                    messages.error(
+                        request,
+                        'This listing requires verified users. The borrower can enquire, but must complete Stripe identity verification before the rental can start.',
+                    )
+                    return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
             try:
                 checkout_video = _save_transaction_evidence(
@@ -2666,7 +2648,7 @@ Transaction Ref: {txn.transaction_reference}"""
     total_px = total_items + total_fees
     step, next_action = getTransactionStepAndAction(txn, request)
     now_ts = timezone.now()
-    today = now_ts.date()
+    today = txn.workflow_today()
     contract_deadline = _get_contract_deadline(txn)
     contract_seconds_remaining = None
     if contract_deadline:
@@ -2742,7 +2724,7 @@ Transaction Ref: {txn.transaction_reference}"""
 
     return_review_completed = bool(txn.return_lender_confirmed or txn.return_lender_video_url)
     return_pin_available = bool(txn.return_handover_pin)
-    checkout_pin_available = bool(txn.checkout_handover_pin)
+    checkout_pin_available = bool(txn.checkout_handover_pin) and txn.checkout_funds_ready()
     deposit_funds_held = _is_deposit_funds_held(txn)
     deposit_proposal_iteration_count = _deposit_proposal_iterations(txn)
     deposit_proposal_iteration_limit = 5
@@ -2824,6 +2806,7 @@ Transaction Ref: {txn.transaction_reference}"""
         'workflow_timeline': workflow_payload['timeline'],
         'workflow_payload': workflow_payload,
         'allowed_actions': user_allowed_actions,
+        'workflow_message': txn.get_workflow_message(),
         'workflow_allowed_actions': workflow_payload.get('allowed_actions', []),
         'is_lender': is_lender,
         'is_renter': is_renter,

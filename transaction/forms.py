@@ -168,7 +168,6 @@ class OrderAddForm(forms.ModelForm):
         delivery_within_km = cleaned_data.get('delivery_within_km')
         delivery_cost_per_km = cleaned_data.get('delivery_cost_per_km') or 0
         delivery_cost = cleaned_data.get('delivery_cost') or 0
-
         if collection_policy == Order.MUST_COLLECT:
             cleaned_data['delivery_within_km'] = None
             cleaned_data['delivery_cost_per_km'] = None
@@ -199,13 +198,6 @@ class OrderAddForm(forms.ModelForm):
 
         collection_is_not_home_address = cleaned_data.get('collection_is_not_home_address')
         cleaned_data['collection_is_home_address'] = not collection_is_not_home_address
-
-        max_rental_days = cleaned_data.get('max_rental_days')
-        if max_rental_days and int(max_rental_days) > 30:
-            self.add_error(
-                'max_rental_days',
-                'Please keep the maximum rental duration to 30 days or fewer for now.',
-            )
 
         if not collection_is_not_home_address:
             cleaned_data['collection_address'] = ''
@@ -337,8 +329,6 @@ class RentalEnquiryForm(forms.Form):
         rental_days = (end - start).days + 1
         if self.max_rental_days and rental_days > int(self.max_rental_days):
             raise forms.ValidationError(f'This listing allows a maximum of {self.max_rental_days} day(s) per booking.')
-        if rental_days > 30:
-            raise forms.ValidationError('Rentals over 30 days are not supported yet. Please choose 30 days or fewer.')
 
         if start in self.handover_dates or end in self.handover_dates:
             raise forms.ValidationError('Selected start/end date is unavailable for collection or drop-off.')

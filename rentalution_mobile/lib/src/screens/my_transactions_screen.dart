@@ -33,15 +33,8 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
     'RRTDAYAWV',
     'RRTDPEND',
   };
-  static const _mediationStatuses = {
-    'RRTDCON',
-    'DMED',
-    'DREQ',
-  };
-  static const _awaitingFeedbackStatuses = {
-    'AWFB',
-    'FB1SIDE',
-  };
+  static const _mediationStatuses = {'RRTDCON', 'DMED', 'DREQ'};
+  static const _awaitingFeedbackStatuses = {'AWFB', 'FB1SIDE'};
   static const _closedStatuses = {
     'CACK',
     'DRET',
@@ -68,18 +61,24 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
     final gradientColors = rentalutionBackgroundGradient(
       Theme.of(context).brightness,
     );
-    final openTransactions = _filterByStatus(widget.transactions, _openStatuses);
-    final mediationTransactions =
-        _filterByStatus(widget.transactions, _mediationStatuses);
-    final awaitingFeedbackTransactions =
-        _filterByStatus(
-          widget.transactions
-              .where((tx) => !tx.feedbackLeftByMe)
-              .toList(growable: false),
-          _awaitingFeedbackStatuses,
-        );
-    final closedTransactions =
-        _filterByStatus(widget.transactions, _closedStatuses);
+    final openTransactions = _filterByStatus(
+      widget.transactions,
+      _openStatuses,
+    );
+    final mediationTransactions = _filterByStatus(
+      widget.transactions,
+      _mediationStatuses,
+    );
+    final awaitingFeedbackTransactions = _filterByStatus(
+      widget.transactions
+          .where((tx) => !tx.feedbackLeftByMe)
+          .toList(growable: false),
+      _awaitingFeedbackStatuses,
+    );
+    final closedTransactions = _filterByStatus(
+      widget.transactions,
+      _closedStatuses,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -89,8 +88,14 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
           isScrollable: true,
           tabs: [
             Tab(text: 'Open (${openTransactions.length})'),
-            Tab(text: 'Mediation${mediationTransactions.isNotEmpty ? ' (${mediationTransactions.length})' : ''}'),
-            Tab(text: 'Needing feedback${awaitingFeedbackTransactions.isNotEmpty ? ' (${awaitingFeedbackTransactions.length})' : ''}'),
+            Tab(
+              text:
+                  'Mediation${mediationTransactions.isNotEmpty ? ' (${mediationTransactions.length})' : ''}',
+            ),
+            Tab(
+              text:
+                  'Needing feedback${awaitingFeedbackTransactions.isNotEmpty ? ' (${awaitingFeedbackTransactions.length})' : ''}',
+            ),
             Tab(text: 'Closed (${closedTransactions.length})'),
           ],
         ),
@@ -106,7 +111,11 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
         child: TabBarView(
           controller: _tabController,
           children: [
-            _buildList(context, openTransactions, emptyText: 'No open bookings yet.'),
+            _buildList(
+              context,
+              openTransactions,
+              emptyText: 'No open bookings yet.',
+            ),
             _buildList(
               context,
               mediationTransactions,
@@ -121,7 +130,11 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
                   ? 'You have no bookings awaiting feedback.'
                   : 'No feedback bookings match.',
             ),
-            _buildList(context, closedTransactions, emptyText: 'No closed bookings yet.'),
+            _buildList(
+              context,
+              closedTransactions,
+              emptyText: 'No closed bookings yet.',
+            ),
           ],
         ),
       ),
@@ -164,20 +177,28 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
     List<TransactionSummary> items,
     Set<String> statuses,
   ) {
-    final filtered =
-        items.where((tx) => statuses.contains(tx.status.trim().toUpperCase())).toList();
-    filtered.sort((a, b) => (b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-        .compareTo(a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+    final filtered = items
+        .where((tx) => statuses.contains(tx.status.trim().toUpperCase()))
+        .toList();
+    filtered.sort(
+      (a, b) => (b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+          .compareTo(a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0)),
+    );
     return filtered;
   }
 
   Widget _transactionTile(BuildContext context, TransactionSummary tx) {
+    final theme = Theme.of(context);
     final statusColor = tx.status == 'RENQ'
         ? Colors.orange.shade700
         : tx.status == 'RONG'
         ? Colors.green.shade700
-        : Theme.of(context).colorScheme.primary;
-    final statusText = _transactionStatusText(tx.status);
+        : theme.colorScheme.primary;
+    final statusText =
+        tx.status.trim().toUpperCase() == 'RAGR' &&
+            tx.statusDisplay.trim().isNotEmpty
+        ? tx.statusDisplay
+        : _transactionStatusText(tx.status);
     final updatedText = _friendlyDate(tx.updatedAt);
     final rentalDates = _rentalDatesLabel(tx);
     final itemTitle = tx.itemName.trim().isEmpty
@@ -197,13 +218,13 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
         borderRadius: BorderRadius.circular(12),
         onTap: () => widget.onOpenTransaction(tx),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 54,
-                height: 54,
+                width: 60,
+                height: 60,
                 decoration: BoxDecoration(
                   color: const Color(0xFFE7F3F1),
                   borderRadius: BorderRadius.circular(14),
@@ -215,17 +236,19 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Text(
+                      itemTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        Flexible(
-                          child: Text(
-                            itemTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -237,26 +260,30 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
                           ),
                           child: Text(
                             statusText,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: statusColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: statusColor,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
                       partiesText,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey.shade700,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(termsText, style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      termsText,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                     if (rentalDates != null) ...[
                       const SizedBox(height: 4),
                       Row(
@@ -264,13 +291,15 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
                           Icon(
                             Icons.date_range_outlined,
                             size: 14,
-                            color: Colors.grey.shade600,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 4),
                           Flexible(
                             child: Text(
                               rentalDates,
-                              style: Theme.of(context).textTheme.bodySmall,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
                         ],
@@ -282,12 +311,14 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
                         Icon(
                           Icons.update_outlined,
                           size: 14,
-                          color: Colors.grey.shade600,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Updated $updatedText',
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -306,27 +337,27 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
   String _transactionStatusText(String code) {
     switch (code.trim().toUpperCase()) {
       case 'RENQ':
-        return 'Discussion';
+        return 'Enquiry awaiting reply';
       case 'RAGR':
-        return 'Agreement';
+        return 'Agreement awaiting confirmation';
       case 'RDAYAWV':
-        return 'Checkout verification';
+        return 'Checkout evidence needed';
       case 'RONG':
-        return 'Ongoing';
+        return 'Rental in progress';
       case 'RRTDAYAWV':
-        return 'Return verification';
+        return 'Return evidence needed';
       case 'RRTDPEND':
-        return 'Deposit review';
+        return 'Deposit return pending';
       case 'RRTDCON':
-        return 'Deposit contested';
+        return 'Deposit return contested';
       case 'AWFB':
-        return 'Feedback';
+        return 'Awaiting feedback';
       case 'FB1SIDE':
-        return 'Feedback';
+        return 'Feedback from one side';
       case 'RCOMP':
-        return 'Completed';
+        return 'Rental complete';
       case 'RCMPNFB':
-        return 'Closed';
+        return 'Closed, no feedback';
       case 'CACK':
         return 'Cancelled';
       case 'DREQ':

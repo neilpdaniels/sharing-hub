@@ -13,7 +13,9 @@ class MyRentalutionScreen extends StatelessWidget {
     required this.onOpenPaymentMethods,
     required this.onOpenKyc,
     required this.onOpenNotificationSettings,
-    required this.activeOrdersCount,
+    required this.openBookingsCount,
+    required this.activeListingsCount,
+    required this.messagesCount,
     required this.favouritesCount,
     required this.biometricAvailable,
     required this.biometricEnabled,
@@ -30,7 +32,9 @@ class MyRentalutionScreen extends StatelessWidget {
   final VoidCallback onOpenPaymentMethods;
   final VoidCallback onOpenKyc;
   final VoidCallback onOpenNotificationSettings;
-  final int activeOrdersCount;
+  final int openBookingsCount;
+  final int activeListingsCount;
+  final int messagesCount;
   final int favouritesCount;
   final bool biometricAvailable;
   final bool biometricEnabled;
@@ -43,11 +47,40 @@ class MyRentalutionScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Your bookings, listings and messages.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('My Bookings'),
+              subtitle: Text(
+                '$openBookingsCount open booking${openBookingsCount == 1 ? '' : 's'}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onOpenMyTransactions,
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.shopping_basket_outlined),
+              title: const Text('My Listings'),
+              subtitle: Text('Active listings: $activeListingsCount'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onOpenMyOrders,
+            ),
+          ),
           Card(
             child: ListTile(
               leading: const Icon(Icons.mark_email_unread_outlined),
               title: const Text('Messages'),
-              subtitle: const Text('All sent and received messages'),
+              subtitle: Text(
+                '$messagesCount message${messagesCount == 1 ? '' : 's'}',
+              ),
               trailing: const Icon(Icons.chevron_right),
               onTap: onOpenInbox,
             ),
@@ -68,24 +101,6 @@ class MyRentalutionScreen extends StatelessWidget {
               subtitle: const Text('See nearby people and connect'),
               trailing: const Icon(Icons.chevron_right),
               onTap: onOpenFriends,
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.shopping_basket_outlined),
-              title: const Text('My Listings'),
-              subtitle: Text('Active listings: $activeOrdersCount'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onOpenMyOrders,
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.receipt_long_outlined),
-              title: const Text('My Bookings'),
-              subtitle: const Text('Review active and completed rentals'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onOpenMyTransactions,
             ),
           ),
           Card(

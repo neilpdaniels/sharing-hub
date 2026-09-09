@@ -9,6 +9,7 @@ from django.utils import timezone
 from common.models import Category, Order, OrderBlockedDate, Product
 from account.models import Profile
 from common.models import System
+from transaction.forms import RentalEnquiryForm
 from transaction.models import PaymentAttempt, Transaction, TransactionFeedback, TransactionMessage
 from transaction.tasks import (
     auto_cancel_overdue_first_day_bookings,
@@ -16,6 +17,75 @@ from transaction.tasks import (
     escalate_overdue_disputes,
     send_pending_action_reminders,
 )
+
+
+@override_settings(MOBILE_VERIFICATION_ENABLED=False)
+class TransactionDepositPolicyTests(TestCase):
+	def setUp(self):
+		self.category = Category.objects.create(title='Deposit policy')
+		self.product = Product.objects.create(category_id=self.category, name='Policy Product')
+		self.lender = User.objects.create_user(username='policy-lender', email='policy-lender@example.com', password='x')
+		self.renter = User.objects.create_user(username='policy-renter', email='policy-renter@example.com', password='x')
+		self.order = Order.objects.create(
+			product=self.product,
+			user=self.lender,
+			direction=Order.TO_LET,
+			expiry_date=timezone.now() + timedelta(days=90),
+			status=Order.ACTIVE,
+			price=20,
+			deposit=50,
+			postcode='SW1A1AA',
+			max_rental_days=90,
+		)
+
+	def _create_txn(self, start_offset, end_offset):
+		start = timezone.localdate() + timedelta(days=start_offset)
+		end = timezone.localdate() + timedelta(days=end_offset)
+		return Transaction.objects.create(
+			user_passive=self.lender,
+			user_aggressive=self.renter,
+			order_passive=self.order,
+			product=self.product,
+			transaction_status=Transaction.RENTAL_AGREED,
+			prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+			rental_start_date=start,
+			rental_end_date=end,
+			price=20,
+			deposit=50,
+			current_spot_value=100,
+			price_as_pct_spot_value=20,
+		)
+
+	def test_deposit_handling_uses_three_duration_tiers(self):
+		short_txn = self._create_txn(1, 6)
+		standard_txn = self._create_txn(1, 7)
+		long_txn = self._create_txn(1, 31)
+
+		self.assertEqual(short_txn.calculate_deposit_handling(), Transaction.DEPOSIT_HELD)
+		self.assertEqual(standard_txn.calculate_deposit_handling(), Transaction.DEPOSIT_HELD_AND_RETURNED)
+		self.assertEqual(long_txn.calculate_deposit_handling(), Transaction.DEPOSIT_TAKEN_AND_HELD)
+
+	def test_restricted_deposit_card_allows_only_visa_credit_or_mastercard_credit(self):
+		self.assertTrue(Transaction.is_restricted_deposit_card('visa', 'credit'))
+		self.assertTrue(Transaction.is_restricted_deposit_card('mastercard', 'credit'))
+		self.assertFalse(Transaction.is_restricted_deposit_card('visa', 'debit'))
+		self.assertFalse(Transaction.is_restricted_deposit_card('mastercard', 'debit'))
+		self.assertFalse(Transaction.is_restricted_deposit_card('amex', 'credit'))
+
+	def test_rental_enquiry_form_accepts_over_30_day_bookings(self):
+		start = timezone.localdate() + timedelta(days=1)
+		end = start + timedelta(days=30)
+		form = RentalEnquiryForm(
+			data={
+				'rental_start_date': start.isoformat(),
+				'rental_end_date': end.isoformat(),
+				'enquiry_message': 'Please confirm availability.',
+			},
+			max_rental_days=90,
+			expiry_date=timezone.localdate() + timedelta(days=120),
+		)
+
+		self.assertTrue(form.is_valid(), form.errors)
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)
@@ -116,7 +186,7 @@ class WebTransactionDateHoldTests(TestCase):
 		self.assertEqual(released_count, 0)
 
 	@patch('transaction.views.verify_turnstile_token', return_value=True)
-	def test_verified_users_only_listing_blocks_unverified_renter(self, _mock_turnstile):
+	def test_verified_users_only_listing_allows_enquiry_but_blocks_rental_start(self, _mock_turnstile):
 		Profile.objects.create(
 			user=self.lender,
 			email_confirmed=True,
@@ -155,7 +225,32 @@ class WebTransactionDateHoldTests(TestCase):
 		)
 
 		self.assertEqual(response.status_code, 302)
-		self.assertEqual(Transaction.objects.filter(order_passive=self.order).count(), 0)
+		txn = Transaction.objects.get(order_passive=self.order, user_aggressive=self.renter_one)
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_ENQUIRY)
+
+		txn.prev_transaction_status = Transaction.RENTAL_ENQUIRY
+		txn.transaction_status = Transaction.RENTAL_AGREED
+		txn.deposit_card_setup_status = Transaction.CARD_READY
+		txn.deposit_test_hold_status = Transaction.TEST_HOLD_SUCCESS
+		txn.lender_agreed_at = timezone.now()
+		txn.save(update_fields=[
+			'prev_transaction_status',
+			'transaction_status',
+			'deposit_card_setup_status',
+			'deposit_test_hold_status',
+			'lender_agreed_at',
+			'amended',
+		])
+
+		self.client.force_login(self.lender)
+		rental_start = self.client.post(
+			reverse('transaction:view_transaction', kwargs={'transaction_reference': txn.transaction_reference}),
+			{'action': 'initiate_rental'},
+		)
+
+		self.assertEqual(rental_start.status_code, 302)
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_AGREED)
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False, ENVIRONMENT_NAME='dev server')
@@ -300,10 +395,10 @@ class WebTransactionWorkflowExtensionTests(TestCase):
 		renter_actions = txn.get_allowed_actions_for_user(self.renter)
 
 		self.assertIn('confirm_lender_contract', lender_actions)
-		self.assertIn('collect_deposit', lender_actions)
+		self.assertNotIn('collect_deposit', lender_actions)
 		self.assertNotIn('confirm_renter_contract', lender_actions)
 
-		self.assertIn('confirm_renter_contract', renter_actions)
+		self.assertNotIn('confirm_renter_contract', renter_actions)
 		self.assertIn('add_deposit_card', renter_actions)
 		self.assertNotIn('confirm_lender_contract', renter_actions)
 
@@ -483,11 +578,74 @@ class WebTransactionWorkflowExtensionTests(TestCase):
 		)
 
 		payload = txn.get_workflow_payload()
-		self.assertEqual(payload['current_stage'], 4)
-		self.assertEqual(payload['current_label'], 'Agreement')
+		self.assertEqual(payload['current_stage'], 2)
+		self.assertEqual(payload['current_label'], Transaction.WORKFLOW_STAGE_LABELS[2])
 		self.assertEqual(len(payload['timeline']), 7)
 		self.assertEqual(payload['timeline'][0]['label'], 'Discussion')
-		self.assertTrue(payload['timeline'][3]['current'])
+		self.assertTrue(payload['timeline'][1]['current'])
+
+
+@override_settings(ENVIRONMENT_NAME='dev server')
+class ScenarioDashboardTests(TestCase):
+	def setUp(self):
+		self.category = Category.objects.create(title='Dashboard Tools')
+		self.product = Product.objects.create(category_id=self.category, name='Dashboard Drill')
+		self.staff = User.objects.create_user(
+			username='dashboard-staff',
+			email='dashboard-staff@example.com',
+			password='x',
+			is_staff=True,
+		)
+		self.lender = User.objects.create_user(
+			username='dashboard-lender',
+			email='dashboard-lender@example.com',
+			password='x',
+		)
+		self.renter = User.objects.create_user(
+			username='dashboard-renter',
+			email='dashboard-renter@example.com',
+			password='x',
+		)
+		self.order = Order.objects.create(
+			product=self.product,
+			user=self.lender,
+			direction=Order.TO_LET,
+			expiry_date=timezone.now() + timedelta(days=30),
+			status=Order.ACTIVE,
+			price=35,
+			deposit=100,
+			postcode='SW1A1AA',
+			verified_users_only=True,
+			max_rental_days=14,
+		)
+		self.txn = Transaction.objects.create(
+			user_passive=self.lender,
+			user_aggressive=self.renter,
+			order_passive=self.order,
+			product=self.product,
+			transaction_status=Transaction.RENTAL_AGREED,
+			prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+			rental_start_date=timezone.now().date() + timedelta(days=5),
+			rental_end_date=timezone.now().date() + timedelta(days=8),
+			price=35,
+			deposit=100,
+			current_spot_value=100,
+			price_as_pct_spot_value=35,
+			deposit_card_setup_status=Transaction.CARD_READY,
+			deposit_test_hold_status=Transaction.TEST_HOLD_SUCCESS,
+			transpact_text_status='SCENARIO:scenario-verified-users-only',
+			deposit_resolution_notes='Verified users only test scenario',
+		)
+
+	def test_dashboard_shows_scenario_links_and_checks(self):
+		self.client.force_login(self.staff)
+		response = self.client.get(reverse('transaction:transaction_scenario_dashboard'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'scenario-verified-users-only')
+		self.assertContains(response, 'Verified users only')
+		self.assertContains(response, 'Mobile API')
+		self.assertContains(response, 'Live state')
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)
@@ -777,7 +935,8 @@ class TransitionNotificationTests(TestCase):
 		self.assertIsNotNone(msg)
 		self.assertTrue(msg.is_system_generated)
 		self.assertTrue(msg.email_to_recepient)
-		self.assertIn('Transaction status changed', msg.description)
+		self.assertIn('Rental agreement', msg.description)
+		self.assertIn('Next step:', msg.description)
 
 	def test_dispute_transition_marks_include_admin(self):
 		txn = self._create_txn()

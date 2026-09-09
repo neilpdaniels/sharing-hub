@@ -28,31 +28,59 @@
           <tr>
             <th>Scenario</th>
             <th>Status</th>
+            <th>Checks</th>
             <th>Buyer</th>
             <th>Lender</th>
             <th>Order</th>
             <th>Updated</th>
+            <th>Links</th>
             <th>Notes</th>
           </tr>
         </thead>
         <tbody>
           {% for txn in scenarios %}
           <tr>
-            <td>{{ txn.transpact_text_status|default:'-' }}</td>
+            <td>{{ txn.transpact_text_status|default:'-'|cut:'SCENARIO:' }}</td>
             <td>{{ txn.get_transaction_status_display }}</td>
+            <td>
+              {% if txn.order_passive and txn.order_passive.verified_users_only %}
+              <span class="badge badge-info mr-1 mb-1">Verified users only</span>
+              {% endif %}
+              {% if txn.get_rental_length_days > 30 %}
+              <span class="badge badge-danger mr-1 mb-1">31+ days</span>
+              {% elif txn.get_rental_length_days > 6 %}
+              <span class="badge badge-warning mr-1 mb-1">7-30 days</span>
+              {% else %}
+              <span class="badge badge-secondary mr-1 mb-1">Sub 7 days</span>
+              {% endif %}
+              {% if txn.deposit > 0 %}
+              <span class="badge badge-primary mr-1 mb-1">Deposit</span>
+              {% endif %}
+              {% if txn.price == 0 and txn.deposit == 0 and txn.delivery_cost == 0 and txn.rentalution_fee == 0 %}
+              <span class="badge badge-light mr-1 mb-1">Zero cost</span>
+              {% endif %}
+            </td>
             <td>{{ txn.user_aggressive.username }}</td>
             <td>{{ txn.user_passive.username }}</td>
             <td>{% if txn.order_passive %}{{ txn.order_passive.product.name }}{% else %}-{% endif %}</td>
             <td>{{ txn.amended|date:'d M Y' }}</td>
             <td>
               <div><a href="{% url 'transaction:view_transaction' txn.transaction_reference %}">{{ txn.transaction_reference }}</a></div>
+              <div class="btn-group btn-group-sm mt-2" role="group" aria-label="Scenario links">
+                <a class="btn btn-outline-primary" href="{% url 'transaction:view_transaction' txn.transaction_reference %}">Web</a>
+                <a class="btn btn-outline-secondary" href="{% url 'transaction:transaction_live_state_json' txn.transaction_reference %}">Live state</a>
+                <a class="btn btn-outline-info" href="{% url 'mobile_api:transactions_detail' txn.transaction_reference %}">Mobile API</a>
+              </div>
               <div class="text-muted small mt-1">Only the lender and borrower can submit transaction actions.</div>
               <div class="text-muted small">{{ txn.deposit_resolution_notes|default:txn.enquiry_message }}</div>
+            </td>
+            <td>
+              <div class="text-muted small">Use the same transaction reference in the mobile app.</div>
             </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="7" class="text-muted">No seeded scenarios yet. Run the seed command first.</td>
+            <td colspan="9" class="text-muted">No seeded scenarios yet. Run the seed command first.</td>
           </tr>
           {% endfor %}
         </tbody>

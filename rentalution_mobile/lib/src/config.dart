@@ -13,13 +13,18 @@ class AppConfig {
   static String get websiteBaseUrl {
     final uri = Uri.parse(baseUrl);
     final segments = uri.pathSegments;
-    final isApiV1 = segments.length >= 2 &&
-        segments[0] == 'api' &&
-        segments[1] == 'v1';
+    final isApiV1 =
+        segments.length >= 2 && segments[0] == 'api' && segments[1] == 'v1';
     if (isApiV1) {
-      return uri.replace(pathSegments: []).toString().replaceAll(RegExp(r'/$'), '');
+      return uri
+          .replace(pathSegments: [])
+          .toString()
+          .replaceAll(RegExp(r'/$'), '');
     }
-    return uri.replace(pathSegments: []).toString().replaceAll(RegExp(r'/$'), '');
+    return uri
+        .replace(pathSegments: [])
+        .toString()
+        .replaceAll(RegExp(r'/$'), '');
   }
 
   // Override at launch: --dart-define=STRIPE_PUBLISHABLE_KEY=pk_test_...
@@ -32,5 +37,11 @@ class AppConfig {
   static const int transactionLivePollSeconds = int.fromEnvironment(
     'TRANSACTION_LIVE_POLL_SECONDS',
     defaultValue: 3,
+  );
+
+  // Override at launch: --dart-define=HOME_REFRESH_POLL_SECONDS=30
+  static const int homeRefreshPollSeconds = int.fromEnvironment(
+    'HOME_REFRESH_POLL_SECONDS',
+    defaultValue: 30,
   );
 }

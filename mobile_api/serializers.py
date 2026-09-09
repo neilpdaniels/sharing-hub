@@ -127,6 +127,7 @@ class MobileTokenObtainSerializer(serializers.Serializer):
 
 
 class TransactionListSerializer(serializers.ModelSerializer):
+    transaction_status_display = serializers.SerializerMethodField()
     passive_user_id = serializers.IntegerField(source='user_passive_id')
     aggressive_user_id = serializers.IntegerField(source='user_aggressive_id')
     order_id = serializers.IntegerField(source='order_passive_id', allow_null=True)
@@ -139,6 +140,9 @@ class TransactionListSerializer(serializers.ModelSerializer):
     workflow_timeline = serializers.SerializerMethodField()
     workflow_payload = serializers.SerializerMethodField()
     feedback_left_by_me = serializers.SerializerMethodField()
+
+    def get_transaction_status_display(self, obj):
+        return obj.get_status_display_verbose()
 
     def get_counterparty_name(self, obj):
         request = self.context.get('request')
@@ -240,6 +244,7 @@ class TransactionListSerializer(serializers.ModelSerializer):
         fields = (
             'transaction_reference',
             'transaction_status',
+            'transaction_status_display',
             'payment_status',
             'deposit_status',
             'item_name',
@@ -301,6 +306,7 @@ class TransactionDetailSerializer(TransactionListSerializer):
     deposit_resolution_notes = serializers.CharField(allow_blank=True)
     listing_image_url = serializers.SerializerMethodField()
     listing_image_urls = serializers.SerializerMethodField()
+    evidence_items = serializers.SerializerMethodField()
     me_is_lender = serializers.SerializerMethodField()
     me_is_renter = serializers.SerializerMethodField()
     active_dispute_case = serializers.SerializerMethodField()
@@ -342,6 +348,7 @@ class TransactionDetailSerializer(TransactionListSerializer):
             'rentalution_fee',
             'listing_image_url',
             'listing_image_urls',
+            'evidence_items',
             'me_is_lender',
             'me_is_renter',
             'active_dispute_case',
@@ -382,6 +389,15 @@ class TransactionDetailSerializer(TransactionListSerializer):
             else:
                 urls.append(request.build_absolute_uri(image_obj.image.url))
         return urls
+
+    def get_evidence_items(self, obj):
+        request = self.context.get('request')
+        queryset = obj.evidence_items.filter(active=True).order_by('-captured_at', '-uploaded_at')
+        return TransactionEvidenceSerializer(
+            queryset,
+            many=True,
+            context={'request': request},
+        ).data
 
     def get_me_is_lender(self, obj):
         request = self.context.get('request')
@@ -453,6 +469,7 @@ class TransactionDetailSerializer(TransactionListSerializer):
 class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     video_url = serializers.SerializerMethodField()
+    captured_at = serializers.DateTimeField(allow_null=True, required=False)
 
     class Meta:
         model = TransactionMessageImage
@@ -460,6 +477,7 @@ class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
             'id',
             'image_url',
             'video_url',
+            'captured_at',
             'uploaded_at',
         )
 
@@ -478,6 +496,35 @@ class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
         if request is None:
             return obj.video.url
         return request.build_absolute_uri(obj.video.url)
+
+
+class TransactionEvidenceSerializer(serializers.ModelSerializer):
+    video_url = serializers.SerializerMethodField()
+    uploaded_at = serializers.DateTimeField()
+    captured_at = serializers.DateTimeField(allow_null=True)
+
+    class Meta:
+        model = TransactionMessageImage
+        fields = (
+            'id',
+            'evidence_stage',
+            'uploader_role',
+            'capture_device',
+            'captured_at',
+            'uploaded_at',
+            'video_url',
+            'external_video_url',
+        )
+
+    def get_video_url(self, obj):
+        request = self.context.get('request')
+        if obj.video:
+            if request is None:
+                return obj.video.url
+            return request.build_absolute_uri(obj.video.url)
+        if obj.external_video_url:
+            return obj.external_video_url
+        return ''
 
 
 class TransactionMessageSerializer(serializers.ModelSerializer):
@@ -579,6 +626,7 @@ class TransactionActionSerializer(serializers.Serializer):
     checkout_borrower_video_url = serializers.CharField(required=False, allow_blank=True)
     return_video_url = serializers.CharField(required=False, allow_blank=True)
     lender_return_video_url = serializers.CharField(required=False, allow_blank=True)
+    captured_at = serializers.CharField(required=False, allow_blank=True)
     pin = serializers.CharField(required=False, allow_blank=True)
     qr_payload = serializers.CharField(required=False, allow_blank=True)
     deposit_proposed_return_amount = serializers.FloatField(required=False)

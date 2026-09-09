@@ -59,22 +59,22 @@ final ThemeData rentalutionLightTheme = ThemeData(
     headlineSmall: GoogleFonts.manrope(
       color: RentalutionPalette.lightText,
       fontWeight: FontWeight.w800,
-      fontSize: 20,
+      fontSize: 22,
     ),
     titleLarge: GoogleFonts.manrope(
       color: RentalutionPalette.lightText,
       fontWeight: FontWeight.w800,
-      fontSize: 20,
+      fontSize: 21,
     ),
     titleMedium: GoogleFonts.manrope(
       color: RentalutionPalette.lightText,
       fontWeight: FontWeight.w700,
-      fontSize: 17,
+      fontSize: 18,
     ),
     titleSmall: GoogleFonts.manrope(
       color: RentalutionPalette.lightText,
       fontWeight: FontWeight.w700,
-      fontSize: 15,
+      fontSize: 16,
     ),
     bodyLarge: GoogleFonts.manrope(
       color: RentalutionPalette.lightText,
@@ -82,7 +82,7 @@ final ThemeData rentalutionLightTheme = ThemeData(
     ),
     bodyMedium: GoogleFonts.manrope(
       color: RentalutionPalette.lightText,
-      fontSize: 15,
+      fontSize: 16,
       height: 1.35,
     ),
     bodySmall: GoogleFonts.manrope(
@@ -113,7 +113,7 @@ final ThemeData rentalutionLightTheme = ThemeData(
     titleTextStyle: TextStyle(
       color: RentalutionPalette.lightText,
       fontWeight: FontWeight.w800,
-      fontSize: 20,
+      fontSize: 22,
     ),
   ),
   inputDecorationTheme: InputDecorationTheme(
@@ -150,10 +150,7 @@ final ThemeData rentalutionLightTheme = ThemeData(
       backgroundColor: RentalutionPalette.brandTeal,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      textStyle: GoogleFonts.manrope(
-        fontWeight: FontWeight.bold,
-        fontSize: 15,
-      ),
+      textStyle: GoogleFonts.manrope(fontWeight: FontWeight.bold, fontSize: 15),
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
     ),
   ),
@@ -161,15 +158,15 @@ final ThemeData rentalutionLightTheme = ThemeData(
     color: RentalutionPalette.lightSurfaceSoft,
     surfaceTintColor: Colors.transparent,
     elevation: 0,
-    margin: const EdgeInsets.symmetric(vertical: 8),
+    margin: const EdgeInsets.symmetric(vertical: 6),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: RentalutionPalette.brandTeal, width: 1.5),
+      side: BorderSide(color: RentalutionPalette.lightBorder, width: 1),
     ),
   ),
   listTileTheme: const ListTileThemeData(
-    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    minLeadingWidth: 56,
+    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    minLeadingWidth: 40,
     horizontalTitleGap: 12,
   ),
   chipTheme: ChipThemeData(
@@ -217,22 +214,22 @@ final ThemeData rentalutionDarkTheme = ThemeData(
     headlineSmall: GoogleFonts.manrope(
       color: RentalutionPalette.darkText,
       fontWeight: FontWeight.w800,
-      fontSize: 20,
+      fontSize: 22,
     ),
     titleLarge: GoogleFonts.manrope(
       color: RentalutionPalette.darkText,
       fontWeight: FontWeight.w800,
-      fontSize: 20,
+      fontSize: 21,
     ),
     titleMedium: GoogleFonts.manrope(
       color: RentalutionPalette.darkText,
       fontWeight: FontWeight.w700,
-      fontSize: 17,
+      fontSize: 18,
     ),
     titleSmall: GoogleFonts.manrope(
       color: RentalutionPalette.darkText,
       fontWeight: FontWeight.w700,
-      fontSize: 15,
+      fontSize: 16,
     ),
     bodyLarge: GoogleFonts.manrope(
       color: RentalutionPalette.darkText,
@@ -240,7 +237,7 @@ final ThemeData rentalutionDarkTheme = ThemeData(
     ),
     bodyMedium: GoogleFonts.manrope(
       color: RentalutionPalette.darkText,
-      fontSize: 15,
+      fontSize: 16,
       height: 1.35,
     ),
     bodySmall: GoogleFonts.manrope(
@@ -271,7 +268,7 @@ final ThemeData rentalutionDarkTheme = ThemeData(
     titleTextStyle: TextStyle(
       color: RentalutionPalette.darkText,
       fontWeight: FontWeight.w800,
-      fontSize: 20,
+      fontSize: 22,
     ),
   ),
   inputDecorationTheme: InputDecorationTheme(
@@ -300,10 +297,7 @@ final ThemeData rentalutionDarkTheme = ThemeData(
       backgroundColor: RentalutionPalette.brandTeal,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      textStyle: GoogleFonts.manrope(
-        fontWeight: FontWeight.bold,
-        fontSize: 15,
-      ),
+      textStyle: GoogleFonts.manrope(fontWeight: FontWeight.bold, fontSize: 15),
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
     ),
   ),
@@ -311,15 +305,15 @@ final ThemeData rentalutionDarkTheme = ThemeData(
     color: RentalutionPalette.darkSurfaceSoft,
     surfaceTintColor: Colors.transparent,
     elevation: 0,
-    margin: const EdgeInsets.symmetric(vertical: 8),
+    margin: const EdgeInsets.symmetric(vertical: 6),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: RentalutionPalette.brandTeal, width: 1.5),
+      side: BorderSide(color: RentalutionPalette.darkBorder, width: 1),
     ),
   ),
   listTileTheme: const ListTileThemeData(
-    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    minLeadingWidth: 56,
+    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    minLeadingWidth: 40,
     horizontalTitleGap: 12,
   ),
   chipTheme: ChipThemeData(

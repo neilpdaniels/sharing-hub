@@ -11,7 +11,7 @@ from django.utils import timezone
 from account.models import Profile
 from common.models import Category, CategoryAttribute, Order, Product
 from friends.models import Friendship
-from transaction.models import Transaction
+from transaction.models import Transaction, TransactionMessageImage
 
 
 class LenderListingsViewTests(TestCase):
@@ -254,7 +254,7 @@ class VerifiedUsersOnlyEnquiryTests(TestCase):
             verified_users_only=True,
         )
 
-    def test_mobile_transaction_create_blocks_unverified_renter(self):
+    def test_mobile_transaction_create_allows_unverified_renter_enquiry(self):
         self.client.force_login(self.renter)
         response = self.client.post(
             reverse('mobile_api:transactions_list'),
@@ -266,8 +266,8 @@ class VerifiedUsersOnlyEnquiryTests(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(Transaction.objects.filter(order_passive=self.order).count(), 0)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Transaction.objects.filter(order_passive=self.order).count(), 1)
 
 
 class MobilePasswordAuthTests(TestCase):
@@ -653,6 +653,17 @@ class TransactionActionWorkflowTests(TestCase):
             start_offset_days=2,
             end_offset_days=5,
         )
+        txn.lender_agreed_at = timezone.now()
+        txn.deposit_card_setup_status = Transaction.CARD_READY
+        txn.deposit_test_hold_status = Transaction.TEST_HOLD_SUCCESS
+        txn.save(
+            update_fields=[
+                'lender_agreed_at',
+                'deposit_card_setup_status',
+                'deposit_test_hold_status',
+                'amended',
+            ]
+        )
 
         self.client.force_login(self.lender)
         lender_response = self.client.get(
@@ -664,9 +675,8 @@ class TransactionActionWorkflowTests(TestCase):
         self.assertEqual(lender_response.status_code, 200)
         lender_payload = lender_response.json()
         lender_actions = lender_payload.get('workflow_payload', {}).get('allowed_actions', [])
-        self.assertIn('confirm_lender_contract', lender_actions)
-        self.assertIn('collect_deposit', lender_actions)
-        self.assertNotIn('confirm_renter_contract', lender_actions)
+        self.assertNotIn('collect_deposit', lender_actions)
+        self.assertNotIn('confirm_lender_contract', lender_actions)
 
         self.client.force_login(self.renter)
         renter_response = self.client.get(
@@ -681,6 +691,7 @@ class TransactionActionWorkflowTests(TestCase):
         self.assertIn('confirm_renter_contract', renter_actions)
         self.assertIn('add_deposit_card', renter_actions)
         self.assertNotIn('confirm_lender_contract', renter_actions)
+        self.assertNotIn('collect_deposit', renter_actions)
 
     def test_mobile_report_missing_rental_and_feedback_path(self):
         txn = self._create_txn(
@@ -748,8 +759,9 @@ class TransactionActionWorkflowTests(TestCase):
             end_offset_days=-5,
         )
 
+        txn.deposit_proposed_by_lender_at = timezone.now()
         txn.deposit_proposal_iteration_count = 5
-        txn.save(update_fields=['deposit_proposal_iteration_count', 'amended'])
+        txn.save(update_fields=['deposit_proposal_iteration_count', 'deposit_proposed_by_lender_at', 'amended'])
 
         self.client.force_login(self.lender)
         blocked = self.client.post(
@@ -806,15 +818,31 @@ class TransactionActionWorkflowTests(TestCase):
             payment_method_id='pm_test_123',
         )
 
-    def test_mobile_initiate_rental_accepts_multipart_video_upload(self):
+    @patch('mobile_api.views.async_collect_deposit_hold.delay')
+    @patch('mobile_api.views.stripe_connect_service.collect_rental_payment')
+    def test_mobile_initiate_rental_accepts_multipart_video_upload(
+        self,
+        mock_collect_rental_payment,
+        mock_async_collect_deposit_hold,
+    ):
         txn = self._create_txn(
             status=Transaction.RENTAL_AGREED,
             start_offset_days=0,
             end_offset_days=3,
         )
+        txn.lender_agreed_at = timezone.now()
+        txn.renter_agreed_at = timezone.now()
         txn.deposit_card_setup_status = Transaction.CARD_READY
         txn.deposit_test_hold_status = Transaction.TEST_HOLD_SUCCESS
-        txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
+        txn.save(update_fields=['lender_agreed_at', 'renter_agreed_at', 'deposit_card_setup_status', 'deposit_test_hold_status', 'amended'])
+        mock_collect_rental_payment.return_value = {
+            'ok': True,
+            'payment_status': Transaction.PAYMENT_CAPTURED_PLACEHOLDER,
+            'collection_requested_at': timezone.now(),
+            'collection_reference': 'pi_test_123',
+            'payment_intent_status': 'succeeded',
+            'charged_amount': 18,
+        }
 
         video_file = SimpleUploadedFile(
             'handover.mp4',
@@ -835,6 +863,27 @@ class TransactionActionWorkflowTests(TestCase):
         txn.refresh_from_db()
         self.assertEqual(txn.transaction_status, Transaction.RENTAL_DAY_AWAITING_VERIFICATION)
         self.assertTrue(bool(txn.checkout_condition_video_url))
+        mock_collect_rental_payment.assert_called_once_with(transaction=txn)
+        mock_async_collect_deposit_hold.assert_called_once_with(transaction_id=txn.id)
+
+        evidence = TransactionMessageImage.objects.get(
+            transaction=txn,
+            evidence_stage='checkout_lender',
+        )
+        self.assertIsNotNone(evidence.captured_at)
+
+        detail_response = self.client.get(
+            reverse(
+                'mobile_api:transactions_detail',
+                kwargs={'transaction_reference': txn.transaction_reference},
+            )
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        detail_payload = detail_response.json()
+        self.assertTrue(detail_payload.get('evidence_items'))
+        self.assertEqual(detail_payload['evidence_items'][0]['id'], evidence.id)
+        self.assertEqual(detail_payload['evidence_items'][0]['evidence_stage'], 'checkout_lender')
+        self.assertIsNotNone(detail_payload['evidence_items'][0]['captured_at'])
 
     @patch('mobile_api.views.stripe_connect_service.create_setup_intent')
     def test_mobile_create_stripe_setup_intent_returns_session_payload(self, mock_create_setup_intent):

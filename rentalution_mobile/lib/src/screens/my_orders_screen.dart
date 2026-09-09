@@ -15,6 +15,7 @@ class MyOrdersScreen extends StatelessWidget {
     required this.loading,
     required this.onRefresh,
     required this.onListMyItem,
+    required this.onOpenOrder,
     required this.onAmendOrder,
     required this.onCancelOrder,
   });
@@ -23,6 +24,7 @@ class MyOrdersScreen extends StatelessWidget {
   final bool loading;
   final Future<void> Function() onRefresh;
   final VoidCallback onListMyItem;
+  final Future<void> Function(OrderSummary order) onOpenOrder;
   final AmendOrderCallback onAmendOrder;
   final CancelOrderCallback onCancelOrder;
 
@@ -211,106 +213,110 @@ class MyOrdersScreen extends StatelessWidget {
               : '');
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: thumbUrl.isEmpty
-                      ? Container(
-                          width: 72,
-                          height: 72,
-                          color: const Color(0x11000000),
-                          child: const Icon(Icons.inventory_2_outlined),
-                        )
-                      : CachedNetworkImage(
-                          imageUrl: thumbUrl,
-                          width: 72,
-                          height: 72,
-                          memCacheWidth: 144,
-                          memCacheHeight: 144,
-                          maxWidthDiskCache: 288,
-                          maxHeightDiskCache: 288,
-                          imageBuilder: (context, imageProvider) => Image(
-                            image: imageProvider,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => onOpenOrder(order),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: thumbUrl.isEmpty
+                        ? Container(
                             width: 72,
                             height: 72,
-                            fit: BoxFit.cover,
+                            color: const Color(0x11000000),
+                            child: const Icon(Icons.inventory_2_outlined),
+                          )
+                        : CachedNetworkImage(
+                            imageUrl: thumbUrl,
+                            width: 72,
+                            height: 72,
+                            memCacheWidth: 144,
+                            memCacheHeight: 144,
+                            maxWidthDiskCache: 288,
+                            maxHeightDiskCache: 288,
+                            imageBuilder: (context, imageProvider) => Image(
+                              image: imageProvider,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                            ),
+                            errorWidget: (context, error, stackTrace) =>
+                                Container(
+                                  width: 72,
+                                  height: 72,
+                                  color: const Color(0x11000000),
+                                  child: const Icon(Icons.broken_image_outlined),
+                                ),
                           ),
-                          errorWidget: (context, error, stackTrace) =>
-                              Container(
-                                width: 72,
-                                height: 72,
-                                color: const Color(0x11000000),
-                                child: const Icon(Icons.broken_image_outlined),
-                              ),
-                        ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        order.productName,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Text('Listing status: ${order.status}'),
-                      Text(
-                        '${order.currencySymbol}${order.price.toStringAsFixed(2)}',
-                      ),
-                    ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            if (order.expiryDate != null)
-              Text('Expires: ${order.expiryDate!.toLocal()}'.split('.').first),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton(
-                  onPressed: () => _showAmendDialog(context, order),
-                  child: const Text('Edit listing'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () async {
-                    final shouldCancel = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Cancel Listing'),
-                        content: const Text(
-                          'Are you sure you want to cancel this listing?',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.productName,
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: const Text('No'),
+                        const SizedBox(height: 4),
+                        Text('Listing status: ${order.status}'),
+                        Text(
+                          '${order.currencySymbol}${order.price.toStringAsFixed(2)}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              if (order.expiryDate != null)
+                Text('Expires: ${order.expiryDate!.toLocal()}'.split('.').first),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () => _showAmendDialog(context, order),
+                    child: const Text('Edit listing'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () async {
+                      final shouldCancel = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Cancel Listing'),
+                          content: const Text(
+                            'Are you sure you want to cancel this listing? Current bookings will not be affected.',
                           ),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: const Text('Yes, cancel'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (shouldCancel == true) {
-                      await onCancelOrder(order);
-                    }
-                  },
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
-          ],
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('No'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Yes, cancel'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (shouldCancel == true) {
+                        await onCancelOrder(order);
+                      }
+                    },
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -616,7 +622,7 @@ class MyOrdersScreen extends StatelessWidget {
                         decoration: const InputDecoration(
                           labelText: 'Max rental days',
                           helperText:
-                              'Rentals over 30 days are not supported yet.',
+                              'Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -674,16 +680,6 @@ class MyOrdersScreen extends StatelessWidget {
                     final maxRentalDays = int.tryParse(
                       maxRentalDaysController.text.trim(),
                     );
-                    if (maxRentalDays != null && maxRentalDays > 30) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Please keep the rental length to 30 days or fewer.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
                     final price = double.tryParse(priceController.text.trim());
                     if (price != null) {
                       fields['price'] = price;

@@ -18,6 +18,7 @@ class ListingFormScreen extends StatefulWidget {
     this.existingOrder,
     this.initialProductId,
     this.initialProductName,
+    this.initialPostcode,
   });
 
   final String accessToken;
@@ -26,6 +27,7 @@ class ListingFormScreen extends StatefulWidget {
   final OrderSummary? existingOrder;
   final int? initialProductId;
   final String? initialProductName;
+  final String? initialPostcode;
 
   bool get isEdit => existingOrder != null;
 
@@ -70,6 +72,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   bool _saving = false;
   bool _searchingProducts = false;
   bool _collectionIsNotHomeAddress = false;
+  bool _showVerifiedUsersOnlyInfo = false;
   Timer? _productSearchDebounce;
 
   int _currentStep = 0;
@@ -117,6 +120,10 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
         unawaited(_loadListingAttributeDefinitionsForInitialProduct());
       }
       _expiryDate = DateTime.now().add(const Duration(days: 30));
+      final postcode = (widget.initialPostcode ?? '').trim();
+      if (postcode.isNotEmpty) {
+        _postcodeController.text = postcode;
+      }
       return;
     }
 
@@ -591,6 +598,19 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     });
   }
 
+  bool get _isPublicOnly => _letVisibility == 'PUBLIC';
+  bool get _isFriendsOnly => _letVisibility == 'FRIENDS';
+
+  void _applyVisibilityRules() {
+    if (_isPublicOnly) {
+      _matesRatesController.clear();
+      _matesDepositController.clear();
+    }
+    if (_isFriendsOnly) {
+      _verifiedUsersOnly = false;
+    }
+  }
+
   Map<String, dynamic> _buildPayload() {
     final priceBands = <Map<String, dynamic>>[];
     void addBand(TextEditingController daysController, TextEditingController priceController) {
@@ -1052,25 +1072,28 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
               decoration: const InputDecoration(labelText: 'Deposit (GBP)'),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _matesRatesController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+            if (!_isPublicOnly) ...[
+              TextFormField(
+                controller: _matesRatesController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Friends rate per day (GBP)',
+                ),
               ),
-              decoration: const InputDecoration(
-                labelText: 'Mates rates per day (GBP)',
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _matesDepositController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Friends deposit (GBP)',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _matesDepositController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Mates deposit (GBP)',
-              ),
-            ),
+              const SizedBox(height: 12),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _maxRentalDaysController,
@@ -1078,15 +1101,12 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
               decoration: const InputDecoration(
                 labelText: 'Maximum rental duration (days)',
                 helperText:
-                    'If you allow rentals over 5 days, deposits must be on Visa or Mastercard credit cards. Rentals over 30 days are not supported yet.',
+                    'If you allow rentals from 7 to 30 days, deposits must be on Visa credit cards or Mastercard credit cards. Rentals over 30 days are supported, but the full deposit has to be taken and returned later rather than held as a card authorisation, so fees are higher.',
               ),
               validator: (value) {
                 final parsed = int.tryParse((value ?? '').trim());
                 if (parsed == null || parsed < 1) {
                   return 'Enter a valid number of days';
-                }
-                if (parsed > 30) {
-                  return 'Keep the rental length to 30 days or fewer';
                 }
                 return null;
               },
@@ -1095,30 +1115,30 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Price bands',
+                'Longer-rental discounts',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Optional day-based pricing for longer rentals. Leave blank if you only use a single daily price. The app will show the lowest relevant band as the rental grows.',
+              'Want to offer reduced prices per day for longer rentals? Add only the breakpoints you need.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
             _buildPriceBandRow(
-              label: 'Band 1',
+              label: 'Up to 3 days',
               daysController: _band1DaysController,
               priceController: _band1PriceController,
             ),
             const SizedBox(height: 12),
             _buildPriceBandRow(
-              label: 'Band 2',
+              label: 'Up to 7 days',
               daysController: _band2DaysController,
               priceController: _band2PriceController,
             ),
             const SizedBox(height: 12),
             _buildPriceBandRow(
-              label: 'Band 3',
+              label: 'Up to 14 days',
               daysController: _band3DaysController,
               priceController: _band3PriceController,
             ),
@@ -1207,25 +1227,61 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
               ],
               onChanged: (value) {
                 if (value != null) {
-                  setState(() => _letVisibility = value);
+                  setState(() {
+                    _letVisibility = value;
+                    _applyVisibilityRules();
+                  });
                 }
               },
             ),
+            const SizedBox(height: 10),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  _isFriendsOnly
+                      ? 'Friends only hides public pricing, so only the friends price matters.'
+                      : _isPublicOnly
+                          ? 'Public only listings use the public price and deposit only.'
+                          : 'Friends and public listings can show both a public rate and a friends rate.',
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
-            CheckboxListTile(
+            SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _verifiedUsersOnly,
-              onChanged: (value) {
-                setState(() {
-                  _verifiedUsersOnly = value ?? false;
-                });
-              },
+              onChanged: _isFriendsOnly
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _verifiedUsersOnly = value;
+                      });
+                    },
               title: const Text('Verified users only'),
               subtitle: const Text(
-                'Renter must have completed Stripe identity verification. This is an identity check, not a payment-card check.',
+                'Renters must complete identity verification before the rental can start.',
               ),
-              controlAffinity: ListTileControlAffinity.leading,
             ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _showVerifiedUsersOnlyInfo = !_showVerifiedUsersOnlyInfo;
+                });
+              },
+              icon: const Icon(Icons.info_outline),
+              label: const Text('Why use verified users only?'),
+            ),
+            if (_showVerifiedUsersOnlyInfo)
+              Card(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text(
+                    'Upside: it can reduce fraud and no-shows. Downside: renters must verify before they can start, so you may get fewer immediate bookings.',
+                  ),
+                ),
+              ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _collectionPolicy,
@@ -1285,6 +1341,11 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                 onChanged: (_) => setState(_refreshDeliverySummary),
               ),
             ],
+            const SizedBox(height: 8),
+            Text(
+              'Pickup options describe what you, the lender, can offer.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 14),
             Align(
               alignment: Alignment.centerLeft,
@@ -1478,7 +1539,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
           child: TextFormField(
             controller: daysController,
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(labelText: '$label days'),
+            decoration: InputDecoration(labelText: label),
           ),
         ),
         const SizedBox(width: 12),

@@ -516,7 +516,7 @@ class Order(models.Model):
     )
     verified_users_only = models.BooleanField(
         default=False,
-        help_text='Only users who have completed Stripe identity verification can enquire on this listing.',
+        help_text='Only users who have completed Stripe identity verification can enquire on this listing. It can reduce fraud and no-shows, but it also means renters must verify before the rental can start.',
     )
 
     # Letting-specific fields

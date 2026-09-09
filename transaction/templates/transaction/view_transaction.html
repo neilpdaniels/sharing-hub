@@ -111,9 +111,9 @@
                         <p class="mb-1"><strong>Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
                         <p class="mb-1"><strong>Price:</strong> £{{ transaction.price|format_price }} per day</p>
                         <p class="mb-1"><strong>Deposit:</strong> £{{ transaction.deposit|format_price }}</p>
-                        {% if transaction.max_rental_days > 5 %}
+                        {% if transaction.get_rental_length_days > 6 %}
                         <div class="alert alert-warning py-2 px-3 mb-2 mt-2" style="font-size:0.92rem;">
-                            Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.
+                            Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.
                         </div>
                         {% endif %}
                         <p class="mb-1"><strong>Deposit status:</strong> {{ transaction.get_deposit_status_display }}</p>
@@ -647,6 +647,8 @@
 
             {% include "transaction/card_setup_form.html" %}
 
+            {% if workflow_message %}<div class="alert alert-info" role="status">{{ workflow_message }}</div>{% endif %}
+
             {% if 'initiate_rental' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
@@ -723,7 +725,7 @@
             </div>
             {% endif %}
 
-            {% if 'verify_checkout_handover_pin' in allowed_actions and checkout_pin_available %}
+            {% if is_renter and checkout_pin_available and transaction.transaction_status == 'RDAYAWV' %}
             <div class="card mb-3 border-success">
                 <div class="card-body">
                     <h5 class="card-title text-success">Checkout Handover PIN</h5>
@@ -839,7 +841,7 @@
             </div>
             {% endif %}
 
-            {% if 'verify_return_handover_pin' in allowed_actions and return_pin_available %}
+            {% if is_lender and return_pin_available and transaction.transaction_status == 'RRTDAYAWV' %}
             <div class="card mb-3 border-success">
                 <div class="card-body">
                     <h5 class="card-title text-success">Return Verification PIN</h5>

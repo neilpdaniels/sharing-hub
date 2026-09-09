@@ -72,8 +72,8 @@
             {% if transaction.transaction_status == transaction.RENTAL_ENQUIRY %}
             <div class="mt-2">You can add your card now before lender agreement.</div>
             {% endif %}
-            {% if transaction.max_rental_days > 5 %}
-            <div class="mt-2 font-weight-bold">Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.</div>
+            {% if transaction.max_rental_days > 6 %}
+            <div class="mt-2 font-weight-bold">Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. You can still use a different card for payment. Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.</div>
             {% endif %}
         </div>
         <div id="card-setup-live-status" class="alert mb-3" style="display:none;"></div>

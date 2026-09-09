@@ -79,9 +79,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       if (!mounted) {
         return;
@@ -123,7 +123,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   void _startCountdownTimer() {
     _countdownTimer?.cancel();
-    if (_detail?.status != 'RAGR') {
+    if (_detail?.status != 'RAGR' || _detail?.renterAgreedAt != null) {
       return;
     }
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -148,6 +148,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return [
       detail.reference,
       detail.status,
+      detail.workflowPayload.message,
+      detail.workflowPayload.allowedActions.join(','),
       detail.paymentStatus,
       detail.depositStatus,
       detail.productStatus,
@@ -282,6 +284,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         action: action,
         fields: fields,
       );
+      if (action == 'verify_checkout_handover_pin' ||
+          action == 'verify_return_handover_pin') {
+        _pinController.clear();
+      }
       await _refresh();
     } catch (e) {
       if (!mounted) {
@@ -358,13 +364,18 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     try {
       final selectedFile = _evidenceVideoFile;
       final videoUrl = _evidenceVideoUrl ?? '';
+      final capturedAt = DateTime.now().toUtc().toIso8601String();
+      final fields = <String, dynamic>{'captured_at': capturedAt};
+      if (videoUrl.isNotEmpty) {
+        fields[fieldName] = videoUrl;
+      }
 
       if (selectedFile != null) {
         await widget.repository.performActionWithFiles(
           accessToken: widget.accessToken,
           transactionReference: widget.transactionReference,
           action: action,
-          fields: videoUrl.isNotEmpty ? {fieldName: videoUrl} : const {},
+          fields: fields,
           videoFiles: [selectedFile],
         );
       } else if (videoUrl.isNotEmpty) {
@@ -372,7 +383,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           accessToken: widget.accessToken,
           transactionReference: widget.transactionReference,
           action: action,
-          fields: {fieldName: videoUrl},
+          fields: fields,
         );
       } else {
         throw Exception(
@@ -408,24 +419,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Rental terms and conditions'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 420),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Text(
-                    'Before confirming, please review the rental terms on the web version as they apply here as well. By continuing you agree to complete the handover, follow the agreed rental period, and raise any issues immediately through the transaction flow.',
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'This confirmation starts the same contract process used on the website. The booking can expire if it is not confirmed before the deadline.',
-                  ),
-                ],
-              ),
-            ),
+          title: const Text('Confirm rental agreement'),
+          content: const Text(
+            'Please review the rental terms shown below before confirming. By continuing, you agree to complete the handover, follow the agreed rental period, care for the item, and use the transaction flow to report any issue.',
           ),
           actions: [
             TextButton(
@@ -443,25 +439,113 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return agreed ?? false;
   }
 
+  Widget _rentalTermsCard(TransactionDetail detail) {
+    final rentalEnd = _friendlyDate(detail.rentalEndDate);
+    final deposit = '£${detail.deposit.toStringAsFixed(2)}';
+    final terms = [
+      (
+        'Condition on collection',
+        'Inspect the item at collection and raise any existing damage or faults through the transaction before accepting it.',
+      ),
+      (
+        'Use and care',
+        'Use the item only for its intended purpose and take reasonable care of it throughout the rental.',
+      ),
+      (
+        'Normal wear and tear',
+        'Minor surface scratches, dust marks, fading, and other small cosmetic changes from ordinary use are accepted.',
+      ),
+      (
+        'Damage beyond normal wear',
+        'You are responsible for damage caused by misuse, neglect, accident, or any damage beyond normal wear and tear.',
+      ),
+      (
+        'Return condition',
+        'Return the item in the same condition as received, allowing for normal wear and tear.',
+      ),
+      (
+        'Return date and location',
+        'Return the item on or before $rentalEnd, to the location agreed with the lender. Late returns may incur additional charges.',
+      ),
+      (
+        'Deposit',
+        'A deposit of $deposit may be held during the rental as security against damage, loss, theft, or other amounts allowed by the rental agreement.',
+      ),
+      (
+        'Deposit return',
+        'The deposit is returned after the item is checked. If damage or another valid claim is identified, some or all of the deposit may be retained while the matter is reviewed.',
+      ),
+      (
+        'Loss, theft, and insurance',
+        'The borrower is responsible for loss or theft during the rental. Appropriate insurance is recommended.',
+      ),
+      (
+        'Disputes',
+        'Condition, handover, missing rental, missing return, and deposit disputes are handled first through the transaction flow and may be escalated for review.',
+      ),
+      (
+        'Platform responsibilities',
+        'Rentalution provides the transaction workflow, messaging, evidence record, and payment/deposit handling. The lender and borrower remain responsible for the agreed rental and handover.',
+      ),
+    ];
+
+    return Card(
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        leading: const Icon(Icons.gavel_outlined),
+        title: const Text('Rental terms and conditions'),
+        subtitle: const Text('Review these terms before confirming'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'These terms apply to this rental. By confirming, both parties agree to follow them and the booking workflow.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                ...terms.map(
+                  (term) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: RichText(
+                      text: TextSpan(
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        children: [
+                          TextSpan(
+                            text: '${term.$1}: ',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          TextSpan(text: term.$2),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Important: confirming this rental creates a binding agreement. Keep all communication and evidence in the booking so any issue can be reviewed fairly.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   DateTime? _contractDeadline(TransactionDetail detail) {
-    final lenderAgreedAt = detail.lenderAgreedAt;
-    if (lenderAgreedAt == null) {
-      return null;
-    }
-
-    final deadlineByTime = lenderAgreedAt.add(const Duration(hours: 24));
-    final rentalStartDate = detail.rentalStartDate;
-    if (rentalStartDate == null) {
-      return deadlineByTime;
-    }
-
-    // Deadline is end of the rental start day (23:59:59), unless 24-hour window expires first
-    final endOfDay = DateTime(
-      rentalStartDate.year,
-      rentalStartDate.month,
-      rentalStartDate.day + 1,
-    ).subtract(const Duration(seconds: 1));
-    return deadlineByTime.isBefore(endOfDay) ? deadlineByTime : endOfDay;
+    return detail.workflowPayload.contractDeadline;
   }
 
   String _formatDuration(Duration duration) {
@@ -473,6 +557,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Duration? _contractTimeRemaining(TransactionDetail detail) {
+    if (detail.renterAgreedAt != null) {
+      return null;
+    }
     final deadline = _contractDeadline(detail);
     if (deadline == null) {
       return null;
@@ -680,7 +767,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       return hasEvidence ? 'verified' : 'pending';
     }
 
-    if (status == 'RENQ' || status == 'RAGR' || status == 'RDAYAWV' ||
+    if (status == 'RENQ' ||
+        status == 'RAGR' ||
+        status == 'RDAYAWV' ||
         status == 'RONG') {
       return 'not yet due';
     }
@@ -688,6 +777,25 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       return hasEvidence ? 'captured' : 'pending';
     }
     return hasEvidence ? 'verified' : 'pending';
+  }
+
+  bool _hasEvidenceForStage(
+    TransactionDetail detail, {
+    required bool checkout,
+  }) {
+    final hasVideo = checkout
+        ? detail.checkoutConditionVideoUrl.trim().isNotEmpty ||
+              detail.checkoutBorrowerVideoUrl.trim().isNotEmpty
+        : detail.returnConditionVideoUrl.trim().isNotEmpty ||
+              detail.returnBorrowerVideoUrl.trim().isNotEmpty ||
+              detail.returnLenderVideoUrl.trim().isNotEmpty;
+    if (hasVideo) {
+      return true;
+    }
+    final prefix = checkout ? 'checkout' : 'return';
+    return detail.evidenceItems.any(
+      (item) => item.evidenceStage.trim().toLowerCase().startsWith(prefix),
+    );
   }
 
   String _friendlyDate(DateTime? value) {
@@ -730,9 +838,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   bool _showDepositProposalProgress(TransactionDetail detail) {
-    return detail.status == 'RRTDPEND' ||
-        detail.status == 'RRTDCON' ||
-        detail.status == 'DREQ';
+    return detail.deposit > 0 &&
+        (detail.status == 'RRTDPEND' ||
+            detail.status == 'RRTDCON' ||
+            detail.status == 'DREQ');
   }
 
   int _depositProposalIterationCount(TransactionDetail detail) {
@@ -762,131 +871,109 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ].where((part) => part.trim().isNotEmpty).join('\n');
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _opposingPartyLabel(detail),
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        leading: CircleAvatar(
+          radius: 22,
+          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+          backgroundImage: avatarUrl.isNotEmpty
+              ? NetworkImage(avatarUrl)
+              : null,
+          child: avatarUrl.isEmpty
+              ? Text(
+                  counterparty.displayName.isNotEmpty
+                      ? counterparty.displayName[0].toUpperCase()
+                      : '?',
+                )
+              : null,
+        ),
+        title: Text(
+          _opposingPartyLabel(detail),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Text(
+          counterparty.displayName.isNotEmpty
+              ? counterparty.displayName
+              : 'View contact details',
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  backgroundImage:
-                      avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                  child: avatarUrl.isEmpty
-                      ? Text(
-                          counterparty.displayName.isNotEmpty
-                              ? counterparty.displayName[0].toUpperCase()
-                              : '?',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      : null,
+                if (counterparty.username.isNotEmpty)
+                  Text('@${counterparty.username}'),
+                if (counterparty.mobileNumber.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(counterparty.mobileNumber),
+                ],
+                if (address.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(address, style: theme.textTheme.bodyMedium),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _summaryChip(
+                      label: 'Rating',
+                      value: counterparty.rating > 0
+                          ? '${counterparty.rating.toStringAsFixed(1)} / 5'
+                          : 'N/A',
+                      icon: Icons.star_outline,
+                      accent: const Color(0xFFB45309),
+                    ),
+                    _summaryChip(
+                      label: 'Completed',
+                      value: counterparty.successfulTxns.toString(),
+                      icon: Icons.check_circle_outline,
+                      accent: const Color(0xFF2E7D6B),
+                    ),
+                    _summaryChip(
+                      label: 'Address',
+                      value: counterparty.addressVerified
+                          ? 'Verified'
+                          : 'Unverified',
+                      icon: Icons.verified_outlined,
+                      accent: const Color(0xFF7C3AED),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        counterparty.displayName.isNotEmpty
-                            ? counterparty.displayName
-                            : '-',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (counterparty.username.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '@${counterparty.username}',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                      if (counterparty.mobileNumber.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          counterparty.mobileNumber,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ],
-                    ],
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _addingCounterparty
+                        ? null
+                        : () => _addCounterpartyAsFriend(detail),
+                    icon: _addingCounterparty
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('Add as friend'),
                   ),
                 ),
               ],
             ),
-            if (address.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withOpacity(
-                    0.55,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(address, style: theme.textTheme.bodyMedium),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _summaryChip(
-                  label: 'Rating',
-                  value: counterparty.rating > 0
-                      ? '${counterparty.rating.toStringAsFixed(1)} / 5'
-                      : 'N/A',
-                  icon: Icons.star_outline,
-                  accent: const Color(0xFFB45309),
-                ),
-                _summaryChip(
-                  label: 'Completed',
-                  value: counterparty.successfulTxns.toString(),
-                  icon: Icons.check_circle_outline,
-                  accent: const Color(0xFF2E7D6B),
-                ),
-                _summaryChip(
-                  label: 'Address',
-                  value: counterparty.addressVerified ? 'Verified' : 'Unverified',
-                  icon: Icons.verified_outlined,
-                  accent: const Color(0xFF7C3AED),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonalIcon(
-                onPressed: _addingCounterparty
-                    ? null
-                    : () => _addCounterpartyAsFriend(detail),
-                icon: _addingCounterparty
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.person_add_alt_1_outlined),
-                label: const Text('Add as friend'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1580,8 +1667,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                             child: Text(
                               entry.label,
                               style: TextStyle(
-                                fontWeight:
-                                    active ? FontWeight.w700 : FontWeight.w500,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                                 color: done
                                     ? Colors.green.shade700
                                     : active
@@ -1632,6 +1720,63 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     );
   }
 
+  Widget _currentWorkflowCard(TransactionDetail detail) {
+    final currentStep = detail.workflowTimeline
+        .where((entry) => entry.current)
+        .firstOrNull;
+    final label = currentStep?.label.trim().isNotEmpty == true
+        ? currentStep!.label
+        : detail.workflowStageLabel;
+    final helpText = currentStep?.helpText.trim() ?? '';
+
+    return Card(
+      color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.flag_outlined,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Current step',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label.isNotEmpty
+                        ? label
+                        : 'Workflow step ${detail.workflowStage}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (helpText.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      helpText,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _checkoutCheckInSection(TransactionDetail detail) {
     final current = detail.workflowStage;
     final isCheckout = current == 5;
@@ -1639,6 +1784,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         ? 'Checkout Handover Evidence'
         : 'Return Handover Evidence';
     final isPastCheckout = current > 5;
+    final stagePrefix = isCheckout ? 'checkout' : 'return';
+    final evidenceItems = _evidenceItemsForStage(detail, stagePrefix);
 
     return Card(
       child: Padding(
@@ -1647,33 +1794,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: Colors.amber.shade700,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Placeholder - features coming soon',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.amber.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 8),
+            Text(
+              'Saved proof for this stage is shown here with the capture time.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
@@ -1689,8 +1814,79 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     detail.meIsLender))
               _pinSection('Return Code'),
             const SizedBox(height: 16),
-            // Show condition evidence section
-            _conditionEvidenceSection(detail, isCheckout),
+            Text(
+              'Saved evidence',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            if (evidenceItems.isEmpty)
+              Text(
+                'No evidence has been uploaded yet.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              ...evidenceItems.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.verified_outlined),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _evidenceStageLabel(item.evidenceStage),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Captured ${_formatEvidenceTimestamp(item.capturedAt ?? item.uploadedAt)}'
+                                '${item.captureDevice.trim().isNotEmpty ? ' · ${item.captureDevice}' : ''}',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                              if (item.externalVideoUrl.isNotEmpty ||
+                                  item.videoUrl.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  item.externalVideoUrl.isNotEmpty
+                                      ? 'External URL saved'
+                                      : 'Video file saved',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1728,96 +1924,85 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     );
   }
 
-  Widget _conditionEvidenceSection(TransactionDetail detail, bool isCheckout) {
-    final hasCheckoutEvidence = detail.checkoutConditionVideoUrl.isNotEmpty;
-    final hasReturnEvidence = detail.returnConditionVideoUrl.isNotEmpty;
+  String? _evidenceSubmissionAction(TransactionDetail detail) {
+    final status = detail.status.trim().toUpperCase();
+    if (detail.meIsLender && status == 'RAGR') {
+      return 'initiate_rental';
+    }
+    if (detail.meIsRenter && status == 'RDAYAWV') {
+      return 'submit_checkout_borrower_evidence';
+    }
+    if (detail.meIsRenter && (status == 'RONG' || status == 'RRTDAYAWV')) {
+      return 'submit_return_borrower_evidence';
+    }
+    if (detail.meIsLender && status == 'RRTDAYAWV') {
+      return 'submit_lender_return_evidence';
+    }
+    return null;
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              'Condition Evidence',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(width: 8),
-            if (hasCheckoutEvidence && isCheckout)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'Uploaded',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700,
-                  ),
-                ),
-              )
-            else if (hasReturnEvidence && !isCheckout)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'Uploaded',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                Icons.videocam_outlined,
-                size: 32,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Video upload placeholder',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: null,
-                    icon: const Icon(Icons.video_library_outlined),
-                    label: const Text('Choose Video'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: null,
-                    icon: const Icon(Icons.videocam_outlined),
-                    label: const Text('Record'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  String _evidenceSubmissionFieldName(TransactionDetail detail) {
+    final status = detail.status.trim().toUpperCase();
+    if (detail.meIsLender && status == 'RAGR') {
+      return 'checkout_video_url';
+    }
+    if (detail.meIsRenter && status == 'RDAYAWV') {
+      return 'checkout_borrower_video_url';
+    }
+    if (detail.meIsRenter && (status == 'RONG' || status == 'RRTDAYAWV')) {
+      return 'return_video_url';
+    }
+    return 'lender_return_video_url';
+  }
+
+  String _evidenceSubmissionLabel(TransactionDetail detail) {
+    final status = detail.status.trim().toUpperCase();
+    if (detail.meIsLender && status == 'RAGR') {
+      return 'initiate rental';
+    }
+    if (detail.meIsRenter && status == 'RDAYAWV') {
+      return 'checkout borrower evidence';
+    }
+    return detail.meIsRenter ? 'return evidence' : 'lender return evidence';
+  }
+
+  List<TransactionEvidenceItem> _evidenceItemsForStage(
+    TransactionDetail detail,
+    String stagePrefix,
+  ) {
+    return detail.evidenceItems
+        .where(
+          (item) =>
+              item.evidenceStage.trim().toLowerCase().startsWith(stagePrefix),
+        )
+        .toList(growable: false);
+  }
+
+  String _evidenceStageLabel(String stage) {
+    switch (stage.trim().toLowerCase()) {
+      case 'checkout_lender':
+        return 'Checkout evidence by lender';
+      case 'checkout_borrower':
+        return 'Checkout counter-evidence by renter';
+      case 'return_borrower':
+        return 'Return evidence by renter';
+      case 'return_lender':
+        return 'Return counter-evidence by lender';
+      default:
+        return stage.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatEvidenceTimestamp(DateTime? value) {
+    if (value == null) {
+      return 'unknown time';
+    }
+    final local = value.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day $hour:$minute';
   }
 
   @override
@@ -1842,6 +2027,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  _currentWorkflowCard(detail),
+                  const SizedBox(height: 16),
+                  _actionsCard(detail),
+                  const SizedBox(height: 16),
+                  _messageComposerCard(),
+                  const SizedBox(height: 16),
                   _summaryCard(detail),
                   if (_showDepositProposalProgress(detail)) ...[
                     const SizedBox(height: 16),
@@ -1850,11 +2041,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   const SizedBox(height: 16),
                   _workflowCard(detail),
                   const SizedBox(height: 16),
-                  _actionsCard(detail),
-                  const SizedBox(height: 16),
-                  _codesCard(),
-                  const SizedBox(height: 16),
-                  _messageComposerCard(),
+                  _rentalTermsCard(detail),
                   const SizedBox(height: 16),
                   _messagesCard(),
                   if (_error != null) ...[
@@ -1875,6 +2062,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         : null;
     final theme = Theme.of(context);
     final contractRemaining = _contractTimeRemaining(detail);
+    final hasCheckoutEvidence = _hasEvidenceForStage(detail, checkout: true);
+    final hasReturnEvidence = _hasEvidenceForStage(detail, checkout: false);
 
     return Card(
       child: Padding(
@@ -1904,7 +2093,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         children: [
                           _summaryChip(
                             label: 'Status',
-                            value: _transactionStatusText(detail.status),
+                            value: detail.statusDisplay.trim().isNotEmpty
+                                ? detail.statusDisplay
+                                : _transactionStatusText(detail.status),
                             icon: Icons.schedule_outlined,
                             accent: const Color(0xFF2E7D6B),
                           ),
@@ -1923,14 +2114,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                       child: Image.network(
                         visualUrls.first,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            Container(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              child: Icon(
-                                Icons.inventory_2_outlined,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: Icon(
+                            Icons.inventory_2_outlined,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1993,11 +2183,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              mainAxisExtent: 112,
+              mainAxisExtent: 128,
               children: [
                 _summaryTile(
                   label: 'Dates',
-                  value: '${_friendlyDate(detail.rentalStartDate)}'
+                  value:
+                      '${_friendlyDate(detail.rentalStartDate)}'
                       ' - ${_friendlyDate(detail.rentalEndDate)}',
                   icon: Icons.event_available_outlined,
                   accent: const Color(0xFF0F766E),
@@ -2017,7 +2208,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              mainAxisExtent: 156,
+              mainAxisExtent: 176,
               children: [
                 _summaryTile(
                   label: 'Price / day',
@@ -2040,28 +2231,27 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _summaryChip(
-                  label: 'Evidence',
-                  value: [
-                    'check-out: ${_evidenceStateText(detail: detail, isCheckout: true)}',
-                    'return: ${_evidenceStateText(detail: detail, isCheckout: false)}',
-                  ].join('\n'),
-                  icon: Icons.photo_library_outlined,
-                  accent: const Color(0xFF5B5FC7),
-                ),
-              ],
-            ),
+            if (hasCheckoutEvidence || hasReturnEvidence) ...[
+              const SizedBox(height: 12),
+              _summaryTile(
+                label: 'Evidence',
+                value: [
+                  if (hasCheckoutEvidence)
+                    'Checkout: ${_evidenceStateText(detail: detail, isCheckout: true)}',
+                  if (hasReturnEvidence)
+                    'Return: ${_evidenceStateText(detail: detail, isCheckout: false)}',
+                ].join('\n'),
+                icon: Icons.photo_library_outlined,
+                accent: const Color(0xFF5B5FC7),
+              ),
+            ],
             const SizedBox(height: 12),
             if (detail.depositProposedByLenderAt != null) ...[
               const SizedBox(height: 12),
               _summaryTile(
                 label: 'Current deposit proposal',
-                value: '£${detail.depositProposedReturnAmount.toStringAsFixed(2)}',
+                value:
+                    '£${detail.depositProposedReturnAmount.toStringAsFixed(2)}',
                 icon: Icons.price_change_outlined,
                 accent: const Color(0xFFB45309),
               ),
@@ -2072,7 +2262,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.55),
+                  color: theme.colorScheme.surfaceContainerHighest.withOpacity(
+                    0.55,
+                  ),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Text(
@@ -2089,22 +2281,26 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   Widget _actionsCard(TransactionDetail detail) {
     final actions = <Widget>[];
+    final codes = _codes;
+    bool can(String action) =>
+        detail.workflowPayload.allowedActions.contains(action);
     final contractRemaining = _contractTimeRemaining(detail);
     final disputeRemaining = _disputeStatementTimeRemaining(detail);
     final needsCardSetup =
-        detail.meIsRenter &&
-        (detail.status == 'RENQ' || detail.status == 'RAGR') &&
-        detail.depositCardSetupStatus != 'READY';
+        can('add_deposit_card') &&
+        (detail.depositCardSetupStatus != 'READY' ||
+            detail.depositTestHoldStatus != 'SUCCESS');
     final nativeStripeConfigured = AppConfig.stripePublishableKey
         .trim()
         .isNotEmpty;
     final hasSavedPaymentMethods = _paymentMethods.isNotEmpty;
-    final canSubmitVideoEvidence = detail.canSubmitVideoEvidence;
     final proposalIterationCount = _depositProposalIterationCount(detail);
     final proposalIterationLimit = _depositProposalIterationLimit(detail);
     final proposalMaxReached = proposalIterationCount >= proposalIterationLimit;
 
-    if (detail.status == 'RAGR' && contractRemaining != null) {
+    if (detail.status == 'RAGR' &&
+        detail.renterAgreedAt == null &&
+        contractRemaining != null) {
       actions.add(
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2184,7 +2380,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       actions.add(const SizedBox(height: 8));
     }
 
-    if (detail.status == 'RENQ' && detail.meIsLender) {
+    if (can('agree_rental')) {
       actions.add(
         _actionButton('Agree Rental', () => _performAction('agree_rental')),
       );
@@ -2193,7 +2389,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (detail.status == 'RENQ') {
+    if (can('request_cancellation')) {
       actions.add(
         _actionButton('Request Cancellation', () async {
           final reason = await _promptForText(
@@ -2212,9 +2408,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (detail.status == 'RAGR' &&
-        detail.meIsLender &&
-        detail.lenderAgreedAt == null) {
+    if (can('confirm_lender_contract')) {
       actions.add(
         _actionButton('Confirm Lender Contract', () async {
           final agreed = await _showRentalTermsConfirmation();
@@ -2226,25 +2420,21 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (detail.status == 'RAGR' &&
-        detail.meIsLender &&
-        detail.lenderAgreedAt != null &&
-        detail.renterAgreedAt == null) {
-      if (contractRemaining == Duration.zero) {
-        actions.add(
-          _actionButton(
-            'Re-send Confirmation Request',
-            () => _performAction('reinitiate_lender_contract'),
-          ),
-        );
-      }
+    if (can('reinitiate_lender_contract')) {
+      actions.add(
+        _actionButton(
+          'Re-send Confirmation Request',
+          () => _performAction('reinitiate_lender_contract'),
+        ),
+      );
     }
 
     if (detail.status == 'RAGR' &&
         detail.meIsRenter &&
+        detail.lenderAgreedAt != null &&
         detail.renterAgreedAt == null) {
       // Only show confirm/reject buttons if contract window is still open
-      if (contractRemaining != Duration.zero) {
+      if (can('confirm_renter_contract')) {
         actions.add(
           _actionButton('Confirm Renter Contract', () async {
             final agreed = await _showRentalTermsConfirmation();
@@ -2297,20 +2487,149 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       }
     }
 
-    if ((detail.status == 'RENQ' || detail.status == 'RAGR') &&
+    if (detail.workflowPayload.message.isNotEmpty) {
+      actions.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(detail.workflowPayload.message),
+        ),
+      );
+    }
+
+    if (can('initiate_rental')) {
+      actions.add(
+        _evidenceCapturePanel(
+          title: 'Collection evidence (lender)',
+          body:
+              'Record the item condition before collection. The borrower will review this evidence. Rental payment and the deposit hold are processed when you submit.',
+          submitLabel: 'Submit Checkout Evidence',
+          action: 'initiate_rental',
+          actionLabel: 'checkout lender evidence',
+          fieldName: 'checkout_video_url',
+          onChooseVideo: () => _pickEvidenceVideo(source: ImageSource.gallery),
+          onRecordVideo: () => _pickEvidenceVideo(source: ImageSource.camera),
+        ),
+      );
+    }
+    if (can('confirm_checkout_evidence')) {
+      actions.add(
+        _actionButton(
+          'Agree With Lender Evidence',
+          () => _performAction('confirm_checkout_evidence'),
+        ),
+      );
+    }
+    if (can('submit_checkout_borrower_evidence')) {
+      actions.add(
+        _evidenceCapturePanel(
+          title: 'Collection counter-evidence (borrower)',
+          body:
+              'Review the lender video in Evidence. If you disagree, submit your own condition video.',
+          submitLabel: 'Submit Counter-Evidence',
+          action: 'submit_checkout_borrower_evidence',
+          actionLabel: 'checkout borrower evidence',
+          fieldName: 'checkout_borrower_video_url',
+          onChooseVideo: () => _pickEvidenceVideo(source: ImageSource.gallery),
+          onRecordVideo: () => _pickEvidenceVideo(source: ImageSource.camera),
+        ),
+      );
+    }
+    if (detail.status == 'RDAYAWV' &&
         detail.meIsRenter &&
-        detail.rentalStartDate != null &&
-        DateTime.now().isAfter(
-          DateTime(
-            detail.rentalStartDate!.year,
-            detail.rentalStartDate!.month,
-            detail.rentalStartDate!.day,
-            23,
-            59,
-            59,
-          ),
-        ) &&
-        detail.checkoutHandoverVerifiedAt == null) {
+        codes?.checkoutPin.isNotEmpty == true) {
+      actions.add(
+        _handoverCodePanel(
+          title: 'Collection QR / PIN',
+          body:
+              'Show this code to the lender. They verify it to confirm collection and commence the rental.',
+          pin: codes!.checkoutPin,
+          qrPayload: codes.checkoutQrPayload,
+          buttonLabel: 'Show Collection QR / PIN',
+        ),
+      );
+    }
+    if (can('verify_checkout_handover_pin')) {
+      actions.add(
+        _handoverVerificationPanel(
+          title: 'Verify collection',
+          body: 'Ask the borrower for their collection code.',
+          action: 'verify_checkout_handover_pin',
+          submitLabel: 'Verify Collection & Start Rental',
+        ),
+      );
+    }
+    if (can('collect_deposit') && !can('initiate_rental')) {
+      actions.add(
+        _actionButton(
+          'Collect / Retry Deposit Hold',
+          () => _performAction('collect_deposit'),
+        ),
+      );
+    }
+    if (can('submit_return_borrower_evidence')) {
+      actions.add(
+        _evidenceCapturePanel(
+          title: 'Return evidence (borrower)',
+          body: 'Record the item condition at return for the lender to review.',
+          submitLabel: 'Submit / Update Return Evidence',
+          action: 'submit_return_borrower_evidence',
+          actionLabel: 'return evidence',
+          fieldName: 'return_video_url',
+          onChooseVideo: () => _pickEvidenceVideo(source: ImageSource.gallery),
+          onRecordVideo: () => _pickEvidenceVideo(source: ImageSource.camera),
+        ),
+      );
+    }
+    if (can('confirm_return_evidence')) {
+      actions.add(
+        _actionButton(
+          'Agree With Borrower Return Evidence',
+          () => _performAction('confirm_return_evidence'),
+        ),
+      );
+    }
+    if (can('submit_lender_return_evidence')) {
+      actions.add(
+        _evidenceCapturePanel(
+          title: 'Return counter-evidence (lender)',
+          body:
+              'Review the borrower video in Evidence. If you disagree, submit your own return video.',
+          submitLabel: 'Submit Return Counter-Evidence',
+          action: 'submit_lender_return_evidence',
+          actionLabel: 'lender return evidence',
+          fieldName: 'lender_return_video_url',
+          onChooseVideo: () => _pickEvidenceVideo(source: ImageSource.gallery),
+          onRecordVideo: () => _pickEvidenceVideo(source: ImageSource.camera),
+        ),
+      );
+    }
+    if (detail.status == 'RRTDAYAWV' &&
+        detail.meIsLender &&
+        codes?.returnPin.isNotEmpty == true) {
+      actions.add(
+        _handoverCodePanel(
+          title: 'Return QR / PIN',
+          body:
+              'Show this code to the borrower. They verify it to confirm return and continue to deposit resolution.',
+          pin: codes!.returnPin,
+          qrPayload: codes.returnQrPayload,
+          buttonLabel: 'Show Return QR / PIN',
+        ),
+      );
+    }
+    if (can('verify_return_handover_pin')) {
+      actions.add(
+        _handoverVerificationPanel(
+          title: 'Verify return',
+          body: 'Ask the lender for their return code.',
+          action: 'verify_return_handover_pin',
+          submitLabel: 'Verify Return & Continue',
+        ),
+      );
+    }
+
+    if (can('report_missing_rental')) {
+      actions.add(const SizedBox(height: 4));
       actions.add(
         _actionButton('Report Missing Rental', () async {
           if (!mounted) {
@@ -2332,30 +2651,17 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (detail.status == 'RAGR' && detail.meIsLender) {
-      actions.add(
-        _actionButton(
-          'Initiate Rental',
-          () => _performVideoEvidenceAction(
-            action: 'initiate_rental',
-            fieldName: 'checkout_video_url',
-            actionLabel: 'initiate_rental',
-          ),
-        ),
-      );
-    }
-
     if (needsCardSetup) {
       actions.add(
         Text(
           'Deposit card status: ${_depositCardStatusText(detail.depositCardSetupStatus)}',
         ),
       );
-      if (_transactionDurationDays(detail) > 5) {
+      if (_transactionDurationDays(detail) >= 7) {
         actions.add(const SizedBox(height: 6));
         actions.add(
           const Text(
-            'Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.',
+            'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. You can still use a different card for payment.',
           ),
         );
       }
@@ -2368,11 +2674,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ),
         );
       } else {
-        actions.add(
-          const Text(
-            'Cannot connect to Stripe right now.',
-          ),
-        );
+        actions.add(const Text('Cannot connect to Stripe right now.'));
       }
       if (nativeStripeConfigured) {
         actions.add(
@@ -2397,124 +2699,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       }
     }
 
-    if (detail.status == 'RDAYAWV' && detail.meIsRenter) {
-      actions.add(
-        _actionButton(
-          'Confirm Checkout Evidence',
-          () => _performAction('confirm_checkout_evidence'),
-        ),
-      );
-      actions.add(
-        _actionButton(
-          'Submit Borrower Checkout Evidence',
-          () => _performVideoEvidenceAction(
-            action: 'submit_checkout_borrower_evidence',
-            fieldName: 'checkout_borrower_video_url',
-            actionLabel: 'submit_checkout_borrower_evidence',
-          ),
-        ),
-      );
-      actions.add(
-        _actionButton(
-          'Verify Checkout via QR Scan',
-          () => _scanAndVerify('verify_checkout_handover_pin'),
-        ),
-      );
-      actions.add(
-        _actionButton(
-          'Verify Checkout via PIN',
-          () => _performAction(
-            'verify_checkout_handover_pin',
-            fields: {'pin': _pinController.text.trim()},
-          ),
-        ),
-      );
-    }
-
-    if (detail.status == 'RDAYAWV' && detail.meIsLender) {
-      actions.add(
-        _actionButton(
-          'Verify Checkout via QR Scan',
-          () => _scanAndVerify('verify_checkout_handover_pin'),
-        ),
-      );
-      actions.add(
-        _actionButton(
-          'Verify Checkout via PIN',
-          () => _performAction(
-            'verify_checkout_handover_pin',
-            fields: {'pin': _pinController.text.trim()},
-          ),
-        ),
-      );
-    }
-
-    if ((detail.status == 'RDAYAWV' ||
-            detail.status == 'RONG' ||
-            detail.status == 'RRTDAYAWV') &&
-        detail.meIsRenter) {
-      actions.add(
-        _actionButton(
-          'Submit Return Evidence',
-          () => _performVideoEvidenceAction(
-            action: 'submit_return_borrower_evidence',
-            fieldName: 'return_video_url',
-            actionLabel: 'submit_return_borrower_evidence',
-          ),
-        ),
-      );
-    }
-
-    if (detail.status == 'RRTDAYAWV' && detail.meIsLender) {
-      actions.add(
-        _actionButton(
-          'Confirm Return Evidence',
-          () => _performAction('confirm_return_evidence'),
-        ),
-      );
-      actions.add(
-        _actionButton(
-          'Submit Lender Return Evidence',
-          () => _performVideoEvidenceAction(
-            action: 'submit_lender_return_evidence',
-            fieldName: 'lender_return_video_url',
-            actionLabel: 'submit_lender_return_evidence',
-          ),
-        ),
-      );
-    }
-
-    if (detail.status == 'RRTDAYAWV' && detail.meIsRenter) {
-      actions.add(
-        _actionButton(
-          'Verify Return via QR Scan',
-          () => _scanAndVerify('verify_return_handover_pin'),
-        ),
-      );
-      actions.add(
-        _actionButton(
-          'Verify Return via PIN',
-          () => _performAction(
-            'verify_return_handover_pin',
-            fields: {'pin': _pinController.text.trim()},
-          ),
-        ),
-      );
-    }
-
-    if ((detail.status == 'RONG' || detail.status == 'RRTDAYAWV') &&
-        detail.meIsLender &&
-        detail.rentalEndDate != null &&
-        DateTime.now().isAfter(
-          DateTime(
-            detail.rentalEndDate!.year,
-            detail.rentalEndDate!.month,
-            detail.rentalEndDate!.day,
-            23,
-            59,
-            59,
-          ),
-        )) {
+    if (can('report_missing_return')) {
       actions.add(
         _actionButton('Report Missing Return', () async {
           final reason = await _promptForText(
@@ -2533,7 +2718,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (detail.status == 'RRTDPEND' && detail.meIsLender) {
+    if (detail.status == 'RRTDPEND' && can('propose_deposit_return')) {
       if (proposalMaxReached) {
         actions.add(
           const Text(
@@ -2553,7 +2738,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       }
     }
 
-    if (detail.status == 'RRTDCON' && detail.meIsLender) {
+    if (detail.status == 'RRTDCON' && detail.meIsLender && detail.deposit > 0) {
       if (proposalMaxReached) {
         actions.add(
           const Text(
@@ -2579,7 +2764,16 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (detail.status == 'RRTDPEND' && detail.meIsRenter) {
+    if (detail.status != 'RRTDCON' && can('secure_dispute_funds')) {
+      actions.add(
+        _actionButton(
+          'Secure Dispute Funds',
+          () => _performAction('secure_dispute_funds'),
+        ),
+      );
+    }
+
+    if (can('agree_deposit_return')) {
       actions.add(
         _actionButton(
           'Agree Deposit Return',
@@ -2604,10 +2798,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if ((detail.status == 'RRTDPEND' ||
-            detail.status == 'RRTDCON' ||
-            detail.status == 'DREQ') &&
-        (detail.meIsLender || detail.meIsRenter)) {
+    if (can('raise_deposit_dispute_admin')) {
       actions.add(
         _actionButton('Raise Deposit Dispute To Admin', () async {
           final notes = await _promptForText(
@@ -2626,15 +2817,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if ((detail.status == 'AWFB' ||
-            detail.status == 'RRTDRET' ||
-            detail.status == 'RCOMP' ||
-            (detail.status == 'CACK' &&
-                detail.meIsRenter &&
-                detail.depositResolutionNotes.contains(
-                  '[MISSING_RENTAL_VOIDED]',
-                ))) &&
-        (detail.meIsLender || detail.meIsRenter)) {
+    if (can('submit_feedback') && !detail.feedbackLeftByMe) {
       actions.add(
         _actionButton('Submit Feedback', () async {
           final fields = await _promptForFeedback();
@@ -2646,74 +2829,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    if (canSubmitVideoEvidence) {
-      actions.add(
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () => _pickEvidenceVideo(source: ImageSource.gallery),
-              icon: const Icon(Icons.video_library_outlined),
-              label: const Text('Choose Video'),
-            ),
-            OutlinedButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () => _pickEvidenceVideo(source: ImageSource.camera),
-              icon: const Icon(Icons.videocam_outlined),
-              label: const Text('Record Video'),
-            ),
-            if (_evidenceVideoFile != null)
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () {
-                        setState(() {
-                          _evidenceVideoFile = null;
-                          _evidenceVideoUrl = null;
-                        });
-                      },
-                child: const Text('Clear'),
-              ),
-          ],
-        ),
-      );
-      if (_evidenceVideoFile != null) {
-        actions.add(
-          Text('Selected video: ${_evidenceVideoFile!.path.split('/').last}'),
-        );
-      }
-      if (_evidenceVideoUrl != null && _evidenceVideoUrl!.isNotEmpty) {
-        actions.add(const Text('Evidence uploaded and ready for action.'));
-      }
-    }
-    final showCheckoutPinEntry =
-        detail.status == 'RDAYAWV' && detail.meIsLender;
-    final showReturnPinEntry =
-        detail.status == 'RRTDAYAWV' && detail.meIsRenter;
-    if (showCheckoutPinEntry || showReturnPinEntry) {
-      actions.add(
-        TextField(
-          controller: _pinController,
-          decoration: InputDecoration(
-            labelText: showCheckoutPinEntry
-                ? 'Checkout PIN'
-                : 'Return PIN',
-            helperText: showCheckoutPinEntry
-                ? 'Enter the borrower-provided PIN for checkout handover.'
-                : 'Enter the lender-provided PIN for return handover.',
-          ),
-        ),
-      );
-    }
-
     if (actions.isEmpty) {
       actions.add(
-        const Text(
-          'No direct actions available right now. Use messages to coordinate the next step.',
+        Text(
+          detail.statusDisplay.trim().isNotEmpty &&
+                  detail.statusDisplay.startsWith('All required steps complete')
+              ? 'All required steps complete, awaiting rental day.'
+              : 'No direct actions available right now. Use messages to coordinate the next step.',
         ),
       );
     }
@@ -2733,6 +2855,189 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     );
   }
 
+  Widget _actionSection({
+    required String title,
+    required String body,
+    required List<Widget> children,
+    required Color accent,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withOpacity(0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _evidenceCapturePanel({
+    required String title,
+    required String body,
+    required String submitLabel,
+    required String action,
+    required String actionLabel,
+    required String fieldName,
+    required Future<void> Function() onChooseVideo,
+    required Future<void> Function() onRecordVideo,
+  }) {
+    return _actionSection(
+      title: title,
+      body:
+          '$body Pick a short video and we will attach it to the transaction with the capture time.',
+      accent: const Color(0xFF5B5FC7),
+      icon: Icons.video_library_outlined,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => onChooseVideo(),
+              icon: const Icon(Icons.video_library_outlined),
+              label: const Text('Choose Video'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => onRecordVideo(),
+              icon: const Icon(Icons.videocam_outlined),
+              label: const Text('Record'),
+            ),
+            if (_evidenceVideoFile != null)
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        setState(() {
+                          _evidenceVideoFile = null;
+                          _evidenceVideoUrl = null;
+                        });
+                      },
+                child: const Text('Clear'),
+              ),
+          ],
+        ),
+        if (_evidenceVideoFile != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Selected video: ${_evidenceVideoFile!.path.split('/').last}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _performVideoEvidenceAction(
+                    action: action,
+                    fieldName: fieldName,
+                    actionLabel: actionLabel,
+                  ),
+            icon: const Icon(Icons.cloud_upload_outlined),
+            label: Text(submitLabel),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _handoverCodePanel({
+    required String title,
+    required String body,
+    required String pin,
+    required String qrPayload,
+    required String buttonLabel,
+  }) {
+    return _actionSection(
+      title: title,
+      body: body,
+      accent: const Color(0xFF0F766E),
+      icon: Icons.qr_code_2_outlined,
+      children: [
+        SelectableText(
+          'PIN: $pin',
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => QrDisplayScreen(
+                  title: title,
+                  qrPayload: qrPayload,
+                  pin: pin,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.qr_code_2),
+            label: Text(buttonLabel),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _handoverVerificationPanel({
+    required String title,
+    required String body,
+    required String action,
+    required String submitLabel,
+  }) {
+    return _actionSection(
+      title: title,
+      body: body,
+      accent: const Color(0xFF0F766E),
+      icon: Icons.qr_code_scanner,
+      children: [
+        TextField(
+          controller: _pinController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'PIN'),
+        ),
+        _actionButton(
+          submitLabel,
+          () => _performAction(
+            action,
+            fields: {'pin': _pinController.text.trim()},
+          ),
+        ),
+        _actionButton('Scan QR Code', () => _scanAndVerify(action)),
+      ],
+    );
+  }
+
   int _transactionDurationDays(TransactionDetail detail) {
     final start = detail.rentalStartDate;
     final end = detail.rentalEndDate;
@@ -2740,63 +3045,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       return 0;
     }
     return end.difference(start).inDays + 1;
-  }
-
-  Widget _codesCard() {
-    final codes = _codes;
-    final detail = _detail;
-    if (codes == null || detail == null) {
-      return const SizedBox.shrink();
-    }
-    final showCheckoutCode = detail.meIsRenter && codes.checkoutPin.isNotEmpty;
-    final showReturnCode = detail.meIsLender && codes.returnPin.isNotEmpty;
-    if (!showCheckoutCode && !showReturnCode) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Verification Codes',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            if (showCheckoutCode)
-              _actionButton(
-                'Show Checkout Code',
-                () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => QrDisplayScreen(
-                      title: 'Checkout Code',
-                      qrPayload: codes.checkoutQrPayload,
-                      pin: codes.checkoutPin,
-                    ),
-                  ),
-                ),
-              ),
-            if (showReturnCode)
-              _actionButton(
-                'Show Return Code',
-                () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => QrDisplayScreen(
-                      title: 'Return Code',
-                      qrPayload: codes.returnQrPayload,
-                      pin: codes.returnPin,
-                    ),
-                  ),
-                ),
-              ),
-            if (!showCheckoutCode && !showReturnCode)
-              const Text('No code available for your role right now.'),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _messageComposerCard() {

@@ -208,7 +208,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
-                      'These saved cards can be used for payments. For long rentals, the deposit card must be Visa or Mastercard credit card, and it can be different from the payment card.',
+                      'These saved cards can be used for payments. For rentals from 7 to 30 days, the deposit card must be a Visa credit card or Mastercard credit card, and it can be different from the payment card.',
                     ),
                   ),
                   const SizedBox(height: 12),

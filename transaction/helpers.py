@@ -237,14 +237,14 @@ def sync_transaction_fee_charges(transaction, pricing):
         TransactionCharge.objects.update_or_create(
             transaction=transaction,
             transaction_fee=rentalution_fee_ref,
-            user_to_pay=transaction.user_passive,
+            user_to_pay=transaction.user_aggressive,
             defaults={'price': rentalution_fee},
         )
     else:
         TransactionCharge.objects.filter(
             transaction=transaction,
             transaction_fee=rentalution_fee_ref,
-            user_to_pay=transaction.user_passive,
+            user_to_pay=transaction.user_aggressive,
         ).delete()
     
 # def checkFee(fee, qty, unit_price, expected_value, order):
@@ -334,50 +334,11 @@ def returnFeeValue(fee, qty, unit_price, order):
     return toReturn
 
 def getTransactionStepAndAction(txn, request):
-    step = 1
-    next_action = False
-    is_lender = (txn.user_passive == request.user)
-    is_renter = (txn.user_aggressive == request.user)
-
-    if txn.transaction_status == txn.RENTAL_ENQUIRY:
-        step = 1
-        next_action = is_lender
-    elif txn.transaction_status == txn.RENTAL_AGREED:
-        lender_done = bool(getattr(txn, 'lender_agreed_at', None))
-        renter_done = bool(getattr(txn, 'renter_agreed_at', None))
-
-        if not lender_done and not renter_done:
-            # Both parties can confirm in parallel
-            step = 2
-            next_action = (is_lender or is_renter)
-        elif lender_done ^ renter_done:
-            # One side confirmed; waiting on the other
-            step = 3
-            next_action = (is_lender and not lender_done) or (is_renter and not renter_done)
-        else:
-            # Both confirmed, ready for initiation
-            step = 4
-            next_action = is_lender
-    elif txn.transaction_status in (txn.RENTAL_DAY_AWAITING_VERIFICATION, txn.RENTAL_ONGOING, txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION):
-        step = 5
-        next_action = True
-    elif txn.transaction_status in (txn.RENTAL_RETURNED_DEPOSIT_PENDING, txn.RENTAL_RETURNED_DEPOSIT_RETURNED, txn.RENTAL_RETURNED_DEPOSIT_CONTESTED):
-        step = 6
-        next_action = is_lender
-    elif txn.transaction_status in (
-        txn.AWAITING_FEEDBACK,
-        txn.FEEDBACK_ONE_SIDED,
-        txn.RENTAL_PROCESS_COMPLETED,
-        txn.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
-        txn.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
-    ):
-        step = 7
-        next_action = False
-    elif txn.transaction_status in (txn.MEDIATION_REQUIRED, txn.DISPUTE_REQUESTED):
-        step = 7
-        next_action = False
-
-    return step, next_action
+    actions = set(txn.get_allowed_actions_for_user(request.user))
+    actions.difference_update({'send_message', 'request_cancellation'})
+    if txn.has_verified_payment_card():
+        actions.difference_update({'add_deposit_card', 'use_existing_card', 'confirm_stripe_card'})
+    return txn.get_workflow_stage_number(), bool(actions)
 
 
 # Distance-based filtering helpers

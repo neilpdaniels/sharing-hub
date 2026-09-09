@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/auth_models.dart';
+import '../services/api_client.dart';
 import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -37,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _passwordVisible = false;
   String? _error;
+  bool _serverUnavailable = false;
   bool _autoBiometricAttempted = false;
 
   @override
@@ -58,7 +60,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted || _autoBiometricAttempted) {
       return;
     }
-    if (!widget.showBiometricLogin || widget.onBiometricLogin == null || widget.busy) {
+    if (!widget.showBiometricLogin ||
+        widget.onBiometricLogin == null ||
+        widget.busy) {
       return;
     }
 
@@ -73,6 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _error = null;
+      _serverUnavailable = false;
     });
 
     try {
@@ -82,7 +87,10 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _serverUnavailable = isNetworkError(e);
+        _error = _serverUnavailable
+            ? 'Cannot contact Rentalution servers'
+            : e.toString();
       });
     }
   }
@@ -191,7 +199,95 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  if (_serverUnavailable)
+                    Card(
+                      margin: EdgeInsets.zero,
+                      color: Theme.of(context).colorScheme.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide(
+                          color: RentalutionPalette.brandTeal.withOpacity(0.28),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 180,
+                                  maxHeight: 140,
+                                ),
+                                child: Image.asset(
+                                  'assets/images/server-not-available-mobile.png',
+                                  fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.medium,
+                                  semanticLabel:
+                                      'Server connection unavailable',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: RentalutionPalette.brandTeal
+                                        .withOpacity(0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.cloud_off_outlined,
+                                    color: RentalutionPalette.brandTeal,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _error!,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        'Check your connection and try again.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: RentalutionPalette.brandTeal,
+                              ),
+                              onPressed: widget.busy ? null : _submit,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(

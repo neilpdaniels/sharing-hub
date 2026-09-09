@@ -79,6 +79,7 @@ flutter:
     - assets/images/logo-rentalution-dark.png
     - assets/images/logo-rentalution.png
     - assets/images/app_icon_1024.png
+    - assets/images/server-not-available-mobile.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

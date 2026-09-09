@@ -73,12 +73,18 @@ class StripeConnectService:
         return self._to_minor_units(rental_amount + delivery_amount + rentalution_amount)
 
     def _long_rental_requires_credit_or_mastercard(self, transaction):
-        return int(getattr(transaction, 'max_rental_days', 0) or 0) > 5
+        return transaction.requires_restricted_deposit_card()
 
     def _is_deposit_card_allowed_for_long_rental(self, card_brand, card_funding):
+        return self._is_deposit_card_allowed_for_transaction(card_brand, card_funding)
+
+    def _is_deposit_card_allowed_for_transaction(self, card_brand, card_funding):
         brand = (card_brand or '').strip().lower()
         funding = (card_funding or '').strip().lower()
-        return brand in ('visa', 'mastercard') and funding in ('credit', 'charge')
+        return (
+            (brand == 'visa' and funding == 'credit')
+            or (brand == 'mastercard' and funding == 'credit')
+        )
 
     def _ensure_customer_and_payment_method(self, stripe, *, transaction):
         customer_id = (transaction.stripe_customer_id or '').strip()
@@ -454,7 +460,7 @@ class StripeConnectService:
                 if not self._is_deposit_card_allowed_for_long_rental(card_brand, card_funding):
                     return {
                         'ok': False,
-                        'error': 'Long rentals require a Visa or Mastercard credit card for the deposit.'
+                        'error': 'Long rentals require a Visa credit card or Mastercard credit card for the deposit.'
                     }
 
             # Create/retrieve Stripe Customer and attach PaymentMethod

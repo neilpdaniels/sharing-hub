@@ -1,5 +1,7 @@
 from django.db import models
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+from django.utils import timezone
 from common.models import Order, Product, TransactionFee
 from django.core.validators import MaxValueValidator, MinValueValidator, FileExtensionValidator
 from django.core.exceptions import ValidationError
@@ -435,6 +437,28 @@ class Transaction(models.Model):
             return delta.days + 1  # inclusive
         return 0
 
+    def get_deposit_policy_tier(self):
+        """Return the deposit policy tier for the current rental length."""
+        rental_days = self.get_rental_length_days()
+        if rental_days > 30:
+            return 'long'
+        if rental_days >= 7:
+            return 'standard'
+        return 'short'
+
+    def requires_restricted_deposit_card(self):
+        """7 to 30 day rentals need a restricted card mix for deposit handling."""
+        return self.get_deposit_policy_tier() == 'standard'
+
+    @staticmethod
+    def is_restricted_deposit_card(card_brand, card_funding):
+        brand = (card_brand or '').strip().lower()
+        funding = (card_funding or '').strip().lower()
+        return (
+            (brand == 'visa' and funding == 'credit')
+            or (brand == 'mastercard' and funding == 'credit')
+        )
+
     @staticmethod
     def feedback_window_days():
         raw_days = getattr(settings, 'TRANSACTION_FEEDBACK_WINDOW_DAYS', 30)
@@ -449,47 +473,41 @@ class Transaction(models.Model):
         return self.feedback_window_expires_at
     
     def calculate_deposit_handling(self):
-        """Determine deposit handling based on rental length and amount"""
-        rental_days = self.get_rental_length_days()
-        
-        # If deposit > £100 and rental > 5 days, must take and return
-        if self.deposit > 100 and rental_days > 5:
-            return self.DEPOSIT_TAKEN_AND_RETURNED
-        # If deposit > £100 and rental <= 5 days, take and hold
-        elif self.deposit > 100 and rental_days <= 5:
+        """Determine deposit handling based on rental length."""
+        policy_tier = self.get_deposit_policy_tier()
+
+        if policy_tier == 'long':
             return self.DEPOSIT_TAKEN_AND_HELD
-        # Otherwise, hold only
-        else:
-            return self.DEPOSIT_HELD
-    
+        if policy_tier == 'standard':
+            return self.DEPOSIT_HELD_AND_RETURNED
+        return self.DEPOSIT_HELD
+
     def validate_rental_length(self):
-        """Validate rental length constraints"""
+        """Validate rental length constraints."""
         rental_days = self.get_rental_length_days()
         errors = []
-        
-        # Max 5 days rental for deposits over £100
-        if self.deposit > 100 and rental_days > 5:
-            errors.append(
-                f'Maximum rental length for deposits over £100 is 5 days. '
-                f'Your rental is {rental_days} days. '
-                f'For longer rentals, deposit will be taken and returned at the end.'
-            )
-        
+
+        if rental_days <= 0:
+            errors.append('Please choose a valid rental date range.')
+
         return errors
 
     def get_status_display_verbose(self):
         """Return richer user-facing status text for key workflow milestones."""
+        if self.transaction_status == self.RENTAL_ONGOING:
+            return self.get_workflow_message() or self.get_transaction_status_display()
         if self.transaction_status == self.RENTAL_AGREED:
             has_lender_confirmed = bool(self.lender_agreed_at)
             has_borrower_confirmed = bool(self.renter_agreed_at)
-            payment_method_not_required = (self.deposit <= 0 and self.price <= 0)
-            has_card_ready = (
-                self.deposit_card_setup_status == self.CARD_READY
-                or payment_method_not_required
-            )
+            has_card_ready = self.has_verified_payment_card()
 
             if has_lender_confirmed and has_borrower_confirmed and has_card_ready:
-                return 'All pre-rental actions completed - awaiting rental start date'
+                return self.get_workflow_message().rstrip('.')
+
+            if has_lender_confirmed and has_borrower_confirmed:
+                return 'Rental agreed, next step is borrower card setup'
+            if has_lender_confirmed:
+                return 'Rental agreed, next step is borrower confirmation'
 
         return self.get_transaction_status_display()
 
@@ -502,11 +520,17 @@ class Transaction(models.Model):
         if status == self.RENTAL_ENQUIRY:
             return 1
         if status == self.RENTAL_AGREED:
+            if (self.lender_agreed_at and self.renter_agreed_at
+                    and self.has_verified_payment_card() and self.rental_start_date
+                    and self.workflow_today() >= self.rental_start_date):
+                return 5
             if self.renter_agreed_at:
                 return 4
             if self.lender_agreed_at:
                 return 3
             return 2
+        if status == self.RENTAL_ONGOING and self.rental_end_date and self.workflow_today() >= self.rental_end_date:
+            return 6
         if status in (
             self.RENTAL_DAY_AWAITING_VERIFICATION,
             self.RENTAL_ONGOING,
@@ -532,6 +556,15 @@ class Transaction(models.Model):
         return 1
 
     def get_workflow_stage_label(self):
+        if self.transaction_status == self.RENTAL_ONGOING:
+            return self.get_workflow_message().rstrip('.') or self.WORKFLOW_STAGE_LABELS[5]
+        if (
+            self.transaction_status == self.RENTAL_AGREED
+            and self.lender_agreed_at
+            and self.renter_agreed_at
+            and self.has_verified_payment_card()
+        ):
+            return self.get_workflow_message().rstrip('.')
         return self.WORKFLOW_STAGE_LABELS.get(self.get_workflow_stage_number(), 'Workflow step')
 
     def _workflow_step_display_date(self, step):
@@ -571,143 +604,176 @@ class Transaction(models.Model):
         except AttributeError:
             return str(value)
 
+    # These actions use the same prerequisites in HTML and API handlers.
+    GUARDED_WORKFLOW_ACTIONS = frozenset({
+        'initiate_rental', 'confirm_checkout_evidence', 'submit_checkout_borrower_evidence',
+        'verify_checkout_handover_pin', 'submit_return_borrower_evidence',
+        'confirm_return_evidence', 'submit_lender_return_evidence', 'verify_return_handover_pin',
+        'propose_deposit_return', 'agree_deposit_return', 'contest_deposit_return',
+        'report_missing_rental', 'report_missing_return', 'collect_deposit',
+        'confirm_renter_contract', 'reinitiate_lender_contract',
+    })
+
     def get_allowed_actions(self):
-        status = self.transaction_status
-        actions = []
+        return list(dict.fromkeys(
+            self.get_allowed_actions_for_user(self.user_passive)
+            + self.get_allowed_actions_for_user(self.user_aggressive)
+        ))
 
-        if status == self.RENTAL_ENQUIRY:
-            actions.extend(['agree_rental', 'reject_enquiry', 'request_cancellation'])
-        elif status == self.RENTAL_AGREED:
-            actions.extend([
-                'confirm_lender_contract',
-                'reinitiate_lender_contract',
-                'confirm_renter_contract',
-                'reject_rental_agreement',
-                'add_deposit_card',
-                'use_existing_card',
-                'confirm_stripe_card',
-                'collect_deposit',
-                'send_message',
-            ])
-        elif status == self.RENTAL_DAY_AWAITING_VERIFICATION:
-            actions.extend([
-                'confirm_checkout_evidence',
-                'submit_checkout_borrower_evidence',
-                'verify_checkout_handover_pin',
-            ])
-        elif status == self.RENTAL_ONGOING:
-            actions.append('submit_return_borrower_evidence')
-        elif status == self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
-            actions.extend([
-                'confirm_return_evidence',
-                'submit_lender_return_evidence',
-                'verify_return_handover_pin',
-                'submit_return_borrower_evidence',
-            ])
-        elif status == self.RENTAL_RETURNED_DEPOSIT_PENDING:
-            if self.deposit > 0:
-                actions.extend([
-                    'propose_deposit_return',
-                    'deposit_full',
-                    'deposit_reduced',
-                    'mediation_required',
-                    'agree_deposit_return',
-                    'contest_deposit_return',
-                    'raise_deposit_dispute_admin',
-                ])
-        elif status in (
-            self.RENTAL_RETURNED_DEPOSIT_RETURNED,
-            self.RENTAL_RETURNED_DEPOSIT_CONTESTED,
-            self.DISPUTE_REQUESTED,
-        ):
-            actions.append('secure_dispute_funds')
-        elif status in (self.AWAITING_FEEDBACK, self.FEEDBACK_ONE_SIDED):
-            actions.append('submit_feedback')
+    def ensure_checkout_pin(self):
+        self.refresh_from_db()
+        if (self.transaction_status == self.RENTAL_DAY_AWAITING_VERIFICATION
+                and (self.checkout_borrower_confirmed or self.checkout_borrower_video_url)
+                and self.checkout_funds_ready() and not self.checkout_handover_pin):
+            pin = ''.join(random.SystemRandom().choices(string.digits, k=6))
+            # Do not replace a code another request has already generated.
+            type(self).objects.filter(pk=self.pk, checkout_handover_pin='',
+                                      transaction_status=self.RENTAL_DAY_AWAITING_VERIFICATION).update(
+                checkout_handover_pin=pin, checkout_handover_pin_generated_at=timezone.now(),
+                amended=timezone.now(),
+            )
+            self.refresh_from_db()
 
-        return list(dict.fromkeys(actions))
+    @staticmethod
+    def workflow_today():
+        return timezone.localtime(timezone.now(), ZoneInfo('Europe/London')).date()
+
+    def get_contract_deadline(self):
+        if not self.lender_agreed_at:
+            return None
+        deadline = self.lender_agreed_at + timedelta(hours=24)
+        if self.rental_start_date:
+            end_of_day = timezone.make_aware(
+                datetime.combine(self.rental_start_date + timedelta(days=1), time.min)
+                - timedelta(seconds=1), ZoneInfo('Europe/London'),
+            )
+            deadline = min(deadline, end_of_day)
+        return deadline
+
+    def needs_payment_card(self):
+        return any((self.deposit > 0, self.price > 0,
+                    (self.delivery_cost or 0) > 0, (self.rentalution_fee or 0) > 0))
+
+    def has_verified_payment_card(self):
+        return not self.needs_payment_card() or (
+            self.deposit_card_setup_status == self.CARD_READY
+            and self.deposit_test_hold_status == self.TEST_HOLD_SUCCESS
+        )
+
+    def checkout_funds_ready(self):
+        payment_due = ((self.quantity or 0) * (self.price or 0)) + (self.delivery_cost or 0) + (self.rentalution_fee or 0)
+        payment_ready = payment_due <= 0 or self.payment_status == self.PAYMENT_CAPTURED_PLACEHOLDER
+        deposit_ready = self.deposit <= 0 or bool(
+            self.deposit_collected_placeholder
+            or self.deposit_collection_status == self.COLLECT_SUCCESS
+            or self.deposit_status == self.DEPOSIT_HELD_PLACEHOLDER
+        )
+        return payment_ready and deposit_ready
+
+    def get_workflow_message(self):
+        today = self.workflow_today()
+        if self.transaction_status == self.RENTAL_AGREED:
+            if not self.lender_agreed_at:
+                return 'Awaiting lender contract confirmation.'
+            if not self.renter_agreed_at:
+                deadline = self.get_contract_deadline()
+                if deadline and timezone.now() > deadline:
+                    return 'Borrower confirmation expired. The lender can re-send the confirmation request.'
+                return 'Awaiting borrower contract confirmation.'
+            if not self.has_verified_payment_card():
+                return 'Awaiting borrower payment card verification before collection.'
+            if self.rental_start_date and today >= self.rental_start_date:
+                return 'Collection due. Lender: submit checkout evidence; borrower: review it before sharing the collection code.'
+            return 'All required steps complete, awaiting rental day.'
+        if self.transaction_status == self.RENTAL_DAY_AWAITING_VERIFICATION:
+            if not (self.checkout_borrower_confirmed or self.checkout_borrower_video_url):
+                return 'Awaiting borrower agreement or checkout counter-evidence.'
+            if not self.checkout_funds_ready():
+                return 'Awaiting rental payment and deposit hold before the collection code is available.'
+            return 'Awaiting collection verification. Borrower: share your code with the lender.'
+        if self.transaction_status == self.RENTAL_ONGOING:
+            if self.rental_end_date and today >= self.rental_end_date:
+                return f'Return due on {self.rental_end_date:%d %b %Y}. Borrower: submit return evidence.'
+            if self.rental_end_date:
+                return f'Rental commenced, awaiting return day on {self.rental_end_date:%d %b %Y}.'
+        if self.transaction_status == self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
+            if not self.return_handover_pin:
+                return 'Awaiting lender agreement or return counter-evidence.'
+            return 'Awaiting return verification. Lender: share your code with the borrower.'
+        if self.transaction_status == self.RENTAL_RETURNED_DEPOSIT_PENDING:
+            if not self.deposit_proposed_by_lender_at:
+                return 'Return completed. Awaiting lender deposit return proposal.'
+            return 'Awaiting borrower acceptance or contest of the deposit return proposal.'
+        if self.transaction_status == self.RENTAL_RETURNED_DEPOSIT_CONTESTED:
+            return 'Deposit proposal contested. Lender: update the proposal or escalate the dispute.'
+        return ''
 
     def get_allowed_actions_for_user(self, user):
         if user is None or not getattr(user, 'is_authenticated', False):
             return []
-
-        status = self.transaction_status
         is_lender = user.id == self.user_passive_id
         is_renter = user.id == self.user_aggressive_id
+        if not (is_lender or is_renter):
+            return []
+        status = self.transaction_status
+        today = self.workflow_today()
+        start_due = bool(self.rental_start_date and today >= self.rental_start_date)
+        return_due = bool(self.rental_end_date and today >= self.rental_end_date)
         actions = []
-
         if status == self.RENTAL_ENQUIRY:
             if is_lender:
                 actions.extend(['agree_rental', 'reject_enquiry'])
-            if is_lender or is_renter:
-                actions.append('request_cancellation')
+            actions.append('request_cancellation')
         elif status == self.RENTAL_AGREED:
+            deadline = self.get_contract_deadline()
+            expired = bool(deadline and timezone.now() > deadline)
             if is_lender and not self.lender_agreed_at:
-                actions.extend(['confirm_lender_contract', 'reinitiate_lender_contract'])
-            if is_renter and self.lender_agreed_at and not self.renter_agreed_at:
+                actions.append('confirm_lender_contract')
+            if is_lender and self.lender_agreed_at and not self.renter_agreed_at and expired:
+                actions.append('reinitiate_lender_contract')
+            if is_renter and self.lender_agreed_at and not self.renter_agreed_at and not expired:
                 actions.extend(['confirm_renter_contract', 'reject_rental_agreement'])
-            payment_card_required = any(
-                (
-                    self.deposit > 0,
-                    self.price > 0,
-                    (self.delivery_cost or 0) > 0,
-                    (self.rentalution_fee or 0) > 0,
-                )
-            )
-            if is_renter and payment_card_required:
-                actions.extend(['add_deposit_card', 'use_existing_card', 'confirm_stripe_card'])
-            if is_lender and payment_card_required and self.deposit_card_setup_status == self.CARD_READY:
-                actions.append('collect_deposit')
-            if is_lender or is_renter:
-                actions.append('send_message')
+            if is_lender and self.lender_agreed_at and self.renter_agreed_at and start_due and self.has_verified_payment_card():
+                actions.append('initiate_rental')
+            actions.append('send_message')
         elif status == self.RENTAL_DAY_AWAITING_VERIFICATION:
-            if is_renter:
-                actions.extend([
-                    'confirm_checkout_evidence',
-                    'submit_checkout_borrower_evidence',
-                ])
-            if is_lender:
+            if is_renter and self.checkout_condition_video_url:
+                actions.extend(['confirm_checkout_evidence', 'submit_checkout_borrower_evidence'])
+            if is_lender and self.checkout_handover_pin and self.checkout_funds_ready():
                 actions.append('verify_checkout_handover_pin')
         elif status == self.RENTAL_ONGOING:
-            if is_renter:
+            if is_renter and return_due:
                 actions.append('submit_return_borrower_evidence')
         elif status == self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
-            if is_lender:
-                actions.extend([
-                    'confirm_return_evidence',
-                    'submit_lender_return_evidence',
-                ])
+            if is_lender and self.return_borrower_video_url:
+                actions.extend(['confirm_return_evidence', 'submit_lender_return_evidence'])
             if is_renter:
-                actions.extend([
-                    'verify_return_handover_pin',
-                    'submit_return_borrower_evidence',
-                ])
-        elif status == self.RENTAL_RETURNED_DEPOSIT_PENDING:
+                actions.append('submit_return_borrower_evidence')
+                if self.return_handover_pin:
+                    actions.append('verify_return_handover_pin')
+        elif status in (self.RENTAL_RETURNED_DEPOSIT_PENDING, self.RENTAL_RETURNED_DEPOSIT_CONTESTED):
             if self.deposit > 0:
-                if is_lender:
-                    actions.extend([
-                        'propose_deposit_return',
-                        'deposit_full',
-                        'deposit_reduced',
-                        'mediation_required',
-                    ])
-                if is_renter:
-                    actions.extend([
-                        'agree_deposit_return',
-                        'contest_deposit_return',
-                    ])
-                if is_lender or is_renter:
-                    actions.append('raise_deposit_dispute_admin')
-        elif status in (
-            self.RENTAL_RETURNED_DEPOSIT_RETURNED,
-            self.RENTAL_RETURNED_DEPOSIT_CONTESTED,
-            self.DISPUTE_REQUESTED,
-        ):
-            if is_lender or is_renter:
-                actions.append('secure_dispute_funds')
+                if is_lender and (self.deposit_proposal_iteration_count or 0) < 5:
+                    actions.append('propose_deposit_return')
+                if is_renter and status == self.RENTAL_RETURNED_DEPOSIT_PENDING and self.deposit_proposed_by_lender_at:
+                    actions.extend(['agree_deposit_return', 'contest_deposit_return'])
+                actions.append('raise_deposit_dispute_admin')
         elif status in (self.AWAITING_FEEDBACK, self.FEEDBACK_ONE_SIDED):
-            if is_lender or is_renter:
-                actions.append('submit_feedback')
-
+            actions.append('submit_feedback')
+        if is_renter and status in (self.RENTAL_ENQUIRY, self.RENTAL_AGREED) and self.needs_payment_card() and not self.deposit_collected_placeholder:
+            actions.extend(['add_deposit_card', 'use_existing_card', 'confirm_stripe_card'])
+        if is_lender and status in (self.RENTAL_AGREED, self.RENTAL_DAY_AWAITING_VERIFICATION,
+                                   self.RENTAL_ONGOING, self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+                                   self.RENTAL_RETURNED_DEPOSIT_PENDING) and self.deposit > 0 and start_due and self.has_verified_payment_card() and not self.deposit_collected_placeholder and self.deposit_collection_status != self.COLLECT_SUCCESS:
+            actions.append('collect_deposit')
+        if is_lender and self.deposit > 0 and status in (self.RENTAL_RETURNED_DEPOSIT_CONTESTED, self.DISPUTE_REQUESTED):
+            actions.append('secure_dispute_funds')
+        if is_renter and status in (self.RENTAL_ENQUIRY, self.RENTAL_AGREED, self.RENTAL_DAY_AWAITING_VERIFICATION) and self.rental_start_date and today > self.rental_start_date and not self.checkout_handover_verified_at:
+            actions.append('report_missing_rental')
+        if is_lender and status in (self.RENTAL_ONGOING, self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION) and self.rental_end_date and today > self.rental_end_date:
+            actions.append('report_missing_return')
+        if is_renter and status == self.CANCEL_ACCEPTED and '[MISSING_RENTAL_VOIDED]' in (self.deposit_resolution_notes or ''):
+            actions.append('submit_feedback')
         return list(dict.fromkeys(actions))
 
     def get_workflow_payload(self):
@@ -734,8 +800,16 @@ class Transaction(models.Model):
         timeline = [
             {
                 'step': step,
-                'label': self.WORKFLOW_STAGE_LABELS.get(step, 'Workflow step'),
-                'help_text': self.WORKFLOW_STAGE_HELP_TEXT.get(step, ''),
+                'label': (
+                    self.get_workflow_stage_label()
+                    if step == current
+                    else self.WORKFLOW_STAGE_LABELS.get(step, 'Workflow step')
+                ),
+                'help_text': (
+                    'The rental is fully prepared. Nothing else is required until the rental day.'
+                    if step == current
+                    else self.WORKFLOW_STAGE_HELP_TEXT.get(step, '')
+                ),
                 'current': step == current,
                 'done': step < current,
                 'display_date': self._format_workflow_step_display_date(
@@ -747,6 +821,9 @@ class Transaction(models.Model):
         return {
             'current_stage': current,
             'current_label': self.get_workflow_stage_label(),
+            'message': self.get_workflow_message(),
+            'today': self.workflow_today().isoformat(),
+            'contract_deadline': self.get_contract_deadline().isoformat() if self.get_contract_deadline() else None,
             'timeline': timeline,
             'allowed_actions': self.get_allowed_actions(),
             'cancellation_banner': cancellation_banner,
@@ -956,6 +1033,13 @@ class TransactionMessageImage(models.Model):
     )
 
     txn_message = models.ForeignKey(TransactionMessage, related_name='txn_msg_img', on_delete=models.CASCADE, blank=True, null=True)
+    transaction = models.ForeignKey(
+        Transaction,
+        related_name='evidence_items',
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
     image = models.ImageField(
         upload_to=RandomFileName('images/txn_msg/'),
         blank=True,

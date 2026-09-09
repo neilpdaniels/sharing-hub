@@ -43,6 +43,7 @@ from transaction.helpers import (
     sync_transaction_fee_charges,
     sync_transaction_pricing,
 )
+from rentalution.context_processors import get_transaction_notification_payload
 from transaction.stripe_connect import stripe_connect_service
 from transaction.tasks import (
     async_collect_deposit_hold,
@@ -111,13 +112,13 @@ def _generate_txn_pin(length=6):
     return ''.join(digits[random.randrange(0, 10)] for _ in range(length))
 
 
-def _parse_qr_payload(payload):
+def _parse_qr_payload(payload, transaction_reference=None):
     value = (payload or '').strip()
     # Expected: SHARINGHUB:CHECKOUT_PIN:<ref>:<pin> or SHARINGHUB:RETURN_PIN:<ref>:<pin>
     if not value.startswith('SHARINGHUB:'):
         return '', ''
     parts = value.split(':')
-    if len(parts) != 4:
+    if len(parts) != 4 or (transaction_reference is not None and parts[2] != transaction_reference):
         return '', ''
     return parts[1], parts[3]
 
@@ -456,7 +457,7 @@ class TransactionAccessMixin:
             return False
         if not txn.rental_start_date:
             return False
-        return timezone.now().date() >= txn.rental_start_date
+        return txn.workflow_today() >= txn.rental_start_date
 
     def _system_message(self, txn, user_from, user_to, subject, description):
         TransactionMessage.objects.create(
@@ -966,6 +967,20 @@ class MobileNotificationPreferencesView(APIView):
         payload['updated'] = bool(updates)
         payload['applied_to_active_devices'] = queryset.count() if updates else 0
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class MobileTransactionNotificationsView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, *args, **kwargs):
+        payload = get_transaction_notification_payload(request.user)
+        return Response(
+            {
+                'txn_notice_count': payload['txn_notice_count'],
+                'txn_notice_items': payload['txn_notice_items'],
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class MobileAccountDetailView(APIView):
@@ -1734,21 +1749,6 @@ class TransactionListView(generics.ListAPIView):
                 {'error': 'Cannot create transaction for your own order'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            renter_profile = user.profile
-        except Profile.DoesNotExist:
-            renter_profile = None
-        if order.verified_users_only and not is_profile_kyc_verified(renter_profile):
-            return Response(
-                {
-                    'error': (
-                        'This listing is for verified users only. '
-                        'Complete Stripe identity verification first. '
-                        'That is an identity check, not a payment-card check.'
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
 
         blocked_dates = set(
             order.blocked_dates.filter(reason__in=[OrderBlockedDate.MANUAL, OrderBlockedDate.BOOKED]).values_list('date', flat=True)
@@ -2003,7 +2003,7 @@ class TransactionCodesView(TransactionAccessMixin, APIView):
             'return_code': None,
         }
 
-        if is_renter and txn.checkout_handover_pin and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
+        if is_renter and txn.checkout_handover_pin and txn.checkout_funds_ready() and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
             payload['checkout_code'] = {
                 'pin': txn.checkout_handover_pin,
                 'qr_payload': f'SHARINGHUB:CHECKOUT_PIN:{txn.transaction_reference}:{txn.checkout_handover_pin}',
@@ -2030,6 +2030,9 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         data = serializer.validated_data
         action = data['action']
 
+        if action in txn.GUARDED_WORKFLOW_ACTIONS and action not in txn.get_allowed_actions_for_user(request.user):
+            raise ValidationError('This action is not available yet. Refresh the transaction to see the current step.')
+
         def notify_counterparty(subject, description):
             recipient = txn.user_aggressive if request.user == txn.user_passive else txn.user_passive
             self._system_message(txn, request.user, recipient, subject, description)
@@ -2052,7 +2055,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         def refresh_feedback_deadline():
             txn.refresh_feedback_deadline()
 
-        def uploaded_video_url(subject_prefix, description):
+        def uploaded_video_url(subject_prefix, description, *, evidence_stage=''):
             video_files = request.FILES.getlist('videos')
             if not video_files:
                 return ''
@@ -2068,11 +2071,16 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             )
             txn_msg_image = TransactionMessageImage(
                 txn_message=txn_message,
+                transaction=txn,
                 user=request.user,
                 video=video_file,
                 video_raw=video_file,
                 first_image=False,
                 active=True,
+                captured_at=timezone.now(),
+                capture_device='mobile',
+                uploader_role='lender' if is_lender else 'borrower',
+                evidence_stage=evidence_stage,
             )
             txn_msg_image.save()
             return txn_msg_image.video.url if txn_msg_image.video else ''
@@ -2135,8 +2143,8 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             return Response({'status': 'ok', 'message': 'Contract confirmed by lender.'})
 
         if action == 'reinitiate_lender_contract' and is_lender and txn.transaction_status == txn.RENTAL_AGREED and txn.lender_agreed_at and not txn.renter_agreed_at:
-            deadline_24h = txn.lender_agreed_at + timedelta(hours=24)
-            if timezone.now() <= deadline_24h:
+            deadline = txn.get_contract_deadline()
+            if deadline and timezone.now() <= deadline:
                 raise ValidationError('Borrower still has time to confirm.')
             txn.lender_agreed_at = timezone.now()
             txn.save(update_fields=['lender_agreed_at', 'amended'])
@@ -2173,8 +2181,9 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         if action == 'report_missing_rental' and is_renter and txn.transaction_status in (
             txn.RENTAL_ENQUIRY,
             txn.RENTAL_AGREED,
+            txn.RENTAL_DAY_AWAITING_VERIFICATION,
         ):
-            if not txn.rental_start_date or timezone.now().date() <= txn.rental_start_date:
+            if not txn.rental_start_date or txn.workflow_today() <= txn.rental_start_date:
                 raise ValidationError('Missing rental can only be reported after rental start date has passed.')
             if txn.checkout_handover_verified_at:
                 raise ValidationError('Rental handover already verified, missing rental cannot be reported.')
@@ -2209,7 +2218,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.RENTAL_ONGOING,
             txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
         ):
-            if not txn.rental_end_date or timezone.now().date() <= txn.rental_end_date:
+            if not txn.rental_end_date or txn.workflow_today() <= txn.rental_end_date:
                 raise ValidationError('Missing return can only be reported after rental return date has passed.')
             reason = (data.get('reason') or '').strip()
             txn.prev_transaction_status = txn.transaction_status
@@ -2242,6 +2251,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 pm = PaymentMethod.objects.get(id=method_id, user=request.user)
             except PaymentMethod.DoesNotExist as exc:
                 raise ValidationError('Payment method not found.') from exc
+            if txn.requires_restricted_deposit_card() and not txn.is_restricted_deposit_card(pm.card_brand, pm.card_funding):
+                raise ValidationError(
+                    'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit.'
+                )
             txn.deposit_card_setup_status = txn.CARD_READY
             txn.deposit_cardholder_name = 'Stripe'
             txn.deposit_card_brand = pm.card_brand
@@ -2263,6 +2276,12 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 raise ValidationError('cardholder_name is required.')
             if len(card_last4) != 4 or not card_last4.isdigit():
                 raise ValidationError('card_last4 must be 4 digits.')
+            if txn.requires_restricted_deposit_card():
+                funding = (data.get('card_funding') or '').strip()
+                if not txn.is_restricted_deposit_card(card_brand, funding):
+                    raise ValidationError(
+                        'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit.'
+                    )
             async_setup_deposit_card_and_test_hold.delay(
                 transaction_id=txn.id,
                 cardholder_name=cardholder_name,
@@ -2331,20 +2350,32 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         ):
             if not self._can_collect_deposit(txn):
                 raise ValidationError('Deposit cannot be collected yet.')
-            async_collect_deposit_hold.delay(transaction_id=txn.id)
             txn.deposit_collection_status = txn.COLLECT_NOT_RUN
             txn.save(update_fields=['deposit_collection_status', 'amended'])
+            async_collect_deposit_hold.delay(transaction_id=txn.id)
             return Response({'status': 'ok', 'message': 'Deposit collection started.'})
 
         if action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
             if not self._has_verified_payment_card(txn):
                 raise ValidationError('Borrower payment card must be verified first.')
+            if txn.order_passive and txn.order_passive.verified_users_only:
+                try:
+                    renter_profile = txn.user_aggressive.profile
+                except Profile.DoesNotExist:
+                    renter_profile = None
+                if not is_profile_kyc_verified(renter_profile):
+                    raise ValidationError(
+                        'This listing requires verified users. The borrower can enquire, but must complete Stripe identity verification before the rental can start.'
+                    )
             checkout_video = (data.get('checkout_video_url') or '').strip()
             if not checkout_video:
                 checkout_video = uploaded_video_url(
                     'Checkout evidence submitted',
                     'Lender submitted rental-start evidence. Borrower should confirm or submit counter-evidence.',
+                    evidence_stage='checkout_lender',
                 )
+            if not checkout_video:
+                raise ValidationError('Checkout video evidence is required.')
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_DAY_AWAITING_VERIFICATION
             txn.checkout_condition_video_url = checkout_video
@@ -2472,6 +2503,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 borrower_video = uploaded_video_url(
                     'Borrower checkout counter-evidence',
                     'Borrower submitted checkout counter-evidence. Lender should review and complete handover PIN verification.',
+                    evidence_stage='checkout_borrower',
                 )
             if not borrower_video:
                 raise ValidationError('checkout_borrower_video_url is required.')
@@ -2492,7 +2524,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         if action == 'verify_checkout_handover_pin' and is_lender and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
             pin = (data.get('pin') or '').strip()
             if not pin:
-                code_type, qr_pin = _parse_qr_payload(data.get('qr_payload'))
+                code_type, qr_pin = _parse_qr_payload(data.get('qr_payload'), txn.transaction_reference)
                 if code_type == 'CHECKOUT_PIN':
                     pin = qr_pin
             if not self._is_rental_payment_collected(txn):
@@ -2523,6 +2555,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 return_video = uploaded_video_url(
                     'Borrower return evidence',
                     'Borrower submitted return evidence. Lender should confirm or submit counter-evidence.',
+                    evidence_stage='return_borrower',
                 )
             if not return_video:
                 raise ValidationError('return_video_url is required.')
@@ -2560,6 +2593,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 lender_video = uploaded_video_url(
                     'Lender return counter-evidence',
                     'Lender submitted return counter-evidence.',
+                    evidence_stage='return_lender',
                 )
             if not lender_video:
                 raise ValidationError('lender_return_video_url is required.')
@@ -2574,7 +2608,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
         if action == 'verify_return_handover_pin' and is_renter and txn.transaction_status == txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
             pin = (data.get('pin') or '').strip()
             if not pin:
-                code_type, qr_pin = _parse_qr_payload(data.get('qr_payload'))
+                code_type, qr_pin = _parse_qr_payload(data.get('qr_payload'), txn.transaction_reference)
                 if code_type == 'RETURN_PIN':
                     pin = qr_pin
             if not txn.return_handover_pin:
@@ -2582,9 +2616,12 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             if pin != txn.return_handover_pin:
                 raise ValidationError('Invalid return handover PIN.')
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
+            txn.transaction_status = txn.AWAITING_FEEDBACK if txn.deposit <= 0 else txn.RENTAL_RETURNED_DEPOSIT_PENDING
             txn.return_handover_verified_at = timezone.now()
-            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'return_handover_verified_at', 'amended'])
+            if txn.deposit <= 0:
+                txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
+                refresh_feedback_deadline()
+            txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'return_handover_verified_at', 'deposit_status', 'feedback_window_expires_at', 'amended'])
             notify_counterparty(
                 f'Return verified {txn.transaction_reference}',
                 'Return handover was verified. Deposit resolution can now begin.',

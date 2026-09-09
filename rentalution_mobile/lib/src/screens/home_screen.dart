@@ -101,7 +101,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
   double _navBarOpacity = 1.0;
@@ -114,6 +114,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _searchLocationQueryOverride;
   bool _initialLocationResolved = false;
   Timer? _searchSuggestionDebounce;
+  Timer? _homeRefreshTimer;
+  bool _homeRefreshInFlight = false;
+  bool _appInForeground = true;
   int _searchSuggestionRequestId = 0;
 
   List<CategorySummary> _categories = const [];
@@ -135,9 +138,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, String> _searchAttributeFilters = const {};
   bool _includeZeroListings = true;
 
-  bool _categoriesLoading = false;
+  bool _categoriesLoading = true;
+  bool _categoriesUnavailable = false;
   bool _browseLoading = false;
+  String? _browsePendingCategorySlug;
   bool _searchLoading = false;
+  bool _searchUnavailable = false;
   bool _ordersLoading = false;
   bool _favouritesLoading = false;
   bool _inboxLoading = false;
@@ -158,6 +164,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return widget.session != null && token != null && token.isNotEmpty;
   }
 
+  static const _openBookingStatuses = {
+    'RENQ',
+    'RAGR',
+    'RDAYAWV',
+    'RONG',
+    'RRTDAYAWV',
+    'RRTDPEND',
+  };
+
+  int get _openBookingsCount => widget.transactions
+      .where((tx) => _openBookingStatuses.contains(tx.status))
+      .length;
+
   int get _browseTabIndex => 1;
 
   int get _searchTabIndex => _isAuthenticated ? 3 : 2;
@@ -165,7 +184,18 @@ class _HomeScreenState extends State<HomeScreen> {
   int get _loginTabIndex => 3;
 
   int _mapTabIndexAfterLogin(int index) {
-    return index;
+    // The unauthenticated menu has Login at index 3, while the authenticated
+    // menu has Search at index 3 and My Rentalution at index 2.
+    switch (index) {
+      case 0:
+      case 1:
+        return index;
+      case 2:
+        return _searchTabIndex;
+      case 3:
+      default:
+        return 0;
+    }
   }
 
   void _rememberPostLoginDestination() {
@@ -263,8 +293,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_categoryTrail.isEmpty) {
       return 'Browse';
     }
-    return ['Browse', ..._categoryTrail.map((category) => category.title)]
-        .join(' / ');
+    return [
+      'Browse',
+      ..._categoryTrail.map((category) => category.title),
+    ].join(' / ');
   }
 
   Widget _buildBrowseBreadcrumb() {
@@ -288,9 +320,9 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: Text(
             '/',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.black38,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.black38),
           ),
         ),
       );
@@ -320,10 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: items,
-    );
+    return Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: items);
   }
 
   Future<void> _resetBrowseToTop() async {
@@ -347,13 +376,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<CategoryAttributeDefinition> _filterableCategoryAttributes() {
     return _selectedCategoryAttributeDefinitions()
-        .where((definition) => definition.filterable && definition.name.trim().isNotEmpty)
+        .where(
+          (definition) =>
+              definition.filterable && definition.name.trim().isNotEmpty,
+        )
         .toList(growable: false);
   }
 
   List<CategoryAttributeDefinition> _sortableCategoryAttributes() {
     return _selectedCategoryAttributeDefinitions()
-        .where((definition) => definition.sortable && definition.name.trim().isNotEmpty)
+        .where(
+          (definition) =>
+              definition.sortable && definition.name.trim().isNotEmpty,
+        )
         .toList(growable: false);
   }
 
@@ -592,17 +627,19 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final definition in _sortableCategoryAttributes()) {
       if (sortBy == definition.sortKeyAsc) {
         sorted.sort(
-          (a, b) => _attributeValueForProduct(a, definition)
-              .toLowerCase()
-              .compareTo(_attributeValueForProduct(b, definition).toLowerCase()),
+          (a, b) =>
+              _attributeValueForProduct(a, definition).toLowerCase().compareTo(
+                _attributeValueForProduct(b, definition).toLowerCase(),
+              ),
         );
         return sorted;
       }
       if (sortBy == definition.sortKeyDesc) {
         sorted.sort(
-          (a, b) => _attributeValueForProduct(b, definition)
-              .toLowerCase()
-              .compareTo(_attributeValueForProduct(a, definition).toLowerCase()),
+          (a, b) =>
+              _attributeValueForProduct(b, definition).toLowerCase().compareTo(
+                _attributeValueForProduct(a, definition).toLowerCase(),
+              ),
         );
         return sorted;
       }
@@ -769,7 +806,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 groupValue: selectedSort,
                 title: Text('${definition.name} (A-Z)'),
                 dense: true,
-                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                visualDensity: const VisualDensity(
+                  horizontal: -4,
+                  vertical: -4,
+                ),
                 contentPadding: EdgeInsets.zero,
                 onChanged: (value) {
                   if (value == null) {
@@ -789,7 +829,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 groupValue: selectedSort,
                 title: Text('${definition.name} (Z-A)'),
                 dense: true,
-                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                visualDensity: const VisualDensity(
+                  horizontal: -4,
+                  vertical: -4,
+                ),
                 contentPadding: EdgeInsets.zero,
                 onChanged: (value) {
                   if (value == null) {
@@ -987,6 +1030,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCategories();
     _resolveInitialLocation();
     if (_isAuthenticated) {
@@ -997,11 +1041,68 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _homeRefreshTimer?.cancel();
+    _searchController.dispose();
+    _searchLocationController.dispose();
+    _browseLocationController.dispose();
+    _searchSuggestionDebounce?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appInForeground = state == AppLifecycleState.resumed;
+    if (_appInForeground && _isAuthenticated) {
+      _startHomeRefreshPolling();
+      unawaited(_refreshHomeData(silent: true));
+    } else if (!_appInForeground) {
+      _homeRefreshTimer?.cancel();
+      _homeRefreshTimer = null;
+    }
+  }
+
+  void _startHomeRefreshPolling() {
+    _homeRefreshTimer?.cancel();
+    final seconds = AppConfig.homeRefreshPollSeconds < 10
+        ? 10
+        : AppConfig.homeRefreshPollSeconds;
+    _homeRefreshTimer = Timer.periodic(Duration(seconds: seconds), (_) {
+      if (_appInForeground && _isAuthenticated) {
+        unawaited(_refreshHomeData(silent: true));
+      }
+    });
+  }
+
+  Future<void> _refreshHomeData({required bool silent}) async {
+    if (_homeRefreshInFlight || !_isAuthenticated) {
+      return;
+    }
+    _homeRefreshInFlight = true;
+    try {
+      final refresh = widget.onRefresh;
+      await Future.wait<void>([
+        if (refresh != null) refresh().catchError((_) {}),
+        _loadOrders(showError: !silent),
+        _loadInbox(showError: !silent),
+        _loadFavouriteOrders(showError: !silent),
+      ]);
+    } finally {
+      _homeRefreshInFlight = false;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final wasAuthenticated = oldWidget.session != null;
+    final wasAuthenticated =
+        oldWidget.session != null &&
+        oldWidget.accessToken != null &&
+        oldWidget.accessToken!.isNotEmpty;
     if (wasAuthenticated != _isAuthenticated) {
       setState(() {
+        _navBarOpacity = 1.0;
         if (_isAuthenticated) {
           final restored = _restorePostLoginDestination();
           if (!restored) {
@@ -1013,11 +1114,14 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       });
       if (_isAuthenticated) {
+        _startHomeRefreshPolling();
         _resolveInitialLocation(force: true);
         _loadOrders();
         _loadFavouriteOrders();
         _loadInbox();
       } else {
+        _homeRefreshTimer?.cancel();
+        _homeRefreshTimer = null;
         setState(() {
           _orders = const [];
           _ordersLoading = false;
@@ -1035,47 +1139,51 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchLocationController.dispose();
-    _browseLocationController.dispose();
-    _searchSuggestionDebounce?.cancel();
-    super.dispose();
+  Future<void> _loadCategories() async {
+    if (mounted) {
+      setState(() {
+        _categoriesLoading = true;
+        _categoriesUnavailable = false;
+      });
+    }
+    try {
+      final topCategories = await widget.catalogRepository.fetchCategories(
+        parentSlug: 'top',
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _allCategories = topCategories;
+        _categories = topCategories;
+        _categoryTrail = const [];
+        _selectedCategorySlug = null;
+        _browseProducts = const [];
+        _categoriesLoading = false;
+        _categoriesUnavailable = false;
+      });
+      unawaited(_preloadAllCategories());
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _categoriesLoading = false;
+          _categoriesUnavailable = true;
+        });
+      }
+    }
   }
 
-  Future<void> _loadCategories() async {
-    setState(() {
-      _categoriesLoading = true;
-    });
-
+  Future<void> _preloadAllCategories() async {
     try {
       final allCategories = await _fetchAllCategories();
-      final topCategories = allCategories.where((category) {
-        return category.parentSlug == 'top' || category.parentSlug.isEmpty;
-      }).toList(growable: false);
       if (!mounted) {
         return;
       }
       setState(() {
         _allCategories = allCategories;
-        _categories = topCategories.isEmpty ? allCategories : topCategories;
-        _categoryTrail = const [];
-        _selectedCategorySlug = null;
-        _browseProducts = const [];
       });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _categoriesLoading = false;
-        });
-      }
+    } catch (_) {
+      // Keep the app usable even if the background preload fails.
     }
   }
 
@@ -1103,14 +1211,14 @@ class _HomeScreenState extends State<HomeScreen> {
   List<CategorySummary> _descendantCategories(String parentSlug) {
     final childrenByParent = <String, List<CategorySummary>>{};
     for (final category in _allCategories) {
-      childrenByParent.putIfAbsent(category.parentSlug, () => <CategorySummary>[]).add(category);
+      childrenByParent
+          .putIfAbsent(category.parentSlug, () => <CategorySummary>[])
+          .add(category);
     }
 
     final descendants = <CategorySummary>[];
     final visited = <String>{};
-    final queue = <CategorySummary>[
-      ...?childrenByParent[parentSlug],
-    ];
+    final queue = <CategorySummary>[...?childrenByParent[parentSlug]];
 
     while (queue.isNotEmpty) {
       final category = queue.removeAt(0);
@@ -1118,7 +1226,9 @@ class _HomeScreenState extends State<HomeScreen> {
         continue;
       }
       descendants.add(category);
-      queue.addAll(childrenByParent[category.slug] ?? const <CategorySummary>[]);
+      queue.addAll(
+        childrenByParent[category.slug] ?? const <CategorySummary>[],
+      );
     }
 
     return descendants;
@@ -1162,10 +1272,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openBrowseCategory(CategorySummary category) async {
-    await _showBrowseCategory(
-      category,
-      trail: [..._categoryTrail, category],
-    );
+    if (_browseLoading || _browsePendingCategorySlug == category.slug) {
+      return;
+    }
+
+    setState(() {
+      _browsePendingCategorySlug = category.slug;
+    });
+
+    try {
+      await _showBrowseCategory(category, trail: [..._categoryTrail, category]);
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (_browsePendingCategorySlug == category.slug) {
+            _browsePendingCategorySlug = null;
+          }
+        });
+      }
+    }
   }
 
   Future<void> _loadBrowseLeafProducts({
@@ -1194,11 +1319,23 @@ class _HomeScreenState extends State<HomeScreen> {
       _browseProducts = sortedProducts;
     });
 
-    unawaited(_prefetchCategoryImages([
-      category.thumbnailUrl.isNotEmpty ? category.thumbnailUrl : category.imageUrl,
-      ...directChildren.map((child) => child.thumbnailUrl.isNotEmpty ? child.thumbnailUrl : child.imageUrl),
-      ...sortedProducts.map((product) => product.thumbnailUrl.isNotEmpty ? product.thumbnailUrl : product.imageUrl),
-    ]));
+    unawaited(
+      _prefetchCategoryImages([
+        category.thumbnailUrl.isNotEmpty
+            ? category.thumbnailUrl
+            : category.imageUrl,
+        ...directChildren.map(
+          (child) => child.thumbnailUrl.isNotEmpty
+              ? child.thumbnailUrl
+              : child.imageUrl,
+        ),
+        ...sortedProducts.map(
+          (product) => product.thumbnailUrl.isNotEmpty
+              ? product.thumbnailUrl
+              : product.imageUrl,
+        ),
+      ]),
+    );
   }
 
   Future<void> _showBrowseCategory(
@@ -1219,19 +1356,25 @@ class _HomeScreenState extends State<HomeScreen> {
         _categories = directChildren;
         _selectedCategorySlug = category.slug;
         _browseProducts = const [];
+        _browsePendingCategorySlug = null;
       });
 
-      unawaited(_prefetchCategoryImages([
-        category.thumbnailUrl.isNotEmpty ? category.thumbnailUrl : category.imageUrl,
-        ...directChildren.map((child) => child.thumbnailUrl.isNotEmpty ? child.thumbnailUrl : child.imageUrl),
-      ]));
+      unawaited(
+        _prefetchCategoryImages([
+          category.thumbnailUrl.isNotEmpty
+              ? category.thumbnailUrl
+              : category.imageUrl,
+          ...directChildren.map(
+            (child) => child.thumbnailUrl.isNotEmpty
+                ? child.thumbnailUrl
+                : child.imageUrl,
+          ),
+        ]),
+      );
       return;
     }
 
-    await _loadBrowseLeafProducts(
-      category: category,
-      trail: trail,
-    );
+    await _loadBrowseLeafProducts(category: category, trail: trail);
   }
 
   Future<void> _goBackBrowseCategory() async {
@@ -1255,12 +1398,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _categories = categories;
         _selectedCategorySlug = parent?.slug;
         _browseProducts = const [];
+        _browsePendingCategorySlug = null;
       });
 
-      unawaited(_prefetchCategoryImages([
-        if (parent != null) (parent.thumbnailUrl.isNotEmpty ? parent.thumbnailUrl : parent.imageUrl),
-        ...categories.map((child) => child.thumbnailUrl.isNotEmpty ? child.thumbnailUrl : child.imageUrl),
-      ]));
+      unawaited(
+        _prefetchCategoryImages([
+          if (parent != null)
+            (parent.thumbnailUrl.isNotEmpty
+                ? parent.thumbnailUrl
+                : parent.imageUrl),
+          ...categories.map(
+            (child) => child.thumbnailUrl.isNotEmpty
+                ? child.thumbnailUrl
+                : child.imageUrl,
+          ),
+        ]),
+      );
       return;
     }
 
@@ -1270,17 +1423,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _categories = const [];
         _selectedCategorySlug = null;
         _browseProducts = const [];
+        _browsePendingCategorySlug = null;
       });
       return;
     }
 
-    await _loadBrowseLeafProducts(
-      category: parent,
-      trail: nextTrail,
-    );
+    await _loadBrowseLeafProducts(category: parent, trail: nextTrail);
   }
 
-  Future<void> _loadOrders() async {
+  Future<void> _loadOrders({bool showError = true}) async {
     final accessToken = widget.accessToken;
     if (accessToken == null || accessToken.isEmpty) {
       return;
@@ -1301,7 +1452,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _orders = orders;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && showError) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -1315,7 +1466,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadInbox() async {
+  Future<void> _loadInbox({bool showError = true}) async {
     final accessToken = widget.accessToken;
     if (accessToken == null || accessToken.isEmpty) {
       return;
@@ -1335,7 +1486,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _inboxMessages = inboxMessages;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && showError) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -1349,7 +1500,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadFavouriteOrders() async {
+  Future<void> _loadFavouriteOrders({bool showError = true}) async {
     final accessToken = widget.accessToken;
     if (accessToken == null || accessToken.isEmpty) {
       return;
@@ -1369,7 +1520,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _favouriteOrders = orders;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && showError) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -1428,9 +1579,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final query = _searchController.text.trim();
     final location = _effectiveSearchLocation();
     final hasFilters =
-        _selectedCategorySlug != null || _selectedDistance != null || location.isNotEmpty;
+        _selectedCategorySlug != null ||
+        _selectedDistance != null ||
+        location.isNotEmpty;
     if (query.isEmpty && !hasFilters) {
       setState(() {
+        _searchUnavailable = false;
         _searchResults = const [];
         _searchCategorySuggestions = const [];
       });
@@ -1439,6 +1593,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _searchLoading = true;
+      _searchUnavailable = false;
     });
 
     try {
@@ -1460,11 +1615,11 @@ class _HomeScreenState extends State<HomeScreen> {
         _searchSuggestions = const [];
         _searchCategorySuggestions = _matchSearchCategories(query);
       });
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        setState(() {
+          _searchUnavailable = true;
+        });
       }
     } finally {
       if (mounted) {
@@ -1486,35 +1641,38 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    _searchSuggestionDebounce = Timer(const Duration(milliseconds: 250), () async {
-      final requestId = ++_searchSuggestionRequestId;
-      try {
-        final results = await widget.catalogRepository.searchProducts(
-          query: trimmed,
-          location: _effectiveSearchLocation(),
-          categorySlug: _selectedCategorySlug,
-          distanceKm: _selectedDistance,
-          sortBy: 'name',
-        attributeFilters: _searchAttributeFilters,
-        includeZeroListings: _includeZeroListings,
-        );
-        if (!mounted || requestId != _searchSuggestionRequestId) {
-          return;
+    _searchSuggestionDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () async {
+        final requestId = ++_searchSuggestionRequestId;
+        try {
+          final results = await widget.catalogRepository.searchProducts(
+            query: trimmed,
+            location: _effectiveSearchLocation(),
+            categorySlug: _selectedCategorySlug,
+            distanceKm: _selectedDistance,
+            sortBy: 'name',
+            attributeFilters: _searchAttributeFilters,
+            includeZeroListings: _includeZeroListings,
+          );
+          if (!mounted || requestId != _searchSuggestionRequestId) {
+            return;
+          }
+          setState(() {
+            _searchSuggestions = results;
+            _searchCategorySuggestions = _matchSearchCategories(trimmed);
+          });
+        } catch (_) {
+          if (!mounted || requestId != _searchSuggestionRequestId) {
+            return;
+          }
+          setState(() {
+            _searchSuggestions = const [];
+            _searchCategorySuggestions = const [];
+          });
         }
-        setState(() {
-          _searchSuggestions = results;
-          _searchCategorySuggestions = _matchSearchCategories(trimmed);
-        });
-      } catch (_) {
-        if (!mounted || requestId != _searchSuggestionRequestId) {
-          return;
-        }
-        setState(() {
-          _searchSuggestions = const [];
-          _searchCategorySuggestions = const [];
-        });
-      }
-    });
+      },
+    );
   }
 
   List<CategorySummary> _matchSearchCategories(String query) {
@@ -1523,12 +1681,16 @@ class _HomeScreenState extends State<HomeScreen> {
       return const [];
     }
 
-    final matches = _allCategories.where((category) {
-      return category.title.toLowerCase().contains(lowered) ||
-          category.description.toLowerCase().contains(lowered);
-    }).toList(growable: false);
+    final matches = _allCategories
+        .where((category) {
+          return category.title.toLowerCase().contains(lowered) ||
+              category.description.toLowerCase().contains(lowered);
+        })
+        .toList(growable: false);
 
-    matches.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    matches.sort(
+      (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+    );
     return matches.take(5).toList(growable: false);
   }
 
@@ -1549,9 +1711,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Colors.black54,
-              fontWeight: FontWeight.w600,
-            ),
+          color: Colors.black54,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -1685,12 +1847,19 @@ class _HomeScreenState extends State<HomeScreen> {
     if (accessToken == null || accessToken.isEmpty) {
       return;
     }
-    await widget.orderRepository.amendOrder(
-      accessToken: accessToken,
-      orderId: order.id,
-      fields: fields,
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ListingFormScreen(
+          accessToken: accessToken,
+          orderRepository: widget.orderRepository,
+          catalogRepository: widget.catalogRepository,
+          existingOrder: order,
+        ),
+      ),
     );
-    await _loadOrders();
+    if (updated == true) {
+      await _loadOrders();
+    }
   }
 
   Future<void> _cancelOrder(OrderSummary order) async {
@@ -1709,7 +1878,11 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _detailPageType = 'orders';
     });
-    await _loadOrders();
+    await _refreshHomeData(silent: true);
+  }
+
+  Future<void> _openOrderListing(OrderSummary order) async {
+    await _openProduct(order.productSlug);
   }
 
   Future<void> _openListMyItem() async {
@@ -1724,6 +1897,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (accessToken == null || accessToken.isEmpty) {
       return;
     }
+    String? initialPostcode;
+    try {
+      final account = await widget.accountRepository.fetchAccountDetails(
+        accessToken: accessToken,
+      );
+      initialPostcode = account.postcode;
+    } catch (_) {
+      initialPostcode = null;
+    }
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ListingFormScreen(
@@ -1732,6 +1914,7 @@ class _HomeScreenState extends State<HomeScreen> {
           catalogRepository: widget.catalogRepository,
           initialProductId: initialProductId,
           initialProductName: initialProductName,
+          initialPostcode: initialPostcode,
         ),
       ),
     );
@@ -1744,6 +1927,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _detailPageType = 'transactions';
     });
+    await _refreshHomeData(silent: true);
   }
 
   Future<void> _openInbox() async {
@@ -1751,12 +1935,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (accessToken == null || accessToken.isEmpty) {
       return;
     }
-    if (_inboxMessages.isEmpty && !_inboxLoading) {
-      await _loadInbox();
-    }
     setState(() {
       _detailPageType = 'inbox';
     });
+    await _refreshHomeData(silent: true);
   }
 
   Future<void> _openFriends() async {
@@ -1837,15 +2019,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _handleRefresh() async {
     await _loadCategories();
-    if (_isAuthenticated) {
-      final refresh = widget.onRefresh;
-      if (refresh != null) {
-        await refresh();
-      }
-      await _loadOrders();
-      await _loadFavouriteOrders();
-      await _loadInbox();
-    }
+    await _refreshHomeData(silent: false);
   }
 
   void _closeDetailPage() {
@@ -2238,7 +2412,9 @@ class _HomeScreenState extends State<HomeScreen> {
           onOpenPaymentMethods: _openPaymentMethods,
           onOpenKyc: _openKyc,
           onOpenNotificationSettings: _openNotificationSettings,
-          activeOrdersCount: _orders.length,
+          openBookingsCount: _openBookingsCount,
+          activeListingsCount: _orders.length,
+          messagesCount: _inboxMessages.length,
           favouritesCount: _favouriteOrders.length,
           biometricAvailable: widget.biometricAvailable,
           biometricEnabled: widget.biometricEnabled,
@@ -2247,7 +2423,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : (enabled) {
                   widget.onBiometricToggle!(enabled);
                 },
-          );
+        );
       case 3:
         return _buildSearch();
       default:
@@ -2474,7 +2650,90 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildServerUnavailableCard({
+    required String message,
+    required VoidCallback? onRetry,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 190,
+                  maxHeight: 145,
+                ),
+                child: Image.asset(
+                  'assets/images/server-not-available-mobile.png',
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.medium,
+                  semanticLabel: 'Server connection unavailable',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: RentalutionPalette.brandTeal.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.cloud_off_outlined,
+                    color: RentalutionPalette.brandTeal,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Cannot contact Rentalution servers',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: RentalutionPalette.brandTeal,
+              ),
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCategoryCardsWrap(List<CategorySummary> categories) {
+    if (_categoriesUnavailable) {
+      return _buildServerUnavailableCard(
+        message:
+            'Your connection may be offline. Your home information is still available below.',
+        onRetry: _categoriesLoading ? null : _loadCategories,
+      );
+    }
+
     if (categories.isEmpty) {
       return const Card(
         child: Padding(
@@ -2508,32 +2767,68 @@ class _HomeScreenState extends State<HomeScreen> {
           itemCount: categories.length,
           itemBuilder: (context, index) {
             final cat = categories[index];
-            return GestureDetector(
-              onTap: () => _openBrowseCategory(cat),
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: const BorderSide(color: Color(0xFF2EC4B6), width: 1.5),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Expanded(child: _categoryThumb(cat.thumbnailUrl.isNotEmpty ? cat.thumbnailUrl : cat.imageUrl)),
-                      const SizedBox(height: 8),
-                      Text(
-                        cat.title,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall,
+            final isPending = _browsePendingCategorySlug == cat.slug;
+            return AnimatedScale(
+              duration: const Duration(milliseconds: 120),
+              scale: isPending ? 0.985 : 1.0,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: const BorderSide(
+                        color: Color(0xFF2EC4B6),
+                        width: 1.5,
                       ),
-                    ],
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: isPending ? null : () => _openBrowseCategory(cat),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: _categoryThumb(
+                                cat.thumbnailUrl.isNotEmpty
+                                    ? cat.thumbnailUrl
+                                    : cat.imageUrl,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              cat.title,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  if (isPending)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.58),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             );
           },
@@ -2617,7 +2912,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                         height: 1.02,
                                       ),
                                 ),
-                                if (selectedCat.description.trim().isNotEmpty) ...[
+                                if (selectedCat.description
+                                    .trim()
+                                    .isNotEmpty) ...[
                                   const SizedBox(height: 8),
                                   Text(
                                     _plainCategoryDescription(
@@ -2646,7 +2943,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-        if (selectedCat != null) const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        if (selectedCat != null)
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -2661,14 +2959,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Expanded(child: Text(_browseDistanceHeading(locationLabel))),
+                        Expanded(
+                          child: Text(_browseDistanceHeading(locationLabel)),
+                        ),
                         IconButton(
                           onPressed: _locating ? null : _useCurrentLocation,
                           icon: const Icon(Icons.my_location),
                           tooltip: 'Use my location',
                         ),
                         IconButton(
-                          onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                          onPressed: () =>
+                              _scaffoldKey.currentState?.openEndDrawer(),
                           icon: const Icon(Icons.tune),
                           tooltip: 'Filters',
                         ),
@@ -2709,76 +3010,79 @@ class _HomeScreenState extends State<HomeScreen> {
         else if (_browseProducts.isEmpty && _currentBrowseCategories().isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
-            child: Center(
-              child: Text(
-                'No products listed in this category.',
-              ),
-            ),
+            child: Center(child: Text('No products listed in this category.')),
           )
         else
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 0.9,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final product = _browseProducts[index];
-                  final productImage =
-                      product.thumbnailUrl.isNotEmpty ? product.thumbnailUrl : product.imageUrl;
-                  return Card(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _openProduct(product.slug),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(
-                              height: 88,
-                              child: Center(
-                                child: _productThumb(
-                                  productImage,
-                                  width: 88,
-                                  height: 88,
+            sliver: SliverLayoutBuilder(
+              builder: (context, constraints) {
+                final config = _browseProductGridConfig(
+                  constraints.crossAxisExtent,
+                );
+
+                return SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: config.columns,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: config.childAspectRatio,
+                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final product = _browseProducts[index];
+                    final productImage = product.thumbnailUrl.isNotEmpty
+                        ? product.thumbnailUrl
+                        : product.imageUrl;
+                    return Card(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _openProduct(product.slug),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                height: config.thumbnailSize,
+                                child: Center(
+                                  child: _productThumb(
+                                    productImage,
+                                    width: config.thumbnailSize,
+                                    height: config.thumbnailSize,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              product.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              product.nearestDistanceKm != null
-                                  ? '${product.activeOrderCount} listed | ${product.nearestDistanceKm!.toStringAsFixed(1)} km'
-                                  : '${product.activeOrderCount} listed',
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontSize: 11,
-                                  ),
-                            ),
-                          ],
+                              const SizedBox(height: 6),
+                              Text(
+                                product.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                product.nearestDistanceKm != null
+                                    ? '${product.activeOrderCount} listed | ${product.nearestDistanceKm!.toStringAsFixed(1)} km'
+                                    : '${product.activeOrderCount} listed',
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.copyWith(fontSize: 11),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-                childCount: _browseProducts.length,
-              ),
+                    );
+                  }, childCount: _browseProducts.length),
+                );
+              },
             ),
           ),
         if (_currentBrowseCategories().isNotEmpty) ...[
@@ -2802,115 +3106,16 @@ class _HomeScreenState extends State<HomeScreen> {
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
-            delegate: SliverChildListDelegate(
-              [
-                TextField(
-                  controller: _searchController,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search items',
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    suffixIcon: IconButton(
-                      tooltip: 'Search',
-                      onPressed: _searchLoading ? null : _searchProducts,
-                      icon: _searchLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.arrow_forward),
-                    ),
-                  ),
-                  onSubmitted: (_) => _searchProducts(),
-                  onChanged: (value) => _scheduleSearchSuggestions(value),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _searchLocationController,
-                  textInputAction: TextInputAction.done,
-                  decoration: InputDecoration(
-                    hintText: 'Town or postcode',
-                    prefixIcon: const Icon(Icons.pin_drop_outlined),
-                    filled: true,
-                    isDense: true,
-                    suffixIcon: IconButton(
-                      tooltip: 'Use my location',
-                      onPressed: _searchLoading ? null : _useCurrentLocation,
-                      icon: _locating
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.my_location),
-                    ),
-                  ),
-                  onSubmitted: (_) => _searchProducts(),
-                  onChanged: (_) {
-                    _searchLocationQueryOverride = null;
-                  },
-                ),
-                if (_searchSuggestions.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _searchSectionHeader('Products'),
-                  ..._searchSuggestions.take(5).map(
-                    (product) => Card(
-                      elevation: 0,
-                      child: ListTile(
-                        leading: const Icon(Icons.search),
-                        title: Text(product.name),
-                        subtitle: Text(product.categoryTitle),
-                        onTap: _searchLoading
-                            ? null
-                            : () => _selectSearchSuggestion(product),
-                      ),
-                    ),
-                  ),
-                ],
-                if (_searchCategorySuggestions.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _searchSectionHeader('Categories'),
-                  ..._searchCategorySuggestions.map(
-                    (category) => Card(
-                      elevation: 0,
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 2,
-                        ),
-                        leading: SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: _categoryThumb(category.thumbnailUrl.isNotEmpty ? category.thumbnailUrl : category.imageUrl),
-                        ),
-                        title: Text(
-                          category.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          category.parentSlug.isEmpty
-                              ? 'Top level category'
-                              : 'Category',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: _searchLoading
-                            ? null
-                            : () => _selectSearchCategory(category),
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Center(
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: RentalutionPalette.accentCoral,
-                    ),
+            delegate: SliverChildListDelegate([
+              TextField(
+                controller: _searchController,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search items',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  suffixIcon: IconButton(
+                    tooltip: 'Search',
                     onPressed: _searchLoading ? null : _searchProducts,
                     icon: _searchLoading
                         ? const SizedBox(
@@ -2918,20 +3123,134 @@ class _HomeScreenState extends State<HomeScreen> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.search),
-                    label: const Text('Search'),
+                        : const Icon(Icons.arrow_forward),
                   ),
                 ),
-                const SizedBox(height: 12),
+                onSubmitted: (_) => _searchProducts(),
+                onChanged: (value) => _scheduleSearchSuggestions(value),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _searchLocationController,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  hintText: 'Town or postcode',
+                  prefixIcon: const Icon(Icons.pin_drop_outlined),
+                  filled: true,
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    tooltip: 'Use my location',
+                    onPressed: _searchLoading ? null : _useCurrentLocation,
+                    icon: _locating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.my_location),
+                  ),
+                ),
+                onSubmitted: (_) => _searchProducts(),
+                onChanged: (_) {
+                  _searchLocationQueryOverride = null;
+                },
+              ),
+              if (_searchSuggestions.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _searchSectionHeader('Products'),
+                ..._searchSuggestions
+                    .take(5)
+                    .map(
+                      (product) => Card(
+                        elevation: 0,
+                        child: ListTile(
+                          leading: const Icon(Icons.search),
+                          title: Text(product.name),
+                          subtitle: Text(product.categoryTitle),
+                          onTap: _searchLoading
+                              ? null
+                              : () => _selectSearchSuggestion(product),
+                        ),
+                      ),
+                    ),
               ],
-            ),
+              if (_searchCategorySuggestions.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _searchSectionHeader('Categories'),
+                ..._searchCategorySuggestions.map(
+                  (category) => Card(
+                    elevation: 0,
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 2,
+                      ),
+                      leading: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: _categoryThumb(
+                          category.thumbnailUrl.isNotEmpty
+                              ? category.thumbnailUrl
+                              : category.imageUrl,
+                        ),
+                      ),
+                      title: Text(
+                        category.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        category.parentSlug.isEmpty
+                            ? 'Top level category'
+                            : 'Category',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: _searchLoading
+                          ? null
+                          : () => _selectSearchCategory(category),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Center(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: RentalutionPalette.accentCoral,
+                  ),
+                  onPressed: _searchLoading ? null : _searchProducts,
+                  icon: _searchLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.search),
+                  label: const Text('Search'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ]),
           ),
         ),
         if (_searchLoading)
           const SliverFillRemaining(
             child: Center(child: CircularProgressIndicator()),
           )
-                else if (!hasResults)
+        else if (_searchUnavailable)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _buildServerUnavailableCard(
+                message:
+                    'Your connection may be offline. Please try your search again.',
+                onRetry: _searchLoading ? null : _searchProducts,
+              ),
+            ),
+          )
+        else if (!hasResults)
           SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
@@ -2948,81 +3267,84 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final product = _searchResults[index];
-                  final details = <String>[
-                    product.categoryTitle,
-                    '${product.activeOrderCount} active listing${product.activeOrderCount == 1 ? '' : 's'}',
-                  ];
-                  if (product.nearestDistanceKm != null) {
-                    details.add(
-                      '${product.nearestDistanceKm!.toStringAsFixed(1)} km away',
-                    );
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Card(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _openProduct(product.slug),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _productThumb(product.thumbnailUrl.isNotEmpty ? product.thumbnailUrl : product.imageUrl),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            product.name,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final product = _searchResults[index];
+                final details = <String>[
+                  product.categoryTitle,
+                  '${product.activeOrderCount} active listing${product.activeOrderCount == 1 ? '' : 's'}',
+                ];
+                if (product.nearestDistanceKm != null) {
+                  details.add(
+                    '${product.nearestDistanceKm!.toStringAsFixed(1)} km away',
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Card(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _openProduct(product.slug),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _productThumb(
+                              product.thumbnailUrl.isNotEmpty
+                                  ? product.thumbnailUrl
+                                  : product.imageUrl,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          product.name,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      details.join(' • '),
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    if (product.tags.isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: product.tags
-                                            .take(3)
-                                            .map(_searchMetaChip)
-                                            .toList(growable: false),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    details.join(' • '),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (product.tags.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: product.tags
+                                          .take(3)
+                                          .map(_searchMetaChip)
+                                          .toList(growable: false),
+                                    ),
                                   ],
-                                ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chevron_right),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_right),
+                          ],
                         ),
                       ),
                     ),
-                  );
-                },
-                childCount: _searchResults.length,
-              ),
+                  ),
+                );
+              }, childCount: _searchResults.length),
             ),
           ),
       ],
@@ -3036,10 +3358,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall,
-      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelSmall),
     );
   }
 
@@ -3048,6 +3367,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _categoryThumb(String imageUrl) {
+    final theme = Theme.of(context);
+    final placeholderColor =
+        theme.cardTheme.color ?? theme.colorScheme.surfaceContainerHighest;
     if (imageUrl.trim().isEmpty) {
       return const Icon(
         Icons.category_outlined,
@@ -3056,12 +3378,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        color: isDarkMode ? Colors.black : Colors.grey[200],
+        color: placeholderColor,
         child: CachedNetworkImage(
           imageUrl: imageUrl,
           memCacheWidth: 240,
@@ -3093,7 +3413,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _prefetchCategoryImages(Iterable<String> imageUrls) async {
-    final urls = imageUrls.where((url) => url.trim().isNotEmpty).toList(growable: false);
+    final urls = imageUrls
+        .where((url) => url.trim().isNotEmpty)
+        .toList(growable: false);
     if (urls.isEmpty) {
       return;
     }
@@ -3120,9 +3442,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _categoryHeroImage(String imageUrl) {
+    final theme = Theme.of(context);
+    final bgColor =
+        theme.cardTheme.color ?? theme.colorScheme.surfaceContainerHighest;
     if (imageUrl.trim().isEmpty) {
       return Container(
-        color: const Color(0xFFE8EFEA),
+        color: bgColor,
         alignment: Alignment.center,
         child: const Icon(
           Icons.category_outlined,
@@ -3139,7 +3464,7 @@ class _HomeScreenState extends State<HomeScreen> {
       maxWidthDiskCache: 1600,
       maxHeightDiskCache: 1200,
       imageBuilder: (context, imageProvider) => Opacity(
-        opacity: 0.88,
+        opacity: 0.84,
         child: Image(
           image: imageProvider,
           fit: BoxFit.cover,
@@ -3147,7 +3472,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       placeholder: (context, url) => const ColoredBox(
-        color: Color(0xFFE8EFEA),
+        color: Color(0xFF294B55),
         child: Center(
           child: SizedBox(
             width: 28,
@@ -3158,7 +3483,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       errorWidget: (context, error, stackTrace) {
         return Container(
-          color: const Color(0xFFE8EFEA),
+          color: bgColor,
           alignment: Alignment.center,
           child: const Icon(
             Icons.category_outlined,
@@ -3167,6 +3492,35 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  _BrowseProductGridConfig _browseProductGridConfig(double width) {
+    if (width >= 1100) {
+      return const _BrowseProductGridConfig(
+        columns: 4,
+        thumbnailSize: 112,
+        childAspectRatio: 0.96,
+      );
+    }
+    if (width >= 800) {
+      return const _BrowseProductGridConfig(
+        columns: 3,
+        thumbnailSize: 100,
+        childAspectRatio: 0.94,
+      );
+    }
+    if (width >= 560) {
+      return const _BrowseProductGridConfig(
+        columns: 3,
+        thumbnailSize: 92,
+        childAspectRatio: 0.92,
+      );
+    }
+    return const _BrowseProductGridConfig(
+      columns: 2,
+      thumbnailSize: 88,
+      childAspectRatio: 0.9,
     );
   }
 
@@ -3195,8 +3549,8 @@ class _HomeScreenState extends State<HomeScreen> {
         height: height,
         memCacheWidth: (width * 2).round(),
         memCacheHeight: (height * 2).round(),
-        maxWidthDiskCache: (width * 4).round(),
-        maxHeightDiskCache: (height * 4).round(),
+        maxWidthDiskCache: (width * 3).round(),
+        maxHeightDiskCache: (height * 3).round(),
         imageBuilder: (context, imageProvider) => Image(
           image: imageProvider,
           width: width,
@@ -3259,6 +3613,7 @@ class _HomeScreenState extends State<HomeScreen> {
           loading: _ordersLoading,
           onRefresh: _loadOrders,
           onListMyItem: _openListMyItem,
+          onOpenOrder: _openOrderListing,
           onAmendOrder: _amendOrder,
           onCancelOrder: _cancelOrder,
         ),
@@ -3536,4 +3891,16 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
+}
+
+class _BrowseProductGridConfig {
+  const _BrowseProductGridConfig({
+    required this.columns,
+    required this.thumbnailSize,
+    required this.childAspectRatio,
+  });
+
+  final int columns;
+  final double thumbnailSize;
+  final double childAspectRatio;
 }

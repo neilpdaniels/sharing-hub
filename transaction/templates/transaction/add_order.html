@@ -22,6 +22,47 @@
         </ul>
       </div>
 
+      <style>
+        #add-order-form .form-text,
+        #add-order-form .helptext,
+        #add-order-form small {
+          color: #5f6d78;
+        }
+        #add-order-form .card {
+          border-radius: 18px;
+        }
+        #add-order-form .card-header {
+          background: #f7fbfc;
+          border-bottom: 1px solid #e2eaee;
+        }
+        #add-order-form .listing-option-note {
+          font-size: 0.84rem;
+          color: #667582;
+        }
+        #add-order-form .pricing-chooser {
+          border: 1px solid #d8e3e8;
+          border-radius: 14px;
+          padding: 12px;
+          background: #fbfdfe;
+        }
+        #add-order-form .pricing-tip {
+          font-size: 0.84rem;
+          color: #58707d;
+        }
+        #add-order-form .band-cta {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 999px;
+          background: #f7fbfc;
+          border: 1px solid #cfe0e5;
+        }
+        #add-order-form .band-cta:hover {
+          background: #eef8fa;
+        }
+      </style>
+
       <form id="add-order-form" action="." method="post" enctype="multipart/form-data">
         {% csrf_token %}
         {% bootstrap_form_errors order_form %}
@@ -32,6 +73,11 @@
           <div class="card-header font-weight-bold">Who can rent this listing?</div>
           <div class="card-body">
             {% bootstrap_field order_form.let_visibility %}
+            {% bootstrap_field order_form.verified_users_only %}
+            <div class="listing-option-note mt-2">
+              Verified-only listings can reduce no-shows, but renters must complete identity checks before the rental can start.
+              <a href="#" data-toggle="modal" data-target="#verifiedUsersOnlyModal">Learn more</a>
+            </div>
           </div>
         </div>
 
@@ -74,6 +120,7 @@
           <div class="card-header font-weight-bold">Collection &amp; delivery</div>
           <div class="card-body">
             {% bootstrap_field order_form.collection_policy %}
+            <div class="listing-option-note mb-2">These options describe what you, the lender, can offer. They are not renter settings.</div>
             <div id="delivery-cost-row">
               {% bootstrap_field order_form.delivery_within_km %}
               <div class="form-group">
@@ -120,13 +167,13 @@
           {% bootstrap_field order_form.max_rental_days %}
           <div class="alert alert-warning mt-2 mb-3" style="display:block;">
             <strong>Long rental note</strong><br/>
-            If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. Payment cards can still be different.
-            Rentals over 30 days are not supported yet.
+            If you allow rentals from 7 to 30 days, deposit cards must be Visa credit cards or Mastercard credit cards. Payment cards can still be different.
+            Rentals over 30 days are supported, but the full deposit has to be taken and returned later rather than held as a card authorisation, so fees are higher.
           </div>
           {% bootstrap_field order_form.deposit %}
           <div class="alert alert-info mt-3 mb-0" style="display:block;">
             <strong>Fees on each rental</strong><br/>
-            The rental payment is captured separately from the deposit. Your rental payout will be reduced by card transaction costs of 2% on the rental payment, and by the banded Rentalution fee that applies to the total rental amount. If a deposit hold is actually captured later, card transaction costs can also apply to that held amount.
+            The rental payment is captured separately from the deposit. The renter pays the delivery charge and the banded Rentalution fee on top of the rental payment. If a deposit hold is actually captured later, the renter also covers any card transaction costs that apply to that held amount.
           </div>
         </div>
 
@@ -152,8 +199,9 @@
             <div id="dynamic-price-bands-wrap">
             <hr>
             <h6 class="font-weight-bold">Dynamic price bands
-              <small class="text-muted font-weight-normal">— optional: lower per-day rate for longer rentals</small>
+              <small class="text-muted font-weight-normal">— optional: offer lower prices for longer rentals</small>
             </h6>
+            <p class="pricing-tip mb-2">Instead of a table of bands, think of this as "Do you want to offer reduced prices per day for longer rentals?" Add bands only where the price changes.</p>
             {{ band_formset.management_form }}
             <div id="price-band-body">
             {% for band_form in band_formset %}
@@ -177,7 +225,7 @@
             {% endfor %}
             </div>
             <div class="mt-1 mb-3">
-              <a href="#" id="add-band-row" class="text-secondary" style="font-size:0.875rem;text-decoration:none;">
+              <a href="#" id="add-band-row" class="band-cta text-secondary" style="font-size:0.875rem;text-decoration:none;">
                 <span class="fas fa-plus-circle"></span> Add price band
               </a>
             </div>
@@ -213,6 +261,23 @@
               </h6>
               {% bootstrap_field order_form.mates_rates %}
               {% bootstrap_field order_form.mates_deposit %}
+            </div>
+          </div>
+        </div>
+
+        <div class="modal fade" id="verifiedUsersOnlyModal" tabindex="-1" role="dialog" aria-labelledby="verifiedUsersOnlyModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="verifiedUsersOnlyModalLabel">Verified users only</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+              <div class="modal-body">
+                <p>This helps reduce fraud and no-shows by restricting the listing to renters who have completed identity verification.</p>
+                <p class="mb-0">The downside is that some renters will not be able to start immediately if they still need to verify, so you may get fewer enquiries.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -451,17 +516,26 @@ toggleCollectionAddress();
 
 function toggleAudiencePricing() {
   var vis = $('#id_let_visibility').val();
+  var isPublic = vis === 'PUBLIC';
+  var isFriends = vis === 'FRIENDS';
   if (vis === 'PUBLIC') {
     $('#mates-rates-wrap').hide();
   } else {
     $('#mates-rates-wrap').show();
   }
-  if (vis === 'FRIENDS') {
+  $('#id_verified_users_only').prop('checked', isPublic ? false : $('#id_verified_users_only').is(':checked'));
+  $('#id_price').prop('disabled', isFriends);
+  $('#id_deposit').prop('disabled', isFriends);
+  $('#id_mates_rates').prop('disabled', isPublic);
+  $('#id_mates_deposit').prop('disabled', isPublic);
+  if (isFriends) {
     $('#public-pricing-fields').css('opacity', '0.65');
     $('#dynamic-price-bands-wrap').hide();
+    $('#public-pricing-fields').find('input, select').not('#id_mates_rates, #id_mates_deposit').attr('aria-disabled', 'true');
   } else {
     $('#public-pricing-fields').css('opacity', '1');
     $('#dynamic-price-bands-wrap').show();
+    $('#public-pricing-fields').find('input, select').removeAttr('aria-disabled');
   }
 }
 $('#id_let_visibility').on('change', toggleAudiencePricing);

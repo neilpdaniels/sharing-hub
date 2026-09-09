@@ -2,6 +2,7 @@ class TransactionSummary {
   TransactionSummary({
     required this.reference,
     required this.status,
+    required this.statusDisplay,
     required this.workflowStage,
     required this.workflowStageLabel,
     required this.workflowTimeline,
@@ -26,6 +27,7 @@ class TransactionSummary {
 
   final String reference;
   final String status;
+  final String statusDisplay;
   final int workflowStage;
   final String workflowStageLabel;
   final List<WorkflowStep> workflowTimeline;
@@ -59,6 +61,7 @@ class TransactionSummary {
     return TransactionSummary(
       reference: json['transaction_reference'] as String? ?? '',
       status: json['transaction_status'] as String? ?? '',
+      statusDisplay: json['transaction_status_display'] as String? ?? '',
       workflowStage: (json['workflow_stage'] as num?)?.toInt() ?? 1,
       workflowStageLabel: json['workflow_stage_label'] as String? ?? '',
       workflowTimeline: workflowPayload.timeline,
@@ -96,6 +99,7 @@ class TransactionDetail extends TransactionSummary {
   TransactionDetail({
     required super.reference,
     required super.status,
+    required super.statusDisplay,
     required super.workflowStage,
     required super.workflowStageLabel,
     required super.workflowTimeline,
@@ -147,6 +151,7 @@ class TransactionDetail extends TransactionSummary {
     required this.listingImageUrls,
     required this.meIsLender,
     required this.meIsRenter,
+    required this.evidenceItems,
     required this.activeDisputeCase,
     required this.disputeFinalStatementDeadline,
     required this.disputeFinalStatementSecondsRemaining,
@@ -184,17 +189,20 @@ class TransactionDetail extends TransactionSummary {
   final List<String> listingImageUrls;
   final bool meIsLender;
   final bool meIsRenter;
+  final List<TransactionEvidenceItem> evidenceItems;
   final DisputeCaseSummary? activeDisputeCase;
   final DateTime? disputeFinalStatementDeadline;
   final int? disputeFinalStatementSecondsRemaining;
   final bool disputeFinalStatementOpen;
 
-  bool get canSubmitVideoEvidence {
-    return (status == 'RAGR' && meIsLender) ||
-        ((status == 'RDAYAWV' || status == 'RONG' || status == 'RRTDAYAWV') &&
-            meIsRenter) ||
-        (status == 'RRTDAYAWV' && meIsLender);
-  }
+  bool get canSubmitVideoEvidence => workflowPayload.allowedActions.any(
+    (action) => const {
+      'initiate_rental',
+      'submit_checkout_borrower_evidence',
+      'submit_return_borrower_evidence',
+      'submit_lender_return_evidence',
+    }.contains(action),
+  );
 
   factory TransactionDetail.fromJson(Map<String, dynamic> json) {
     final workflowPayload = WorkflowPayload.fromJson(
@@ -208,6 +216,7 @@ class TransactionDetail extends TransactionSummary {
     return TransactionDetail(
       reference: json['transaction_reference'] as String? ?? '',
       status: json['transaction_status'] as String? ?? '',
+      statusDisplay: json['transaction_status_display'] as String? ?? '',
       paymentStatus: json['payment_status'] as String? ?? '',
       depositStatus: json['deposit_status'] as String? ?? '',
       itemName: json['item_name'] as String? ?? '',
@@ -302,6 +311,10 @@ class TransactionDetail extends TransactionSummary {
               .toList(growable: false),
       meIsLender: json['me_is_lender'] as bool? ?? false,
       meIsRenter: json['me_is_renter'] as bool? ?? false,
+      evidenceItems: (json['evidence_items'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TransactionEvidenceItem.fromJson)
+          .toList(growable: false),
       activeDisputeCase: json['active_dispute_case'] == null
           ? null
           : DisputeCaseSummary.fromJson(
@@ -311,8 +324,7 @@ class TransactionDetail extends TransactionSummary {
         json['dispute_final_statement_deadline'] as String?,
       ),
       disputeFinalStatementSecondsRemaining:
-          (json['dispute_final_statement_seconds_remaining'] as num?)
-              ?.toInt(),
+          (json['dispute_final_statement_seconds_remaining'] as num?)?.toInt(),
       disputeFinalStatementOpen:
           json['dispute_final_statement_open'] as bool? ?? false,
     );
@@ -412,19 +424,33 @@ class WorkflowPayload {
     required this.currentStage,
     required this.currentLabel,
     required this.timeline,
+    required this.allowedActions,
+    this.message = '',
+    this.contractDeadline,
   });
 
   final int currentStage;
   final String currentLabel;
   final List<WorkflowStep> timeline;
+  final List<String> allowedActions;
+  final String message;
+  final DateTime? contractDeadline;
 
   factory WorkflowPayload.fromJson(Map<String, dynamic> json) {
     return WorkflowPayload(
+      message: json['message'] as String? ?? '',
+      contractDeadline: DateTime.tryParse(
+        json['contract_deadline']?.toString() ?? '',
+      ),
       currentStage: (json['current_stage'] as num?)?.toInt() ?? 1,
       currentLabel: json['current_label'] as String? ?? '',
       timeline: (json['timeline'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(WorkflowStep.fromJson)
+          .toList(growable: false),
+      allowedActions: (json['allowed_actions'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .where((value) => value.trim().isNotEmpty)
           .toList(growable: false),
     );
   }
@@ -434,12 +460,14 @@ class WorkflowStep {
   WorkflowStep({
     required this.step,
     required this.label,
+    required this.helpText,
     required this.current,
     required this.done,
   });
 
   final int step;
   final String label;
+  final String helpText;
   final bool current;
   final bool done;
 
@@ -447,6 +475,7 @@ class WorkflowStep {
     return WorkflowStep(
       step: (json['step'] as num?)?.toInt() ?? 0,
       label: json['label'] as String? ?? '',
+      helpText: json['help_text'] as String? ?? '',
       current: json['current'] as bool? ?? false,
       done: json['done'] as bool? ?? false,
     );
@@ -458,12 +487,14 @@ class TransactionMessageAttachment {
     required this.id,
     required this.imageUrl,
     required this.videoUrl,
+    required this.capturedAt,
     required this.uploadedAt,
   });
 
   final int id;
   final String imageUrl;
   final String videoUrl;
+  final DateTime? capturedAt;
   final DateTime? uploadedAt;
 
   factory TransactionMessageAttachment.fromJson(Map<String, dynamic> json) {
@@ -471,7 +502,46 @@ class TransactionMessageAttachment {
       id: json['id'] as int,
       imageUrl: json['image_url'] as String? ?? '',
       videoUrl: json['video_url'] as String? ?? '',
+      capturedAt: TransactionSummary._parseDate(json['captured_at'] as String?),
       uploadedAt: TransactionSummary._parseDate(json['uploaded_at'] as String?),
+    );
+  }
+}
+
+class TransactionEvidenceItem {
+  TransactionEvidenceItem({
+    required this.id,
+    required this.evidenceStage,
+    required this.uploaderRole,
+    required this.captureDevice,
+    required this.capturedAt,
+    required this.uploadedAt,
+    required this.videoUrl,
+    required this.externalVideoUrl,
+  });
+
+  final int id;
+  final String evidenceStage;
+  final String uploaderRole;
+  final String captureDevice;
+  final DateTime? capturedAt;
+  final DateTime? uploadedAt;
+  final String videoUrl;
+  final String externalVideoUrl;
+
+  bool get hasVideo =>
+      videoUrl.trim().isNotEmpty || externalVideoUrl.trim().isNotEmpty;
+
+  factory TransactionEvidenceItem.fromJson(Map<String, dynamic> json) {
+    return TransactionEvidenceItem(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      evidenceStage: json['evidence_stage'] as String? ?? '',
+      uploaderRole: json['uploader_role'] as String? ?? '',
+      captureDevice: json['capture_device'] as String? ?? '',
+      capturedAt: TransactionSummary._parseDate(json['captured_at'] as String?),
+      uploadedAt: TransactionSummary._parseDate(json['uploaded_at'] as String?),
+      videoUrl: json['video_url'] as String? ?? '',
+      externalVideoUrl: json['external_video_url'] as String? ?? '',
     );
   }
 }

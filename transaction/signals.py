@@ -62,16 +62,49 @@ def _configured_major_statuses():
 
 
 def _transition_subject(instance):
-    return f'Transaction update {instance.transaction_reference}: {instance.get_transaction_status_display()}'
+    return f'{_transition_title(instance)}'
+
+
+def _transition_title(instance):
+    titles = {
+        Transaction.RENTAL_AGREED: 'Rental agreed',
+        Transaction.RENTAL_DAY_AWAITING_VERIFICATION: 'Rental day is here',
+        Transaction.RENTAL_ONGOING: 'Rental started',
+        Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION: 'Return started',
+        Transaction.RENTAL_RETURNED_DEPOSIT_PENDING: 'Item returned',
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED: 'Deposit return needs review',
+        Transaction.DISPUTE_REQUESTED: 'Dispute requested',
+        Transaction.AWAITING_FEEDBACK: 'Rental complete',
+        Transaction.FEEDBACK_ONE_SIDED: 'Feedback received',
+        Transaction.RENTAL_PROCESS_COMPLETED: 'Rental fully complete',
+        Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED: 'Rental closed',
+        Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK: 'Rental closed',
+        Transaction.DISPUTE_DECIDED: 'Dispute decided',
+        Transaction.CANCEL_ACCEPTED: 'Rental cancelled',
+    }
+    return f'{titles.get(instance.transaction_status, instance.get_transaction_status_display())} · {instance.transaction_reference}'
 
 
 def _transition_description(instance):
-    prev_label = dict(instance.TRANSACTION_STATUS_CHOICES).get(instance.prev_transaction_status, instance.prev_transaction_status)
-    new_label = instance.get_transaction_status_display()
-    return (
-        f'Transaction status changed from "{prev_label}" to "{new_label}". '
-        f'Reference: {instance.transaction_reference}.'
-    )
+    next_steps = {
+        Transaction.RENTAL_AGREED: 'Review and confirm the rental agreement, then add the borrower payment card if required.',
+        Transaction.RENTAL_DAY_AWAITING_VERIFICATION: 'Complete the checkout evidence and handover confirmation.',
+        Transaction.RENTAL_ONGOING: 'Keep the item safe and return it on the agreed return date.',
+        Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION: 'Complete the return evidence and handover confirmation.',
+        Transaction.RENTAL_RETURNED_DEPOSIT_PENDING: 'Review and agree the deposit return.',
+        Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED: 'Review the deposit proposal or continue with dispute handling.',
+        Transaction.DISPUTE_REQUESTED: 'Keep your evidence and messages available for dispute review.',
+        Transaction.AWAITING_FEEDBACK: 'Leave feedback about the rental experience.',
+        Transaction.FEEDBACK_ONE_SIDED: 'The other party can still leave their feedback.',
+        Transaction.RENTAL_PROCESS_COMPLETED: 'This rental is complete.',
+        Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED: 'This rental is closed.',
+        Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK: 'This rental is closed.',
+        Transaction.DISPUTE_DECIDED: 'Review the dispute outcome and deposit decision.',
+        Transaction.CANCEL_ACCEPTED: 'This rental has been cancelled.',
+    }
+    status_label = instance.get_transaction_status_display()
+    next_step = next_steps.get(instance.transaction_status, 'Review the booking for the next available step.')
+    return f'{status_label}. Next step: {next_step}'
 
 
 def _create_system_transition_message(*, txn, user_from, user_to):

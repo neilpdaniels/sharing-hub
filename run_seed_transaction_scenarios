@@ -2,22 +2,41 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-PROJECT_ROOT="/home/neil/Projects/rentalution"
+PROJECT_ROOT="$PWD"
 VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
-source "$VENV_PATH"
+if (($# == 0)); then
+  echo ""
+  echo "Transaction scenarios:"
+  echo "  1) Seed missing scenarios"
+  echo "  2) Commence today — move all existing scenario start dates to today"
+  echo "  3) Finish today — move all existing scenario end dates to today"
+  echo "  4) Reset — delete and recreate seeded scenarios"
+  echo "  q) Cancel"
+  echo ""
+  echo "Date changes preserve rental length and workflow progress. Today uses Europe/London."
+  while true; do
+    read -r -p "Choose: " selection || exit 0
+    case "$selection" in
+      1) break ;;
+      2) set -- --commence-today; break ;;
+      3) set -- --finish-today; break ;;
+      4) set -- --reset; break ;;
+      q|Q) exit 0 ;;
+      *) echo "Please choose 1, 2, 3, 4, or q to cancel." ;;
+    esac
+  done
+fi
 
+source "$VENV_PATH"
 SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
 
-if [[ "${1:-}" == "--reset" ]]; then
-  shift
-  if [[ "${ENVIRONMENT_NAME:-}" == "Production" ]]; then
-    echo "Refusing to reset scenarios in production." >&2
-    exit 1
-  fi
-  uv run python manage.py seed_transaction_scenarios --reset --settings="$SETTINGS_MODULE" "$@"
-else
-  uv run python manage.py seed_transaction_scenarios --settings="$SETTINGS_MODULE" "$@"
+scenario_environment="${ENVIRONMENT_NAME:-}"
+if [[ "${scenario_environment,,}" == "production" ]]; then
+  echo "Refusing to change scenarios in production." >&2
+  exit 1
 fi
+
+uv run python manage.py seed_transaction_scenarios --settings="$SETTINGS_MODULE" "$@"
 
 echo "Seed users:"
 echo "  scenario-lender / scenario-lender"

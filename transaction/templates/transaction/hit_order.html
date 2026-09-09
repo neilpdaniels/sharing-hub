@@ -45,16 +45,28 @@
                     </div>
                     {% endif %}
 
-                    {% if order.deposit > 100 %}
+                    {% if order.verified_users_only %}
                     <div class="alert alert-info mb-3">
-                        <strong>ℹ️ Rental Length Limit</strong><br/>
-                        For deposits over £100, the maximum rental length is <strong>5 days</strong>.<br/>
-                        <small>For longer rentals with high deposits, the deposit will be taken and returned at the end.</small>
+                        <strong>Verified users only</strong>
+                        <span
+                            class="badge badge-info ml-2"
+                            title="Pro: helps reduce fraud and no-shows. Con: renters must complete Stripe identity verification before the rental can start."
+                            style="cursor: help;"
+                        >i</span><br/>
+                        You can still send an enquiry, but the rental cannot start until your identity is verified.
+                    </div>
+                    {% endif %}
+
+                    {% if order.deposit > 0 %}
+                    <div class="alert alert-info mb-3">
+                        <strong>ℹ️ Deposit rules</strong><br/>
+                        Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit.<br/>
+                        <small>Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.</small>
                     </div>
                     {% endif %}
                     <div id="long-rental-deposit-note" class="alert alert-warning mb-3" style="display:none;">
                         <strong>Long rental deposit rule</strong><br/>
-                        Rentals over 5 days require a Visa or Mastercard credit card for the deposit.
+                        Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit.
                         You can still pay with a different card.
                     </div>
 
@@ -131,8 +143,8 @@
                                                     <div><strong>Applied daily price:</strong> £<span id="price-per-day">{{ order.price|floatformat:2 }}</span></div>
                                                     <div><strong>Band:</strong> <span id="price-band-note">Base daily price</span></div>
                                                     <div><strong>Estimated rental subtotal:</strong> £<span id="price-subtotal">{{ order.price|floatformat:2 }}</span></div>
-                                                    <div id="pricing-long-rental-note" class="mt-2 font-weight-bold text-warning" style="display:none;">Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.</div>
-                                                    <div id="pricing-very-long-rental-note" class="mt-2 font-weight-bold text-danger" style="display:none;">Rentals over 30 days are not supported yet. Please choose 30 days or fewer.</div>
+                                                    <div id="pricing-long-rental-note" class="mt-2 font-weight-bold text-warning" style="display:none;">Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. You can still use a different card for payment.</div>
+                                                    <div id="pricing-very-long-rental-note" class="mt-2 font-weight-bold text-danger" style="display:none;">Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.</div>
                                                     {% if order.max_rental_days %}
                                                     <div class="text-muted">Maximum booking length: {{ order.max_rental_days }} day(s)</div>
                                                     {% endif %}
@@ -230,14 +242,14 @@
         document.getElementById('price-per-day').textContent = pricing.rate.toFixed(2);
         document.getElementById('price-band-note').textContent = pricing.label;
         document.getElementById('price-subtotal').textContent = (days > 0 ? (days * pricing.rate) : pricing.rate).toFixed(2);
-        var longRental = days > 5;
+        var longRental = days >= 7 && days <= 30;
         var veryLongRental = days > 30;
         var note = document.getElementById('pricing-long-rental-note');
         var hardStop = document.getElementById('pricing-very-long-rental-note');
         var banner = document.getElementById('long-rental-deposit-note');
         if (note) note.style.display = longRental ? 'block' : 'none';
         if (hardStop) hardStop.style.display = veryLongRental ? 'block' : 'none';
-        if (banner) banner.style.display = longRental ? 'block' : 'none';
+        if (banner) banner.style.display = (longRental || veryLongRental) ? 'block' : 'none';
     }
 
     function dateIsSelectableEndpoint(d) {
@@ -259,7 +271,6 @@
             cur.setDate(cur.getDate() + 1);
         }
         var days = dayCount(start, end);
-        if (days > 30) return false;
         if (maxRentalDays && days > maxRentalDays) return false;
         if (isHandover(start) || isHandover(end)) return false;
         return true;

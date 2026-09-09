@@ -1,3 +1,4 @@
+from zoneinfo import ZoneInfo
 from celery import shared_task
 import json
 import logging
@@ -314,7 +315,7 @@ def auto_cancel_overdue_first_day_bookings():
     These are system cancellations, so the Transaction save() path and signals
     will emit the usual system messages to both parties.
     """
-    now = timezone.localtime()
+    now = timezone.localtime(timezone.now(), ZoneInfo('Europe/London'))
     today = now.date()
     end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=0)
     candidates = Transaction.objects.filter(
@@ -772,6 +773,7 @@ def async_collect_deposit_hold(transaction_id):
                     update_fields.append('deposit_resolution_notes')
 
             transaction.save(update_fields=update_fields)
+            transaction.ensure_checkout_pin()
             logger.info(f'Deposit collection complete for transaction {transaction.transaction_reference}')
         else:
             transaction.deposit_collection_status = transaction.COLLECT_FAILED
@@ -973,7 +975,7 @@ def send_new_message_push_notification(message_id):
     item_name = ''
     if message.transaction and message.transaction.order_passive and message.transaction.order_passive.product:
         item_name = message.transaction.order_passive.product.name
-    title = item_name or 'New message'
+    title = (message.subject or '').strip() or item_name or 'New message'
     body = (message.description or '').strip() or 'You have a new message in rentalution.'
 
     headers = {

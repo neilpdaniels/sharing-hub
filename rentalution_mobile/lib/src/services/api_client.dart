@@ -1,13 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 class ApiClient {
-  ApiClient({
-    required this.baseUrl,
-    http.Client? client,
-  }) : _client = client ?? http.Client();
+  ApiClient({required this.baseUrl, http.Client? client})
+    : _client = client ?? http.Client();
 
   final String baseUrl;
   final http.Client _client;
@@ -27,11 +26,13 @@ class ApiClient {
     String? accessToken,
     Map<String, String>? queryParameters,
   }) async {
-    final response = await _client.post(
-      _buildUri(path, queryParameters: queryParameters),
-      headers: _headers(accessToken: accessToken),
-      body: jsonEncode(body),
-    ).timeout(_requestTimeout);
+    final response = await _client
+        .post(
+          _buildUri(path, queryParameters: queryParameters),
+          headers: _headers(accessToken: accessToken),
+          body: jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
     return _decodeObject(response);
   }
 
@@ -41,11 +42,13 @@ class ApiClient {
     String? accessToken,
     Map<String, String>? queryParameters,
   }) async {
-    final response = await _client.patch(
-      _buildUri(path, queryParameters: queryParameters),
-      headers: _headers(accessToken: accessToken),
-      body: jsonEncode(body),
-    ).timeout(_requestTimeout);
+    final response = await _client
+        .patch(
+          _buildUri(path, queryParameters: queryParameters),
+          headers: _headers(accessToken: accessToken),
+          body: jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
     return _decodeObject(response);
   }
 
@@ -54,10 +57,12 @@ class ApiClient {
     String? accessToken,
     Map<String, String>? queryParameters,
   }) async {
-    final response = await _client.get(
-      _buildUri(path, queryParameters: queryParameters),
-      headers: _headers(accessToken: accessToken),
-    ).timeout(_requestTimeout);
+    final response = await _client
+        .get(
+          _buildUri(path, queryParameters: queryParameters),
+          headers: _headers(accessToken: accessToken),
+        )
+        .timeout(_requestTimeout);
     return _decodeList(response);
   }
 
@@ -66,10 +71,12 @@ class ApiClient {
     String? accessToken,
     Map<String, String>? queryParameters,
   }) async {
-    final response = await _client.get(
-      _buildUri(path, queryParameters: queryParameters),
-      headers: _headers(accessToken: accessToken),
-    ).timeout(_requestTimeout);
+    final response = await _client
+        .get(
+          _buildUri(path, queryParameters: queryParameters),
+          headers: _headers(accessToken: accessToken),
+        )
+        .timeout(_requestTimeout);
     return _decodeObject(response);
   }
 
@@ -98,9 +105,7 @@ class ApiClient {
   }
 
   Map<String, String> _headers({String? accessToken, bool isJson = true}) {
-    final headers = <String, String>{
-      'Accept': 'application/json',
-    };
+    final headers = <String, String>{'Accept': 'application/json'};
 
     if (isJson) {
       headers['Content-Type'] = 'application/json';
@@ -173,4 +178,10 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+bool isNetworkError(Object error) {
+  return error is SocketException ||
+      error is TimeoutException ||
+      error is http.ClientException;
 }

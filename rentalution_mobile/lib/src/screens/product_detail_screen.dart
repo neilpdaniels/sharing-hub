@@ -225,7 +225,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ),
       endDrawer: _buildFilterDrawer(),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Container(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: const Center(child: CircularProgressIndicator()),
+            )
           : _error != null
           ? Center(child: Text(_error!))
           : _buildContent(context),
@@ -272,8 +275,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             borderRadius: BorderRadius.circular(14),
             child: product.imageUrl.isNotEmpty
                 ? CachedNetworkImage(
-                    imageUrl: product.imageUrl,
+                  imageUrl: product.imageUrl,
                     height: 250,
+                    placeholder: (context, url) => Container(
+                      height: 250,
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child: const Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
                     memCacheWidth: 1600,
                     memCacheHeight: 1600,
                     maxWidthDiskCache: 1800,
@@ -947,6 +961,57 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 ? '${order.currencySymbol}${order.deposit.toStringAsFixed(2)}'
                                 : '-',
                           ),
+                          if (order.verifiedUsersOnly) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer
+                                    .withOpacity(0.35),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withOpacity(0.22),
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.verified_user_outlined,
+                                    size: 18,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Verified users only - you can enquire, but you will need Stripe identity verification before the rental can start. This helps reduce fraud and no-shows.',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Tooltip(
+                                    message:
+                                        'Pro: helps reduce fraud and no-shows. Con: renters must verify before the rental can start.',
+                                    child: Icon(
+                                      Icons.info_outline,
+                                      size: 18,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           _metaRow(
                             'Collection policy',
                             _collectionPolicyText(order.collectionPolicy),
@@ -1223,6 +1288,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               Future<void> chooseDates() async {
                 final picked = await showDateRangePicker(
                   context: dialogContext,
+                  saveText: 'Select',
+                  confirmText: 'Select',
                   firstDate: _dateOnly(DateTime.now()),
                   lastDate: _lastEnquiryDate(order),
                   currentDate: _dateOnly(DateTime.now()),
@@ -1247,13 +1314,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   start: _dateOnly(picked.start),
                   end: _dateOnly(picked.end),
                 );
-                if (_selectedRangeIsTooLong(pickedRange)) {
-                  setDialogState(() {
-                    selectedRange = pickedRange;
-                  });
-                  return;
-                }
-
                 setDialogState(() {
                   selectedRange = pickedRange;
                 });
@@ -1263,6 +1323,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               final handoverCount = handoverDates.length;
               final selectedLabel =
                   '${_formatDate(selectedRange.start)} - ${_formatDate(selectedRange.end)}';
+              final selectedDays = DateTime.utc(
+                selectedRange.end.year,
+                selectedRange.end.month,
+                selectedRange.end.day,
+              ).difference(DateTime.utc(
+                selectedRange.start.year,
+                selectedRange.start.month,
+                selectedRange.start.day,
+              )).inDays + 1;
 
               return AlertDialog(
                 title: const Text('Send Enquiry'),
@@ -1294,17 +1363,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             : 'Max rental days: not set',
                         style: Theme.of(dialogContext).textTheme.bodySmall,
                       ),
-                      if (order.maxRentalDays > 30) ...[
+                      if (order.maxRentalDays > 6) ...[
                         const SizedBox(height: 8),
                         const Text(
-                          'Rentals over 30 days are not supported yet. Please choose 30 days or fewer.',
+                          'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.',
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ],
                       if (_selectedRangeHasLongRental(selectedRange)) ...[
                         const SizedBox(height: 8),
                         const Text(
-                          'Long rentals over 5 days require a Visa or Mastercard credit card for the deposit. You can still use a different card for payment.',
+                          'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. You can still use a different card for payment.',
                         ),
                       ],
                       if (blockedCount > 0 || handoverCount > 0) ...[
@@ -1321,7 +1390,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         label: const Text('Choose rental dates'),
                       ),
                       const SizedBox(height: 8),
-                      Text('Selected: $selectedLabel'),
+                      Text(
+                        'Selected: $selectedLabel',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$selectedDays rental ${selectedDays == 1 ? 'day' : 'days'}',
+                      ),
                       const SizedBox(height: 12),
                       const Text('Optional message:'),
                       const SizedBox(height: 8),
@@ -1344,9 +1420,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     child: const Text('Cancel'),
                   ),
                   ElevatedButton(
-                    onPressed: _selectedRangeIsTooLong(selectedRange)
-                        ? null
-                        : () => Navigator.pop(dialogContext, true),
+                    onPressed: () => Navigator.pop(dialogContext, true),
                     child: const Text('Send Enquiry'),
                   ),
                 ],
@@ -1490,11 +1564,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   bool _selectedRangeHasLongRental(DateTimeRange range) {
-    return range.duration.inDays + 1 > 5;
-  }
-
-  bool _selectedRangeIsTooLong(DateTimeRange range) {
-    return range.duration.inDays + 1 > 30;
+    return range.duration.inDays + 1 >= 7;
   }
 
   String _formatDate(DateTime value) {

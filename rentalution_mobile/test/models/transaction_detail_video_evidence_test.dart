@@ -5,6 +5,7 @@ Map<String, dynamic> _detailJson({
   required String status,
   required bool meIsLender,
   required bool meIsRenter,
+  List<String> allowedActions = const [],
 }) {
   return {
     'transaction_reference': 'TXN-1',
@@ -21,6 +22,7 @@ Map<String, dynamic> _detailJson({
     'quantity': 1,
     'me_is_lender': meIsLender,
     'me_is_renter': meIsRenter,
+    'workflow_payload': {'allowed_actions': allowedActions},
   };
 }
 
@@ -28,7 +30,12 @@ void main() {
   group('TransactionDetail.canSubmitVideoEvidence', () {
     test('is true for lender in RAGR', () {
       final detail = TransactionDetail.fromJson(
-        _detailJson(status: 'RAGR', meIsLender: true, meIsRenter: false),
+        _detailJson(
+          status: 'RAGR',
+          meIsLender: true,
+          meIsRenter: false,
+          allowedActions: ['initiate_rental'],
+        ),
       );
 
       expect(detail.canSubmitVideoEvidence, isTrue);
@@ -36,7 +43,12 @@ void main() {
 
     test('is true for renter in RDAYAWV', () {
       final detail = TransactionDetail.fromJson(
-        _detailJson(status: 'RDAYAWV', meIsLender: false, meIsRenter: true),
+        _detailJson(
+          status: 'RDAYAWV',
+          meIsLender: false,
+          meIsRenter: true,
+          allowedActions: ['submit_checkout_borrower_evidence'],
+        ),
       );
 
       expect(detail.canSubmitVideoEvidence, isTrue);
@@ -44,7 +56,12 @@ void main() {
 
     test('is true for renter in RONG', () {
       final detail = TransactionDetail.fromJson(
-        _detailJson(status: 'RONG', meIsLender: false, meIsRenter: true),
+        _detailJson(
+          status: 'RONG',
+          meIsLender: false,
+          meIsRenter: true,
+          allowedActions: ['submit_return_borrower_evidence'],
+        ),
       );
 
       expect(detail.canSubmitVideoEvidence, isTrue);
@@ -52,7 +69,12 @@ void main() {
 
     test('is true for renter in RRTDAYAWV', () {
       final detail = TransactionDetail.fromJson(
-        _detailJson(status: 'RRTDAYAWV', meIsLender: false, meIsRenter: true),
+        _detailJson(
+          status: 'RRTDAYAWV',
+          meIsLender: false,
+          meIsRenter: true,
+          allowedActions: ['submit_return_borrower_evidence'],
+        ),
       );
 
       expect(detail.canSubmitVideoEvidence, isTrue);
@@ -60,7 +82,12 @@ void main() {
 
     test('is true for lender in RRTDAYAWV', () {
       final detail = TransactionDetail.fromJson(
-        _detailJson(status: 'RRTDAYAWV', meIsLender: true, meIsRenter: false),
+        _detailJson(
+          status: 'RRTDAYAWV',
+          meIsLender: true,
+          meIsRenter: false,
+          allowedActions: ['submit_lender_return_evidence'],
+        ),
       );
 
       expect(detail.canSubmitVideoEvidence, isTrue);
@@ -81,6 +108,16 @@ void main() {
 
       expect(detail.canSubmitVideoEvidence, isFalse);
     });
+
+    test(
+      'is false before return date when the server offers no evidence action',
+      () {
+        final detail = TransactionDetail.fromJson(
+          _detailJson(status: 'RONG', meIsLender: false, meIsRenter: true),
+        );
+        expect(detail.canSubmitVideoEvidence, isFalse);
+      },
+    );
 
     test('is false for unrelated status', () {
       final detail = TransactionDetail.fromJson(

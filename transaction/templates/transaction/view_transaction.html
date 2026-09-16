@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% load thumbnail %}
+{% load static %}
 {% load common_lib %}
 
 {% block headerContent %}
+<script src="{% static 'transaction/video-upload.js' %}" data-worker-url="{% static 'transaction/video-worker.js' %}" defer></script>
 {% if message_turnstile_required %}
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 {% endif %}
@@ -15,9 +17,28 @@
     {% if transaction %}
     {% if request.user.is_staff and not is_lender and not is_renter %}
     <div class="alert alert-warning border-warning mb-3">
-        Staff view only. You can inspect this transaction, but only the lender and borrower can submit transaction actions.
+        Admin view. You can inspect this transaction and edit its rental dates. Handover and agreement actions belong to the lender and borrower.
     </div>
     {% endif %}
+            {% if transaction.get_overdue_kind %}
+            <div class="alert alert-warning" role="alert">
+                <strong>Booking needs attention</strong>
+                <p>{{ transaction.get_overdue_message }}</p>
+                {% if 'confirm_no_collection' in allowed_actions %}
+                <form method="post">{% csrf_token %}
+                    <input type="hidden" name="action" value="confirm_no_collection">
+                    <button type="submit" class="btn btn-warning">Confirm collection did not happen</button>
+                </form>
+                {% endif %}
+                {% if 'report_missing_return' in allowed_actions %}
+                <form method="post">{% csrf_token %}
+                    <input type="hidden" name="action" value="report_missing_return">
+                    <button type="submit" class="btn btn-warning">No, the item was not returned — start non-return review</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+
     <div class="row">
         <div class="col-lg-8">
             <h3 class="mb-1">Rental Transaction</h3>
@@ -109,6 +130,9 @@
                         <h5 class="card-title">{{ transaction.product.name }}</h5>
                         <p class="mb-1"><strong>Status:</strong> {{ transaction.get_status_display_verbose }}</p>
                         <p class="mb-1"><strong>Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
+                        {% if request.user.is_staff %}
+                        <a class="btn btn-sm btn-outline-primary mb-2" href="{% url 'transaction:edit_transaction_dates' transaction.transaction_reference %}">Edit rental dates (admin)</a>
+                        {% endif %}
                         <p class="mb-1"><strong>Price:</strong> £{{ transaction.price|format_price }} per day</p>
                         <p class="mb-1"><strong>Deposit:</strong> £{{ transaction.deposit|format_price }}</p>
                         {% if transaction.get_rental_length_days > 6 %}
@@ -302,41 +326,31 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Condition Evidence</h5>
-                    <p class="mb-1"><strong>Checkout video:</strong>
-                        {% if transaction.checkout_condition_video_url %}
-                        <a href="{{ transaction.checkout_condition_video_url }}" target="_blank" rel="noopener">View</a>
-                        {% else %}
-                        Not added yet
+                    {% for evidence in transaction.evidence_items.all %}
+                    {% if evidence.active %}
+                    <div class="mb-3">
+                        <strong>{{ evidence.evidence_stage|default:"Video evidence" }}</strong>
+                        <small class="text-muted">{{ evidence.uploaded_at }}</small>
+                        {% if evidence.video_preview %}
+                        <video controls playsinline preload="none" class="d-block mt-2" style="max-width:100%;max-height:360px" src="{{ evidence.video_preview.url }}"></video>
+                        <small class="text-muted">Smaller preview</small>
+                        {% elif evidence.video %}
+                        <p class="text-muted mb-1">{% if evidence.preview_status == 'failed' %}Preview unavailable. The uploaded video is still available below.{% else %}Preparing smaller preview…{% endif %}</p>
+                        {% elif evidence.external_video_url %}
+                        <a href="{{ evidence.external_video_url }}" target="_blank" rel="noopener">Open external video</a>
                         {% endif %}
-                    </p>
-                    <p class="mb-1"><strong>Checkout evidence (borrower):</strong>
-                        {% if transaction.checkout_borrower_video_url %}
-                        <a href="{{ transaction.checkout_borrower_video_url }}" target="_blank" rel="noopener">View</a>
-                        {% else %}
-                        Not added yet
+                        {% if evidence.video %}
+                        <a class="d-block mt-1" href="{{ evidence.video_download_url }}">Download full uploaded quality</a>
                         {% endif %}
-                    </p>
-                    <p class="mb-0"><strong>Return video:</strong>
-                        {% if transaction.return_condition_video_url %}
-                        <a href="{{ transaction.return_condition_video_url }}" target="_blank" rel="noopener">View</a>
-                        {% else %}
-                        Not added yet
-                        {% endif %}
-                    </p>
-                    <p class="mb-0 mt-2"><strong>Return evidence (borrower):</strong>
-                        {% if transaction.return_borrower_video_url %}
-                        <a href="{{ transaction.return_borrower_video_url }}" target="_blank" rel="noopener">View</a>
-                        {% else %}
-                        Not added yet
-                        {% endif %}
-                    </p>
-                    <p class="mb-0"><strong>Return evidence (lender):</strong>
-                        {% if transaction.return_lender_video_url %}
-                        <a href="{{ transaction.return_lender_video_url }}" target="_blank" rel="noopener">View</a>
-                        {% else %}
-                        Not added yet
-                        {% endif %}
-                    </p>
+                    </div>
+                    {% endif %}
+                    {% empty %}
+                    {% if transaction.checkout_condition_video_url %}<p><a href="{{ transaction.checkout_condition_video_url }}" target="_blank" rel="noopener">Open supplied checkout video</a></p>{% endif %}
+                    {% if transaction.checkout_borrower_video_url %}<p><a href="{{ transaction.checkout_borrower_video_url }}" target="_blank" rel="noopener">Open supplied checkout counter-evidence</a></p>{% endif %}
+                    {% if transaction.return_borrower_video_url %}<p><a href="{{ transaction.return_borrower_video_url }}" target="_blank" rel="noopener">Open supplied return video</a></p>{% endif %}
+                    {% if transaction.return_lender_video_url %}<p><a href="{{ transaction.return_lender_video_url }}" target="_blank" rel="noopener">Open supplied return counter-evidence</a></p>{% endif %}
+                    {% if not transaction.checkout_condition_video_url and not transaction.return_borrower_video_url %}<p>No video evidence uploaded yet.</p>{% endif %}
+                    {% endfor %}
                 </div>
             </div>
 
@@ -647,7 +661,7 @@
 
             {% include "transaction/card_setup_form.html" %}
 
-            {% if workflow_message %}<div class="alert alert-info" role="status">{{ workflow_message }}</div>{% endif %}
+            {% if workflow_message and not transaction.get_overdue_kind %}<div class="alert alert-info" role="status">{{ workflow_message }}</div>{% endif %}
 
             {% if 'initiate_rental' in allowed_actions %}
             <div class="card mb-3">
@@ -666,12 +680,14 @@
                         <input type="hidden" name="action" value="initiate_rental">
                         <div class="form-group">
                             <label for="id_checkout_video_file">Checkout condition video upload</label>
-                            <input id="id_checkout_video_file" class="form-control-file" type="file" name="checkout_video_file" accept="video/*">
+                            <input id="id_checkout_video_file" class="form-control-file" type="file" name="checkout_video_file" accept="video/*" capture="environment">
+                            {% if phone_evidence_qrs.initiate_rental %}
+                            <div class="mt-3 text-center">
+                                <img src="{{ phone_evidence_qrs.initiate_rental }}" alt="Scan to record checkout evidence on phone" width="144" height="144">
+                                <p class="small text-muted mb-0">Scan to record on phone. Link expires in 5 minutes.</p>
+                            </div>
+                            {% endif %}
                             <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="id_checkout_video_url">Checkout condition video URL</label>
-                            <input id="id_checkout_video_url" class="form-control" type="url" name="checkout_video_url" placeholder="https://...">
                         </div>
                         <div class="form-check mb-2">
                             <input type="hidden" name="payment_collected_placeholder" value="1">
@@ -701,23 +717,20 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Action: Review Checkout Evidence (Borrower)</h5>
-                    <p class="text-muted mb-2">Confirm lender evidence or submit your own counter-evidence.</p>
+                    <p class="text-muted mb-2">Accept the condition to reveal your collection code, or submit counter-evidence.</p>
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_checkout_evidence">
-                        <button class="btn btn-success btn-block" type="submit">Agree With Lender Evidence</button>
+                        <button class="btn btn-success btn-block" type="submit">Accept Condition &amp; Show Collection Code</button>
                     </form>
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_checkout_borrower_evidence">
                         <div class="form-group">
                             <label for="id_checkout_borrower_video_file">Borrower counter-evidence video upload</label>
-                            <input id="id_checkout_borrower_video_file" class="form-control-file" type="file" name="checkout_borrower_video_file" accept="video/*">
+                            <input id="id_checkout_borrower_video_file" class="form-control-file" type="file" name="checkout_borrower_video_file" accept="video/*" capture="environment">
+                            {% if phone_evidence_qrs.submit_checkout_borrower_evidence %}<img class="mt-2" src="{{ phone_evidence_qrs.submit_checkout_borrower_evidence }}" alt="Scan to record counter-evidence on phone" width="120" height="120">{% endif %}
                             <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="id_checkout_borrower_video_url">Borrower counter-evidence video URL</label>
-                            <input id="id_checkout_borrower_video_url" class="form-control" type="url" name="checkout_borrower_video_url" placeholder="https://..." value="{{ transaction.checkout_borrower_video_url }}">
                         </div>
                         <button class="btn btn-outline-warning btn-block" type="submit">Submit Counter-Evidence</button>
                     </form>
@@ -728,8 +741,8 @@
             {% if is_renter and checkout_pin_available and transaction.transaction_status == 'RDAYAWV' %}
             <div class="card mb-3 border-success">
                 <div class="card-body">
-                    <h5 class="card-title text-success">Checkout Handover PIN</h5>
-                    <p class="mb-1">Payment has been captured and the deposit hold is in place. Share this PIN with the lender so they can complete handover verification:</p>
+                    <h5 class="card-title text-success">Collection code</h5>
+                    <p class="mb-1">Your condition acceptance is recorded. Share this code with the lender to complete handover verification:</p>
                     <p class="display-4 mb-1" style="letter-spacing: 0.2rem;">{{ transaction.checkout_handover_pin }}</p>
                     {% if transaction.checkout_handover_pin_generated_at %}
                     <p class="text-muted mb-0"><small>Generated: {{ transaction.checkout_handover_pin_generated_at|date:"M d, Y H:i" }}</small></p>
@@ -797,12 +810,9 @@
                         <input type="hidden" name="action" value="submit_return_borrower_evidence">
                         <div class="form-group">
                             <label for="id_return_video_file">Borrower return evidence video upload</label>
-                            <input id="id_return_video_file" class="form-control-file" type="file" name="return_video_file" accept="video/*">
+                            <input id="id_return_video_file" class="form-control-file" type="file" name="return_video_file" accept="video/*" capture="environment">
+                            {% if phone_evidence_qrs.submit_return_borrower_evidence %}<img class="mt-2" src="{{ phone_evidence_qrs.submit_return_borrower_evidence }}" alt="Scan to record return evidence on phone" width="120" height="120">{% endif %}
                             <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="id_return_video_url">Borrower return evidence video URL</label>
-                            <input id="id_return_video_url" class="form-control" type="url" name="return_video_url" placeholder="https://..." value="{{ transaction.return_borrower_video_url }}">
                         </div>
                         <button class="btn btn-primary btn-block" type="submit">Submit / Update Return Evidence</button>
                     </form>
@@ -817,23 +827,22 @@
                     <div class="alert alert-info py-2 mb-3" role="alert">
                         Video evidence is easiest to record and upload using our Android/iOS app.
                     </div>
-                    <p class="text-muted mb-2">Confirm you agree with borrower evidence, or provide your own counter-evidence.</p>
+                    <p class="text-muted mb-2">Accept the condition to reveal your return code, or submit counter-evidence.</p>
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_return_evidence">
-                        <button class="btn btn-success btn-block" type="submit">Agree With Borrower Evidence</button>
+                        <button class="btn btn-success btn-block" type="submit">Accept Condition &amp; Show Return Code</button>
                     </form>
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_lender_return_evidence">
                         <div class="form-group">
                             <label for="id_lender_return_video_file">Lender counter-evidence video upload</label>
-                            <input id="id_lender_return_video_file" class="form-control-file" type="file" name="lender_return_video_file" accept="video/*">
+                            <input id="id_lender_return_video_file" class="form-control-file" type="file" name="lender_return_video_file" accept="video/*" capture="environment">
+                            {% if phone_evidence_qrs.submit_lender_return_evidence %}<img class="mt-2" src="{{ phone_evidence_qrs.submit_lender_return_evidence }}" alt="Scan to record return counter-evidence on phone" width="120" height="120">{% endif %}
                             <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
                         </div>
                         <div class="form-group">
-                            <label for="id_lender_return_video_url">Lender counter-evidence video URL</label>
-                            <input id="id_lender_return_video_url" class="form-control" type="url" name="lender_return_video_url" placeholder="https://..." value="{{ transaction.return_lender_video_url }}">
                         </div>
                         <button class="btn btn-outline-warning btn-block" type="submit">Submit Counter-Evidence</button>
                     </form>
@@ -1859,7 +1868,8 @@ let lastLiveSignature = "{{ txn_live_state_signature|escapejs }}";
 let livePollInFlight = false;
 
 function pollTransactionLiveState() {
-    if (document.hidden || livePollInFlight) {
+    if (document.hidden || livePollInFlight || document.querySelector('form[data-video-busy]') ||
+        [...document.querySelectorAll('video')].some(video => !video.paused)) {
         return;
     }
 
@@ -1879,7 +1889,8 @@ function pollTransactionLiveState() {
         if (!signature) {
             return;
         }
-        if (signature !== lastLiveSignature) {
+        if (signature !== lastLiveSignature && !document.querySelector('form[data-video-busy]') &&
+            ![...document.querySelectorAll('video')].some(video => !video.paused)) {
             window.location.reload();
             return;
         }

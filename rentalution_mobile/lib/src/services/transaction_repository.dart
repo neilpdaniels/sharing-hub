@@ -90,6 +90,7 @@ class TransactionRepository {
     required String action,
     Map<String, dynamic> fields = const {},
     List<File> videoFiles = const [],
+    void Function(int sentBytes, int totalBytes)? onUploadProgress,
   }) {
     return _apiClient.postMultipart(
       '/transactions/$transactionReference/actions/',
@@ -99,6 +100,7 @@ class TransactionRepository {
         ...fields.map((key, value) => MapEntry(key, value.toString())),
       },
       videoFiles: videoFiles,
+      onUploadProgress: onUploadProgress,
     );
   }
 
@@ -183,6 +185,7 @@ class TransactionRepository {
     required String messageBody,
     List<File> imageFiles = const [],
     List<File> videoFiles = const [],
+    void Function(int sentBytes, int totalBytes)? onUploadProgress,
   }) async {
     final json = await _apiClient.postMultipart(
       '/transactions/$transactionReference/messages/',
@@ -190,6 +193,7 @@ class TransactionRepository {
       fields: {'message_body': messageBody},
       imageFiles: imageFiles,
       videoFiles: videoFiles,
+      onUploadProgress: onUploadProgress,
     );
     return TransactionMessage.fromJson(json);
   }

@@ -31,6 +31,16 @@
         {% if message.preview_text %}
         <div class="thread-message-body">{{ message.preview_text }}</div>
         {% endif %}
+        {% for attachment in message.txn_msg_img.all %}
+        {% if attachment.video and attachment.active %}
+        <div onclick="event.stopPropagation()" onkeydown="event.stopPropagation()">
+            {% if attachment.video_preview %}
+            <video controls playsinline preload="none" style="max-width:100%;max-height:240px" src="{{ attachment.video_preview.url }}"></video>
+            {% else %}<small>{% if attachment.preview_status == 'failed' %}Preview unavailable{% else %}Preparing preview…{% endif %}</small>{% endif %}
+            <a class="d-block" href="{{ attachment.video_download_url }}">Download full uploaded quality</a>
+        </div>
+        {% endif %}
+        {% endfor %}
     </div>
     {% endfor %}
 </div>

@@ -10,6 +10,7 @@ import string
 from common.helpers import RandomFileName
 from PIL import Image
 from io import BytesIO
+from django.core.files.base import File
 from django.core.files.uploadedfile import InMemoryUploadedFile
 import sys
 from django.conf import settings
@@ -492,8 +493,38 @@ class Transaction(models.Model):
 
         return errors
 
+    def get_overdue_kind(self):
+        today = self.workflow_today()
+        if (self.transaction_status in (self.RENTAL_ENQUIRY, self.RENTAL_AGREED,
+                                       self.RENTAL_DAY_AWAITING_VERIFICATION)
+                and self.rental_start_date and today > self.rental_start_date
+                and not self.checkout_handover_verified_at):
+            return 'collection'
+        if (self.transaction_status in (self.RENTAL_ONGOING, self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION)
+                and self.rental_end_date and today > self.rental_end_date
+                and not self.return_handover_verified_at):
+            return 'return'
+        return ''
+
+    def get_overdue_message(self):
+        kind = self.get_overdue_kind()
+        if kind == 'collection':
+            return ('Past agreement date, transaction presumed not to occur. '
+                    'No collection is recorded. Either participant can confirm that collection did not happen. '
+                    'If it did happen, complete the collection verification below.')
+        if kind == 'return':
+            return ('Past return date. Has the renter returned the item? '
+                    'Lender: if not, report non-return to start the dispute workflow. '
+                    'If it was returned, complete the return evidence and verification below.')
+        return ''
+
     def get_status_display_verbose(self):
         """Return richer user-facing status text for key workflow milestones."""
+        overdue = self.get_overdue_kind()
+        if overdue == 'collection':
+            return 'Collection overdue — confirm whether it happened'
+        if overdue == 'return':
+            return 'Return overdue — confirm whether the item was returned'
         if self.transaction_status == self.RENTAL_ONGOING:
             return self.get_workflow_message() or self.get_transaction_status_display()
         if self.transaction_status == self.RENTAL_AGREED:
@@ -556,6 +587,8 @@ class Transaction(models.Model):
         return 1
 
     def get_workflow_stage_label(self):
+        if self.transaction_status == self.CANCEL_ACCEPTED:
+            return 'Cancelled'
         if self.transaction_status == self.RENTAL_ONGOING:
             return self.get_workflow_message().rstrip('.') or self.WORKFLOW_STAGE_LABELS[5]
         if (
@@ -606,6 +639,7 @@ class Transaction(models.Model):
 
     # These actions use the same prerequisites in HTML and API handlers.
     GUARDED_WORKFLOW_ACTIONS = frozenset({
+        'confirm_no_collection',
         'initiate_rental', 'confirm_checkout_evidence', 'submit_checkout_borrower_evidence',
         'verify_checkout_handover_pin', 'submit_return_borrower_evidence',
         'confirm_return_evidence', 'submit_lender_return_evidence', 'verify_return_handover_pin',
@@ -671,6 +705,12 @@ class Transaction(models.Model):
         return payment_ready and deposit_ready
 
     def get_workflow_message(self):
+        if self.transaction_status == self.CANCEL_ACCEPTED:
+            if '[NO_COLLECTION_CONFIRMED]' in (self.deposit_resolution_notes or ''):
+                return 'This booking was cancelled because collection did not happen.'
+            return 'This booking has been cancelled.'
+        if self.get_overdue_kind():
+            return self.get_overdue_message()
         today = self.workflow_today()
         if self.transaction_status == self.RENTAL_AGREED:
             if not self.lender_agreed_at:
@@ -686,20 +726,30 @@ class Transaction(models.Model):
                 return 'Collection due. Lender: submit checkout evidence; borrower: review it before sharing the collection code.'
             return 'All required steps complete, awaiting rental day.'
         if self.transaction_status == self.RENTAL_DAY_AWAITING_VERIFICATION:
+            if not self.checkout_condition_video_url:
+                if not self.has_verified_payment_card():
+                    return 'Awaiting borrower payment card verification before collection.'
+                if not self.rental_start_date or today < self.rental_start_date:
+                    return 'Awaiting rental day for lender checkout evidence.'
+                return 'Collection due. Lender: submit checkout evidence; borrower: review it before sharing the collection code.'
             if not (self.checkout_borrower_confirmed or self.checkout_borrower_video_url):
                 return 'Awaiting borrower agreement or checkout counter-evidence.'
             if not self.checkout_funds_ready():
                 return 'Awaiting rental payment and deposit hold before the collection code is available.'
-            return 'Awaiting collection verification. Borrower: share your code with the lender.'
+            return 'Condition accepted. Borrower: share the collection code with the lender to complete handover.'
         if self.transaction_status == self.RENTAL_ONGOING:
-            if self.rental_end_date and today >= self.rental_end_date:
+            if self.rental_end_date and today == self.rental_end_date:
+                return 'Return due today. Borrower: submit return evidence.'
+            if self.rental_end_date and today > self.rental_end_date:
                 return f'Return due on {self.rental_end_date:%d %b %Y}. Borrower: submit return evidence.'
             if self.rental_end_date:
                 return f'Rental commenced, awaiting return day on {self.rental_end_date:%d %b %Y}.'
         if self.transaction_status == self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
+            if not self.return_borrower_video_url:
+                return 'Awaiting borrower return evidence. Borrower: submit return evidence for the lender to review.'
             if not self.return_handover_pin:
                 return 'Awaiting lender agreement or return counter-evidence.'
-            return 'Awaiting return verification. Lender: share your code with the borrower.'
+            return 'Condition accepted. Lender: share the return code with the borrower to complete handover.'
         if self.transaction_status == self.RENTAL_RETURNED_DEPOSIT_PENDING:
             if not self.deposit_proposed_by_lender_at:
                 return 'Return completed. Awaiting lender deposit return proposal.'
@@ -720,6 +770,8 @@ class Transaction(models.Model):
         start_due = bool(self.rental_start_date and today >= self.rental_start_date)
         return_due = bool(self.rental_end_date and today >= self.rental_end_date)
         actions = []
+        if self.get_overdue_kind() == 'collection':
+            actions.append('confirm_no_collection')
         if status == self.RENTAL_ENQUIRY:
             if is_lender:
                 actions.extend(['agree_rental', 'reject_enquiry'])
@@ -737,6 +789,8 @@ class Transaction(models.Model):
                 actions.append('initiate_rental')
             actions.append('send_message')
         elif status == self.RENTAL_DAY_AWAITING_VERIFICATION:
+            if is_lender and not self.checkout_condition_video_url and start_due and self.has_verified_payment_card():
+                actions.append('initiate_rental')
             if is_renter and self.checkout_condition_video_url:
                 actions.extend(['confirm_checkout_evidence', 'submit_checkout_borrower_evidence'])
             if is_lender and self.checkout_handover_pin and self.checkout_funds_ready():
@@ -770,7 +824,7 @@ class Transaction(models.Model):
             actions.append('secure_dispute_funds')
         if is_renter and status in (self.RENTAL_ENQUIRY, self.RENTAL_AGREED, self.RENTAL_DAY_AWAITING_VERIFICATION) and self.rental_start_date and today > self.rental_start_date and not self.checkout_handover_verified_at:
             actions.append('report_missing_rental')
-        if is_lender and status in (self.RENTAL_ONGOING, self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION) and self.rental_end_date and today > self.rental_end_date:
+        if is_lender and status in (self.RENTAL_ONGOING, self.RENTAL_RETURN_DAY_AWAITING_VERIFICATION) and self.get_overdue_kind() == 'return':
             actions.append('report_missing_return')
         if is_renter and status == self.CANCEL_ACCEPTED and '[MISSING_RENTAL_VOIDED]' in (self.deposit_resolution_notes or ''):
             actions.append('submit_feedback')
@@ -807,7 +861,11 @@ class Transaction(models.Model):
                 ),
                 'help_text': (
                     'The rental is fully prepared. Nothing else is required until the rental day.'
-                    if step == current
+                    if (step == current and self.transaction_status == self.RENTAL_AGREED
+                        and self.lender_agreed_at and self.renter_agreed_at
+                        and self.has_verified_payment_card() and self.rental_start_date
+                        and self.workflow_today() < self.rental_start_date)
+                    else self.get_workflow_message() if step == current and self.get_workflow_message()
                     else self.WORKFLOW_STAGE_HELP_TEXT.get(step, '')
                 ),
                 'current': step == current,
@@ -822,6 +880,7 @@ class Transaction(models.Model):
             'current_stage': current,
             'current_label': self.get_workflow_stage_label(),
             'message': self.get_workflow_message(),
+            'overdue_kind': self.get_overdue_kind(),
             'today': self.workflow_today().isoformat(),
             'contract_deadline': self.get_contract_deadline().isoformat() if self.get_contract_deadline() else None,
             'timeline': timeline,
@@ -1054,6 +1113,22 @@ class TransactionMessageImage(models.Model):
         validators=[validate_video_size],
         help_text='Max 50 MB. Optimized/display version.'
     )
+    video_preview = models.FileField(upload_to=RandomFileName('videos/txn_preview/'), blank=True)
+    preview_status = models.CharField(max_length=12, default='pending', choices=[
+        ('pending', 'Preparing'), ('processing', 'Processing'), ('ready', 'Ready'), ('failed', 'Unavailable'),
+    ])
+    preview_updated_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def video_download_url(self):
+        from django.core import signing
+        from django.urls import reverse
+        from urllib.parse import urlencode
+        if not (self.video_raw or self.video):
+            return self.external_video_url
+        token = signing.dumps(self.pk, salt='transaction-video-download')
+        return reverse('transaction:download_video', args=[self.pk]) + '?' + urlencode({'token': token})
+
     video_raw = models.FileField(
         upload_to=RandomFileName('videos/txn_msg_raw/'),
         blank=True,
@@ -1071,15 +1146,48 @@ class TransactionMessageImage(models.Model):
     first_image = models.BooleanField(default=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 
+    def _save_shared_video_archive(self):
+        if (self.video and self.video_raw
+                and not self.video._committed and not self.video_raw._committed
+                and self.video.file is self.video_raw.file):
+            # Both fields reference the same preserved upload. Only the derived
+            # preview is a second stored file; do not duplicate/move the upload.
+            self.video.save(self.video.name, self.video.file, save=False)
+            self.video_raw = self.video.name
+
+    def _queue_video_preview(self):
+        from django.db import transaction
+        def enqueue():
+            from .video import queue_video_preview
+            try:
+                queue_video_preview(self.pk)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Unable to queue video preview %s', self.pk)
+                type(self).objects.filter(pk=self.pk).update(preview_status='failed')
+        transaction.on_commit(enqueue)
+
     def saveNoImageModification(self, *args, **kwargs):
+        new_video = self.pk is None and bool(self.video)
+        if new_video:
+            validate_video_size(self.video)
+        self._save_shared_video_archive()
         super(TransactionMessageImage, self).save(*args, **kwargs)
+        if new_video:
+            self._queue_video_preview()
 
     def save(self, *args, **kwargs):
+        new_video = self.pk is None and bool(self.video)
+        if new_video:
+            validate_video_size(self.video)
+        self._save_shared_video_archive()
         # Check if we should skip image processing (used by async task)
         skip_processing = getattr(self, '_skip_image_processing', False)
         
         if self.video and not self.image:
             super(TransactionMessageImage, self).save(*args, **kwargs)
+            if new_video:
+                self._queue_video_preview()
             return
 
         if not self.image:

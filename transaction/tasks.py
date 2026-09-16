@@ -308,52 +308,13 @@ def auto_close_feedback_windows():
 
 @shared_task
 def auto_cancel_overdue_first_day_bookings():
+    """Keep the scheduled entry compatible; overdue bookings need participant confirmation.
+
+    Date-derived banners/actions are visible immediately, without waiting for Celery.
+    Refresh dashboard counts instead of silently cancelling unverified collections.
     """
-    Cancel rentals that have not completed the first-day workflow by end of the
-    rental start day.
-
-    These are system cancellations, so the Transaction save() path and signals
-    will emit the usual system messages to both parties.
-    """
-    now = timezone.localtime(timezone.now(), ZoneInfo('Europe/London'))
-    today = now.date()
-    end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=0)
-    candidates = Transaction.objects.filter(
-        rental_start_date__lte=today,
-        transaction_status__in=(
-            Transaction.RENTAL_ENQUIRY,
-            Transaction.RENTAL_AGREED,
-            Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
-        ),
-    ).select_related('user_passive', 'user_aggressive')
-
-    cancelled = 0
-    for txn in candidates:
-        if txn.transaction_status == txn.CANCEL_ACCEPTED:
-            continue
-        if txn.rental_start_date == today and now <= end_of_today:
-            continue
-
-        txn.prev_transaction_status = txn.transaction_status
-        txn.transaction_status = txn.CANCEL_ACCEPTED
-        txn.transaction_status_raised_by = None
-        note = f'[AUTO_CANCELLED_BY_SYSTEM] First day of rental ended on {txn.rental_start_date}.'
-        existing_notes = (txn.deposit_resolution_notes or '').strip()
-        if note not in existing_notes:
-            txn.deposit_resolution_notes = f'{existing_notes}\n{note}'.strip()
-        txn.save(update_fields=[
-            'prev_transaction_status',
-            'transaction_status',
-            'transaction_status_raised_by',
-            'deposit_resolution_notes',
-            'amended',
-        ])
-        cancelled += 1
-
     stats_result = _recalculate_booking_stats()
-    result = {'cancelled': cancelled, 'stats_updated': stats_result.get('updated', 0)}
-    logger.info('Auto-cancel overdue first-day bookings: %s', result)
-    return result
+    return {'cancelled': 0, 'stats_updated': stats_result.get('updated', 0)}
 
 
 @shared_task
@@ -1055,3 +1016,12 @@ def send_new_message_push_notification(message_id):
         'failed': failed_count,
         'invalid_token_count': len(invalid_tokens),
     }
+
+
+@shared_task(bind=True, queue='video', acks_late=True, reject_on_worker_lost=True, time_limit=360)
+def generate_video_preview(self, evidence_id):
+    from .models import TransactionMessageImage
+    if (self.request.delivery_info or {}).get('redelivered'):
+        TransactionMessageImage.objects.filter(pk=evidence_id, preview_status='processing').update(preview_status='pending')
+    from .video import generate_preview
+    return generate_preview(evidence_id)

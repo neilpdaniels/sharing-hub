@@ -163,6 +163,42 @@ feature backlog from app/site comparison
 
 supporting technical tasks
 
+nice to have — post-release intelligence and workflow research
+
+0) simplify normal rental handover workflow:
+    - replace the blocking lender → renter → lender evidence loop with one explicit physical handover confirmation at collection and one at return.
+    - collection target flow: both contract/payment prerequisites complete before the day; lender captures checkout evidence; lender scans renter QR / enters renter PIN to confirm pickup; rental starts.
+    - return target flow: renter captures return evidence; lender scans renter QR / enters lender PIN to confirm receipt; lender then has a defined inspection window before deposit proposal.
+    - make counter-evidence an optional, prominently offered follow-up within a defined deadline instead of a prerequisite that blocks handover. Preserve original upload, timestamps, roles, and evidence stages.
+    - define whether the counter-evidence deadline starts at evidence upload, QR/PIN handover, or both; define what happens if neither party uploads evidence.
+    - define inspection deadline, lender response requirements, renter rebuttal window, reminder cadence, and automatic escalation/expiry for the return/deposit path.
+    - ensure the UI has one primary current action per participant, with the QR/PIN handover panel only for the person who presents or verifies it.
+    - retain the current flow behind a feature flag, run web/mobile parity and dispute-policy review, and compare completion, cancellation, counter-evidence, and dispute rates before full rollout.
+
+1) wallet card setup proof of concept:
+    - add Apple Pay and Google Pay to the existing Stripe SetupIntent / PaymentSheet path where the device supports it.
+    - verify that the resulting payment method can be saved and used for the later deposit/rental charges, including off-session charges and SCA handling.
+    - preserve the current restricted-card rules for longer rentals; do not offer a wallet when its funding/card type cannot satisfy the rule.
+    - configure and test Apple merchant ID/capability, Google Pay Android manifest configuration, Stripe dashboard/domain registration, supported-device fallbacks, and web wallet support.
+    - measure completion rate against the existing card setup before making it the default.
+
+2) guided condition-evidence assistant:
+    - prototype a vision-model review of structured before/after photos or selected video frames.
+    - first use: capture-quality checks, missing-angle prompts, and a private draft list of visible differences for both parties to review.
+    - do not auto-decide damage, deposit deductions, or disputes; retain the original evidence, confidence, model version, and reviewer decision for audit.
+    - define consent, retention, processor/privacy review, cost limits, human escalation, and bias/false-positive monitoring before any live trial.
+
+3) semantic listing search assistant:
+    - after launch, measure failed searches and zero-result queries before building this.
+    - prototype hybrid search: existing filters/keyword search plus embeddings over public listing title, description, category, attributes, and availability.
+    - let an LLM translate a natural-language query into the existing safe filter schema, then retrieve only authorised listing IDs; never use it as the source of truth for prices, availability, or policy.
+    - do not train a model on the database initially. Retrieval from current public listings is cheaper, updates immediately, and avoids memorising deleted/private data. Consider fine-tuning only after enough labelled query/click data proves a clear gap.
+
+4) transaction copilot, only after workflow metrics exist:
+    - use the server-owned workflow state to explain the current action in plain language and draft neutral messages/checklists.
+    - keep state transitions, payment eligibility, handover verification, disputes, and policy decisions deterministic and reviewable.
+
+
 1) shared workflow state contract:
     - consolidate transaction state helpers so web templates and Flutter screens consume the same stage/label/action source.
     - remove duplicated hard-coded status text from the client where the backend can own it.

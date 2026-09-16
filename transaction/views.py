@@ -3,6 +3,8 @@ import json
 import hashlib
 import logging
 import random
+import base64
+from io import BytesIO
 from datetime import datetime, timedelta, time as dt_time
 from operator import attrgetter
 from urllib.parse import quote
@@ -14,15 +16,17 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files import File
+from django.core import signing
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.db import models
+from django.db import models, transaction as db_transaction
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from simple_history.utils import bulk_update_with_history
 
 # Local apps
 from account.models import PaymentMethod, Profile
@@ -32,6 +36,7 @@ from common.models import Category, Order, OrderBlockedDate, OrderImage, Product
 from common.security import verify_turnstile_token
 from common.failures import record_site_failure
 from .forms import (
+    AdminTransactionDatesForm,
     LetPriceBandFormSet,
     OrderAddForm,
     OrderExpireForm,
@@ -64,6 +69,23 @@ from .tasks import (
     async_resolve_deposit_hold,
     async_setup_deposit_card_and_test_hold,
 )
+
+
+PHONE_EVIDENCE_ACTIONS = frozenset({
+    'initiate_rental',
+    'submit_checkout_borrower_evidence',
+    'submit_return_borrower_evidence',
+    'submit_lender_return_evidence',
+})
+
+
+def _phone_evidence_qr_data_uri(url):
+    import qrcode
+
+    image = qrcode.make(url)
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    return 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii')
 
 
 
@@ -128,6 +150,73 @@ def _release_transaction_dates(txn):
                 date=date_value,
                 reason=OrderBlockedDate.BOOKED,
             ).delete()
+
+
+def _admin_date_conflict(txn, start, end):
+    if not txn.order_passive_id or txn.transaction_status not in _holding_statuses():
+        return None
+    if Transaction.objects.filter(
+        order_passive_id=txn.order_passive_id,
+        transaction_status__in=_holding_statuses(),
+        rental_start_date__lte=end, rental_end_date__gte=start,
+    ).exclude(pk=txn.pk).exists():
+        return 'Another rental already reserves dates in this range.'
+    blocked = OrderBlockedDate.objects.filter(order_id=txn.order_passive_id)
+    if blocked.filter(reason=OrderBlockedDate.MANUAL, date__range=(start, end)).exists():
+        return 'This range includes dates the lender has marked unavailable.'
+    if blocked.filter(reason=OrderBlockedDate.HANDOVER_UNAVAILABLE, date__in=(start, end)).exists():
+        return 'Collection or return is unavailable on the selected boundary dates.'
+    booked = blocked.filter(reason=OrderBlockedDate.BOOKED, date__range=(start, end))
+    if txn.rental_start_date and txn.rental_end_date:
+        booked = booked.exclude(date__range=(txn.rental_start_date, txn.rental_end_date))
+    if booked.exists():
+        return 'This range includes dates already reserved on the listing.'
+    return None
+
+
+@login_required
+def edit_transaction_dates(request, transaction_reference):
+    if not request.user.is_staff:
+        raise PermissionDenied('Only administrators can change transaction dates.')
+    with db_transaction.atomic():
+        queryset = Transaction.objects.all()
+        if request.method == 'POST':
+            queryset = queryset.select_for_update()
+        txn = get_object_or_404(queryset, transaction_reference=transaction_reference)
+        form = AdminTransactionDatesForm(
+            request.POST if request.method == 'POST' else None,
+            initial={'rental_start_date': txn.rental_start_date, 'rental_end_date': txn.rental_end_date},
+        )
+        if request.method == 'POST' and form.is_valid():
+            start, end = form.cleaned_data['rental_start_date'], form.cleaned_data['rental_end_date']
+            if (start, end) == (txn.rental_start_date, txn.rental_end_date):
+                messages.info(request, 'Rental dates are unchanged.')
+                return redirect('transaction:view_transaction', transaction_reference=transaction_reference)
+            if txn.order_passive_id:
+                Order.objects.select_for_update().get(pk=txn.order_passive_id)
+            conflict = _admin_date_conflict(txn, start, end)
+            if conflict:
+                form.add_error(None, conflict)
+            else:
+                _release_transaction_dates(txn)
+                txn.rental_start_date, txn.rental_end_date = start, end
+                txn.amended = timezone.now()
+                # Record the admin/date change without replaying status-transition
+                # signals, payment processing, or handover notifications.
+                bulk_update_with_history(
+                    [txn], Transaction, ['rental_start_date', 'rental_end_date', 'amended'],
+                    default_user=request.user,
+                    default_change_reason=f"Dates: {form.cleaned_data['reason']}",
+                )
+                if txn.transaction_status in _holding_statuses():
+                    _reserve_transaction_dates(txn)
+                messages.success(request, f'Rental dates updated to {start:%d %b %Y} – {end:%d %b %Y}.')
+                return redirect('transaction:view_transaction', transaction_reference=transaction_reference)
+    return render(request, 'transaction/edit_transaction_dates.html', {
+        'transaction': txn,
+        'form': form,
+        'date_changes': txn.history.filter(history_change_reason__startswith='Dates: ').select_related('history_user')[:10],
+    })
 
 
 def _friendly_message_title(message):
@@ -309,6 +398,7 @@ def _build_transaction_live_state(txn):
 
     signature_parts = [
         str(txn.id),
+        ','.join(f'{pk}:{state}' for pk, state in TransactionMessageImage.objects.filter(models.Q(transaction=txn) | models.Q(txn_message__transaction=txn)).values_list('pk', 'preview_status')),
         txn.workflow_today().isoformat(),
         txn.get_workflow_message(),
         ','.join(txn.get_allowed_actions()),
@@ -1343,6 +1433,20 @@ def view_transaction(request, transaction_reference=None):
 
     is_lender = (request.user == txn.user_passive)
     is_renter = (request.user == txn.user_aggressive)
+    phone_evidence_action = ''
+    handoff_token = request.GET.get('phone_evidence', '')
+    if handoff_token:
+        try:
+            handoff = signing.loads(
+                handoff_token,
+                salt='transaction-phone-evidence',
+                max_age=300,
+            )
+            action = handoff.get('action', '')
+            if handoff.get('transaction_id') == txn.pk and action in PHONE_EVIDENCE_ACTIONS:
+                phone_evidence_action = action
+        except signing.BadSignature:
+            messages.error(request, 'This phone recording link has expired. Generate a new QR code from the booking.')
     card_setup_allowed_statuses = (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED)
 
     def _get_contract_deadline(transaction):
@@ -1431,6 +1535,18 @@ def view_transaction(request, transaction_reference=None):
                 messages.error(request, 'Maximum deposit proposal iterations reached (5). Raise dispute to continue.')
             else:
                 messages.error(request, 'This action is not available yet. Please follow the current transaction step.')
+            return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
+
+        if action == 'confirm_no_collection':
+            from transaction.overdue import confirm_no_collection
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            try:
+                confirm_no_collection(txn, request.user)
+            except DjangoValidationError as exc:
+                messages.error(request, ' '.join(exc.messages))
+            else:
+                _release_transaction_dates(txn)
+                messages.success(request, 'Confirmed: collection did not happen. The booking is cancelled.')
             return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
@@ -1608,35 +1724,15 @@ Transaction Ref: {txn.transaction_reference}"""
                 )
                 messages.warning(request, 'Missing rental reported. Transaction voided and routed to dispute review. Borrower can now leave final feedback.')
 
-        elif action == 'report_missing_return' and is_lender and txn.transaction_status in (
-            txn.RENTAL_ONGOING,
-            txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
-        ):
-            if not txn.rental_end_date or txn.workflow_today() <= txn.rental_end_date:
-                messages.error(request, 'Missing return can only be reported after the rental return date has passed.')
+        elif action == 'report_missing_return':
+            from transaction.overdue import report_non_return
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            try:
+                report_non_return(txn, request.user, (request.POST.get('missing_return_reason') or '').strip())
+            except DjangoValidationError as exc:
+                messages.error(request, ' '.join(exc.messages))
             else:
-                reason = (request.POST.get('missing_return_reason') or '').strip()
-                txn.prev_transaction_status = txn.transaction_status
-                txn.transaction_status = txn.DISPUTE_REQUESTED
-                txn.deposit_status = txn.DEPOSIT_MEDIATION
-                txn.deposit_resolution_notes = f'Lender reported missing return. {reason}'.strip()
-                txn.save(update_fields=[
-                    'prev_transaction_status',
-                    'transaction_status',
-                    'deposit_status',
-                    'deposit_resolution_notes',
-                    'amended',
-                ])
-                TransactionMessage.objects.create(
-                    user_from=request.user,
-                    user_to=txn.user_aggressive,
-                    transaction=txn,
-                    subject=f'Missing return reported {txn.transaction_reference}',
-                    description='Lender reported missing return after return date. Dispute workflow has been opened for admin review.',
-                    include_admin=True,
-                    is_system_generated=True,
-                )
-                messages.warning(request, 'Missing return reported and dispute review opened.')
+                messages.warning(request, 'Non-return reported. Dispute review is now open.')
 
         elif action == 'add_deposit_card' and is_renter and txn.transaction_status in card_setup_allowed_statuses:
             cardholder_name = (request.POST.get('deposit_cardholder_name') or '').strip()
@@ -1857,7 +1953,11 @@ Transaction Ref: {txn.transaction_reference}"""
                     return JsonResponse({'ok': True, 'message': 'Private message sent.'})
                 messages.info(request, 'Private message sent to the dispute team.')
 
-        elif action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
+        elif action == 'initiate_rental' and is_lender and (
+            txn.transaction_status == txn.RENTAL_AGREED
+            or (txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION
+                and not txn.checkout_condition_video_url)
+        ):
             if not _has_verified_payment_card(txn):
                 messages.error(
                     request,
@@ -1997,7 +2097,7 @@ Transaction Ref: {txn.transaction_reference}"""
             )
             if should_collect_deposit_now:
                 async_collect_deposit_hold.delay(transaction_id=txn.id)
-            messages.success(request, 'Checkout evidence submitted. Waiting for borrower confirmation/counter-evidence and handover PIN verification.')
+            messages.success(request, 'Checkout video submitted successfully. The borrower can accept the condition and show their collection code, or submit counter-evidence.')
 
         elif action == 'confirm_checkout_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
             if not txn.checkout_condition_video_url:
@@ -2006,7 +2106,7 @@ Transaction Ref: {txn.transaction_reference}"""
                 txn.checkout_borrower_confirmed = True
                 if not _is_rental_payment_collected(txn):
                     txn.save(update_fields=['checkout_borrower_confirmed', 'amended'])
-                    messages.warning(request, 'Evidence confirmed, but PIN cannot be generated until rental payment is captured.')
+                    messages.warning(request, 'Condition accepted, but the collection code cannot be generated until rental payment is captured.')
                 elif _is_deposit_funds_held(txn):
                     if not txn.checkout_handover_pin:
                         txn.checkout_handover_pin = _generate_txn_pin(6)
@@ -2017,10 +2117,10 @@ Transaction Ref: {txn.transaction_reference}"""
                         'checkout_handover_pin_generated_at',
                         'amended',
                     ])
-                    messages.success(request, 'Checkout evidence confirmed. PIN generated for handover verification.')
+                    messages.success(request, 'Condition accepted. Collection code generated for handover verification.')
                 else:
                     txn.save(update_fields=['checkout_borrower_confirmed', 'amended'])
-                    messages.warning(request, 'Evidence confirmed, but PIN cannot be generated until deposit funds are held.')
+                    messages.warning(request, 'Condition accepted, but the collection code cannot be generated until deposit funds are held.')
 
                 TransactionMessage.objects.create(
                     user_from=request.user,
@@ -2273,15 +2373,26 @@ Transaction Ref: {txn.transaction_reference}"""
             elif proposal_iterations >= 5:
                 messages.error(request, 'Maximum deposit proposal iterations reached (5). Please raise a dispute to continue; disputes may incur a fee.')
             else:
+                full_return = abs(proposed_amount - txn.deposit) < 0.01
                 previous_status = txn.transaction_status
                 txn.prev_transaction_status = txn.transaction_status
-                txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
-                txn.deposit_status = txn.DEPOSIT_PENDING
+                txn.transaction_status = (
+                    txn.AWAITING_FEEDBACK
+                    if full_return
+                    else txn.RENTAL_RETURNED_DEPOSIT_PENDING
+                )
+                txn.deposit_status = (
+                    txn.DEPOSIT_RETURNED_FULL
+                    if full_return
+                    else txn.DEPOSIT_PENDING
+                )
                 txn.deposit_proposed_return_amount = proposed_amount
                 txn.deposit_proposed_by_lender_at = timezone.now()
-                txn.deposit_proposal_accepted_at = None
+                txn.deposit_proposal_accepted_at = timezone.now() if full_return else None
                 txn.deposit_proposal_iteration_count = proposal_iterations + 1
                 txn.deposit_resolution_notes = resolution_notes
+                if full_return:
+                    _refresh_feedback_deadline(txn)
                 txn.save(update_fields=[
                     'prev_transaction_status',
                     'transaction_status',
@@ -2291,8 +2402,31 @@ Transaction Ref: {txn.transaction_reference}"""
                     'deposit_proposal_accepted_at',
                     'deposit_proposal_iteration_count',
                     'deposit_resolution_notes',
+                    'feedback_window_expires_at',
                     'amended',
                 ])
+
+                if full_return:
+                    TransactionMessage.objects.create(
+                        user_from=request.user,
+                        user_to=txn.user_aggressive,
+                        transaction=txn,
+                        subject=f'Deposit returned in full {txn.transaction_reference}',
+                        description='The lender returned the full deposit. No approval is needed.',
+                        is_system_generated=True,
+                    )
+                    async_resolve_deposit_hold.delay(
+                        transaction_id=txn.id,
+                        return_amount=proposed_amount,
+                    )
+                    messages.success(
+                        request,
+                        'Full deposit return submitted. No borrower approval is needed.',
+                    )
+                    return redirect(
+                        'transaction:view_transaction',
+                        transaction_reference=txn.transaction_reference,
+                    )
 
                 if previous_status == txn.RENTAL_RETURNED_DEPOSIT_CONTESTED:
                     description = (
@@ -2789,6 +2923,19 @@ Transaction Ref: {txn.transaction_reference}"""
 
     workflow_payload = txn.get_workflow_payload()
     user_allowed_actions = txn.get_allowed_actions_for_user(request.user)
+    if phone_evidence_action not in user_allowed_actions:
+        phone_evidence_action = ''
+
+    phone_evidence_qrs = {}
+    for action in PHONE_EVIDENCE_ACTIONS.intersection(user_allowed_actions):
+        token = signing.dumps(
+            {'transaction_id': txn.pk, 'action': action},
+            salt='transaction-phone-evidence',
+        )
+        handoff_url = request.build_absolute_uri(
+            f'{request.path}?phone_evidence={token}'
+        )
+        phone_evidence_qrs[action] = _phone_evidence_qr_data_uri(handoff_url)
 
     context = {
         'transaction': txn,
@@ -2806,6 +2953,8 @@ Transaction Ref: {txn.transaction_reference}"""
         'workflow_timeline': workflow_payload['timeline'],
         'workflow_payload': workflow_payload,
         'allowed_actions': user_allowed_actions,
+        'phone_evidence_action': phone_evidence_action,
+        'phone_evidence_qrs': phone_evidence_qrs,
         'workflow_message': txn.get_workflow_message(),
         'workflow_allowed_actions': workflow_payload.get('allowed_actions', []),
         'is_lender': is_lender,
@@ -3104,3 +3253,28 @@ class TransactionMessageImageUpload(View):
         else:
             data = {'is_valid': False}
         return JsonResponse(data)
+
+
+def download_video(request, evidence_id):
+    """Short-lived download links are issued only by participant-facing pages/API."""
+    from django.core import signing
+    from django.http import FileResponse
+    from pathlib import Path
+    try:
+        signed_id = signing.loads(request.GET.get('token', ''), salt='transaction-video-download', max_age=3600)
+    except signing.BadSignature:
+        raise PermissionDenied('This download link has expired. Refresh the booking and try again.')
+    if signed_id != evidence_id:
+        raise PermissionDenied('Invalid download link.')
+    item = get_object_or_404(TransactionMessageImage, pk=evidence_id, active=True)
+    original = item.video_raw or item.video
+    if not original:
+        raise Http404('Video not found.')
+    try:
+        stream = original.open('rb')
+    except FileNotFoundError:
+        raise Http404('Video not found.')
+    response = FileResponse(stream, as_attachment=True,
+                            filename=f'evidence-{item.pk}-uploaded{Path(original.name).suffix}')
+    response['Cache-Control'] = 'private, no-store'
+    return response

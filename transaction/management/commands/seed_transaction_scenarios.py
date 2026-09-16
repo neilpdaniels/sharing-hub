@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -13,6 +13,13 @@ from transaction.models import Transaction
 
 SCENARIOS = [
     {
+        'name': 'scenario-rental-ready',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'Stripe test card verified; ready for lender checkout evidence on rental day.',
+        'stripe_test_card': True,
+        'transaction_overrides': {'rental_start_delta_days': 0, 'rental_end_delta_days': 2},
+    },
+    {
         'name': 'scenario-enquiry',
         'status': Transaction.RENTAL_ENQUIRY,
         'note': 'Initial enquiry',
@@ -24,8 +31,9 @@ SCENARIOS = [
     },
     {
         'name': 'scenario-checkout',
-        'status': Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
-        'note': 'Checkout evidence pending',
+        'status': Transaction.RENTAL_AGREED,
+        'note': 'Contracts confirmed; verify a Stripe test card, then submit checkout evidence on rental day.',
+        'transaction_overrides': {'rental_start_delta_days': 0, 'rental_end_delta_days': 2},
     },
     {
         'name': 'scenario-ongoing',
@@ -40,7 +48,8 @@ SCENARIOS = [
     {
         'name': 'scenario-deposit',
         'status': Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
-        'note': 'Deposit review pending',
+        'note': 'Deposit review pending; lender can propose a return amount in the mobile app.',
+        'transaction_overrides': {'deposit': 120},
     },
     {
         'name': 'scenario-feedback',
@@ -70,8 +79,6 @@ SCENARIOS = [
             'rental_end_delta_days': 8,
             'price': 38,
             'deposit': 110,
-            'deposit_card_setup_status': Transaction.CARD_READY,
-            'deposit_test_hold_status': Transaction.TEST_HOLD_SUCCESS,
         },
     },
     {
@@ -150,24 +157,51 @@ class Command(BaseCommand):
     help = 'Seed repeatable transaction scenarios for web/mobile/Stripe walkthroughs.'
 
     def add_arguments(self, parser):
+        parser.add_argument('--transaction-id', type=int, help='Target one existing transaction by database ID (including non-scenario transactions).')
         actions = parser.add_mutually_exclusive_group()
+        actions.add_argument('--rental-ready', action='store_true', help='Seed a rental starting today with a real Stripe test payment method and verification hold. Requires a Stripe test secret key.')
+        actions.add_argument('--repair', action='store_true', help='Repair incomplete seeded contract/checkout prerequisites without resetting dates or completed work.')
         actions.add_argument('--reset', action='store_true', help='Delete existing seeded scenarios before recreating them.')
         actions.add_argument('--commence-today', action='store_true', help='Move existing scenario start dates to today, preserving duration and progress.')
         actions.add_argument('--finish-today', action='store_true', help='Move existing scenario end dates to today, preserving duration and progress.')
+
+        actions.add_argument('--commence-date', type=date.fromisoformat, metavar='YYYY-MM-DD', help='Move the selected transaction start date, preserving duration and progress. Requires --transaction-id.')
+        actions.add_argument('--finish-date', type=date.fromisoformat, metavar='YYYY-MM-DD', help='Move the selected transaction end date, preserving duration and progress. Requires --transaction-id.')
 
     def handle(self, *args, **options):
         if getattr(settings, 'ENVIRONMENT_NAME', '').strip().lower() == 'production':
             raise CommandError('This command is disabled in production.')
 
-        if options['commence_today'] or options['finish_today']:
-            self._move_dates(commence_today=options['commence_today'])
+        target_date = options['commence_date'] or options['finish_date']
+        date_mode = target_date or options['commence_today'] or options['finish_today']
+        if target_date and options['transaction_id'] is None:
+            raise CommandError('--commence-date and --finish-date require --transaction-id.')
+        if options['transaction_id'] is not None and not date_mode and not options['repair']:
+            raise CommandError('--transaction-id requires a date option or --repair.')
+
+        if date_mode:
+            self._move_dates(
+                commence_today=bool(options['commence_today'] or options['commence_date']),
+                target_date=target_date, transaction_id=options['transaction_id'],
+            )
+            return
+
+        if options['repair']:
+            self._repair(options['transaction_id'])
             return
 
         if options['reset']:
             self._reset()
 
+        if options['rental_ready']:
+            key = getattr(settings, 'STRIPE_CONNECT_SECRET_KEY', '') or ''
+            if not key.startswith(('sk_test_', 'rk_test_')):
+                raise CommandError('--rental-ready requires STRIPE_CONNECT_SECRET_KEY set to a Stripe test key (sk_test_ or rk_test_). No scenario was created.')
+
         created = 0
         for scenario in SCENARIOS:
+            if bool(scenario.get('stripe_test_card')) != options['rental_ready']:
+                continue
             scenario_name = scenario['name']
             status = scenario['status']
             note = scenario['note']
@@ -214,6 +248,8 @@ class Command(BaseCommand):
                     product=product,
                     transaction_status=status,
                     prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+                    lender_agreed_at=timezone.now() if status != Transaction.RENTAL_ENQUIRY else None,
+                    renter_agreed_at=timezone.now() if status != Transaction.RENTAL_ENQUIRY else None,
                     rental_start_date=Transaction.workflow_today() + timedelta(days=txn_overrides.get('rental_start_delta_days', 1)),
                     rental_end_date=Transaction.workflow_today() + timedelta(days=txn_overrides.get('rental_end_delta_days', 3)),
                     quantity=1,
@@ -232,6 +268,9 @@ class Command(BaseCommand):
                     transpact_text_status=marker,
                 )
 
+            if scenario.get('stripe_test_card'):
+                self._verify_seed_card(txn)
+
             if was_created:
                 created += 1
                 self.stdout.write(self.style.SUCCESS(f'Created {scenario_name}: {txn.transaction_reference}'))
@@ -240,17 +279,105 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f'Seeding complete. Created {created} scenario transactions.'))
 
-    def _move_dates(self, *, commence_today):
+    def _verify_seed_card(self, txn):
+        import stripe
+        from transaction.stripe_connect import stripe_connect_service
+
+        with db_transaction.atomic():
+            txn = Transaction.objects.select_for_update().get(pk=txn.pk)
+            if (txn.has_verified_payment_card() and txn.stripe_payment_method_id
+                    and txn.stripe_customer_id and txn.deposit_test_hold_reference
+                    and txn.deposit_test_hold_at):
+                self.stdout.write(f'Existing verified test card preserved for {txn.transaction_reference}. Dates and progress unchanged.')
+                return
+            if txn.transaction_status != Transaction.RENTAL_AGREED:
+                raise CommandError('This scenario has progressed; refusing to replace its payment method.')
+            try:
+                # A new reusable test PaymentMethod, never a real card number.
+                method = stripe.PaymentMethod.create(
+                    type='card', card={'token': 'tok_visa'},
+                    billing_details={'name': 'Scenario Renter'},
+                    api_key=settings.STRIPE_CONNECT_SECRET_KEY,
+                )
+                result = stripe_connect_service.confirm_card_setup(
+                    transaction=txn, setup_intent_id='', payment_method_id=method.id,
+                )
+            except Exception as exc:
+                raise CommandError('Stripe test-card setup failed. The scenario remains unverified; fix the Stripe configuration and rerun --rental-ready.') from exc
+            if not result.get('ok'):
+                raise CommandError(
+                    f'Stripe test-card verification failed: {result.get("error", "unknown error")}. '
+                    'The scenario remains unverified; rerun --rental-ready after resolving the error.'
+                )
+            updates = {
+                'stripe_payment_method_id': method.id,
+                'stripe_customer_id': result['stripe_customer_id'],
+                'deposit_card_setup_status': result['card_setup_status'],
+                'deposit_cardholder_name': result['cardholder_name'],
+                'deposit_card_brand': result['card_brand'],
+                'deposit_card_funding': result['card_funding'],
+                'deposit_card_last4': result['card_last4'],
+                'deposit_test_hold_status': result['test_hold_status'],
+                'deposit_test_hold_amount': result['test_hold_amount'],
+                'deposit_test_hold_at': result['test_hold_at'],
+                'deposit_test_hold_reference': result['test_hold_reference'],
+                'amended': timezone.now(),
+            }
+            Transaction.objects.filter(pk=txn.pk).update(**updates)
+            self.stdout.write(self.style.SUCCESS(
+                f'Verified Stripe test card for {txn.transaction_reference} (ID {txn.pk}). '
+                'Lender checkout evidence is available from the rental start date.'
+            ))
+
+    def _repair(self, transaction_id=None):
+        markers = [f"SCENARIO:{scenario['name']}" for scenario in SCENARIOS]
+        with db_transaction.atomic():
+            rows = Transaction.objects.select_for_update().filter(transpact_text_status__in=markers)
+            if transaction_id is not None:
+                rows = rows.filter(pk=transaction_id)
+            rows = list(rows)
+            if transaction_id is not None and not rows:
+                raise CommandError(f'Transaction ID {transaction_id} is not a known seeded scenario.')
+            for txn in rows:
+                updates = {}
+                if txn.transaction_status != Transaction.RENTAL_ENQUIRY:
+                    for field in ('lender_agreed_at', 'renter_agreed_at'):
+                        if not getattr(txn, field):
+                            updates[field] = timezone.now()
+                if (txn.transaction_status == Transaction.RENTAL_DAY_AWAITING_VERIFICATION
+                        and not txn.checkout_condition_video_url
+                        and not txn.checkout_borrower_video_url
+                        and not txn.checkout_borrower_confirmed
+                        and not txn.checkout_handover_pin
+                        and not txn.checkout_handover_verified_at):
+                    updates['transaction_status'] = Transaction.RENTAL_AGREED
+                    updates['prev_transaction_status'] = Transaction.RENTAL_ENQUIRY
+                if updates:
+                    # Seed maintenance must not send notifications or replay payments.
+                    Transaction.objects.filter(pk=txn.pk).update(**updates, amended=timezone.now())
+                    self.stdout.write(f'Repaired {txn.pk}: {", ".join(updates)}')
+                else:
+                    self.stdout.write(f'Unchanged {txn.pk}')
+        self.stdout.write(self.style.SUCCESS(
+            'Repair complete. Dates and evidence preserved. Paid checkout scenarios still require real Stripe test-card verification.'
+        ))
+
+    def _move_dates(self, *, commence_today, target_date=None, transaction_id=None):
         # Reuse the website's reservation policy, including holds by other rentals.
         from transaction.views import _holding_statuses, _release_transaction_dates, _reserve_transaction_dates
 
-        today = Transaction.workflow_today()
+        today = target_date or Transaction.workflow_today()
         changes = []
         markers = [f"SCENARIO:{scenario['name']}" for scenario in SCENARIOS]
         with db_transaction.atomic():
-            transactions = list(Transaction.objects.select_for_update().filter(
-                transpact_text_status__in=markers,
-            ).order_by('id'))
+            queryset = Transaction.objects.select_for_update()
+            if transaction_id is None:
+                queryset = queryset.filter(transpact_text_status__in=markers)
+            else:
+                queryset = queryset.filter(pk=transaction_id)
+            transactions = list(queryset.order_by('id'))
+            if transaction_id is not None and not transactions:
+                raise CommandError(f'Transaction ID {transaction_id} does not exist.')
             for txn in transactions:
                 if (not txn.rental_start_date or not txn.rental_end_date
                         or txn.rental_end_date < txn.rental_start_date):
@@ -275,7 +402,7 @@ class Command(BaseCommand):
                 if txn.transaction_status in _holding_statuses():
                     _reserve_transaction_dates(txn)
                 changes.append(
-                    f'{txn.transpact_text_status.removeprefix("SCENARIO:")} '
+                    f'{(txn.transpact_text_status or "Transaction").removeprefix("SCENARIO:")} '
                     f'({txn.transaction_reference}): {old_start} – {old_end} '
                     f'-> {new_start} – {new_end} ({duration.days + 1} rental days)'
                 )
@@ -286,9 +413,11 @@ class Command(BaseCommand):
         for change in changes:
             self.stdout.write(change)
         boundary = 'start' if commence_today else 'end'
+        scope = 'scenario transactions' if transaction_id is None else 'transaction'
+        when = f'on {today}' if target_date else f'today ({today}, Europe/London)'
         self.stdout.write(self.style.SUCCESS(
-            f'Updated {len(changes)} scenario transactions to {boundary} today '
-            f'({today}, Europe/London). Rental length and workflow progress preserved.'
+            f'Updated {len(changes)} {scope} to {boundary} {when}. '
+            'Rental length and workflow progress preserved.'
         ))
 
     def _ensure_user(self, username, email):

@@ -1,0 +1,13 @@
+{
+  "name": "rentalution-video-upload",
+  "private": true,
+  "scripts": {
+    "build": "esbuild worker.js --bundle --format=iife --minify --outfile=../static/transaction/video-worker.js --banner:js='/*! Includes Mediabunny 1.56.2 (MPL-2.0). See mediabunny.LICENSE.txt. Source: https://registry.npmjs.org/mediabunny/-/mediabunny-1.56.2.tgz */'"
+  },
+  "dependencies": {
+    "mediabunny": "1.56.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

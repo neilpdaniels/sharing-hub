@@ -52,7 +52,7 @@ The mobile app reads `workflow_payload.allowed_actions`, `message`, and `contrac
 
 ## Admin and scenario date tools TODO
 
-- [ ] Let admin users change a transaction's rental start/end dates from the **website transaction page** (website only, not the mobile app). Enforce admin permission on the server, validate the date range, record who changed it, and keep booking availability and workflow actions consistent with the new dates.
+- [x] Let admin users change a transaction's rental start/end dates from the **website transaction page** (website only, not the mobile app). Staff see **Edit rental dates (admin)** next to the dates. The form validates the range and booking/availability conflicts, requires a reason, and records the admin and new dates in history. Date/history/reservation updates are atomic; existing progress, evidence, codes, and payments stay as recorded. The edit page lists recent date changes. Twelve admin-date tests plus the eight scenario-date tests passed; no live transaction dates were changed.
 - [x] Add an interactive menu to `./run_seed_transaction_scenarios`: seed missing scenarios, **Commence today**, **Finish today**, **Reset scenarios**, and cancel. Date moves update recognised existing scenarios using Europe/London's current date, preserve rental length and workflow progress, and update reserved dates. Production use is blocked. Eight Django regression tests and mocked shell-menu checks passed; current scenario data has not been changed by this implementation.
 
 ## Validation

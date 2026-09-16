@@ -7,11 +7,11 @@ class AppConfig {
   // Override at launch: --dart-define=API_BASE_URL=http://<your-lan-ip>:8000/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.155:8000/api/v1',
+    defaultValue: 'http://127.0.0.1:8000/api/v1',
   );
 
-  static String get websiteBaseUrl {
-    final uri = Uri.parse(baseUrl);
+  static String websiteBaseUrlFor(String apiBaseUrl) {
+    final uri = Uri.parse(apiBaseUrl);
     final segments = uri.pathSegments;
     final isApiV1 =
         segments.length >= 2 && segments[0] == 'api' && segments[1] == 'v1';
@@ -26,6 +26,8 @@ class AppConfig {
         .toString()
         .replaceAll(RegExp(r'/$'), '');
   }
+
+  static String get websiteBaseUrl => websiteBaseUrlFor(baseUrl);
 
   // Override at launch: --dart-define=STRIPE_PUBLISHABLE_KEY=pk_test_...
   static const String stripePublishableKey = String.fromEnvironment(

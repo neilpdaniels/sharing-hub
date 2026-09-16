@@ -1007,7 +1007,7 @@ class AutoCancelOverdueRentalTests(TestCase):
 			postcode='SW1A1AA',
 		)
 
-	def test_overdue_first_day_booking_is_cancelled_and_stats_are_recalculated(self):
+	def test_overdue_first_day_booking_awaits_participant_confirmation(self):
 		start_date = timezone.localdate() - timedelta(days=1)
 		end_date = start_date + timedelta(days=2)
 		txn = Transaction.objects.create(
@@ -1029,23 +1029,12 @@ class AutoCancelOverdueRentalTests(TestCase):
 			mock_localtime.return_value = timezone.now()
 			result = auto_cancel_overdue_first_day_bookings()
 
-		self.assertEqual(result['cancelled'], 1)
-
+		self.assertEqual(result['cancelled'], 0)
 		txn.refresh_from_db()
-		self.assertEqual(txn.transaction_status, Transaction.CANCEL_ACCEPTED)
-		self.assertEqual(txn.transaction_status_raised_by, None)
-		self.assertIn('[AUTO_CANCELLED_BY_SYSTEM]', txn.deposit_resolution_notes)
-
-		msgs = TransactionMessage.objects.filter(transaction=txn).order_by('created')
-		self.assertEqual(msgs.count(), 2)
-		self.assertTrue(all(msg.is_system_generated for msg in msgs))
-
-		self.lender.profile.refresh_from_db()
-		self.renter.profile.refresh_from_db()
-		self.assertEqual(self.lender.profile.user_bookings_pending_my_action, 0)
-		self.assertEqual(self.lender.profile.user_bookings_pending_other_party, 0)
-		self.assertEqual(self.renter.profile.user_bookings_pending_my_action, 0)
-		self.assertEqual(self.renter.profile.user_bookings_pending_other_party, 0)
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_AGREED)
+		self.assertEqual(txn.get_overdue_kind(), 'collection')
+		for user in (self.lender, self.renter):
+			self.assertIn('confirm_no_collection', txn.get_allowed_actions_for_user(user))
 
 	def test_first_day_booking_is_not_cancelled_before_end_of_day(self):
 		start_date = timezone.localdate()

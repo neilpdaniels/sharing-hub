@@ -194,9 +194,16 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
         : tx.status == 'RONG'
         ? Colors.green.shade700
         : theme.colorScheme.primary;
-    final statusText =
-        tx.status.trim().toUpperCase() == 'RAGR' &&
-            tx.statusDisplay.trim().isNotEmpty
+    final statusText = tx.status == 'CACK'
+        ? 'Cancelled'
+        : tx.workflowPayload.overdueKind == 'collection'
+        ? 'Collection overdue — confirm whether it happened'
+        : tx.workflowPayload.overdueKind == 'return'
+        ? 'Return overdue — confirm whether the item was returned'
+        : tx.status.trim().toUpperCase() == 'RONG' && _isToday(tx.rentalEndDate)
+        ? 'Rental ending today'
+        : tx.status.trim().toUpperCase() == 'RAGR' &&
+              tx.statusDisplay.trim().isNotEmpty
         ? tx.statusDisplay
         : _transactionStatusText(tx.status);
     final updatedText = _friendlyDate(tx.updatedAt);
@@ -367,6 +374,16 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
     }
   }
 
+  bool _isToday(DateTime? date) {
+    if (date == null) {
+      return false;
+    }
+    final today = DateTime.now();
+    return date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day;
+  }
+
   String _friendlyDate(DateTime? value) {
     if (value == null) {
       return 'recently';
@@ -385,7 +402,20 @@ class _MyTransactionsScreenState extends State<MyTransactionsScreen>
       'Nov',
       'Dec',
     ];
-    return '${months[value.month - 1]} ${value.day}, ${value.year}';
+    return '${_ordinalDay(value.day)} ${months[value.month - 1]} ${(value.year % 100).toString().padLeft(2, '0')}';
+  }
+
+  String _ordinalDay(int day) {
+    final suffix = (day >= 11 && day <= 13)
+        ? 'th'
+        : day % 10 == 1
+        ? 'st'
+        : day % 10 == 2
+        ? 'nd'
+        : day % 10 == 3
+        ? 'rd'
+        : 'th';
+    return '$day$suffix';
   }
 
   String? _rentalDatesLabel(TransactionSummary tx) {

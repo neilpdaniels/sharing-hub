@@ -41,6 +41,10 @@ Set `SETTINGS_MODULE` to override the default settings module used by the seed s
 
 The transaction scenario menu uses today's date in Europe/London and updates only recognised seeded transactions. It also updates their reserved dates. For automation, the script still accepts `--reset`, `--commence-today`, or `--finish-today` directly; the date options require existing scenarios and do not recreate them.
 
+To add a rental ready for checkout evidence, run `./run_seed_transaction_scenarios --rental-ready` (menu option 8). This creates `scenario-rental-ready`, starting today for three rental days, with both test contracts confirmed. It creates a reusable Stripe test card and runs the application's verification authorization and cancellation before marking the card verified. Configure `STRIPE_CONNECT_SECRET_KEY` with a test key (`sk_test_` or `rk_test_`); live keys and production environments are rejected. The existing `scenario-checkout` remains available for testing manual card setup. This uses [Stripe's test token support](https://docs.stripe.com/api/payment_methods/create) and does not use a real card.
+
+Rerunning `--rental-ready` preserves existing verification, dates, and workflow progress. If Stripe verification fails, it exits with an error and leaves the scenario unverified for a retry. To move a previously created rental-ready scenario to today, use `--transaction-id ID --commence-today`. Rental payment and the full deposit are handled by the normal checkout flow; the seed only verifies the test card.
+
 ### Configuration and Environment Checks
 
 | Script | Purpose | Usage |
@@ -79,3 +83,5 @@ ViewPayerTranspacts
 [2026-02-28 11:32:51,773: ERROR/ForkPoolWorker-1] <class 'NoneType'>
 [2026-02-28 11:32:51,773: WARNING/ForkPoolWorker-1] running get transactions for user testuser2@sharing-hub.com
 [2026-02-28 11:32:51,858: ERROR/ForkPoolWorker-1] <class 'NoneType'>
+
+Video evidence now uses device-side upload compression, Celery-generated previews and full-upload downloads. See [video setup and deployment](docs/video_evidence.md).

@@ -3,7 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
 import '../models/account_models.dart';
@@ -48,6 +51,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   List<TransactionMessage> _messages = const [];
   bool _loading = true;
   bool _busy = false;
+  bool _downloadInProgress = false;
+  double? _uploadProgress;
+  String? _uploadPhase;
   String? _error;
   Timer? _livePollTimer;
   Timer? _countdownTimer;
@@ -147,6 +153,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
     return [
       detail.reference,
+      detail.evidenceItems.map((e) => '${e.id}:${e.previewStatus}').join(','),
+      messages
+          .expand((m) => m.attachments)
+          .map((a) => '${a.id}:${a.previewStatus}')
+          .join(','),
       detail.status,
       detail.workflowPayload.message,
       detail.workflowPayload.allowedActions.join(','),
@@ -268,6 +279,60 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
   }
 
+  void _showActionConfirmation(
+    Map<String, dynamic> result, {
+    String fallback = 'Booking updated.',
+  }) {
+    if (!mounted) return;
+    final message = (result['message'] as String?)?.trim();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message?.isNotEmpty == true ? message! : fallback),
+          duration: const Duration(seconds: 8),
+          showCloseIcon: true,
+        ),
+      );
+  }
+
+  void _updateUploadProgress(int sentBytes, int totalBytes) {
+    if (!mounted) return;
+    setState(() {
+      _uploadPhase = 'Uploading video…';
+      _uploadProgress = totalBytes > 0
+          ? (sentBytes / totalBytes).clamp(0.0, 1.0)
+          : null;
+    });
+  }
+
+  Widget _videoUploadProgress() {
+    final progress = _uploadProgress;
+    final label = progress == null
+        ? (_uploadPhase ?? 'Preparing video…')
+        : '${_uploadPhase ?? 'Uploading video…'} ${(progress * 100).round()}%';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(value: progress),
+            const SizedBox(height: 8),
+            Text(
+              progress == null
+                  ? 'Compressing the recording on your device before upload.'
+                  : 'Keep the app open until the upload completes.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _performAction(
     String action, {
     Map<String, dynamic> fields = const {},
@@ -278,7 +343,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     });
 
     try {
-      await widget.repository.performAction(
+      final result = await widget.repository.performAction(
         accessToken: widget.accessToken,
         transactionReference: widget.transactionReference,
         action: action,
@@ -289,6 +354,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         _pinController.clear();
       }
       await _refresh();
+      _showActionConfirmation(result);
     } catch (e) {
       if (!mounted) {
         return;
@@ -359,6 +425,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _uploadProgress = null;
+      _uploadPhase = 'Preparing video…';
     });
 
     try {
@@ -370,16 +438,18 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         fields[fieldName] = videoUrl;
       }
 
+      final Map<String, dynamic> result;
       if (selectedFile != null) {
-        await widget.repository.performActionWithFiles(
+        result = await widget.repository.performActionWithFiles(
           accessToken: widget.accessToken,
           transactionReference: widget.transactionReference,
           action: action,
           fields: fields,
           videoFiles: [selectedFile],
+          onUploadProgress: _updateUploadProgress,
         );
       } else if (videoUrl.isNotEmpty) {
-        await widget.repository.performAction(
+        result = await widget.repository.performAction(
           accessToken: widget.accessToken,
           transactionReference: widget.transactionReference,
           action: action,
@@ -398,6 +468,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         });
       }
       await _refresh();
+      _showActionConfirmation(
+        result,
+        fallback: 'Video evidence submitted successfully.',
+      );
     } catch (e) {
       if (!mounted) {
         return;
@@ -409,6 +483,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
+          _uploadProgress = null;
+          _uploadPhase = null;
         });
       }
     }
@@ -491,7 +567,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
     return Card(
       child: ExpansionTile(
-        initiallyExpanded: true,
+        initiallyExpanded: false,
         leading: const Icon(Icons.gavel_outlined),
         title: const Text('Rental terms and conditions'),
         subtitle: const Text('Review these terms before confirming'),
@@ -593,6 +669,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _uploadProgress = null;
+      _uploadPhase = _videos.isEmpty ? null : 'Preparing video…';
     });
 
     try {
@@ -602,6 +680,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         messageBody: body,
         imageFiles: _images,
         videoFiles: _videos,
+        onUploadProgress: _videos.isEmpty ? null : _updateUploadProgress,
       );
       _messageController.clear();
       _images.clear();
@@ -615,6 +694,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
+          _uploadProgress = null;
+          _uploadPhase = null;
         });
       }
     }
@@ -816,10 +897,19 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       'Nov',
       'Dec',
     ];
-    final day = value.day.toString().padLeft(2, '0');
+    final day = value.day;
     final month = months[value.month - 1];
-    final year = value.year.toString();
-    return '$day $month $year';
+    final suffix = (day >= 11 && day <= 13)
+        ? 'th'
+        : day % 10 == 1
+        ? 'st'
+        : day % 10 == 2
+        ? 'nd'
+        : day % 10 == 3
+        ? 'rd'
+        : 'th';
+    final year = (value.year % 100).toString().padLeft(2, '0');
+    return '$day$suffix $month $year';
   }
 
   int? _rentalDays(TransactionDetail detail) {
@@ -1088,7 +1178,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 Text(
                   label,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                   maxLines: 1,
@@ -1396,14 +1486,19 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext, {
-                      'communication_rating': communicationRating,
-                      'delivery_return_rating': deliveryReturnRating,
-                      'overall_rating': overallRating,
-                      'feedback_comment': comment.text.trim(),
-                    });
-                  },
+                  onPressed:
+                      communicationRating == 0 ||
+                          deliveryReturnRating == 0 ||
+                          overallRating == 0
+                      ? null
+                      : () {
+                          Navigator.pop(dialogContext, {
+                            'communication_rating': communicationRating,
+                            'delivery_return_rating': deliveryReturnRating,
+                            'overall_rating': overallRating,
+                            'feedback_comment': comment.text.trim(),
+                          });
+                        },
                   child: const Text('Submit'),
                 ),
               ],
@@ -1429,18 +1524,19 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.start,
-          children: List.generate(6, (index) {
-            final selected = index <= value;
+          children: List.generate(5, (index) {
+            final rating = index + 1;
+            final selected = rating <= value;
             return IconButton(
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              onPressed: () => onChanged(index),
+              onPressed: () => onChanged(rating),
               icon: Icon(
                 selected ? Icons.star : Icons.star_border,
                 color: Colors.amber,
               ),
-              tooltip: '$index out of 5',
+              tooltip: '$rating out of 5',
             );
           }),
         ),
@@ -1589,8 +1685,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Widget _workflowCard(TransactionDetail detail) {
-    final current = detail.workflowStage;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1712,7 +1806,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             ),
           ),
         ),
-        if (current >= 5) ...[
+        if (detail.workflowStage > 6) ...[
           const SizedBox(height: 16),
           _checkoutCheckInSection(detail),
         ],
@@ -1720,14 +1814,24 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     );
   }
 
+  String _cancellationSummary(TransactionDetail detail) =>
+      detail.depositResolutionNotes.contains('[NO_COLLECTION_CONFIRMED]')
+      ? 'This booking was cancelled because collection did not happen.'
+      : 'This booking has been cancelled.';
+
   Widget _currentWorkflowCard(TransactionDetail detail) {
     final currentStep = detail.workflowTimeline
         .where((entry) => entry.current)
         .firstOrNull;
-    final label = currentStep?.label.trim().isNotEmpty == true
+    final cancelled = detail.status == 'CACK';
+    final label = cancelled
+        ? 'Cancelled'
+        : currentStep?.label.trim().isNotEmpty == true
         ? currentStep!.label
         : detail.workflowStageLabel;
-    final helpText = currentStep?.helpText.trim() ?? '';
+    final helpText = cancelled
+        ? _cancellationSummary(detail)
+        : currentStep?.helpText.trim() ?? '';
 
     return Card(
       color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
@@ -1746,7 +1850,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Current step',
+                    cancelled ? 'Booking status' : 'Current step',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.w800,
@@ -1777,13 +1881,77 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     );
   }
 
+  Future<void> _watchVideo(String url) async {
+    try {
+      final uri = Uri.tryParse(url.trim());
+      if (uri == null ||
+          !uri.hasAuthority ||
+          (uri.scheme != 'https' && uri.scheme != 'http')) {
+        throw const FormatException('Invalid video URL');
+      }
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // Keep storage/plugin errors out of the user-facing message.
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Unable to open this video. Please try again or view it on the website.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadVideo(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null ||
+        !uri.hasAuthority ||
+        (uri.scheme != 'https' && uri.scheme != 'http')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to download this video.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _downloadInProgress = true);
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('Download failed with ${response.statusCode}');
+      }
+      final directory = await getApplicationDocumentsDirectory();
+      final filename =
+          'rentalution-evidence-${DateTime.now().millisecondsSinceEpoch}.mp4';
+      await File(
+        '${directory.path}/$filename',
+      ).writeAsBytes(response.bodyBytes, flush: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Full-quality video downloaded to the app files.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to download this video. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _downloadInProgress = false);
+    }
+  }
+
   Widget _checkoutCheckInSection(TransactionDetail detail) {
     final current = detail.workflowStage;
     final isCheckout = current == 5;
     final title = isCheckout
         ? 'Checkout Handover Evidence'
         : 'Return Handover Evidence';
-    final isPastCheckout = current > 5;
     final stagePrefix = isCheckout ? 'checkout' : 'return';
     final evidenceItems = _evidenceItemsForStage(detail, stagePrefix);
 
@@ -1801,18 +1969,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 16),
-            // Show the code only to the side that should present it.
-            if (isCheckout ||
-                (isPastCheckout &&
-                    detail.checkoutHandoverPinGeneratedAt != null &&
-                    detail.meIsRenter))
-              _pinSection('Verification Code'),
-            if (!isCheckout ||
-                (isPastCheckout &&
-                    detail.returnHandoverPinGeneratedAt != null &&
-                    detail.meIsLender))
-              _pinSection('Return Code'),
             const SizedBox(height: 16),
             Text(
               'Saved evidence',
@@ -1864,21 +2020,34 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                                       ).colorScheme.onSurfaceVariant,
                                     ),
                               ),
-                              if (item.externalVideoUrl.isNotEmpty ||
-                                  item.videoUrl.isNotEmpty) ...[
-                                const SizedBox(height: 4),
+                              if (item.previewUrl.isNotEmpty)
+                                TextButton.icon(
+                                  onPressed: () => _watchVideo(item.previewUrl),
+                                  icon: const Icon(Icons.play_circle_outline),
+                                  label: const Text('Watch preview'),
+                                )
+                              else if (item.externalVideoUrl.isNotEmpty)
+                                TextButton(
+                                  onPressed: () =>
+                                      _watchVideo(item.externalVideoUrl),
+                                  child: const Text('Open external video'),
+                                )
+                              else
                                 Text(
-                                  item.externalVideoUrl.isNotEmpty
-                                      ? 'External URL saved'
-                                      : 'Video file saved',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
+                                  item.previewStatus == 'failed'
+                                      ? 'Preview unavailable. You can still download the uploaded video.'
+                                      : 'Preparing smaller preview…',
                                 ),
-                              ],
+                              if (item.downloadUrl.isNotEmpty)
+                                TextButton.icon(
+                                  onPressed: _downloadInProgress
+                                      ? null
+                                      : () => _downloadVideo(item.downloadUrl),
+                                  icon: const Icon(Icons.download_outlined),
+                                  label: const Text(
+                                    'Download full uploaded quality',
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -1890,37 +2059,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _pinSection(String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.qr_code_2, color: Colors.grey.shade400),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'PIN verification will appear here',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-      ],
     );
   }
 
@@ -2027,7 +2165,49 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (detail.workflowPayload.overdueKind.isNotEmpty)
+                    Card(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF3D3218)
+                          : Colors.amber.shade100,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Booking needs attention',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            Text(detail.workflowPayload.message),
+                            if (detail.workflowPayload.allowedActions.contains(
+                              'confirm_no_collection',
+                            ))
+                              _actionButton(
+                                'Confirm collection did not happen',
+                                () => _performAction('confirm_no_collection'),
+                              ),
+                            if (detail.workflowPayload.allowedActions.contains(
+                              'report_missing_return',
+                            ))
+                              _actionButton(
+                                'No, the item was not returned — start non-return review',
+                                () => _performAction('report_missing_return'),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (_uploadPhase != null) ...[
+                    const SizedBox(height: 16),
+                    _videoUploadProgress(),
+                  ],
                   _currentWorkflowCard(detail),
+                  if ((detail.workflowStage == 5 && detail.meIsLender) ||
+                      detail.workflowStage == 6) ...[
+                    const SizedBox(height: 16),
+                    _checkoutCheckInSection(detail),
+                  ],
                   const SizedBox(height: 16),
                   _actionsCard(detail),
                   const SizedBox(height: 16),
@@ -2039,7 +2219,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     _depositProposalProgressCard(detail),
                   ],
                   const SizedBox(height: 16),
-                  _workflowCard(detail),
+                  if (detail.status != 'CACK') _workflowCard(detail),
                   const SizedBox(height: 16),
                   _rentalTermsCard(detail),
                   const SizedBox(height: 16),
@@ -2093,7 +2273,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         children: [
                           _summaryChip(
                             label: 'Status',
-                            value: detail.statusDisplay.trim().isNotEmpty
+                            value: detail.status == 'CACK'
+                                ? 'Cancelled'
+                                : detail.statusDisplay.trim().isNotEmpty
                                 ? detail.statusDisplay
                                 : _transactionStatusText(detail.status),
                             icon: Icons.schedule_outlined,
@@ -2214,22 +2396,26 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   label: 'Price / day',
                   value: [
                     '£${detail.price.toStringAsFixed(2)} / day',
-                    'Total cost: ${estimatedRentalTotal != null ? '£${estimatedRentalTotal.toStringAsFixed(2)}' : 'Pending'}',
-                    'Deposit: £${detail.deposit.toStringAsFixed(2)}',
+                    'Total ${estimatedRentalTotal != null ? '£${estimatedRentalTotal.toStringAsFixed(2)}' : 'Pending'}',
                   ].join('\n'),
                   icon: Icons.sell_outlined,
                   accent: const Color(0xFFB45309),
                 ),
                 _summaryTile(
-                  label: 'Payment / Deposit',
-                  value: [
-                    'Payment: ${_paymentStatusText(detail.paymentStatus)}',
-                    'Deposit: ${_depositStatusText(detail.depositStatus)}',
-                  ].join('\n'),
+                  label: 'Payment',
+                  value: _paymentStatusText(detail.paymentStatus),
                   icon: Icons.payments_outlined,
                   accent: const Color(0xFF2E7D6B),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            _summaryTile(
+              label: 'Deposit',
+              value:
+                  '£${detail.deposit.toStringAsFixed(2)}\n${_depositStatusText(detail.depositStatus)}',
+              icon: Icons.account_balance_wallet_outlined,
+              accent: const Color(0xFFB45309),
             ),
             if (hasCheckoutEvidence || hasReturnEvidence) ...[
               const SizedBox(height: 12),
@@ -2514,7 +2700,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     if (can('confirm_checkout_evidence')) {
       actions.add(
         _actionButton(
-          'Agree With Lender Evidence',
+          'Accept Condition & Show Collection Code',
           () => _performAction('confirm_checkout_evidence'),
         ),
       );
@@ -2539,12 +2725,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         codes?.checkoutPin.isNotEmpty == true) {
       actions.add(
         _handoverCodePanel(
-          title: 'Collection QR / PIN',
+          title: 'Collection code',
           body:
-              'Show this code to the lender. They verify it to confirm collection and commence the rental.',
+              'Your condition acceptance is recorded. Show this code to the lender to complete collection.',
           pin: codes!.checkoutPin,
           qrPayload: codes.checkoutQrPayload,
-          buttonLabel: 'Show Collection QR / PIN',
+          buttonLabel: 'Show Collection Code',
         ),
       );
     }
@@ -2554,7 +2740,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           title: 'Verify collection',
           body: 'Ask the borrower for their collection code.',
           action: 'verify_checkout_handover_pin',
-          submitLabel: 'Verify Collection & Start Rental',
+          submitLabel: 'Collection confirmed',
         ),
       );
     }
@@ -2583,7 +2769,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     if (can('confirm_return_evidence')) {
       actions.add(
         _actionButton(
-          'Agree With Borrower Return Evidence',
+          'Accept Condition & Show Return Code',
           () => _performAction('confirm_return_evidence'),
         ),
       );
@@ -2608,12 +2794,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         codes?.returnPin.isNotEmpty == true) {
       actions.add(
         _handoverCodePanel(
-          title: 'Return QR / PIN',
+          title: 'Return code',
           body:
-              'Show this code to the borrower. They verify it to confirm return and continue to deposit resolution.',
+              'Your condition acceptance is recorded. Show this code to the borrower to complete the return.',
           pin: codes!.returnPin,
           qrPayload: codes.returnQrPayload,
-          buttonLabel: 'Show Return QR / PIN',
+          buttonLabel: 'Show Return Code',
         ),
       );
     }
@@ -2832,8 +3018,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     if (actions.isEmpty) {
       actions.add(
         Text(
-          detail.statusDisplay.trim().isNotEmpty &&
-                  detail.statusDisplay.startsWith('All required steps complete')
+          detail.status == 'CACK'
+              ? _cancellationSummary(detail)
+              : detail.statusDisplay.trim().isNotEmpty &&
+                    detail.statusDisplay.startsWith(
+                      'All required steps complete',
+                    )
               ? 'All required steps complete, awaiting rental day.'
               : 'No direct actions available right now. Use messages to coordinate the next step.',
         ),
@@ -2911,7 +3101,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return _actionSection(
       title: title,
       body:
-          '$body Pick a short video and we will attach it to the transaction with the capture time.',
+          '$body Videos are compressed before upload. A smaller preview and the full uploaded download will be available.',
       accent: const Color(0xFF5B5FC7),
       icon: Icons.video_library_outlined,
       children: [
@@ -2952,6 +3142,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             ),
           ),
         ],
+        if (_busy && _uploadPhase != null) ...[
+          const SizedBox(height: 10),
+          _videoUploadProgress(),
+        ],
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
@@ -2964,7 +3158,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     actionLabel: actionLabel,
                   ),
             icon: const Icon(Icons.cloud_upload_outlined),
-            label: Text(submitLabel),
+            label: Text(_busy ? 'Preparing and uploading…' : submitLabel),
           ),
         ),
       ],
@@ -3108,35 +3302,42 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           children: [
             Text('Messages', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            if (_messages.isEmpty)
+            if (_messages
+                .where((message) => !message.isSystemGenerated)
+                .isEmpty)
               const Text('No messages yet.')
             else
-              ..._messages.map(
-                (m) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(_displaySubject(m.subject)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(m.description),
-                      const SizedBox(height: 6),
-                      if (m.attachments.isNotEmpty)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: m.attachments
-                              .map((a) {
-                                if (a.imageUrl.isNotEmpty) {
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      a.imageUrl,
-                                      width: 64,
-                                      height: 64,
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              Container(
+              ..._messages
+                  .where((message) => !message.isSystemGenerated)
+                  .map(
+                    (m) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(_displaySubject(m.subject)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(m.description),
+                          const SizedBox(height: 6),
+                          if (m.attachments.isNotEmpty)
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: m.attachments
+                                  .map((a) {
+                                    if (a.imageUrl.isNotEmpty) {
+                                      return ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          a.imageUrl,
+                                          width: 64,
+                                          height: 64,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) => Container(
                                                 width: 64,
                                                 height: 64,
                                                 color: const Color(0x11000000),
@@ -3144,28 +3345,54 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                                                   Icons.broken_image_outlined,
                                                 ),
                                               ),
-                                    ),
-                                  );
-                                }
-                                if (a.videoUrl.isNotEmpty) {
-                                  return Container(
-                                    width: 64,
-                                    height: 64,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0x11000000),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.videocam_outlined),
-                                  );
-                                }
-                                return const SizedBox.shrink();
-                              })
-                              .toList(growable: false),
-                        ),
-                    ],
+                                        ),
+                                      );
+                                    }
+                                    if (a.videoUrl.isNotEmpty) {
+                                      return Column(
+                                        children: [
+                                          if (a.previewUrl.isNotEmpty)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _watchVideo(a.previewUrl),
+                                              icon: const Icon(
+                                                Icons.play_circle_outline,
+                                              ),
+                                              label: const Text(
+                                                'Watch preview',
+                                              ),
+                                            )
+                                          else
+                                            Text(
+                                              a.previewStatus == 'failed'
+                                                  ? 'Preview unavailable'
+                                                  : 'Preparing preview…',
+                                            ),
+                                          if (a.downloadUrl.isNotEmpty)
+                                            TextButton.icon(
+                                              onPressed: _downloadInProgress
+                                                  ? null
+                                                  : () => _downloadVideo(
+                                                      a.downloadUrl,
+                                                    ),
+                                              icon: const Icon(
+                                                Icons.download_outlined,
+                                              ),
+                                              label: const Text(
+                                                'Download full uploaded quality',
+                                              ),
+                                            ),
+                                        ],
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  })
+                                  .toList(growable: false),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
           ],
         ),
       ),

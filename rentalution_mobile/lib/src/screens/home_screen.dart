@@ -1188,23 +1188,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<List<CategorySummary>> _fetchAllCategories() async {
+    final all = await widget.catalogRepository.fetchAllCategories();
     final visited = <String>{};
     final queue = <String>['top'];
     final categories = <CategorySummary>[];
-
     while (queue.isNotEmpty) {
-      final parentSlug = queue.removeAt(0);
-      final children = await widget.catalogRepository.fetchCategories(
-        parentSlug: parentSlug,
-      );
-      for (final category in children) {
+      final parent = queue.removeAt(0);
+      for (final category in all.where(
+        (category) => category.parentSlug == parent,
+      )) {
         if (visited.add(category.slug)) {
           categories.add(category);
           queue.add(category.slug);
         }
       }
     }
-
     return categories;
   }
 

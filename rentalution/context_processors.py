@@ -18,53 +18,47 @@ def get_transaction_notification_payload(user, session=None):
 
     from transaction.models import Transaction, TransactionMessage
 
-    def _lender_agreed_at(txn):
-        return getattr(txn, 'lender_agreed_at', None)
-
-    def _renter_agreed_at(txn):
-        return getattr(txn, 'renter_agreed_at', None)
-
     show_login_notice = bool(session.pop('show_txn_login_notice', False)) if session is not None else False
-    today = timezone.localdate()
+    today = Transaction.workflow_today()
 
     def _requires_action_and_label(txn):
-        is_lender = txn.user_passive_id == user.id
-        is_renter = txn.user_aggressive_id == user.id
-        status = txn.transaction_status
-
-        if status == txn.RENTAL_ENQUIRY and is_lender:
-            return True, 'Respond to enquiry'
-
-        if status == txn.RENTAL_AGREED:
-            lender_done = bool(_lender_agreed_at(txn))
-            renter_done = bool(_renter_agreed_at(txn))
-
-            if not lender_done and is_lender:
-                return True, 'Confirm contract'
-            if lender_done and not renter_done and is_renter:
-                return True, 'Confirm contract'
-            if lender_done and renter_done:
-                if txn.deposit_card_setup_status != txn.CARD_READY and is_renter:
-                    return True, 'Set up payment card'
-                if (
-                    is_lender
-                    and txn.deposit_card_setup_status == txn.CARD_READY
-                    and txn.rental_start_date
-                    and today >= txn.rental_start_date
-                ):
-                    return True, 'Start rental'
-
-        if (
-            status == txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION
-            and is_renter
-            and txn.rental_end_date
-            and today >= txn.rental_end_date
-        ):
-            return True, 'Mark item returned'
-
-        if status == txn.RENTAL_RETURNED_DEPOSIT_PENDING and is_lender:
-            return True, 'Resolve deposit'
-
+        actions = set(txn.get_allowed_actions_for_user(user))
+        # These labels are deliberately ordered. For example, once a handover
+        # code exists, entering it is more useful than re-offering evidence.
+        if 'confirm_no_collection' in actions:
+            return True, 'Confirm whether collection happened'
+        if 'report_missing_return' in actions:
+            return True, 'Confirm whether the item was returned'
+        if actions.intersection({
+            'add_deposit_card', 'use_existing_card', 'confirm_stripe_card',
+        }):
+            return True, 'Set up your payment card'
+        if actions.intersection({
+            'confirm_checkout_evidence', 'submit_checkout_borrower_evidence',
+        }):
+            return True, 'Review checkout evidence — confirm or submit counter-evidence'
+        if actions.intersection({
+            'confirm_return_evidence', 'submit_lender_return_evidence',
+        }):
+            return True, 'Review return evidence — confirm or submit counter-evidence'
+        if actions.intersection({
+            'agree_deposit_return', 'contest_deposit_return',
+        }):
+            return True, 'Review the deposit proposal — accept or contest it'
+        action_labels = (
+            ('confirm_lender_contract', 'Confirm the rental contract'),
+            ('reinitiate_lender_contract', 'Re-send the rental contract'),
+            ('confirm_renter_contract', 'Confirm the rental contract'),
+            ('initiate_rental', 'Submit checkout evidence'),
+            ('verify_checkout_handover_pin', 'Confirm collection using the renter’s PIN / QR code'),
+            ('verify_return_handover_pin', 'Confirm return using the lender’s PIN / QR code'),
+            ('submit_return_borrower_evidence', 'Submit return evidence'),
+            ('propose_deposit_return', 'Propose the deposit return'),
+            ('submit_feedback', 'Leave rental feedback'),
+        )
+        for action, label in action_labels:
+            if action in actions:
+                return True, label
         return False, ''
 
     def _product_name(txn):
@@ -84,6 +78,8 @@ def get_transaction_notification_payload(user, session=None):
     lender_pending = Q(user_passive=user) & (
         Q(transaction_status=Transaction.RENTAL_ENQUIRY) |
         Q(transaction_status=Transaction.RENTAL_AGREED) |
+        Q(transaction_status=Transaction.RENTAL_DAY_AWAITING_VERIFICATION) |
+        Q(transaction_status=Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION) |
         Q(transaction_status=Transaction.RENTAL_RETURNED_DEPOSIT_PENDING)
     )
 
@@ -92,10 +88,18 @@ def get_transaction_notification_payload(user, session=None):
         ~Q(deposit_card_setup_status=Transaction.CARD_READY) |
         Q(transaction_status=Transaction.RENTAL_DAY_AWAITING_VERIFICATION) |
         Q(transaction_status=Transaction.RENTAL_ONGOING) |
-        Q(transaction_status=Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION)
+        Q(transaction_status=Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION) |
+        Q(transaction_status=Transaction.RENTAL_RETURNED_DEPOSIT_PENDING)
     )
 
-    pending_qs = Transaction.objects.filter(lender_pending | renter_pending).filter(
+    overdue = (
+        Q(rental_start_date__lt=today, checkout_handover_verified_at__isnull=True,
+          transaction_status__in=[Transaction.RENTAL_ENQUIRY, Transaction.RENTAL_AGREED,
+                                  Transaction.RENTAL_DAY_AWAITING_VERIFICATION]) |
+        Q(rental_end_date__lt=today, return_handover_verified_at__isnull=True,
+          transaction_status__in=[Transaction.RENTAL_ONGOING, Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION])
+    )
+    pending_qs = Transaction.objects.filter(lender_pending | renter_pending | overdue).filter(
         Q(user_passive=user) | Q(user_aggressive=user)
     )
 

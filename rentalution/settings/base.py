@@ -281,3 +281,6 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': False,
     'UPDATE_LAST_LOGIN': True,
 }
+
+# Celery preview worker; uploads are retained without further compression.
+FFMPEG_BINARY = os.environ.get('FFMPEG_BINARY', 'ffmpeg')

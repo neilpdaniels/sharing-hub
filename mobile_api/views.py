@@ -1314,6 +1314,7 @@ class CategoryListView(generics.ListAPIView):
             {
                 'parent_slug': (request.GET.get('parent_slug') or '').strip(),
                 'include_top': (request.GET.get('include_top') or '').strip().lower(),
+                'origin': request.build_absolute_uri('/'),
             },
         )
 
@@ -1322,7 +1323,17 @@ class CategoryListView(generics.ListAPIView):
             serializer = self.get_serializer(queryset, many=True)
             return serializer.data
 
-        return Response(_cache_list_payload(cache_key, build_payload))
+        import hashlib
+        from django.utils.http import parse_etags
+        from rest_framework.renderers import JSONRenderer
+        payload = _cache_list_payload(cache_key, build_payload)
+        etag = '"' + hashlib.sha256(JSONRenderer().render(payload)).hexdigest() + '"'
+        supplied = parse_etags(request.headers.get('If-None-Match', ''))
+        unchanged = '*' in supplied or etag in [value.removeprefix('W/') for value in supplied]
+        response = Response(status=304) if unchanged else Response(payload)
+        response['ETag'] = etag
+        response['Cache-Control'] = 'private, no-cache'
+        return response
 
 
 class CategoryProductsView(generics.ListAPIView):
@@ -2178,6 +2189,16 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             )
             return Response({'status': 'ok', 'message': 'Rental agreement rejected.'})
 
+        if action == 'confirm_no_collection':
+            from transaction.overdue import confirm_no_collection
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            try:
+                confirm_no_collection(txn, request.user)
+            except DjangoValidationError as exc:
+                raise ValidationError(exc.messages)
+            _release_transaction_dates(txn)
+            return Response({'status': 'ok', 'message': 'Confirmed: collection did not happen. The booking is cancelled.'})
+
         if action == 'report_missing_rental' and is_renter and txn.transaction_status in (
             txn.RENTAL_ENQUIRY,
             txn.RENTAL_AGREED,
@@ -2214,34 +2235,14 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             )
             return Response({'status': 'ok', 'message': 'Missing rental reported and transaction voided.'})
 
-        if action == 'report_missing_return' and is_lender and txn.transaction_status in (
-            txn.RENTAL_ONGOING,
-            txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
-        ):
-            if not txn.rental_end_date or txn.workflow_today() <= txn.rental_end_date:
-                raise ValidationError('Missing return can only be reported after rental return date has passed.')
-            reason = (data.get('reason') or '').strip()
-            txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.DISPUTE_REQUESTED
-            txn.deposit_status = txn.DEPOSIT_MEDIATION
-            txn.deposit_resolution_notes = f'Lender reported missing return. {reason}'.strip()
-            txn.save(update_fields=[
-                'prev_transaction_status',
-                'transaction_status',
-                'deposit_status',
-                'deposit_resolution_notes',
-                'amended',
-            ])
-            TransactionMessage.objects.create(
-                user_from=request.user,
-                user_to=txn.user_aggressive,
-                transaction=txn,
-                subject=f'Missing return reported {txn.transaction_reference}',
-                description='Lender reported missing return after return date. Dispute workflow has been opened for admin review.',
-                include_admin=True,
-                is_system_generated=True,
-            )
-            return Response({'status': 'ok', 'message': 'Missing return reported and dispute opened.'})
+        if action == 'report_missing_return':
+            from transaction.overdue import report_non_return
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            try:
+                report_non_return(txn, request.user, (data.get('reason') or '').strip())
+            except DjangoValidationError as exc:
+                raise ValidationError(exc.messages)
+            return Response({'status': 'ok', 'message': 'Non-return reported. Dispute review is now open.'})
 
         if action == 'use_existing_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
             method_id = data.get('payment_method_id')
@@ -2355,7 +2356,11 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             async_collect_deposit_hold.delay(transaction_id=txn.id)
             return Response({'status': 'ok', 'message': 'Deposit collection started.'})
 
-        if action == 'initiate_rental' and is_lender and txn.transaction_status == txn.RENTAL_AGREED:
+        if action == 'initiate_rental' and is_lender and (
+            txn.transaction_status == txn.RENTAL_AGREED
+            or (txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION
+                and not txn.checkout_condition_video_url)
+        ):
             if not self._has_verified_payment_card(txn):
                 raise ValidationError('Borrower payment card must be verified first.')
             if txn.order_passive and txn.order_passive.verified_users_only:
@@ -2479,7 +2484,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             )
             if should_collect_deposit_now:
                 async_collect_deposit_hold.delay(transaction_id=txn.id)
-            return Response({'status': 'ok', 'message': 'Rental started and checkout evidence submitted.'})
+            return Response({'status': 'ok', 'message': 'Checkout video submitted successfully. The borrower can accept the condition and show their collection code, or submit counter-evidence.'})
 
         if action == 'confirm_checkout_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
             if not txn.checkout_condition_video_url:
@@ -2492,10 +2497,10 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 update_fields.extend(['checkout_handover_pin', 'checkout_handover_pin_generated_at'])
             txn.save(update_fields=update_fields)
             if not self._is_rental_payment_collected(txn):
-                return Response({'status': 'ok', 'message': 'Checkout evidence confirmed, but PIN is blocked until rental payment is captured.'})
+                return Response({'status': 'ok', 'message': 'Condition accepted, but the collection code is blocked until rental payment is captured.'})
             if not self._is_deposit_funds_held(txn):
-                return Response({'status': 'ok', 'message': 'Checkout evidence confirmed, but PIN is blocked until deposit funds are held.'})
-            return Response({'status': 'ok', 'message': 'Checkout evidence confirmed.'})
+                return Response({'status': 'ok', 'message': 'Condition accepted, but the collection code is blocked until deposit funds are held.'})
+            return Response({'status': 'ok', 'message': 'Condition accepted. Show your collection code to the lender to complete pickup.'})
 
         if action == 'submit_checkout_borrower_evidence' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
             borrower_video = (data.get('checkout_borrower_video_url') or '').strip()
@@ -2585,7 +2590,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 txn.return_handover_pin_generated_at = timezone.now()
             txn.return_lender_confirmed = True
             txn.save(update_fields=['return_handover_pin', 'return_handover_pin_generated_at', 'return_lender_confirmed', 'amended'])
-            return Response({'status': 'ok', 'message': 'Return evidence confirmed. Return verification code generated.'})
+            return Response({'status': 'ok', 'message': 'Condition accepted. Show your return code to the borrower to complete handover.'})
 
         if action == 'submit_lender_return_evidence' and is_lender and txn.transaction_status == txn.RENTAL_RETURN_DAY_AWAITING_VERIFICATION:
             lender_video = (data.get('lender_return_video_url') or '').strip()
@@ -2643,14 +2648,25 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 raise ValidationError('deposit_resolution_notes is required when returning less than the full deposit.')
             if iterations >= 5:
                 raise ValidationError('Maximum deposit proposal iterations reached (5). Raise dispute to continue; disputes may incur a fee.')
+            full_return = abs(proposed_amount - txn.deposit) < 0.01
             txn.prev_transaction_status = txn.transaction_status
-            txn.transaction_status = txn.RENTAL_RETURNED_DEPOSIT_PENDING
-            txn.deposit_status = txn.DEPOSIT_PENDING
+            txn.transaction_status = (
+                txn.AWAITING_FEEDBACK
+                if full_return
+                else txn.RENTAL_RETURNED_DEPOSIT_PENDING
+            )
+            txn.deposit_status = (
+                txn.DEPOSIT_RETURNED_FULL if full_return else txn.DEPOSIT_PENDING
+            )
             txn.deposit_proposed_return_amount = proposed_amount
             txn.deposit_proposed_by_lender_at = timezone.now()
-            txn.deposit_proposal_accepted_at = None
+            txn.deposit_proposal_accepted_at = (
+                timezone.now() if full_return else None
+            )
             txn.deposit_proposal_iteration_count = iterations + 1
             txn.deposit_resolution_notes = notes
+            if full_return:
+                refresh_feedback_deadline()
             txn.save(update_fields=[
                 'prev_transaction_status',
                 'transaction_status',
@@ -2660,8 +2676,22 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 'deposit_proposal_accepted_at',
                 'deposit_proposal_iteration_count',
                 'deposit_resolution_notes',
+                'feedback_window_expires_at',
                 'amended',
             ])
+            if full_return:
+                notify_counterparty(
+                    f'Deposit returned in full {txn.transaction_reference}',
+                    'The lender returned the full deposit. No approval is needed.',
+                )
+                async_resolve_deposit_hold.delay(
+                    transaction_id=txn.id,
+                    return_amount=proposed_amount,
+                )
+                return Response({
+                    'status': 'ok',
+                    'message': 'Full deposit return submitted. No renter approval is needed.',
+                })
             notify_counterparty(
                 f'Deposit proposal updated {txn.transaction_reference}',
                 f'The lender proposed returning {proposed_amount:.2f} from the deposit.',

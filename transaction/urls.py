@@ -3,6 +3,7 @@ from . import views
 
 app_name = 'transaction'
 urlpatterns = [
+    path('evidence/<int:evidence_id>/download/', views.download_video, name='download_video'),
     path('list_item/',                   views.list_item,            name='list_item'),
     path('product_search/',              views.product_search_ajax,  name='product_search_ajax'),
     path('add_order/<int:product_id>/' , views.add_order, name='add_order'),
@@ -11,6 +12,7 @@ urlpatterns = [
     path('hit_order/<int:order_id>/' , views.hit_order, name='hit_order'),
     path('get_fee/', views.get_fee, name='get_fee'),
     path('view_transaction/<str:transaction_reference>/' , views.view_transaction, name='view_transaction'),
+    path('view_transaction/<str:transaction_reference>/edit-dates/', views.edit_transaction_dates, name='edit_transaction_dates'),
     path('view_transaction/<str:transaction_reference>/live-state/' , views.transaction_live_state_json, name='transaction_live_state_json'),
     path('view_transaction/<str:transaction_reference>/card-setup-status/' , views.card_setup_status, name='card_setup_status'),
     path('order_image_upload/', views.OrderImageUpload.as_view(), name='order_image_upload'),

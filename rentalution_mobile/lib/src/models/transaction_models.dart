@@ -426,6 +426,7 @@ class WorkflowPayload {
     required this.timeline,
     required this.allowedActions,
     this.message = '',
+    this.overdueKind = '',
     this.contractDeadline,
   });
 
@@ -434,11 +435,13 @@ class WorkflowPayload {
   final List<WorkflowStep> timeline;
   final List<String> allowedActions;
   final String message;
+  final String overdueKind;
   final DateTime? contractDeadline;
 
   factory WorkflowPayload.fromJson(Map<String, dynamic> json) {
     return WorkflowPayload(
       message: json['message'] as String? ?? '',
+      overdueKind: json['overdue_kind'] as String? ?? '',
       contractDeadline: DateTime.tryParse(
         json['contract_deadline']?.toString() ?? '',
       ),
@@ -487,6 +490,9 @@ class TransactionMessageAttachment {
     required this.id,
     required this.imageUrl,
     required this.videoUrl,
+    this.previewUrl = '',
+    this.downloadUrl = '',
+    this.previewStatus = 'pending',
     required this.capturedAt,
     required this.uploadedAt,
   });
@@ -494,6 +500,9 @@ class TransactionMessageAttachment {
   final int id;
   final String imageUrl;
   final String videoUrl;
+  final String previewUrl;
+  final String downloadUrl;
+  final String previewStatus;
   final DateTime? capturedAt;
   final DateTime? uploadedAt;
 
@@ -502,6 +511,9 @@ class TransactionMessageAttachment {
       id: json['id'] as int,
       imageUrl: json['image_url'] as String? ?? '',
       videoUrl: json['video_url'] as String? ?? '',
+      previewUrl: json['preview_url'] as String? ?? '',
+      downloadUrl: json['download_url'] as String? ?? '',
+      previewStatus: json['preview_status'] as String? ?? 'pending',
       capturedAt: TransactionSummary._parseDate(json['captured_at'] as String?),
       uploadedAt: TransactionSummary._parseDate(json['uploaded_at'] as String?),
     );
@@ -517,6 +529,9 @@ class TransactionEvidenceItem {
     required this.capturedAt,
     required this.uploadedAt,
     required this.videoUrl,
+    this.previewUrl = '',
+    this.downloadUrl = '',
+    this.previewStatus = 'pending',
     required this.externalVideoUrl,
   });
 
@@ -527,6 +542,9 @@ class TransactionEvidenceItem {
   final DateTime? capturedAt;
   final DateTime? uploadedAt;
   final String videoUrl;
+  final String previewUrl;
+  final String downloadUrl;
+  final String previewStatus;
   final String externalVideoUrl;
 
   bool get hasVideo =>
@@ -541,6 +559,9 @@ class TransactionEvidenceItem {
       capturedAt: TransactionSummary._parseDate(json['captured_at'] as String?),
       uploadedAt: TransactionSummary._parseDate(json['uploaded_at'] as String?),
       videoUrl: json['video_url'] as String? ?? '',
+      previewUrl: json['preview_url'] as String? ?? '',
+      downloadUrl: json['download_url'] as String? ?? '',
+      previewStatus: json['preview_status'] as String? ?? 'pending',
       externalVideoUrl: json['external_video_url'] as String? ?? '',
     );
   }
@@ -617,6 +638,7 @@ class TransactionMessage {
     required this.subject,
     required this.description,
     required this.created,
+    required this.isSystemGenerated,
     required this.attachments,
   });
 
@@ -626,6 +648,7 @@ class TransactionMessage {
   final String subject;
   final String description;
   final DateTime? created;
+  final bool isSystemGenerated;
   final List<TransactionMessageAttachment> attachments;
 
   factory TransactionMessage.fromJson(Map<String, dynamic> json) {
@@ -636,6 +659,7 @@ class TransactionMessage {
       subject: json['subject'] as String? ?? '',
       description: json['description'] as String? ?? '',
       created: TransactionSummary._parseDate(json['created'] as String?),
+      isSystemGenerated: json['is_system_generated'] as bool? ?? false,
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(TransactionMessageAttachment.fromJson)

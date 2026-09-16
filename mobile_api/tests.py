@@ -752,6 +752,36 @@ class TransactionActionWorkflowTests(TestCase):
         txn.refresh_from_db()
         self.assertEqual(txn.transaction_status, Transaction.DISPUTE_REQUESTED)
 
+    @patch('mobile_api.views.async_resolve_deposit_hold.delay')
+    def test_mobile_full_deposit_return_skips_renter_approval(self, resolve_hold):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
+            start_offset_days=-12,
+            end_offset_days=-5,
+        )
+
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={
+                'transaction_reference': txn.transaction_reference,
+            }),
+            {
+                'action': 'propose_deposit_return',
+                'deposit_proposed_return_amount': txn.deposit,
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.AWAITING_FEEDBACK)
+        self.assertEqual(txn.deposit_status, Transaction.DEPOSIT_RETURNED_FULL)
+        self.assertIsNotNone(txn.deposit_proposal_accepted_at)
+        resolve_hold.assert_called_once_with(
+            transaction_id=txn.id,
+            return_amount=txn.deposit,
+        )
+
     def test_mobile_deposit_iteration_cap_blocks_lender_and_auto_escalates_renter_contest(self):
         txn = self._create_txn(
             status=Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,

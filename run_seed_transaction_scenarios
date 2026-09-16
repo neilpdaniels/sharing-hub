@@ -11,6 +11,10 @@ if (($# == 0)); then
   echo "  2) Commence today — move all existing scenario start dates to today"
   echo "  3) Finish today — move all existing scenario end dates to today"
   echo "  4) Reset — delete and recreate seeded scenarios"
+  echo "  5) Set commencement date for a transaction ID"
+  echo "  6) Set finish date for a transaction ID"
+  echo "  7) Repair existing seeded contract/checkout prerequisites"
+  echo "  8) Seed rental-ready transaction with a verified Stripe test card"
   echo "  q) Cancel"
   echo ""
   echo "Date changes preserve rental length and workflow progress. Today uses Europe/London."
@@ -21,8 +25,19 @@ if (($# == 0)); then
       2) set -- --commence-today; break ;;
       3) set -- --finish-today; break ;;
       4) set -- --reset; break ;;
+      5|6)
+        read -r -p "Transaction ID: " transaction_id || exit 0
+        read -r -p "Date (YYYY-MM-DD): " target_date || exit 0
+        if [[ "$selection" == "5" ]]; then
+          set -- --transaction-id "$transaction_id" --commence-date "$target_date"
+        else
+          set -- --transaction-id "$transaction_id" --finish-date "$target_date"
+        fi
+        break ;;
+      7) set -- --repair; break ;;
+      8) set -- --rental-ready; break ;;
       q|Q) exit 0 ;;
-      *) echo "Please choose 1, 2, 3, 4, or q to cancel." ;;
+      *) echo "Please choose 1, 2, 3, 4, 5, 6, 7, 8, or q to cancel." ;;
     esac
   done
 fi

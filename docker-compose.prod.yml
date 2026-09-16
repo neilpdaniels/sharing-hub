@@ -34,5 +34,19 @@ services:
       - "8000:8000"
     restart: unless-stopped
 
+  video-worker:
+    image: ${WEB_IMAGE}
+    build: null
+    command: uv run celery -A rentalution worker -Q video --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    volumes:
+      - ./media:/app/media
+    depends_on:
+      - db
+      - web
+      - redis
+    restart: unless-stopped
+
 volumes:
   postgres_data:

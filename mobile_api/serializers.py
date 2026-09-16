@@ -466,9 +466,23 @@ class TransactionDetailSerializer(TransactionListSerializer):
         return False
 
 
-class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
+class VideoVersionsMixin:
+    def get_preview_url(self, obj):
+        url = obj.video_preview.url if obj.video_preview else ''
+        request = self.context.get('request')
+        return request.build_absolute_uri(url) if request and url else url
+
+    def get_download_url(self, obj):
+        url = obj.video_download_url
+        request = self.context.get('request')
+        return request.build_absolute_uri(url) if request and url else url
+
+
+class TransactionMessageAttachmentSerializer(VideoVersionsMixin, serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     video_url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
     captured_at = serializers.DateTimeField(allow_null=True, required=False)
 
     class Meta:
@@ -477,6 +491,9 @@ class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
             'id',
             'image_url',
             'video_url',
+            'preview_url',
+            'download_url',
+            'preview_status',
             'captured_at',
             'uploaded_at',
         )
@@ -498,8 +515,10 @@ class TransactionMessageAttachmentSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(obj.video.url)
 
 
-class TransactionEvidenceSerializer(serializers.ModelSerializer):
+class TransactionEvidenceSerializer(VideoVersionsMixin, serializers.ModelSerializer):
     video_url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
     uploaded_at = serializers.DateTimeField()
     captured_at = serializers.DateTimeField(allow_null=True)
 
@@ -513,6 +532,9 @@ class TransactionEvidenceSerializer(serializers.ModelSerializer):
             'captured_at',
             'uploaded_at',
             'video_url',
+            'preview_url',
+            'download_url',
+            'preview_status',
             'external_video_url',
         )
 

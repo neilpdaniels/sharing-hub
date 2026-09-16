@@ -23,10 +23,17 @@ class QrDisplayScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              QrImageView(
-                data: qrPayload,
-                version: QrVersions.auto,
-                size: 260,
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(12),
+                child: QrImageView(
+                  data: qrPayload,
+                  version: QrVersions.auto,
+                  size: 260,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(color: Colors.black),
+                  dataModuleStyle: const QrDataModuleStyle(color: Colors.black),
+                ),
               ),
               const SizedBox(height: 16),
               Text(

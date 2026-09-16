@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -16,6 +17,9 @@ void main() {
     required bool lender,
     required List<String> actions,
     String message = '',
+    String overdueKind = '',
+    String depositNotes = '',
+    List<Map<String, dynamic>> evidence = const [],
     Map<String, dynamic> codes = const {},
     List<Map<String, dynamic>>? submitted,
   }) async {
@@ -34,14 +38,18 @@ void main() {
             jsonEncode({
               'transaction_reference': 'TEST',
               'transaction_status': status,
+              'workflow_stage': status == 'RRTDAYAWV' ? 6 : 5,
               'me_is_lender': lender,
               'me_is_renter': !lender,
               'deposit': 120,
+              'deposit_resolution_notes': depositNotes,
+              'evidence_items': evidence,
               'deposit_card_setup_status': 'READY',
               'deposit_test_hold_status': 'SUCCESS',
               'workflow_payload': {
                 'current_stage': 5,
                 'message': message,
+                'overdue_kind': overdueKind,
                 'allowed_actions': actions,
               },
             }),
@@ -67,6 +75,145 @@ void main() {
   Future<void> dispose(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
   }
+
+  testWidgets(
+    'either participant can confirm an overdue collection did not happen',
+    (tester) async {
+      for (final lender in [true, false]) {
+        final submitted = <Map<String, dynamic>>[];
+        await showTransaction(
+          tester,
+          status: 'RAGR',
+          lender: lender,
+          actions: ['confirm_no_collection'],
+          overdueKind: 'collection',
+          message: 'Past agreement date, transaction presumed not to occur.',
+          submitted: submitted,
+        );
+        expect(find.text('Booking needs attention'), findsOneWidget);
+        await tester.tap(find.text('Confirm collection did not happen'));
+        await tester.pumpAndSettle();
+        expect(submitted.single['action'], 'confirm_no_collection');
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+
+  testWidgets(
+    'overdue return prompts both parties but only lender can report non-return',
+    (tester) async {
+      for (final lender in [true, false]) {
+        final submitted = <Map<String, dynamic>>[];
+        await showTransaction(
+          tester,
+          status: 'RONG',
+          lender: lender,
+          actions: lender
+              ? ['report_missing_return']
+              : ['submit_return_borrower_evidence'],
+          overdueKind: 'return',
+          message: 'Has the renter returned the item?',
+          submitted: submitted,
+        );
+        expect(find.text('Booking needs attention'), findsOneWidget);
+        final button = find.text(
+          'No, the item was not returned — start non-return review',
+        );
+        expect(button, lender ? findsOneWidget : findsNothing);
+        if (lender) {
+          await tester.tap(button);
+          await tester.pumpAndSettle();
+          expect(submitted.single['action'], 'report_missing_return');
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+
+  testWidgets('cancelled booking clearly replaces its stale current step', (
+    tester,
+  ) async {
+    await showTransaction(
+      tester,
+      status: 'CACK',
+      lender: true,
+      actions: [],
+      depositNotes: '[NO_COLLECTION_CONFIRMED] Collection did not happen.',
+    );
+    expect(find.text('Booking status'), findsOneWidget);
+    expect(find.text('Cancelled'), findsWidgets);
+    expect(
+      find.text(
+        'This booking was cancelled because collection did not happen.',
+      ),
+      findsWidgets,
+    );
+    expect(find.text('Current step'), findsNothing);
+    expect(
+      find.text(
+        'No direct actions available right now. Use messages to coordinate the next step.',
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'lender can open checkout evidence; renter does not see handover panel',
+    (tester) async {
+      const channel = MethodChannel('plugins.flutter.io/url_launcher');
+      final opened = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'launch')
+          opened.add(call.arguments['url'] as String);
+        return true;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      for (final lender in [true, false]) {
+        await showTransaction(
+          tester,
+          status: 'RDAYAWV',
+          lender: lender,
+          actions: [],
+          evidence: [
+            {
+              'id': 1,
+              'evidence_stage': 'checkout_lender',
+              'video_url': 'https://example.test/evidence.mp4',
+              'preview_url': 'https://example.test/preview.mp4',
+              'download_url': 'https://example.test/download/',
+              'preview_status': 'ready',
+            },
+          ],
+        );
+        final handoverPanel = find.text('Checkout Handover Evidence');
+        if (lender) {
+          expect(handoverPanel, findsOneWidget);
+          final watch = find.text('Watch preview');
+          expect(watch, findsOneWidget);
+          await tester.ensureVisible(watch);
+          await tester.tap(watch);
+          await tester.pumpAndSettle();
+          expect(opened.last, 'https://example.test/preview.mp4');
+          final download = find.text('Download full uploaded quality');
+          await tester.ensureVisible(download);
+          await tester.tap(download);
+          await tester.pumpAndSettle();
+          expect(opened.last, 'https://example.test/preview.mp4');
+        } else {
+          expect(handoverPanel, findsNothing);
+        }
+        await dispose(tester);
+      }
+      expect(opened.length, 1);
+    },
+  );
 
   testWidgets(
     'agreed rental exposes lender collection evidence when server permits',
@@ -101,7 +248,7 @@ void main() {
         },
       },
     );
-    expect(find.text('Agree With Lender Evidence'), findsOneWidget);
+    expect(find.text('Accept Condition & Show Collection Code'), findsOneWidget);
     expect(find.text('Submit Counter-Evidence'), findsOneWidget);
     expect(find.text('PIN: 123456'), findsOneWidget);
     expect(find.text('Verify Collection & Start Rental'), findsNothing);
@@ -125,7 +272,7 @@ void main() {
     expect(find.text('Show Collection QR / PIN'), findsNothing);
     await tester.ensureVisible(pinField);
     await tester.enterText(pinField, '123456');
-    final verify = find.text('Verify Collection & Start Rental');
+    final verify = find.text('Collection confirmed');
     await tester.ensureVisible(verify);
     await tester.tap(verify);
     await tester.pumpAndSettle();
@@ -176,7 +323,7 @@ void main() {
         },
       },
     );
-    expect(find.text('Agree With Borrower Return Evidence'), findsOneWidget);
+    expect(find.text('Accept Condition & Show Return Code'), findsOneWidget);
     expect(find.text('Submit Return Counter-Evidence'), findsOneWidget);
     expect(find.text('PIN: 654321'), findsOneWidget);
     expect(find.text('Verify Return & Continue'), findsNothing);

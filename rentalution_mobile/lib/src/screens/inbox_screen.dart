@@ -80,9 +80,9 @@ class _InboxScreenState extends State<InboxScreen>
                             ? '99+'
                             : '$unreadReceivedCount',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -309,7 +309,20 @@ class _InboxScreenState extends State<InboxScreen>
       'Nov',
       'Dec',
     ];
-    return '${months[value.month - 1]} ${value.day}, ${value.year}';
+    return '${_ordinalDay(value.day)} ${months[value.month - 1]} ${(value.year % 100).toString().padLeft(2, '0')}';
+  }
+
+  String _ordinalDay(int day) {
+    final suffix = (day >= 11 && day <= 13)
+        ? 'th'
+        : day % 10 == 1
+        ? 'st'
+        : day % 10 == 2
+        ? 'nd'
+        : day % 10 == 3
+        ? 'rd'
+        : 'th';
+    return '$day$suffix';
   }
 }
 
@@ -405,7 +418,20 @@ class _MessageDetailScreen extends StatelessWidget {
       'Nov',
       'Dec',
     ];
-    return '${months[value.month - 1]} ${value.day}, ${value.year}';
+    return '${_ordinalDay(value.day)} ${months[value.month - 1]} ${(value.year % 100).toString().padLeft(2, '0')}';
+  }
+
+  String _ordinalDay(int day) {
+    final suffix = (day >= 11 && day <= 13)
+        ? 'th'
+        : day % 10 == 1
+        ? 'st'
+        : day % 10 == 2
+        ? 'nd'
+        : day % 10 == 3
+        ? 'rd'
+        : 'th';
+    return '$day$suffix';
   }
 
   String? _rentalPeriodLabel(DateTime? start, DateTime? end) {

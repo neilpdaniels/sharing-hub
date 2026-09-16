@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Edit rental dates – {{ transaction.transaction_reference }}{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-7">
+            <h3>Edit rental dates</h3>
+            <p class="text-muted">{{ transaction.product.name }} · {{ transaction.transaction_reference }}</p>
+            <p>Current dates: {{ transaction.rental_start_date|date:"d M Y" }} – {{ transaction.rental_end_date|date:"d M Y" }}</p>
+            <p class="small text-muted">Dates use UK time. This changes booking availability and when workflow actions appear. Existing payments, agreements, evidence, and transaction progress remain as recorded.</p>
+            <form method="post" class="card card-body mb-4">
+                {% csrf_token %}
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+                {% endif %}
+                {% for field in form %}
+                <div class="form-group">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="text-danger" role="alert">{{ error }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+                <div>
+                    <button type="submit" class="btn btn-primary">Update rental dates</button>
+                    <a class="btn btn-outline-secondary" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">Cancel</a>
+                </div>
+            </form>
+            {% if date_changes %}
+            <h5>Recent date changes</h5>
+            <ul class="list-group">
+                {% for change in date_changes %}
+                <li class="list-group-item">
+                    <strong>{{ change.rental_start_date|date:"d M Y" }} – {{ change.rental_end_date|date:"d M Y" }}</strong><br>
+                    {{ change.history_change_reason }}<br>
+                    <small class="text-muted">{{ change.history_user|default:"Deleted admin" }} · {{ change.history_date|date:"d M Y H:i" }}</small>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

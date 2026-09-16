@@ -14,42 +14,87 @@ class CatalogRepository {
   final Map<String, Future<List<CategorySummary>>> _categoryCache = {};
   final Map<String, Future<List<ProductSummary>>> _productCache = {};
   final Map<String, Future<ProductDetail>> _productDetailCache = {};
-  static const Duration _categoryCacheTtl = Duration(hours: 24);
+  final Map<String, List<dynamic>> _categoryJson = {};
+  final Map<String, String> _categoryEtags = {};
+  final Map<String, DateTime> _categoryCheckedAt = {};
+  final Set<String> _categoryRefreshing = {};
+  static const Duration _categoryCheckInterval = Duration(minutes: 5);
   static const Duration _productCacheTtl = Duration(hours: 6);
   static const Duration _productDetailCacheTtl = Duration(hours: 6);
 
   Future<List<CategorySummary>> fetchCategories({String? parentSlug}) async {
-    final cacheKey = parentSlug?.trim().isNotEmpty == true ? parentSlug!.trim() : 'root';
-    final cached = _categoryCache[cacheKey];
+    final parent = parentSlug?.trim();
+    if (parent?.isNotEmpty == true && _categoryCache.containsKey('@all')) {
+      final tree = await fetchAllCategories();
+      return tree
+          .where((category) => category.parentSlug == parent)
+          .toList(growable: false);
+    }
+    return _fetchCategories(parentSlug: parent);
+  }
+
+  Future<List<CategorySummary>> fetchAllCategories() =>
+      _fetchCategories(includeAll: true);
+
+  Future<List<CategorySummary>> _fetchCategories({
+    String? parentSlug,
+    bool includeAll = false,
+  }) async {
+    final parent = parentSlug?.trim();
+    final key = includeAll
+        ? '@all'
+        : parent?.isNotEmpty == true
+        ? 'parent:$parent'
+        : 'root';
+    final cached = _categoryCache[key];
     if (cached != null) {
+      // An in-flight initial load owns its request; refresh only resolved data.
+      if (_categoryJson.containsKey(key)) {
+        unawaited(_refreshCategories(key, parent));
+      }
       return cached;
     }
-
-    final persisted = await _readCachedJsonList(
-      _cacheStorageKey('categories', cacheKey),
-      ttl: _categoryCacheTtl,
-    );
-    if (persisted != null) {
-      final cachedCategories = persisted
-          .whereType<Map<String, dynamic>>()
-          .map(CategorySummary.fromJson)
-          .toList(growable: false);
-      _categoryCache[cacheKey] = Future<List<CategorySummary>>.value(cachedCategories);
-      unawaited(_refreshCategories(cacheKey, parentSlug));
-      return _categoryCache[cacheKey]!;
-    }
-
-    final future = _loadCategories(cacheKey, parentSlug);
-    _categoryCache[cacheKey] = future;
+    final future = _initialCategories(key, parent);
+    _categoryCache[key] = future;
     try {
       return await future;
     } catch (_) {
-      // Do not replay a failed request when the caller retries.
-      if (identical(_categoryCache[cacheKey], future)) {
-        _categoryCache.remove(cacheKey);
-      }
+      if (identical(_categoryCache[key], future)) _categoryCache.remove(key);
       rethrow;
     }
+  }
+
+  String _categoryStorageKey(String key) =>
+      'catalog_categories_v2::${_apiClient.baseUrl}::$key';
+
+  List<CategorySummary> _parseCategories(List<dynamic> json) => json
+      .whereType<Map<String, dynamic>>()
+      .map(CategorySummary.fromJson)
+      .toList(growable: false);
+
+  Future<List<CategorySummary>> _initialCategories(
+    String key,
+    String? parent,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_categoryStorageKey(key));
+      if (stored != null) {
+        final envelope = jsonDecode(stored) as Map<String, dynamic>;
+        final json = envelope['data'] as List<dynamic>;
+        final categories = _parseCategories(json);
+        _categoryJson[key] = json;
+        if (envelope['etag'] is String) {
+          _categoryEtags[key] = envelope['etag'] as String;
+        }
+        // Display even an older snapshot immediately, including when offline.
+        unawaited(_refreshCategories(key, parent));
+        return categories;
+      }
+    } catch (_) {
+      // Corrupt/unavailable device storage must not prevent a network retry.
+    }
+    return _loadCategories(key, parent);
   }
 
   Future<List<ProductSummary>> fetchCategoryProducts({
@@ -85,7 +130,9 @@ class CatalogRepository {
           .whereType<Map<String, dynamic>>()
           .map(ProductSummary.fromJson)
           .toList(growable: false);
-      _productCache[cacheKey] = Future<List<ProductSummary>>.value(cachedProducts);
+      _productCache[cacheKey] = Future<List<ProductSummary>>.value(
+        cachedProducts,
+      );
       unawaited(
         _refreshCategoryProducts(
           cacheKey: cacheKey,
@@ -175,29 +222,58 @@ class CatalogRepository {
     }
   }
 
-  Future<List<CategorySummary>> _loadCategories(String cacheKey, String? parentSlug) async {
-    final params = <String, String>{};
-    if (parentSlug != null && parentSlug.isNotEmpty) {
-      params['parent_slug'] = parentSlug;
-    }
-
-    final json = await _apiClient.getJsonList(
+  Future<List<CategorySummary>> _loadCategories(
+    String cacheKey,
+    String? parentSlug,
+  ) async {
+    final response = await _apiClient.getConditionalJsonList(
       '/categories/',
-      queryParameters: params.isEmpty ? null : params,
+      etag: _categoryJson.containsKey(cacheKey)
+          ? _categoryEtags[cacheKey]
+          : null,
+      queryParameters: cacheKey == '@all'
+          ? {'include_top': 'true'}
+          : parentSlug?.isNotEmpty == true
+          ? {'parent_slug': parentSlug!}
+          : null,
     );
-    await _writeCachedJsonList(_cacheStorageKey('categories', cacheKey), json);
-    return json
-        .whereType<Map<String, dynamic>>()
-        .map(CategorySummary.fromJson)
-        .toList(growable: false);
+    final json = response.data ?? _categoryJson[cacheKey]!;
+    final categories = _parseCategories(json);
+    _categoryJson[cacheKey] = json;
+    if (response.etag != null) {
+      _categoryEtags[cacheKey] = response.etag!;
+    } else {
+      _categoryEtags.remove(cacheKey);
+    }
+    _categoryCheckedAt[cacheKey] = DateTime.now();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _categoryStorageKey(cacheKey),
+        jsonEncode({'etag': response.etag, 'data': json}),
+      );
+    } catch (_) {
+      // Successful responses remain usable when device storage is unavailable.
+    }
+    return categories;
   }
 
   Future<void> _refreshCategories(String cacheKey, String? parentSlug) async {
+    final checked = _categoryCheckedAt[cacheKey];
+    if (_categoryRefreshing.contains(cacheKey) ||
+        (checked != null &&
+            DateTime.now().difference(checked) < _categoryCheckInterval)) {
+      return;
+    }
+    _categoryRefreshing.add(cacheKey);
+    _categoryCheckedAt[cacheKey] = DateTime.now();
     try {
-      _categoryCache[cacheKey] = _loadCategories(cacheKey, parentSlug);
-      await _categoryCache[cacheKey];
+      final categories = await _loadCategories(cacheKey, parentSlug);
+      _categoryCache[cacheKey] = Future.value(categories);
     } catch (_) {
-      _categoryCache.remove(cacheKey);
+      // Keep displaying the last good snapshot when a refresh fails.
+    } finally {
+      _categoryRefreshing.remove(cacheKey);
     }
   }
 
@@ -286,7 +362,10 @@ class CatalogRepository {
       accessToken: accessToken,
       queryParameters: params.isEmpty ? null : params,
     );
-    await _writeCachedJsonObject(_cacheStorageKey('product_detail', cacheKey), json);
+    await _writeCachedJsonObject(
+      _cacheStorageKey('product_detail', cacheKey),
+      json,
+    );
     return ProductDetail.fromJson(json);
   }
 
@@ -311,7 +390,8 @@ class CatalogRepository {
     }
   }
 
-  String _cacheStorageKey(String kind, String cacheKey) => 'catalog_cache::$kind::$cacheKey';
+  String _cacheStorageKey(String kind, String cacheKey) =>
+      'catalog_cache::$kind::$cacheKey';
 
   Future<List<dynamic>?> _readCachedJsonList(
     String key, {
@@ -372,7 +452,10 @@ class CatalogRepository {
     );
   }
 
-  Future<void> _writeCachedJsonObject(String key, Map<String, dynamic> json) async {
+  Future<void> _writeCachedJsonObject(
+    String key,
+    Map<String, dynamic> json,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       key,

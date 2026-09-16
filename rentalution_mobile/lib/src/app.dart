@@ -17,11 +17,16 @@ import 'services/push_notification_service.dart';
 import 'services/theme_service.dart';
 import 'services/transaction_repository.dart';
 import 'storage/token_store.dart';
+import 'storage/dev_api_endpoint_store.dart';
 import 'theme.dart';
 
-void runRentalutionMobile() {
-  final apiClient = ApiClient(baseUrl: AppConfig.baseUrl);
-  final websiteApiClient = ApiClient(baseUrl: AppConfig.websiteBaseUrl);
+Future<void> runRentalutionMobile() async {
+  final endpointStore = DevApiEndpointStore();
+  final apiBaseUrl = await endpointStore.getBaseUrl();
+  final apiClient = ApiClient(baseUrl: apiBaseUrl);
+  final websiteApiClient = ApiClient(
+    baseUrl: AppConfig.websiteBaseUrlFor(apiBaseUrl),
+  );
   final tokenStore = TokenStore();
   final authRepository = AuthRepository(
     apiClient: apiClient,
@@ -46,6 +51,8 @@ void runRentalutionMobile() {
       orderRepository: orderRepository,
       catalogRepository: catalogRepository,
       friendsRepository: friendsRepository,
+      devApiBaseUrl: endpointStore.isAvailable ? apiBaseUrl : null,
+      devApiEndpointStore: endpointStore,
     ),
   );
 }
@@ -62,6 +69,8 @@ class RentalutionMobileApp extends StatefulWidget {
     required this.orderRepository,
     required this.catalogRepository,
     required this.friendsRepository,
+    this.devApiBaseUrl,
+    this.devApiEndpointStore,
   });
 
   final AuthRepository authRepository;
@@ -73,6 +82,8 @@ class RentalutionMobileApp extends StatefulWidget {
   final OrderRepository orderRepository;
   final CatalogRepository catalogRepository;
   final FriendsRepository friendsRepository;
+  final String? devApiBaseUrl;
+  final DevApiEndpointStore? devApiEndpointStore;
 
   @override
   State<RentalutionMobileApp> createState() => _RentalutionMobileAppState();
@@ -97,8 +108,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
   NotificationPreferences _notificationPreferences =
       NotificationPreferences.defaults;
 
-  bool get _showDevBanner =>
-      AppConfig.appName.toLowerCase().contains('dev');
+  bool get _showDevBanner => AppConfig.appName.toLowerCase().contains('dev');
 
   @override
   void initState() {
@@ -429,32 +439,70 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
         barrierDismissible: true,
         builder: (dialogContext) {
           return AlertDialog(
-            title: const Text('New booking alert'),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 8,
+            ),
+            title: const Text('Booking alerts', style: TextStyle(fontSize: 20)),
+            contentTextStyle: Theme.of(
+              dialogContext,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 13),
             content: SizedBox(
-              width: double.maxFinite,
+              width: 520,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${payload.noticeCount} booking alert${payload.noticeCount == 1 ? '' : 's'} need your attention.',
+                      '${payload.noticeCount} booking alert${payload.noticeCount == 1 ? '' : 's'} ${payload.noticeCount == 1 ? 'needs' : 'need'} your attention.',
                     ),
                     const SizedBox(height: 12),
                     ...payload.noticeItems.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(
-                            Icons.notifications_active_outlined,
+                      (item) => InkWell(
+                        onTap: () => Navigator.pop(dialogContext),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.notifications_active_outlined,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.productName,
+                                      style: Theme.of(dialogContext)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${item.dateLabel}\n${item.actionLabel}',
+                                      style: Theme.of(dialogContext)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          title: Text(item.productName),
-                          subtitle: Text(
-                            '${item.dateLabel}\n${item.actionLabel}',
-                          ),
-                          isThreeLine: true,
-                          onTap: () => Navigator.pop(dialogContext),
                         ),
                       ),
                     ),
@@ -525,9 +573,8 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
 
     await navigator.push(
       MaterialPageRoute(
-        builder: (_) => PasswordResetScreen(
-          authRepository: widget.authRepository,
-        ),
+        builder: (_) =>
+            PasswordResetScreen(authRepository: widget.authRepository),
       ),
     );
   }
@@ -557,6 +604,71 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
     await _loadTransactions();
   }
 
+  Future<void> _openDevServerSettings() async {
+    final store = widget.devApiEndpointStore;
+    final current = widget.devApiBaseUrl;
+    if (store == null || current == null) return;
+
+    final controller = TextEditingController(text: current);
+    final entered = await showDialog<String>(
+      context: _navigatorKey.currentContext ?? context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Development server'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Use the laptop address on the current Wi-Fi or hotspot. '
+              'The app will use it after you close and reopen it.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: 'API server',
+                hintText: 'http://192.168.x.x:8000/api/v1',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (entered == null) return;
+
+    try {
+      await store.save(entered);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Server saved. Fully close and reopen the app to connect.',
+          ),
+          duration: Duration(seconds: 8),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -575,17 +687,35 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
           return child;
         }
 
-        return Banner(
-          message: 'DEV',
-          location: BannerLocation.topStart,
-          color: const Color(0xFFFFD54F),
-          textStyle: const TextStyle(
-            color: Color(0xFF1A1A1A),
-            fontWeight: FontWeight.w800,
-            fontSize: 11,
-            letterSpacing: 0.8,
-          ),
-          child: child,
+        return Stack(
+          children: [
+            Banner(
+              message: 'DEV',
+              location: BannerLocation.topStart,
+              color: const Color(0xFFFFD54F),
+              textStyle: const TextStyle(
+                color: Color(0xFF1A1A1A),
+                fontWeight: FontWeight.w800,
+                fontSize: 11,
+                letterSpacing: 0.8,
+              ),
+              child: child,
+            ),
+            Positioned(
+              top: 36,
+              right: 4,
+              child: SafeArea(
+                child: Material(
+                  color: Colors.transparent,
+                  child: IconButton(
+                    tooltip: 'Development server',
+                    icon: const Icon(Icons.dns_outlined),
+                    onPressed: _openDevServerSettings,
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
       // TODO: Add Nunito font to pubspec.yaml and use logo in AppBar or login screen

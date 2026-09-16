@@ -4,6 +4,28 @@ from .models import TransactionMessage, TransactionMessageImage
 from datetime import datetime, date
 import logging
 
+class AdminTransactionDatesForm(forms.Form):
+    rental_start_date = forms.DateField(
+        label='Rental start date',
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'form-control'}),
+    )
+    rental_end_date = forms.DateField(
+        label='Rental end date',
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'form-control'}),
+    )
+    reason = forms.CharField(
+        label='Reason for change', max_length=90,
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get('rental_start_date'), cleaned.get('rental_end_date')
+        if start and end and end < start:
+            self.add_error('rental_end_date', 'The end date must be on or after the start date.')
+        return cleaned
+
+
 class OrderAddForm(forms.ModelForm):
     required_css_class = 'required'
 

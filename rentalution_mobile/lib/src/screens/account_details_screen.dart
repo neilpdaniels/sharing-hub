@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/account_models.dart';
 import '../services/account_repository.dart';
@@ -32,6 +33,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  AccountDetails? _details;
 
   @override
   void initState() {
@@ -80,6 +82,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   }
 
   void _apply(AccountDetails details) {
+    _details = details;
     _firstNameController.text = details.firstName;
     _lastNameController.text = details.lastName;
     _emailController.text = details.email;
@@ -89,6 +92,21 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     _townController.text = details.town;
     _countyController.text = details.county;
     _postcodeController.text = details.postcode;
+  }
+
+  Future<void> _startPayoutOnboarding() async {
+    try {
+      final url = await widget.accountRepository.startPayoutOnboarding(
+        accessToken: widget.accessToken,
+      );
+      if (url.isEmpty || !await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+        throw Exception('Could not open Stripe payout setup.');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -146,6 +164,31 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Lender payouts', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          if (_details?.stripeConnectTransfersEnabled ?? false)
+                            const Text('Your Stripe payout account can receive rental transfers.')
+                          else ...[
+                            const Text('Complete secure Stripe payout setup before accepting paid rentals.'),
+                            if ((_details?.stripeConnectRequirements ?? const []).isNotEmpty)
+                              Text('Stripe still needs: ${_details!.stripeConnectRequirements.join(', ')}'),
+                            const SizedBox(height: 8),
+                            OutlinedButton(
+                              onPressed: _startPayoutOnboarding,
+                              child: const Text('Set up lender payouts'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _firstNameController,
                     decoration: const InputDecoration(labelText: 'First name'),

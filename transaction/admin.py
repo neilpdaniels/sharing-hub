@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     DisputeCase,
     PaymentAttempt,
+    StripeSettlement,
     Transaction,
     TransactionMessage,
     TransactionCharge,
@@ -57,3 +58,14 @@ class PaymentAttemptAdmin(admin.ModelAdmin):
     list_display = ('created_at', 'transaction', 'failure_point', 'status', 'amount', 'card_brand', 'card_funding')
     list_filter = ('status', 'failure_point', 'card_brand', 'card_funding', 'created_at')
     search_fields = ('transaction__transaction_reference', 'error_message', 'stripe_object_id')
+
+
+@admin.register(StripeSettlement)
+class StripeSettlementAdmin(admin.ModelAdmin):
+    list_display = (
+        'transaction', 'kind', 'status', 'gross_amount', 'stripe_fee',
+        'net_transfer_amount', 'platform_shortfall', 'transfer_id', 'updated_at',
+    )
+    list_filter = ('kind', 'status', 'created_at')
+    search_fields = ('transaction__transaction_reference', 'payment_intent_id', 'charge_id', 'transfer_id', 'failure_reason')
+    readonly_fields = ('created_at', 'updated_at', 'idempotency_key')

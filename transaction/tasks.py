@@ -15,7 +15,7 @@ from google.oauth2 import service_account
 
 from common.models import Order
 from account.models import Profile
-from .models import DisputeCase, Transaction
+from .models import DisputeCase, StripeSettlement, Transaction
 from .stripe_connect import stripe_connect_service
 from common.failures import record_site_failure
 
@@ -36,6 +36,30 @@ def _notify_payment_failure_parties(transaction, error_message, *, point):
                 user.email_user(subject, message)
             except Exception:
                 logger.exception('Failed to email payment failure notice to user %s', user.id)
+
+
+def _notify_settlement_parties(transaction, result, *, kind):
+    """Keep both parties informed without exposing Stripe identifiers."""
+    if result.get('existing'):
+        return
+    if kind == 'rental':
+        gross_amount = ((transaction.quantity or 0) * (transaction.price or 0)) + (transaction.delivery_cost or 0)
+        label = 'rental proceeds'
+    else:
+        gross_amount = float(result.get('gross_amount') or result.get('net_amount') or 0)
+        label = 'deposit award'
+    if result.get('ok'):
+        if kind == 'deposit' and gross_amount == 0:
+            description = 'The deposit was released in full. No lender transfer was created.'
+            subject = f'Deposit released {transaction.transaction_reference}'
+        else:
+            description = f'£{gross_amount:.2f} {label} payout has been recorded.'
+            subject = f'{label.title()} settlement complete {transaction.transaction_reference}'
+    else:
+        description = f'{label.title()} payout needs staff attention. The rental workflow is unaffected.'
+        subject = f'{label.title()} settlement pending {transaction.transaction_reference}'
+    for sender, recipient in ((transaction.user_passive, transaction.user_aggressive), (transaction.user_aggressive, transaction.user_passive)):
+        _send_system_alert(txn=transaction, user_from=sender, user_to=recipient, subject=subject, description=description)
 
 
 def _in_reminder_window(now):
@@ -592,6 +616,45 @@ def escalate_overdue_disputes():
 
 
 @shared_task
+def async_transfer_rental_proceeds(transaction_id):
+    """Release rental proceeds to the lender after return handover is verified."""
+    try:
+        transaction = Transaction.objects.get(id=transaction_id)
+    except Transaction.DoesNotExist:
+        logger.error('Transaction %s not found for rental transfer', transaction_id)
+        return {'ok': False, 'error': 'Transaction not found.'}
+    if not transaction.return_handover_verified_at:
+        return {'ok': False, 'error': 'Return handover is not verified.'}
+    result = stripe_connect_service.transfer_rental_proceeds(transaction=transaction)
+    _notify_settlement_parties(transaction, result, kind='rental')
+    return result
+
+
+@shared_task
+def async_retry_stripe_settlement(settlement_id):
+    """Retry only a previously failed Connect transfer using its stable idempotency key."""
+    try:
+        settlement = StripeSettlement.objects.select_related('transaction').get(id=settlement_id)
+    except StripeSettlement.DoesNotExist:
+        return {'ok': False, 'error': 'Settlement not found.'}
+    if settlement.status != StripeSettlement.STATUS_FAILED:
+        return {'ok': False, 'error': 'Only failed settlements can be retried.'}
+    transaction = settlement.transaction
+    if settlement.kind == StripeSettlement.KIND_RENTAL:
+        if not transaction.return_handover_verified_at:
+            return {'ok': False, 'error': 'Return handover is not verified.'}
+        result = stripe_connect_service.transfer_rental_proceeds(transaction=transaction)
+    else:
+        result = stripe_connect_service.transfer_deposit_award(
+        transaction=transaction,
+        payment_intent_id=settlement.payment_intent_id or transaction.deposit_collection_reference,
+        award_amount=settlement.gross_amount,
+        )
+    _notify_settlement_parties(transaction, result, kind=settlement.kind)
+    return result
+
+
+@shared_task
 def async_confirm_card_setup(transaction_id, setup_intent_id, payment_method_id):
     """
     Async task to confirm Stripe card setup and run test hold.
@@ -802,6 +865,19 @@ def async_resolve_deposit_hold(transaction_id, return_amount):
                 transaction.deposit_resolution_notes = f'{existing_notes}\n{settlement_note}'.strip()
 
             transaction.save(update_fields=['deposit_resolution_notes', 'amended'])
+            # Record every final deposit outcome in the ledger. A full release
+            # creates a zero-value settlement and deliberately no lender transfer.
+            transfer_result = stripe_connect_service.transfer_deposit_award(
+                transaction=transaction,
+                payment_intent_id=transaction.deposit_collection_reference,
+                award_amount=charged_amount,
+            )
+            if not transfer_result.get('ok'):
+                logger.error(
+                    'Deposit award transfer failed for transaction %s: %s',
+                    transaction.transaction_reference, transfer_result.get('error'),
+                )
+            _notify_settlement_parties(transaction, transfer_result, kind='deposit')
             logger.info('Deposit settlement complete for transaction %s', transaction.transaction_reference)
         else:
             logger.error(

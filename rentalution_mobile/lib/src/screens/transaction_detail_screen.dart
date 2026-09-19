@@ -422,6 +422,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     required String fieldName,
     required String actionLabel,
   }) async {
+    if (_busy) {
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -465,6 +468,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         setState(() {
           _evidenceVideoFile = null;
           _evidenceVideoUrl = null;
+          _uploadProgress = null;
+          _uploadPhase = null;
         });
       }
       await _refresh();
@@ -1611,8 +1616,22 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       if (!mounted) {
         return;
       }
+      final detail = _detail;
+      if (detail?.depositCardSetupStatus == 'FAILED' ||
+          detail?.depositTestHoldStatus == 'FAILED') {
+        throw Exception(
+          'Stripe could not verify this card. Please try another card or contact support.',
+        );
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Deposit card setup submitted.')),
+        SnackBar(
+          content: Text(
+            detail?.depositCardSetupStatus == 'READY' &&
+                    detail?.depositTestHoldStatus == 'SUCCESS'
+                ? 'Deposit card verified.'
+                : 'Deposit card setup submitted. Verification is in progress.',
+          ),
+        ),
       );
     } on stripe.StripeException catch (e) {
       if (e.error.code == stripe.FailureCode.Canceled) {
@@ -2198,10 +2217,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         ),
                       ),
                     ),
-                  if (_uploadPhase != null) ...[
-                    const SizedBox(height: 16),
-                    _videoUploadProgress(),
-                  ],
                   _currentWorkflowCard(detail),
                   if ((detail.workflowStage == 5 && detail.meIsLender) ||
                       detail.workflowStage == 6) ...[

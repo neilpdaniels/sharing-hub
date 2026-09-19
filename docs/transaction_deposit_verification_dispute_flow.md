@@ -63,7 +63,7 @@ This is the listing setup flow a lender uses before any rental exists.
 ## Transaction Fees
 
 - Delivery charges are passed to the renter.
-- The banded Rentalution fee is passed to the renter.
+- The upfront Rentalution service fee is charged to the renter on rental plus delivery.
 - Any deposit-related card cost that arises from a captured hold is also passed to the renter.
 - Fee totals shown in the UI should match the charge records created for the transaction.
 

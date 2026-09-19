@@ -36,6 +36,25 @@ Seeds transaction test scenarios with local settings by default.
 
 Optional `--reset` is blocked in production by the script.
 
+### `run_stripe_connect_matrix`
+
+Runs the Stripe Connect Sandbox payment matrix and checks the managed Stripe CLI
+webhook listener. If the listener is absent, it asks before starting it. The
+listener's signing secret is stored only in `logs/stripe_webhook_secret` with
+owner-only permissions and is shared with Django at webhook-verification time.
+
+Safe policy/listener check:
+
+```bash
+./run_stripe_connect_matrix
+```
+
+The interactive menu offers: policy/listener check, successful Sandbox
+payment/deposit checks, and the same checks plus decline-card coverage.
+
+It refuses production and live keys. Successful short/standard deposit checks
+are cancelled; the 31-day check is captured then fully refunded.
+
 ### `run_promote_product_drafts`
 
 Wrapper for the product draft promotion flow.
@@ -139,6 +158,7 @@ These are the underlying Django commands used by the scripts above.
 ### Transaction scenarios
 
 - `seed_transaction_scenarios`
+- `stripe_connect_matrix`
 
 ## Environment Checks
 
@@ -192,6 +212,12 @@ CHECK_DB_CONNECTION=1 sh scripts/check_db_env.sh .env
 
 ```bash
 ./run_seed_transaction_scenarios
+```
+
+### Run Stripe Connect Sandbox checks
+
+```bash
+./run_stripe_connect_matrix
 ```
 
 ## Notes

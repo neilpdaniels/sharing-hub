@@ -70,12 +70,21 @@
 }
 
 .txn-status-pill {
-    display: inline-block;
+    display: block;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.95rem;
+    width: fit-content;
+    min-width: 0;
+    padding: 0.34rem 0.52rem;
+    border-color: #dce7e8 !important;
+    border-radius: 0.5rem;
+    background: #f4faf9;
+    color: #23404a;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.32;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 /* Compact action buttons for booking tables */
 .txn-action-btn {

@@ -12,6 +12,17 @@
   </div>
 
   <div class="card mb-4">
+    <div class="card-header"><strong>Platform financial totals</strong></div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-4"><strong>Gross rental + delivery volume</strong><div>£{{ transaction_financial_totals.gross_volume|floatformat:2 }}</div></div>
+        <div class="col-md-4"><strong>Service-fee revenue</strong><div>£{{ transaction_financial_totals.service_fee_revenue|floatformat:2 }}</div></div>
+        <div class="col-md-4"><strong>Deposit authorisations held</strong><div>£{{ transaction_financial_totals.held_deposits|floatformat:2 }}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
     <div class="card-header"><strong>Failure points</strong></div>
     <div class="card-body">
       <ul class="mb-0">
@@ -21,6 +32,26 @@
         <li class="text-muted">No payment attempts yet.</li>
         {% endfor %}
       </ul>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Connect settlements</strong></div>
+    <div class="card-body table-responsive">
+      <p class="small text-muted">Gross £{{ settlement_totals.gross|default:0|floatformat:2 }} · Stripe fees £{{ settlement_totals.fees|default:0|floatformat:2 }} · Lender transfers £{{ settlement_totals.transferred|default:0|floatformat:2 }} · Shortfalls £{{ settlement_totals.shortfalls|default:0|floatformat:2 }}</p>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Transaction</th><th>Type</th><th>Status</th><th>Gross</th><th>Fee</th><th>Transfer</th><th>Shortfall</th><th>Failure</th><th></th></tr></thead>
+        <tbody>
+          {% for settlement in settlements %}
+          <tr>
+            <td><a href="{% url 'transaction:view_transaction' settlement.transaction.transaction_reference %}">{{ settlement.transaction.transaction_reference }}</a></td>
+            <td>{{ settlement.get_kind_display }}</td><td>{{ settlement.get_status_display }}</td>
+            <td>£{{ settlement.gross_amount|floatformat:2 }}</td><td>£{{ settlement.stripe_fee|floatformat:2 }}</td><td>£{{ settlement.net_transfer_amount|floatformat:2 }}</td><td>£{{ settlement.platform_shortfall|floatformat:2 }}</td><td>{{ settlement.failure_reason|default:'-' }}</td>
+            <td>{% if settlement.status == 'failed' %}<form method="post" action="{% url 'transaction:retry_stripe_settlement' settlement.id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry</button></form>{% endif %}</td>
+          </tr>
+          {% empty %}<tr><td colspan="9" class="text-muted">No Connect settlements yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -35,6 +66,8 @@
             <th>Point</th>
             <th>Status</th>
             <th>Amount</th>
+            <th>Stripe fee</th>
+            <th>Net</th>
             <th>Card</th>
             <th>Failure</th>
           </tr>
@@ -47,11 +80,13 @@
             <td>{{ attempt.get_failure_point_display }}</td>
             <td>{{ attempt.get_status_display }}</td>
             <td>{{ attempt.amount }} {{ attempt.currency }}</td>
+            <td>{{ attempt.context.stripe_processing_fee|default:'-' }}</td>
+            <td>{{ attempt.context.stripe_net_amount|default:'-' }}</td>
             <td>{{ attempt.card_brand }} {{ attempt.card_funding }}</td>
             <td>{{ attempt.error_message|default:'-' }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="text-muted">No attempts yet.</td></tr>
+          <tr><td colspan="9" class="text-muted">No attempts yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

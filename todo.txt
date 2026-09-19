@@ -1,5 +1,21 @@
 todo: 
 
+Stripe Connect — current position (17 Sep 2026)
+
+- DONE: Stripe business model selected.
+- DONE: Test connected account created.
+- DONE: Test payment created.
+- NEXT (Stripe owner): open the red "Multiple capabilities paused" banner in the
+  Stripe Sandbox and complete the action Stripe identifies. This must be resolved
+  before live Connect payments/payouts can be enabled.
+- NEXT (local development): in the Sandbox, copy the test publishable and secret
+  API keys into the untracked .env as STRIPE_CONNECT_PUBLIC_KEY and
+  STRIPE_CONNECT_SECRET_KEY. Then run Stripe CLI forwarding to
+  http://localhost:8000/transaction/stripe/connect/webhook/ and set the displayed
+  whsec_ signing secret as STRIPE_CONNECT_WEBHOOK_SECRET.
+- Reference: docs/stripe_connect_settlement_todo.md has the full owner runbook
+  and the remaining engineering settlement work.
+
 1) review catalog and :
 a) reduce
 b) add new categories and products

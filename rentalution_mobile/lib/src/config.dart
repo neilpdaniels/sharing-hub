@@ -4,10 +4,10 @@ class AppConfig {
     defaultValue: 'Rentalution',
   );
 
-  // Override at launch: --dart-define=API_BASE_URL=http://<your-lan-ip>:8000/api/v1
+  // Override at launch: --dart-define=API_BASE_URL=http://<host>:8000/api/v1
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000/api/v1',
+    defaultValue: 'http://neil-laptop:8000/api/v1',
   );
 
   static String websiteBaseUrlFor(String apiBaseUrl) {

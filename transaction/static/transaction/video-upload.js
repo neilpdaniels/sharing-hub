@@ -4,6 +4,7 @@
   const submitting = new WeakSet();
   const passThrough = new WeakSet();
   const workerUrl = document.currentScript.dataset.workerUrl;
+  const allowInsecureUpload = document.currentScript.dataset.allowInsecureUpload === 'true';
 
   async function compress(file, progress) {
     if (prepared.has(file)) return file;
@@ -51,6 +52,15 @@
     }
     if (submitter) submitter.disabled = true;
     try {
+      if (!window.isSecureContext && allowInsecureUpload) {
+        const tooLarge = inputs.some(input => [...input.files].some(file => file.size > 50 * 1024 * 1024));
+        if (tooLarge) throw new Error('This development connection uploads the original video. Please choose a video under 50 MB.');
+        status.textContent = 'Uploading original video from this development address. Keep this page open.';
+        passThrough.add(form);
+        if (submitter) submitter.disabled = false;
+        form.requestSubmit(submitter || undefined);
+        return;
+      }
       for (const input of inputs) {
         const files = new DataTransfer();
         for (const file of input.files) {

@@ -56,6 +56,7 @@ from .helpers import (
 from .models import (
     DisputeCase,
     PaymentAttempt,
+    StripeSettlement,
     Transaction,
     TransactionFeedback,
     TransactionImage,
@@ -67,7 +68,9 @@ from .tasks import (
     async_collect_deposit_hold,
     async_confirm_card_setup,
     async_resolve_deposit_hold,
+    async_retry_stripe_settlement,
     async_setup_deposit_card_and_test_hold,
+    async_transfer_rental_proceeds,
 )
 
 
@@ -78,6 +81,41 @@ PHONE_EVIDENCE_ACTIONS = frozenset({
     'submit_lender_return_evidence',
 })
 
+PHONE_EVIDENCE_CAPTURE_DETAILS = {
+    'initiate_rental': {
+        'title': 'Add checkout evidence',
+        'description': 'Use this phone to record the item condition, or add an existing video.',
+        'field_id': 'id_phone_checkout_video_file',
+        'field_name': 'checkout_video_file',
+        'field_label': 'Record or add checkout video',
+        'submit_label': 'Save checkout evidence',
+    },
+    'submit_checkout_borrower_evidence': {
+        'title': 'Add checkout counter-evidence',
+        'description': 'Use this phone to record the item condition, or add an existing video.',
+        'field_id': 'id_phone_checkout_borrower_video_file',
+        'field_name': 'checkout_borrower_video_file',
+        'field_label': 'Record or add counter-evidence video',
+        'submit_label': 'Save counter-evidence',
+    },
+    'submit_return_borrower_evidence': {
+        'title': 'Add return evidence',
+        'description': 'Use this phone to record the item condition, or add an existing video.',
+        'field_id': 'id_phone_return_video_file',
+        'field_name': 'return_video_file',
+        'field_label': 'Record or add return video',
+        'submit_label': 'Save return evidence',
+    },
+    'submit_lender_return_evidence': {
+        'title': 'Add return counter-evidence',
+        'description': 'Use this phone to record the item condition, or add an existing video.',
+        'field_id': 'id_phone_lender_return_video_file',
+        'field_name': 'lender_return_video_file',
+        'field_label': 'Record or add counter-evidence video',
+        'submit_label': 'Save counter-evidence',
+    },
+}
+
 
 def _phone_evidence_qr_data_uri(url):
     import qrcode
@@ -86,6 +124,15 @@ def _phone_evidence_qr_data_uri(url):
     buffer = BytesIO()
     image.save(buffer, format='PNG')
     return 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii')
+
+
+def _phone_evidence_handoff_url(request, token):
+    """Build a phone-reachable URL when local development uses localhost."""
+    query = f'{request.path}?phone_evidence={token}'
+    base_url = getattr(settings, 'PHONE_EVIDENCE_BASE_URL', '')
+    if base_url:
+        return f'{base_url}{query}'
+    return request.build_absolute_uri(query)
 
 
 
@@ -660,13 +707,17 @@ def dispute_case_review(request, case_number):
             lender_share_ratio = max(0.0, min(100.0, float(request.POST.get('settlement_ratio') or 50))) / 100.0
             borrower_share_ratio = 1.0 - lender_share_ratio
 
-            if outcome in (DisputeCase.OUTCOME_LENDER, DisputeCase.OUTCOME_SPLIT, DisputeCase.OUTCOME_REFUND):
+            if outcome == DisputeCase.OUTCOME_LENDER:
+                deposit_return_amount = 0.0
+                txn.deposit_status = txn.DEPOSIT_RETURNED_REDUCED
+                txn.transaction_status = txn.DISPUTE_DECIDED
+            elif outcome == DisputeCase.OUTCOME_SPLIT:
                 txn.deposit_status = txn.DEPOSIT_RETURNED_FULL if deposit_return_amount >= (txn.deposit or 0) else txn.DEPOSIT_RETURNED_REDUCED
                 txn.transaction_status = txn.DISPUTE_DECIDED
-            elif outcome in (DisputeCase.OUTCOME_BORROWER, DisputeCase.OUTCOME_VOID):
-                txn.deposit_status = txn.DEPOSIT_MEDIATION
+            elif outcome in (DisputeCase.OUTCOME_BORROWER, DisputeCase.OUTCOME_VOID, DisputeCase.OUTCOME_REFUND):
+                deposit_return_amount = txn.deposit or 0
+                txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
                 txn.transaction_status = txn.DISPUTE_DECIDED
-                deposit_return_amount = 0.0
             else:
                 txn.deposit_status = txn.DEPOSIT_MEDIATION
                 txn.transaction_status = txn.DISPUTE_DECIDED
@@ -692,7 +743,9 @@ def dispute_case_review(request, case_number):
             case.payment_offset_amount = 0
             case.save(update_fields=['deposit_return_amount', 'payment_offset_amount', 'amended'])
 
-            if deposit_return_amount > 0:
+            # Every final dispute decision must settle the manual authorisation:
+            # £0 returned captures the full award; the full deposit releases it.
+            if outcome != DisputeCase.OUTCOME_OTHER and (txn.deposit or 0) > 0 and txn.deposit_collection_reference:
                 async_resolve_deposit_hold.delay(
                     transaction_id=txn.id,
                     return_amount=deposit_return_amount,
@@ -1308,6 +1361,13 @@ def hit_order(request, order_id=None):
             end_date = order_hit_form.cleaned_data['rental_end_date']
             rental_days = (end_date - start_date).days + 1
             price_per_day = _price_per_day_for_days(rental_days)
+
+            # A paid booking cannot safely progress until the lender has a
+            # Connect account that can receive the eventual separate transfer.
+            lender_profile = Profile.objects.filter(user=order.user).first()
+            if price_per_day > 0 and (not lender_profile or not lender_profile.stripe_connect_transfers_enabled):
+                messages.error(request, 'This lender has not completed payout setup, so paid bookings are not available yet.')
+                return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
             product = order.product
 
@@ -2003,15 +2063,6 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.payment_collected_placeholder = True
             txn.payment_status = txn.PAYMENT_CAPTURED_PLACEHOLDER
             txn.deposit_status = txn.DEPOSIT_HELD_PLACEHOLDER if txn.deposit_collected_placeholder else txn.DEPOSIT_PENDING
-            rental_amount = round((txn.quantity or 0) * (txn.price or 0), 2)
-            total_before_deposit = round(rental_amount + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0), 2)
-            default_payment_note = (
-                f'Rental £{rental_amount:.2f}; '
-                f'Delivery £{(txn.delivery_cost or 0):.2f}; '
-                f'Rentalution fee £{(txn.rentalution_fee or 0):.2f}; '
-                f'Total before deposit £{total_before_deposit:.2f}'
-            )
-            txn.payment_placeholder_notes = (request.POST.get('payment_placeholder_notes', '').strip() or default_payment_note)
 
             payment_capture_result = stripe_connect_service.collect_rental_payment(transaction=txn)
             if not payment_capture_result.get('ok'):
@@ -2046,16 +2097,6 @@ Transaction Ref: {txn.transaction_reference}"""
             txn.payment_status = payment_capture_result.get('payment_status', txn.PAYMENT_CAPTURED_PLACEHOLDER)
             txn.payment_collection_requested_at = payment_capture_result.get('collection_requested_at', timezone.now())
             txn.payment_collection_reference = payment_capture_result.get('collection_reference', '')
-            charged_amount = float(payment_capture_result.get('charged_amount') or 0)
-            capture_note = (
-                f'[STRIPE_RENTAL_CAPTURE] charged={charged_amount:.2f} '
-                f'status={payment_capture_result.get("payment_intent_status") or ""} '
-                f'ref={txn.payment_collection_reference}'
-            ).strip()
-            if capture_note:
-                existing_payment_notes = (txn.payment_placeholder_notes or '').strip()
-                if capture_note not in existing_payment_notes:
-                    txn.payment_placeholder_notes = f'{existing_payment_notes}\n{capture_note}'.strip()
 
             should_collect_deposit_now = (
                 txn.deposit > 0
@@ -2080,7 +2121,6 @@ Transaction Ref: {txn.transaction_reference}"""
                     'payment_collection_requested_at',
                     'payment_collection_reference',
                     'deposit_status',
-                    'payment_placeholder_notes',
                     'deposit_collection_status',
                     'deposit_collection_requested_at',
                     'amended',
@@ -2349,6 +2389,7 @@ Transaction Ref: {txn.transaction_reference}"""
                     description='Borrower completed return PIN verification. Return is confirmed and deposit resolution can now proceed.',
                     is_system_generated=True,
                 )
+                async_transfer_rental_proceeds.delay(txn.id)
                 if (txn.deposit or 0) <= 0:
                     messages.success(request, 'Return verification complete. No deposit is held, so the transaction has moved straight to feedback.')
                 else:
@@ -2925,6 +2966,7 @@ Transaction Ref: {txn.transaction_reference}"""
     user_allowed_actions = txn.get_allowed_actions_for_user(request.user)
     if phone_evidence_action not in user_allowed_actions:
         phone_evidence_action = ''
+    phone_evidence_capture = PHONE_EVIDENCE_CAPTURE_DETAILS.get(phone_evidence_action)
 
     phone_evidence_qrs = {}
     for action in PHONE_EVIDENCE_ACTIONS.intersection(user_allowed_actions):
@@ -2932,9 +2974,7 @@ Transaction Ref: {txn.transaction_reference}"""
             {'transaction_id': txn.pk, 'action': action},
             salt='transaction-phone-evidence',
         )
-        handoff_url = request.build_absolute_uri(
-            f'{request.path}?phone_evidence={token}'
-        )
+        handoff_url = _phone_evidence_handoff_url(request, token)
         phone_evidence_qrs[action] = _phone_evidence_qr_data_uri(handoff_url)
 
     context = {
@@ -2954,7 +2994,9 @@ Transaction Ref: {txn.transaction_reference}"""
         'workflow_payload': workflow_payload,
         'allowed_actions': user_allowed_actions,
         'phone_evidence_action': phone_evidence_action,
+        'phone_evidence_capture': phone_evidence_capture,
         'phone_evidence_qrs': phone_evidence_qrs,
+        'allow_insecure_video_upload': settings.DEBUG,
         'workflow_message': txn.get_workflow_message(),
         'workflow_allowed_actions': workflow_payload.get('allowed_actions', []),
         'is_lender': is_lender,
@@ -3001,6 +3043,14 @@ Transaction Ref: {txn.transaction_reference}"""
         'renter_feedback_stats': renter_feedback_stats,
         'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),
         'user_payment_methods': user_payment_methods,
+        'stripe_settlements': txn.stripe_settlements.all(),
+        'payment_breakdown': {
+            'rental': (txn.quantity or 0) * (txn.price or 0),
+            'delivery': txn.delivery_cost or 0,
+            'service_fee': txn.rentalution_fee or 0,
+            'renter_total': ((txn.quantity or 0) * (txn.price or 0)) + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0),
+            'deposit_held': txn.deposit if deposit_funds_held else 0,
+        },
         'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
         'message_turnstile_required': message_turnstile_required,
         'txn_live_state_signature': _build_transaction_live_state(txn)['state_signature'],
@@ -3211,11 +3261,42 @@ def payment_summary(request):
         .order_by('failure_point')
     )
     latest = attempts.select_related('transaction').order_by('-created_at')[:100]
+    settlements = StripeSettlement.objects.select_related('transaction').order_by('-updated_at')[:100]
+    settlement_totals = StripeSettlement.objects.aggregate(
+        gross=models.Sum('gross_amount'), fees=models.Sum('stripe_fee'),
+        transferred=models.Sum('net_transfer_amount'), shortfalls=models.Sum('platform_shortfall'),
+    )
+    paid_transactions = Transaction.objects.filter(payment_status=Transaction.PAYMENT_CAPTURED_PLACEHOLDER)
+    held_deposits = Transaction.objects.filter(
+        deposit_collection_status=Transaction.COLLECT_SUCCESS,
+        deposit_status__in=[Transaction.DEPOSIT_PENDING, Transaction.DEPOSIT_HELD_PLACEHOLDER, Transaction.DEPOSIT_MEDIATION],
+    )
+    transaction_financial_totals = {
+        'gross_volume': paid_transactions.aggregate(value=models.Sum(models.F('quantity') * models.F('price') + models.F('delivery_cost')))['value'] or 0,
+        'service_fee_revenue': paid_transactions.aggregate(value=models.Sum('rentalution_fee'))['value'] or 0,
+        'held_deposits': held_deposits.aggregate(value=models.Sum('deposit'))['value'] or 0,
+    }
     return render(request, 'transaction/payment_summary.html', {
         'attempts': latest,
         'totals': totals,
         'by_point': by_point,
+        'settlements': settlements,
+        'settlement_totals': settlement_totals,
+        'transaction_financial_totals': transaction_financial_totals,
     })
+
+
+@staff_member_required
+def retry_stripe_settlement(request, settlement_id):
+    if request.method != 'POST':
+        raise Http404
+    settlement = get_object_or_404(StripeSettlement, id=settlement_id)
+    if settlement.status != StripeSettlement.STATUS_FAILED:
+        messages.error(request, 'Only failed Stripe settlements can be retried.')
+    else:
+        async_retry_stripe_settlement.delay(settlement.id)
+        messages.success(request, f'Retry queued for {settlement.get_kind_display().lower()} settlement.')
+    return redirect('transaction:payment_summary')
 
 
 @csrf_exempt
@@ -3234,6 +3315,30 @@ def stripe_connect_webhook(request):
         'event_type': result.get('event_type', 'unknown'),
         'provider': result.get('provider', 'unknown'),
     })
+
+
+@login_required
+def stripe_connect_onboarding(request):
+    profile = get_object_or_404(Profile, user=request.user)
+    refresh_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding'))
+    return_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding_return'))
+    result = stripe_connect_service.create_lender_onboarding_link(
+        profile=profile, refresh_url=refresh_url, return_url=return_url,
+    )
+    if not result.get('ok') or not result.get('url'):
+        messages.error(request, result.get('error', 'Unable to start Stripe payout setup.'))
+        return redirect('myaccount')
+    return redirect(result['url'])
+
+
+@login_required
+def stripe_connect_onboarding_return(request):
+    profile = get_object_or_404(Profile, user=request.user)
+    messages.success(
+        request,
+        'Stripe payout setup was submitted. We will update your payout status when Stripe confirms it.',
+    )
+    return redirect('myaccount')
 
 class TransactionMessageImageUpload(View):
     def post(self, request):

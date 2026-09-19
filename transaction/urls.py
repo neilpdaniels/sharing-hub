@@ -26,7 +26,10 @@ urlpatterns = [
     path('transpact_refresh/', views.transpact_refresh, name='transpact_refresh'),
     path('admin/scenarios/', views.transaction_scenario_dashboard, name='transaction_scenario_dashboard'),
     path('admin/payments/', views.payment_summary, name='payment_summary'),
+    path('admin/payments/settlements/<int:settlement_id>/retry/', views.retry_stripe_settlement, name='retry_stripe_settlement'),
     path('stripe/connect/webhook/', views.stripe_connect_webhook, name='stripe_connect_webhook'),
+    path('stripe/connect/onboarding/', views.stripe_connect_onboarding, name='stripe_connect_onboarding'),
+    path('stripe/connect/onboarding/return/', views.stripe_connect_onboarding_return, name='stripe_connect_onboarding_return'),
     path('dispute/<str:case_number>/review/', views.dispute_case_review, name='dispute_case_review'),
     path('admin/transactions/', views.admin_transaction_browser, name='admin_transaction_browser'),
 

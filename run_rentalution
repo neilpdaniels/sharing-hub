@@ -10,6 +10,80 @@ RUNSERVER_LOG="$LOG_DIR/runserver.log"
 CELERY_WORKER_LOG="$LOG_DIR/celery_worker.log"
 CELERY_BEAT_LOG="$LOG_DIR/celery_beat.log"
 FLOWER_LOG="$LOG_DIR/flower.log"
+STRIPE_WEBHOOK_LOG="$LOG_DIR/stripe_listen.log"
+STRIPE_WEBHOOK_SECRET_FILE="$LOG_DIR/stripe_webhook_secret"
+STRIPE_WEBHOOK_PID_FILE="$LOG_DIR/stripe_listener.pid"
+STRIPE_WEBHOOK_PID=""
+
+detect_lan_ip() {
+    local ip
+
+    if command -v ip >/dev/null 2>&1; then
+        ip="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+    fi
+    if [[ -z "${ip:-}" ]] && command -v hostname >/dev/null 2>&1; then
+        ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    fi
+    printf '%s' "${ip:-}"
+}
+
+start_stripe_webhook_listener() {
+    local attempt webhook_secret
+
+    if ! command -v stripe >/dev/null 2>&1; then
+        echo "Stripe CLI is required for the webhook listener."
+        echo "Install and authenticate it with 'stripe login', then run ./run_rentalution again."
+        return 1
+    fi
+
+    : > "$STRIPE_WEBHOOK_LOG"
+    stripe listen \
+        --events setup_intent.succeeded,setup_intent.setup_failed,setup_intent.canceled,account.updated \
+        --forward-to localhost:8000/transaction/stripe/connect/webhook/ \
+        > "$STRIPE_WEBHOOK_LOG" 2>&1 &
+    STRIPE_WEBHOOK_PID="$!"
+    (umask 077; printf '%s\n' "$STRIPE_WEBHOOK_PID" > "$STRIPE_WEBHOOK_PID_FILE")
+
+    for ((attempt = 1; attempt <= 50; attempt++)); do
+        webhook_secret="$(sed -nE 's/.*(whsec_[[:alnum:]_]+).*/\1/p' "$STRIPE_WEBHOOK_LOG" | head -n 1)"
+        if [[ -n "$webhook_secret" ]]; then
+            (umask 077; printf '%s\n' "$webhook_secret" > "$STRIPE_WEBHOOK_SECRET_FILE")
+            export STRIPE_CONNECT_WEBHOOK_SECRET="$webhook_secret"
+            export STRIPE_CONNECT_WEBHOOK_SECRET_FILE="$STRIPE_WEBHOOK_SECRET_FILE"
+            echo "Stripe webhook listener started; its signing secret is shared with this server and local test commands."
+            echo "Listener log: $STRIPE_WEBHOOK_LOG"
+            open_stripe_webhook_log
+            return
+        fi
+        if ! kill -0 "$STRIPE_WEBHOOK_PID" 2>/dev/null; then
+            break
+        fi
+        sleep 0.2
+    done
+
+    echo "Stripe CLI did not provide a webhook signing secret."
+    echo "Run 'stripe login' if needed, then try again. Listener output: $STRIPE_WEBHOOK_LOG"
+    [[ -n "$STRIPE_WEBHOOK_PID" ]] && wait "$STRIPE_WEBHOOK_PID" 2>/dev/null || true
+    STRIPE_WEBHOOK_PID=""
+    return 1
+}
+
+open_stripe_webhook_log() {
+    if command -v gnome-terminal >/dev/null 2>&1; then
+        gnome-terminal --title="Rentalution Stripe webhooks" -- bash -lc "tail -n +1 -f '$STRIPE_WEBHOOK_LOG'" &
+    elif command -v x-terminal-emulator >/dev/null 2>&1; then
+        x-terminal-emulator -e bash -lc "tail -n +1 -f '$STRIPE_WEBHOOK_LOG'" &
+    fi
+}
+
+stop_stripe_webhook_listener() {
+    if [[ -n "$STRIPE_WEBHOOK_PID" ]] && kill -0 "$STRIPE_WEBHOOK_PID" 2>/dev/null; then
+        kill "$STRIPE_WEBHOOK_PID" 2>/dev/null || true
+        wait "$STRIPE_WEBHOOK_PID" 2>/dev/null || true
+    fi
+    rm -f "$STRIPE_WEBHOOK_SECRET_FILE"
+    rm -f "$STRIPE_WEBHOOK_PID_FILE"
+}
 
 pkill -f "celery -A $DJANGO_APP worker" || true
 pkill -f "celery -A $DJANGO_APP beat" || true
@@ -21,6 +95,25 @@ cd "$PROJECT_ROOT"
 mkdir -p "$LOG_DIR"
 
 export DJANGO_SETTINGS_MODULE="$SETTINGS_MODULE"
+
+if [[ -t 0 && -t 1 ]]; then
+    read -r -p "Start Stripe test webhooks and configure this server automatically? [y/N] " START_STRIPE_WEBHOOK_LISTENER
+    case "$START_STRIPE_WEBHOOK_LISTENER" in
+        [yY]|[yY][eE][sS])
+            if ! start_stripe_webhook_listener; then
+                exit 1
+            fi
+            trap stop_stripe_webhook_listener EXIT INT TERM
+            ;;
+    esac
+fi
+
+if [[ -z "${PHONE_EVIDENCE_BASE_URL:-}" ]]; then
+    if lan_ip="$(detect_lan_ip)" && [[ -n "$lan_ip" ]]; then
+        export PHONE_EVIDENCE_BASE_URL="http://${lan_ip}:8000"
+    fi
+fi
+echo "Using PHONE_EVIDENCE_BASE_URL=${PHONE_EVIDENCE_BASE_URL:-request host}"
 
 DEFAULT_FCM_SERVICE_ACCOUNT_FILE="$HOME/.secrets/mobberley-labs-sharing-hub-firebase-adminsdk-fbsvc-e668797b17.json"
 if [[ -f "$DEFAULT_FCM_SERVICE_ACCOUNT_FILE" ]]; then

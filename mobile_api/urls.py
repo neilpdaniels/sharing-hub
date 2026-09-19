@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     CategoryListView,
     MobileAccountDetailView,
+    MobilePayoutOnboardingView,
     MobileKycStatusView,
     MobileDeviceRegisterView,
     MobileNotificationPreferencesView,
@@ -79,6 +80,7 @@ urlpatterns = [
     path('notifications/transactions/', MobileTransactionNotificationsView.as_view(), name='notifications_transactions'),
     path('account/me/', MobileAccountDetailView.as_view(), name='account_me'),
     path('account/kyc-status/', MobileKycStatusView.as_view(), name='account_kyc_status'),
+    path('account/payout-onboarding/', MobilePayoutOnboardingView.as_view(), name='account_payout_onboarding'),
     path('payment-methods/', MobilePaymentMethodListView.as_view(), name='payment_methods_list'),
     path('payment-methods/setup-intent/', MobilePaymentMethodSetupIntentView.as_view(), name='payment_methods_setup_intent'),
     path('payment-methods/confirm/', MobilePaymentMethodConfirmView.as_view(), name='payment_methods_confirm'),

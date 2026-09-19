@@ -609,7 +609,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
     final current = widget.devApiBaseUrl;
     if (store == null || current == null) return;
 
-    final controller = TextEditingController(text: current);
+    final controller = TextEditingController(text: Uri.parse(current).host);
     final entered = await showDialog<String>(
       context: _navigatorKey.currentContext ?? context,
       builder: (dialogContext) => AlertDialog(
@@ -619,8 +619,9 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Use the laptop address on the current Wi-Fi or hotspot. '
-              'The app will use it after you close and reopen it.',
+              'Enter only the laptop IP address or hostname. '
+              'The app always uses port 8000 and /api/v1 after you close '
+              'and reopen it.',
             ),
             const SizedBox(height: 12),
             TextField(
@@ -629,8 +630,9 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: const InputDecoration(
-                labelText: 'API server',
-                hintText: 'http://192.168.x.x:8000/api/v1',
+                labelText: 'Laptop IP or hostname',
+                hintText: '192.168.1.42',
+                helperText: 'Connects to http://address:8000/api/v1',
               ),
             ),
           ],
@@ -678,46 +680,6 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
       darkTheme: rentalutionDarkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: _buildHome(),
-      builder: (context, child) {
-        if (child == null) {
-          return const SizedBox.shrink();
-        }
-
-        if (!_showDevBanner) {
-          return child;
-        }
-
-        return Stack(
-          children: [
-            Banner(
-              message: 'DEV',
-              location: BannerLocation.topStart,
-              color: const Color(0xFFFFD54F),
-              textStyle: const TextStyle(
-                color: Color(0xFF1A1A1A),
-                fontWeight: FontWeight.w800,
-                fontSize: 11,
-                letterSpacing: 0.8,
-              ),
-              child: child,
-            ),
-            Positioned(
-              top: 36,
-              right: 4,
-              child: SafeArea(
-                child: Material(
-                  color: Colors.transparent,
-                  child: IconButton(
-                    tooltip: 'Development server',
-                    icon: const Icon(Icons.dns_outlined),
-                    onPressed: _openDevServerSettings,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
       // TODO: Add Nunito font to pubspec.yaml and use logo in AppBar or login screen
     );
   }
@@ -780,6 +742,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
       transactionRepository: widget.transactionRepository,
       notificationPreferences: _notificationPreferences,
       onUpdateNotificationPreferences: _updateNotificationPreferences,
+      onOpenDevServerSettings: _showDevBanner ? _openDevServerSettings : null,
     );
   }
 }

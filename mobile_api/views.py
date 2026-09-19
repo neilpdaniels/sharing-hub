@@ -1,4 +1,5 @@
 from datetime import timedelta
+import hashlib
 import logging
 import random
 import re
@@ -50,6 +51,7 @@ from transaction.tasks import (
     async_confirm_card_setup,
     async_resolve_deposit_hold,
     async_setup_deposit_card_and_test_hold,
+    async_transfer_rental_proceeds,
 )
 
 from .serializers import (
@@ -1012,10 +1014,30 @@ class MobileAccountDetailView(APIView):
                     'email_confirmed': profile.email_confirmed if profile else False,
                     'mobile_verified': profile.mobile_verified if profile else False,
                     'address_verified': profile.address_verified if profile else False,
+                    'stripe_connect_transfers_enabled': profile.stripe_connect_transfers_enabled if profile else False,
+                    'stripe_connect_payouts_enabled': profile.stripe_connect_payouts_enabled if profile else False,
+                    'stripe_connect_requirements': profile.stripe_connect_requirements if profile else [],
                 },
             },
             status=status.HTTP_200_OK,
         )
+
+
+class MobilePayoutOnboardingView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        profile = Profile.objects.filter(user=request.user).first()
+        if profile is None:
+            raise ValidationError('Profile not found.')
+        refresh_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding'))
+        return_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding_return'))
+        result = stripe_connect_service.create_lender_onboarding_link(
+            profile=profile, refresh_url=refresh_url, return_url=return_url,
+        )
+        if not result.get('ok') or not result.get('url'):
+            return Response({'detail': result.get('error', 'Unable to start payout setup.')}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'url': result['url'], 'account_id': result.get('account_id', '')}, status=status.HTTP_200_OK)
 
 
 class MobileKycStatusView(APIView):
@@ -2072,6 +2094,23 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 return ''
 
             video_file = video_files[0]
+            checksum = hashlib.sha256()
+            for chunk in video_file.chunks():
+                checksum.update(chunk)
+            try:
+                video_file.seek(0)
+            except Exception:
+                pass
+            checksum_sha256 = checksum.hexdigest()
+            existing_evidence = TransactionMessageImage.objects.filter(
+                transaction=txn,
+                user=request.user,
+                evidence_stage=evidence_stage,
+                checksum_sha256=checksum_sha256,
+                active=True,
+            ).order_by('-id').first()
+            if existing_evidence and existing_evidence.video:
+                return existing_evidence.video.url
             txn_message = TransactionMessage.objects.create(
                 user_from=request.user,
                 user_to=txn.user_aggressive if is_lender else txn.user_passive,
@@ -2092,6 +2131,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 capture_device='mobile',
                 uploader_role='lender' if is_lender else 'borrower',
                 evidence_stage=evidence_stage,
+                checksum_sha256=checksum_sha256,
             )
             txn_msg_image.save()
             return txn_msg_image.video.url if txn_msg_image.video else ''
@@ -2399,7 +2439,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.payment_placeholder_notes = (
                 f'Rental £{rental_amount:.2f}; '
                 f'Delivery £{(txn.delivery_cost or 0):.2f}; '
-                f'Rentalution fee £{(txn.rentalution_fee or 0):.2f}; '
+                f'Rentalution service fee £{(txn.rentalution_fee or 0):.2f}; '
                 f'Total before deposit £{total_before_deposit:.2f}'
             )
 
@@ -2627,6 +2667,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
                 refresh_feedback_deadline()
             txn.save(update_fields=['prev_transaction_status', 'transaction_status', 'return_handover_verified_at', 'deposit_status', 'feedback_window_expires_at', 'amended'])
+            async_transfer_rental_proceeds.delay(txn.id)
             notify_counterparty(
                 f'Return verified {txn.transaction_reference}',
                 'Return handover was verified. Deposit resolution can now begin.',

@@ -146,7 +146,7 @@ def _ensure_rentalution_fee_bands(fee):
     if fee.transactionfeeband_set.exists():
         return fee
 
-    for price, max_price in ((10, 5), (3, 10), (2, 50), (1.5, 999999)):
+    for price, max_price in ((10, 999999),):
         TransactionFeeBand.objects.create(
             transaction_fee=fee,
             price=price,
@@ -157,7 +157,16 @@ def _ensure_rentalution_fee_bands(fee):
 
 
 def get_rentalution_fee_reference():
-    fee = _get_or_create_transaction_fee('Rentalution fee', TransactionFee.VALUE)
+    fee = (
+        TransactionFee.objects.filter(name__in=('Rentalution service fee', 'Rentalution fee'))
+        .order_by('id')
+        .first()
+    )
+    if fee is None:
+        fee = _get_or_create_transaction_fee('Rentalution service fee', TransactionFee.VALUE)
+    elif fee.name != 'Rentalution service fee':
+        fee.name = 'Rentalution service fee'
+        fee.save(update_fields=['name', 'slug'])
     return _ensure_rentalution_fee_bands(fee)
 
 

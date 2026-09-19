@@ -7,7 +7,7 @@ Video evidence and message attachments use two stored versions:
 
 The existing `video` and `video_raw` fields point to the same uploaded file for new uploads; `video_preview` points to the smaller derivative. Existing duplicate archives are retained. We do not replace or recompress the uploaded evidence on the server.
 
-The app uses native compression on Android/iOS. The website uses a locally bundled Mediabunny/WebCodecs worker, targeting 6 Mbps video and 128 Kbps audio. It selects MP4/H.264/AAC where supported, otherwise WebM/VP9/Opus. This requires HTTPS (or localhost) and browser support for decoding the selected video's codecs. Unsupported codecs fail visibly rather than dropping audio/video tracks or uploading an uncompressed file. The original device recording remains untouched. The compressed upload limit is 50 MiB.
+The app uses native compression on Android/iOS. The website uses a locally bundled Mediabunny/WebCodecs worker, targeting 6 Mbps video and 128 Kbps audio. It selects MP4/H.264/AAC where supported, otherwise WebM/VP9/Opus. This requires HTTPS (or localhost) and browser support for decoding the selected video's codecs. In Django development, a phone visiting a LAN HTTP address uploads its original video instead, because WebCodecs is unavailable in that insecure context; the 50 MiB upload limit still applies. Production does not allow this fallback. The original device recording remains untouched.
 
 Both participants can watch the smaller preview or download the full uploaded file. Preview processing failures do not remove the upload or block its download. External video URLs remain external: the server does not download or transcode them.
 

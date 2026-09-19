@@ -65,6 +65,7 @@ class HomeScreen extends StatefulWidget {
     required this.transactionRepository,
     required this.notificationPreferences,
     required this.onUpdateNotificationPreferences,
+    this.onOpenDevServerSettings,
   });
 
   final bool privacyNoticeAccepted;
@@ -96,6 +97,7 @@ class HomeScreen extends StatefulWidget {
   final NotificationPreferences notificationPreferences;
   final Future<void> Function(NotificationPreferences preferences)?
   onUpdateNotificationPreferences;
+  final VoidCallback? onOpenDevServerSettings;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -2199,6 +2201,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               icon: const Icon(Icons.refresh),
               tooltip: 'Refresh',
             ),
+            if (widget.onOpenDevServerSettings != null)
+              IconButton(
+                onPressed: widget.onOpenDevServerSettings,
+                icon: const Icon(Icons.settings_ethernet),
+                tooltip: 'Development server',
+              ),
             IconButton(
               onPressed: widget.onThemeToggle == null
                   ? null

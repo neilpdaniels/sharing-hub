@@ -10,6 +10,9 @@ class AccountDetails {
     required this.town,
     required this.county,
     required this.postcode,
+    required this.stripeConnectTransfersEnabled,
+    required this.stripeConnectPayoutsEnabled,
+    required this.stripeConnectRequirements,
   });
 
   final String username;
@@ -22,6 +25,9 @@ class AccountDetails {
   final String town;
   final String county;
   final String postcode;
+  final bool stripeConnectTransfersEnabled;
+  final bool stripeConnectPayoutsEnabled;
+  final List<String> stripeConnectRequirements;
 
   factory AccountDetails.fromJson(Map<String, dynamic> json) {
     final user = (json['user'] as Map<String, dynamic>? ?? const {});
@@ -38,6 +44,13 @@ class AccountDetails {
       town: profile['town'] as String? ?? '',
       county: profile['county'] as String? ?? '',
       postcode: profile['postcode'] as String? ?? '',
+      stripeConnectTransfersEnabled:
+          profile['stripe_connect_transfers_enabled'] as bool? ?? false,
+      stripeConnectPayoutsEnabled:
+          profile['stripe_connect_payouts_enabled'] as bool? ?? false,
+      stripeConnectRequirements: (profile['stripe_connect_requirements'] as List? ?? const [])
+          .map((value) => value.toString())
+          .toList(growable: false),
     );
   }
 }

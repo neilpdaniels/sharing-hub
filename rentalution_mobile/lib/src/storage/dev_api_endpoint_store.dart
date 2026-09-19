@@ -5,6 +5,8 @@ import '../config.dart';
 /// A device-local override for development builds when a laptop's LAN IP changes.
 class DevApiEndpointStore {
   static const _key = 'dev_api_base_url';
+  static const _port = 8000;
+  static const _apiPath = '/api/v1';
 
   bool get isAvailable => AppConfig.appName.toLowerCase().contains('dev');
 
@@ -14,20 +16,24 @@ class DevApiEndpointStore {
     return prefs.getString(_key) ?? AppConfig.baseUrl;
   }
 
-  Future<void> save(String baseUrl) async {
-    final uri = Uri.tryParse(baseUrl.trim());
-    if (!isAvailable ||
-        uri == null ||
-        !uri.hasAuthority ||
-        (uri.scheme != 'http' && uri.scheme != 'https')) {
+  /// Saves a hostname or IPv4 address. The local Django port and API path are
+  /// deliberately fixed so changing networks only needs the new address.
+  Future<void> save(String host) async {
+    final normalisedHost = host.trim().toLowerCase();
+    final invalidHost =
+        normalisedHost.isEmpty ||
+        normalisedHost.contains(RegExp(r'[:/@?#\s]')) ||
+        normalisedHost.contains('://') ||
+        !RegExp(
+          r'^[a-z0-9][a-z0-9.-]*[a-z0-9]$|^[a-z0-9]$',
+        ).hasMatch(normalisedHost);
+    if (!isAvailable || invalidHost) {
       throw const FormatException(
-        'Enter a full http:// or https:// server address.',
+        'Enter only the laptop IP address or hostname.',
       );
     }
-    final normalised = uri
-        .replace(path: '/api/v1', query: null, fragment: null)
-        .toString()
-        .replaceAll(RegExp(r'/$'), '');
+
+    final normalised = 'http://$normalisedHost:$_port$_apiPath';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, normalised);
   }

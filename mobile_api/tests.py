@@ -915,6 +915,48 @@ class TransactionActionWorkflowTests(TestCase):
         self.assertEqual(detail_payload['evidence_items'][0]['evidence_stage'], 'checkout_lender')
         self.assertIsNotNone(detail_payload['evidence_items'][0]['captured_at'])
 
+    def test_mobile_return_video_upload_is_idempotent_for_the_same_recording(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_ONGOING,
+            start_offset_days=-2,
+            end_offset_days=0,
+        )
+        action_url = reverse(
+            'mobile_api:transactions_actions',
+            kwargs={'transaction_reference': txn.transaction_reference},
+        )
+        video_bytes = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom'
+
+        self.client.force_login(self.renter)
+        first = self.client.post(
+            action_url,
+            {
+                'action': 'submit_return_borrower_evidence',
+                'videos': SimpleUploadedFile(
+                    'return.mp4', video_bytes, content_type='video/mp4'
+                ),
+            },
+        )
+        second = self.client.post(
+            action_url,
+            {
+                'action': 'submit_return_borrower_evidence',
+                'videos': SimpleUploadedFile(
+                    'return.mp4', video_bytes, content_type='video/mp4'
+                ),
+            },
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(
+            TransactionMessageImage.objects.filter(
+                transaction=txn,
+                evidence_stage='return_borrower',
+            ).count(),
+            1,
+        )
+
     @patch('mobile_api.views.stripe_connect_service.create_setup_intent')
     def test_mobile_create_stripe_setup_intent_returns_session_payload(self, mock_create_setup_intent):
         txn = self._create_txn(

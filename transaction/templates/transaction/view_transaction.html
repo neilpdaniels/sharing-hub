@@ -4,7 +4,7 @@
 {% load common_lib %}
 
 {% block headerContent %}
-<script src="{% static 'transaction/video-upload.js' %}" data-worker-url="{% static 'transaction/video-worker.js' %}" defer></script>
+<script src="{% static 'transaction/video-upload.js' %}" data-worker-url="{% static 'transaction/video-worker.js' %}" data-allow-insecure-upload="{% if allow_insecure_video_upload %}true{% else %}false{% endif %}" defer></script>
 {% if message_turnstile_required %}
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 {% endif %}
@@ -43,6 +43,28 @@
         <div class="col-lg-8">
             <h3 class="mb-1">Rental Transaction</h3>
             <p class="text-muted mb-3">Reference: {{ transaction.transaction_reference }}</p>
+
+            {% if phone_evidence_capture %}
+            <div class="card mb-3 border-primary">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="badge badge-primary mr-2">Phone evidence</span>
+                        <h4 class="mb-0">{{ phone_evidence_capture.title }}</h4>
+                    </div>
+                    <p class="text-muted mb-3">{{ phone_evidence_capture.description }}</p>
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="{{ phone_evidence_action }}">
+                        <div class="form-group">
+                            <label for="{{ phone_evidence_capture.field_id }}">{{ phone_evidence_capture.field_label }}</label>
+                            <input id="{{ phone_evidence_capture.field_id }}" class="form-control-file" type="file" name="{{ phone_evidence_capture.field_name }}" accept="video/*" capture="environment" required>
+                            <small class="form-text text-muted">Choose Record Video in the next step to use this phone's camera.</small>
+                        </div>
+                        <button class="btn btn-primary btn-block" type="submit">{{ phone_evidence_capture.submit_label }}</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
 
             {% if feedback_prompt_required %}
             <div class="card mb-3 border-warning" style="border-width: 2px;">
@@ -142,8 +164,26 @@
                         {% endif %}
                         <p class="mb-1"><strong>Deposit status:</strong> {{ transaction.get_deposit_status_display }}</p>
                         <p class="mb-0"><strong>Payment status:</strong> {{ transaction.get_payment_status_display }}</p>
+                        <hr>
+                        <p class="mb-1"><strong>Renter payment:</strong> £{{ payment_breakdown.renter_total|floatformat:2 }}</p>
+                        <p class="mb-1 small text-muted">Rental £{{ payment_breakdown.rental|floatformat:2 }} · Delivery £{{ payment_breakdown.delivery|floatformat:2 }} · Service fee £{{ payment_breakdown.service_fee|floatformat:2 }}</p>
+                        <p class="mb-0"><strong>Deposit currently held:</strong> £{{ payment_breakdown.deposit_held|floatformat:2 }}</p>
                     </div>
                 </div>
+
+                {% if stripe_settlements %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Payout settlement</h5>
+                        {% for settlement in stripe_settlements %}
+                        <div class="border-bottom pb-2 mb-2 {% if forloop.last %}border-bottom-0 mb-0 pb-0{% endif %}">
+                            <strong>{{ settlement.get_kind_display }}</strong>: {{ settlement.get_status_display }}<br>
+                            <small class="text-muted">Gross £{{ settlement.gross_amount|floatformat:2 }} · Stripe fee £{{ settlement.stripe_fee|floatformat:2 }} · Lender transfer £{{ settlement.net_transfer_amount|floatformat:2 }}{% if settlement.platform_shortfall %} · Platform shortfall £{{ settlement.platform_shortfall|floatformat:2 }}{% endif %}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
 
             <div class="card mb-3">
                 <div class="card-body">
@@ -679,7 +719,7 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="initiate_rental">
                         <div class="form-group">
-                            <label for="id_checkout_video_file">Checkout condition video upload</label>
+                            <label for="id_checkout_video_file">Record or add checkout evidence</label>
                             <input id="id_checkout_video_file" class="form-control-file" type="file" name="checkout_video_file" accept="video/*" capture="environment">
                             {% if phone_evidence_qrs.initiate_rental %}
                             <div class="mt-3 text-center">
@@ -687,24 +727,7 @@
                                 <p class="small text-muted mb-0">Scan to record on phone. Link expires in 5 minutes.</p>
                             </div>
                             {% endif %}
-                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input type="hidden" name="payment_collected_placeholder" value="1">
-                            <span class="text-muted small">Rental payment is collected automatically when the rental starts. The deposit is handled separately.</span>
-                        </div>
-                        <div class="form-group mb-2">
-                            <label for="id_payment_placeholder_notes">Rental payment notes</label>
-                            <textarea id="id_payment_placeholder_notes" class="form-control" name="payment_placeholder_notes" rows="2"></textarea>
-                            <small class="form-text text-muted">Use this to note the rental amount, delivery charge, and platform fee breakdown for the payment capture.</small>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" value="1" id="id_deposit_collected_placeholder" name="deposit_collected_placeholder">
-                            <label class="form-check-label" for="id_deposit_collected_placeholder">Deposit collected (placeholder)</label>
-                        </div>
-                        <div class="form-group">
-                            <label for="id_deposit_placeholder_notes">Deposit notes</label>
-                            <textarea id="id_deposit_placeholder_notes" class="form-control" name="deposit_placeholder_notes" rows="2"></textarea>
+                            <small class="form-text text-muted">Record on a phone, or choose a saved video.</small>
                         </div>
                         <button class="btn btn-primary btn-block" type="submit">Submit Checkout Evidence</button>
                     </form>
@@ -727,10 +750,10 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_checkout_borrower_evidence">
                         <div class="form-group">
-                            <label for="id_checkout_borrower_video_file">Borrower counter-evidence video upload</label>
+                            <label for="id_checkout_borrower_video_file">Record or add checkout counter-evidence</label>
                             <input id="id_checkout_borrower_video_file" class="form-control-file" type="file" name="checkout_borrower_video_file" accept="video/*" capture="environment">
                             {% if phone_evidence_qrs.submit_checkout_borrower_evidence %}<img class="mt-2" src="{{ phone_evidence_qrs.submit_checkout_borrower_evidence }}" alt="Scan to record counter-evidence on phone" width="120" height="120">{% endif %}
-                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                            <small class="form-text text-muted">Record on a phone, or choose a saved video.</small>
                         </div>
                         <button class="btn btn-outline-warning btn-block" type="submit">Submit Counter-Evidence</button>
                     </form>
@@ -809,10 +832,10 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_return_borrower_evidence">
                         <div class="form-group">
-                            <label for="id_return_video_file">Borrower return evidence video upload</label>
+                            <label for="id_return_video_file">Record or add return evidence</label>
                             <input id="id_return_video_file" class="form-control-file" type="file" name="return_video_file" accept="video/*" capture="environment">
                             {% if phone_evidence_qrs.submit_return_borrower_evidence %}<img class="mt-2" src="{{ phone_evidence_qrs.submit_return_borrower_evidence }}" alt="Scan to record return evidence on phone" width="120" height="120">{% endif %}
-                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                            <small class="form-text text-muted">Record on a phone, or choose a saved video.</small>
                         </div>
                         <button class="btn btn-primary btn-block" type="submit">Submit / Update Return Evidence</button>
                     </form>
@@ -837,10 +860,10 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="submit_lender_return_evidence">
                         <div class="form-group">
-                            <label for="id_lender_return_video_file">Lender counter-evidence video upload</label>
+                            <label for="id_lender_return_video_file">Record or add return counter-evidence</label>
                             <input id="id_lender_return_video_file" class="form-control-file" type="file" name="lender_return_video_file" accept="video/*" capture="environment">
                             {% if phone_evidence_qrs.submit_lender_return_evidence %}<img class="mt-2" src="{{ phone_evidence_qrs.submit_lender_return_evidence }}" alt="Scan to record return counter-evidence on phone" width="120" height="120">{% endif %}
-                            <small class="form-text text-muted">Upload directly from your device, or provide a URL below.</small>
+                            <small class="form-text text-muted">Record on a phone, or choose a saved video.</small>
                         </div>
                         <div class="form-group">
                         </div>

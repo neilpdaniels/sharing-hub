@@ -4,5 +4,18 @@
 
 {% block content %}
     <h1>My account</h1>
-    <p>TODO: what is this for... we have the edit accoutn bit</p>
+    <section class="card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Lender payouts</h2>
+            {% if request.user.profile.stripe_connect_transfers_enabled %}
+                <p class="text-success mb-2">Your Stripe payout account can receive rental transfers.</p>
+            {% else %}
+                <p class="mb-2">Complete Stripe’s secure payout setup before you accept paid rentals as a lender.</p>
+                {% if request.user.profile.stripe_connect_requirements %}
+                    <p class="text-muted small">Stripe still needs: {{ request.user.profile.stripe_connect_requirements|join:', ' }}.</p>
+                {% endif %}
+                <a class="btn btn-primary" href="{% url 'transaction:stripe_connect_onboarding' %}">Set up lender payouts</a>
+            {% endif %}
+        </div>
+    </section>
 {% endblock %}

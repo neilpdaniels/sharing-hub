@@ -22,6 +22,9 @@ SILENCED_SYSTEM_CHECKS = ['models.W042']
 ENVIRONMENT_NAME = os.environ.get('ENVIRONMENT_NAME', 'Development')
 ENVIRONMENT_COLOR = os.environ.get('ENVIRONMENT_COLOR', 'blue')
 SITE_URL = os.environ.get('SITE_URL', 'https://rentalution.co.uk')
+# Optional public origin for the browser-based evidence QR.  This is useful
+# locally when the page is opened on localhost but the QR is scanned by a phone.
+PHONE_EVIDENCE_BASE_URL = os.environ.get('PHONE_EVIDENCE_BASE_URL', '').rstrip('/')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk')
 
 
@@ -79,7 +82,14 @@ STRIPE_CONNECT_ALLOW_LEGACY_CARD_FALLBACK = os.environ.get('STRIPE_CONNECT_ALLOW
 STRIPE_CONNECT_PUBLIC_KEY = os.environ.get('STRIPE_CONNECT_PUBLIC_KEY', '')
 STRIPE_CONNECT_SECRET_KEY = os.environ.get('STRIPE_CONNECT_SECRET_KEY', '')
 STRIPE_CONNECT_WEBHOOK_SECRET = os.environ.get('STRIPE_CONNECT_WEBHOOK_SECRET', '')
+# Development listener secret shared by the Django process and local test tools.
+# This runtime file is never committed and must not be used in production.
+STRIPE_CONNECT_WEBHOOK_SECRET_FILE = os.environ.get(
+    'STRIPE_CONNECT_WEBHOOK_SECRET_FILE', os.path.join(BASE_DIR, 'logs', 'stripe_webhook_secret')
+)
 STRIPE_CONNECT_PLATFORM_ACCOUNT = os.environ.get('STRIPE_CONNECT_PLATFORM_ACCOUNT', '')
+STRIPE_CONNECT_PLATFORM_COUNTRY = os.environ.get('STRIPE_CONNECT_PLATFORM_COUNTRY', 'GB').upper()
+STRIPE_CONNECT_CURRENCY = os.environ.get('STRIPE_CONNECT_CURRENCY', 'gbp').lower()
 
 # Firebase Cloud Messaging settings.
 # HTTP v1 uses OAuth2 via a service account key file.

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+PROJECT_ROOT="$PWD"
+VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
+SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
+
+if [[ ! -f "$VENV_PATH" ]]; then
+  echo "Virtual environment not found: $VENV_PATH" >&2
+  exit 1
+fi
+
+source "$VENV_PATH"
+
+if (($# == 0)); then
+  echo ""
+  echo "Stripe Connect Sandbox matrix:"
+  echo "  1) Check deposit policies and start the managed webhook listener if needed"
+  echo "  2) Run successful payment/deposit checks (Sandbox; test payments are cleaned up)"
+  echo "  3) Run successful checks plus decline-card checks (Sandbox)"
+  echo "  q) Cancel"
+  echo ""
+  while true; do
+    read -r -p "Choose: " selection || exit 0
+    case "$selection" in
+      1) set -- ; break ;;
+      2) set -- --execute ; break ;;
+      3) set -- --execute --include-declines ; break ;;
+      q|Q) exit 0 ;;
+      *) echo "Please choose 1, 2, 3, or q." ;;
+    esac
+  done
+fi
+
+uv run python manage.py stripe_connect_matrix \
+  --settings="$SETTINGS_MODULE" \
+  --webhooks \
+  "$@"

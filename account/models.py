@@ -32,6 +32,11 @@ class Profile(models.Model):
         null=True,
         help_text='When user completed KYC verification',
     )
+    stripe_connect_account_id = models.CharField(max_length=255, blank=True, unique=True, null=True)
+    stripe_connect_transfers_enabled = models.BooleanField(default=False)
+    stripe_connect_payouts_enabled = models.BooleanField(default=False)
+    stripe_connect_requirements = models.JSONField(default=list, blank=True)
+    stripe_connect_last_synced_at = models.DateTimeField(blank=True, null=True)
     date_of_birth = models.DateField(validators=[MinAgeValidator])
     mobile_number = models.CharField(max_length=20)
     address_line_1 = models.CharField(max_length=255)

@@ -313,6 +313,12 @@ class Transaction(models.Model):
         blank=True,
         help_text='Stripe Customer ID for reusable payment methods'
     )
+    stripe_rental_transfer_id = models.CharField(max_length=120, blank=True)
+    stripe_rental_transfer_status = models.CharField(max_length=20, blank=True, default='')
+    stripe_rental_transfer_amount = models.FloatField(default=0)
+    stripe_deposit_transfer_id = models.CharField(max_length=120, blank=True)
+    stripe_deposit_transfer_status = models.CharField(max_length=20, blank=True, default='')
+    stripe_deposit_transfer_amount = models.FloatField(default=0)
     
     # naming is wrong, but this is in case the orders are matched systematically rather than manually
     order_aggressive = models.ForeignKey(Order, on_delete=models.CASCADE,
@@ -361,7 +367,7 @@ class Transaction(models.Model):
     rentalution_fee = models.FloatField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(999999)],
-        help_text='Computed Rentalution fee charged for this transaction'
+        help_text='Computed Rentalution service fee charged for this transaction'
     )
     
     total_weight = models.FloatField(default=0, validators=[MinValueValidator(0), MaxValueValidator(999999)])
@@ -935,6 +941,42 @@ class PaymentAttempt(models.Model):
 
     def __str__(self):
         return f'{self.transaction.transaction_reference} {self.failure_point} {self.status}'
+
+
+class StripeSettlement(models.Model):
+    """Auditable, idempotent record of money due to a lender via Connect."""
+    KIND_RENTAL = 'rental'
+    KIND_DEPOSIT = 'deposit'
+    KIND_CHOICES = ((KIND_RENTAL, 'Rental proceeds'), (KIND_DEPOSIT, 'Deposit award'))
+    STATUS_PENDING = 'pending'
+    STATUS_SUCCEEDED = 'succeeded'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = (
+        (STATUS_PENDING, 'Pending'), (STATUS_SUCCEEDED, 'Succeeded'), (STATUS_FAILED, 'Failed'),
+    )
+
+    transaction = models.ForeignKey('Transaction', on_delete=models.CASCADE, related_name='stripe_settlements')
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    gross_amount = models.FloatField(default=0)
+    stripe_fee = models.FloatField(default=0)
+    net_transfer_amount = models.FloatField(default=0)
+    platform_shortfall = models.FloatField(default=0)
+    payment_intent_id = models.CharField(max_length=120, blank=True)
+    charge_id = models.CharField(max_length=120, blank=True)
+    balance_transaction_id = models.CharField(max_length=120, blank=True)
+    transfer_id = models.CharField(max_length=120, blank=True)
+    idempotency_key = models.CharField(max_length=160, unique=True)
+    failure_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        constraints = [models.UniqueConstraint(fields=('transaction', 'kind'), name='one_connect_settlement_per_kind')]
+
+    def __str__(self):
+        return f'{self.transaction.transaction_reference} {self.kind} {self.status}'
 
 
 class DisputeCase(models.Model):

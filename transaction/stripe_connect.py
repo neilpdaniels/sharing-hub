@@ -1,9 +1,10 @@
 import logging
+import os
 
 from django.conf import settings
 from django.utils import timezone
 from common.failures import record_site_failure
-from .models import PaymentAttempt
+from .models import PaymentAttempt, StripeSettlement
 
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,186 @@ class StripeConnectService:
     def _identity_verification_minor_amount(self):
         return self._to_minor_units(getattr(settings, 'STRIPE_IDENTITY_VERIFICATION_AMOUNT', 1.50))
 
+    def _account_value(self, value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    def sync_connected_account(self, account):
+        """Persist the non-sensitive onboarding state returned by Stripe."""
+        from account.models import Profile
+
+        account_id = self._account_value(account, 'id', '')
+        metadata = self._account_value(account, 'metadata', {}) or {}
+        profile_id = self._account_value(metadata, 'profile_id')
+        profile = Profile.objects.filter(id=profile_id).first() if profile_id else None
+        if profile is None:
+            profile = Profile.objects.filter(stripe_connect_account_id=account_id).first()
+        if profile is None:
+            logger.warning('Ignoring Stripe account update for unrecognised account %s', account_id)
+            return None
+
+        capabilities = self._account_value(account, 'capabilities', {}) or {}
+        requirements = self._account_value(account, 'requirements', {}) or {}
+        currently_due = self._account_value(requirements, 'currently_due', []) or []
+        profile.stripe_connect_account_id = account_id
+        profile.stripe_connect_transfers_enabled = self._account_value(capabilities, 'transfers') == 'active'
+        profile.stripe_connect_payouts_enabled = bool(self._account_value(account, 'payouts_enabled', False))
+        profile.stripe_connect_requirements = list(currently_due)
+        profile.stripe_connect_last_synced_at = timezone.now()
+        profile.save(update_fields=[
+            'stripe_connect_account_id', 'stripe_connect_transfers_enabled',
+            'stripe_connect_payouts_enabled', 'stripe_connect_requirements',
+            'stripe_connect_last_synced_at',
+        ])
+        return profile
+
+    def create_lender_onboarding_link(self, *, profile, refresh_url, return_url):
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+        try:
+            account_id = profile.stripe_connect_account_id
+            if not account_id:
+                user = profile.user
+                account = stripe.Account.create(
+                    type='express', country=settings.STRIPE_CONNECT_PLATFORM_COUNTRY, email=user.email,
+                    capabilities={'transfers': {'requested': True}},
+                    metadata={'profile_id': str(profile.id), 'user_id': str(user.id)},
+                )
+                profile = self.sync_connected_account(account) or profile
+                account_id = getattr(account, 'id', '')
+            link = stripe.AccountLink.create(
+                account=account_id, refresh_url=refresh_url, return_url=return_url,
+                type='account_onboarding',
+            )
+            return {'ok': True, 'url': getattr(link, 'url', ''), 'account_id': account_id}
+        except Exception as exc:
+            logger.exception('Stripe Connect onboarding link creation failed')
+            return {'ok': False, 'error': f'Unable to start lender payout setup: {exc}'}
+
+    def transfer_rental_proceeds(self, *, transaction):
+        """Create exactly one rental-proceeds transfer after verified return."""
+        settlement, _ = StripeSettlement.objects.get_or_create(
+            transaction=transaction, kind=StripeSettlement.KIND_RENTAL,
+            defaults={
+                'idempotency_key': f'rental-transfer-{transaction.id}',
+                'gross_amount': ((transaction.quantity or 0) * (transaction.price or 0)) + (transaction.delivery_cost or 0),
+            },
+        )
+        if settlement.status == StripeSettlement.STATUS_SUCCEEDED:
+            return {'ok': True, 'transfer_id': settlement.transfer_id, 'existing': True}
+        from account.models import Profile
+        profile = Profile.objects.filter(user=transaction.user_passive).first()
+        if not profile or not profile.stripe_connect_account_id or not profile.stripe_connect_transfers_enabled:
+            return {'ok': False, 'error': 'Lender is not enabled to receive Stripe transfers.'}
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+        try:
+            payment_intent = stripe.PaymentIntent.retrieve(transaction.payment_collection_reference)
+            source_charge = getattr(payment_intent, 'latest_charge', '')
+            if not isinstance(source_charge, str):
+                source_charge = getattr(source_charge, 'id', '')
+            amount = self._to_minor_units((transaction.quantity * transaction.price) + transaction.delivery_cost)
+            if amount <= 0 or not source_charge:
+                return {'ok': False, 'error': 'Rental payment is not available for transfer.'}
+            transfer = stripe.Transfer.create(
+                amount=amount, currency=settings.STRIPE_CONNECT_CURRENCY, destination=profile.stripe_connect_account_id,
+                source_transaction=source_charge, transfer_group=f'rental_{transaction.id}',
+                metadata={'transaction_id': str(transaction.id), 'transaction_reference': transaction.transaction_reference},
+                idempotency_key=f'rental-transfer-{transaction.id}',
+            )
+            transaction.stripe_rental_transfer_id = getattr(transfer, 'id', '')
+            transaction.stripe_rental_transfer_status = 'succeeded'
+            transaction.stripe_rental_transfer_amount = amount / 100
+            transaction.save(update_fields=['stripe_rental_transfer_id', 'stripe_rental_transfer_status', 'stripe_rental_transfer_amount', 'amended'])
+            settlement.status = StripeSettlement.STATUS_SUCCEEDED
+            settlement.charge_id = source_charge
+            settlement.payment_intent_id = transaction.payment_collection_reference
+            settlement.transfer_id = transaction.stripe_rental_transfer_id
+            settlement.net_transfer_amount = amount / 100.0
+            settlement.failure_reason = ''
+            settlement.save()
+            return {'ok': True, 'transfer_id': transaction.stripe_rental_transfer_id}
+        except Exception as exc:
+            transaction.stripe_rental_transfer_status = 'failed'
+            transaction.save(update_fields=['stripe_rental_transfer_status', 'amended'])
+            settlement.status = StripeSettlement.STATUS_FAILED
+            settlement.failure_reason = str(exc)
+            settlement.save(update_fields=['status', 'failure_reason', 'updated_at'])
+            logger.exception('Stripe rental transfer failed for %s', transaction.id)
+            return {'ok': False, 'error': f'Unable to transfer rental proceeds: {exc}'}
+
+    def transfer_deposit_award(self, *, transaction, payment_intent_id, award_amount):
+        """Pay a captured deposit award less its actual Stripe processing fee."""
+        award_minor = self._to_minor_units(award_amount)
+        settlement, _ = StripeSettlement.objects.get_or_create(
+            transaction=transaction, kind=StripeSettlement.KIND_DEPOSIT,
+            defaults={'idempotency_key': f'deposit-transfer-{transaction.id}', 'gross_amount': award_minor / 100.0,
+                      'payment_intent_id': payment_intent_id},
+        )
+        if settlement.status == StripeSettlement.STATUS_SUCCEEDED:
+            return {'ok': True, 'transfer_id': settlement.transfer_id, 'existing': True}
+        if award_minor <= 0:
+            settlement.status = StripeSettlement.STATUS_SUCCEEDED
+            settlement.net_transfer_amount = 0
+            settlement.save(update_fields=['status', 'net_transfer_amount', 'updated_at'])
+            transaction.stripe_deposit_transfer_status = 'succeeded'
+            transaction.stripe_deposit_transfer_amount = 0
+            transaction.save(update_fields=['stripe_deposit_transfer_status', 'stripe_deposit_transfer_amount', 'amended'])
+            return {'ok': True, 'transfer_id': '', 'no_transfer': True, 'gross_amount': 0.0}
+
+        from account.models import Profile
+        profile = Profile.objects.filter(user=transaction.user_passive).first()
+        if not profile or not profile.stripe_connect_account_id or not profile.stripe_connect_transfers_enabled:
+            return {'ok': False, 'error': 'Lender is not enabled to receive Stripe transfers.'}
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+        try:
+            intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+            balance = self._balance_context(stripe, intent)
+            fee_minor = self._to_minor_units(balance.get('stripe_processing_fee', 0))
+            transfer_minor = max(0, award_minor - fee_minor)
+            settlement.charge_id = balance.get('stripe_charge_id', '')
+            settlement.balance_transaction_id = balance.get('stripe_balance_transaction_id', '')
+            settlement.stripe_fee = fee_minor / 100.0
+            settlement.net_transfer_amount = transfer_minor / 100.0
+            settlement.platform_shortfall = max(0, fee_minor - award_minor) / 100.0
+            if transfer_minor:
+                if not settlement.charge_id:
+                    raise ValueError('Stripe balance transaction is not available for the captured deposit yet.')
+                transfer = stripe.Transfer.create(
+                    amount=transfer_minor, currency=settings.STRIPE_CONNECT_CURRENCY, destination=profile.stripe_connect_account_id,
+                    source_transaction=settlement.charge_id, transfer_group=f'deposit_{transaction.id}',
+                    metadata={'transaction_id': str(transaction.id), 'purpose': 'deposit_award'},
+                    idempotency_key=settlement.idempotency_key,
+                )
+                settlement.transfer_id = getattr(transfer, 'id', '')
+            settlement.status = StripeSettlement.STATUS_SUCCEEDED
+            settlement.failure_reason = ''
+            settlement.save()
+            transaction.stripe_deposit_transfer_id = settlement.transfer_id
+            transaction.stripe_deposit_transfer_status = 'succeeded'
+            transaction.stripe_deposit_transfer_amount = settlement.net_transfer_amount
+            transaction.save(update_fields=[
+                'stripe_deposit_transfer_id', 'stripe_deposit_transfer_status',
+                'stripe_deposit_transfer_amount', 'amended',
+            ])
+            return {
+                'ok': True, 'transfer_id': settlement.transfer_id,
+                'net_amount': settlement.net_transfer_amount, 'gross_amount': settlement.gross_amount,
+            }
+        except Exception as exc:
+            settlement.status = StripeSettlement.STATUS_FAILED
+            settlement.failure_reason = str(exc)
+            settlement.save(update_fields=['status', 'failure_reason', 'updated_at'])
+            transaction.stripe_deposit_transfer_status = 'failed'
+            transaction.save(update_fields=['stripe_deposit_transfer_status', 'amended'])
+            logger.exception('Stripe deposit transfer failed for %s', transaction.id)
+            return {'ok': False, 'error': f'Unable to transfer deposit award: {exc}'}
+
     def _record_payment_attempt(self, *, transaction, status, failure_point, amount=0, currency='gbp', stripe_object_id='', card_brand='', card_funding='', error_message='', context=None):
         try:
             PaymentAttempt.objects.create(
@@ -65,6 +246,32 @@ class StripeConnectService:
             )
         except Exception:
             logger.exception('Unable to record payment attempt for %s', getattr(transaction, 'transaction_reference', 'unknown'))
+
+    def _balance_context(self, stripe, payment_intent):
+        """Return Stripe's settled fee/net figures when they are available."""
+        try:
+            charge_ref = getattr(payment_intent, 'latest_charge', None)
+            if not charge_ref:
+                return {}
+            if not isinstance(charge_ref, str):
+                charge_ref = getattr(charge_ref, 'id', '')
+            if not charge_ref:
+                return {}
+            charge = stripe.Charge.retrieve(charge_ref, expand=['balance_transaction'])
+            balance = getattr(charge, 'balance_transaction', None)
+            if isinstance(balance, str):
+                balance = stripe.BalanceTransaction.retrieve(balance)
+            if not balance:
+                return {}
+            return {
+                'stripe_charge_id': charge_ref,
+                'stripe_balance_transaction_id': getattr(balance, 'id', ''),
+                'stripe_processing_fee': int(getattr(balance, 'fee', 0) or 0) / 100.0,
+                'stripe_net_amount': int(getattr(balance, 'net', 0) or 0) / 100.0,
+            }
+        except Exception:
+            logger.info('Stripe balance transaction is not available yet for %s', getattr(payment_intent, 'id', ''))
+            return {}
 
     def _rental_total_minor(self, transaction):
         rental_amount = (transaction.quantity or 0) * (transaction.price or 0)
@@ -87,19 +294,9 @@ class StripeConnectService:
         )
 
     def _ensure_customer_and_payment_method(self, stripe, *, transaction):
-        customer_id = (transaction.stripe_customer_id or '').strip()
-        if not customer_id:
-            user = transaction.user_aggressive
-            customer = stripe.Customer.create(
-                email=user.email,
-                name=user.get_full_name() or user.username,
-                metadata={'user_id': str(user.id)},
-            )
-            customer_id = getattr(customer, 'id', '') or ''
-
         payment_method_id = (transaction.stripe_payment_method_id or '').strip()
         if not payment_method_id:
-            return None, customer_id, {
+            return None, '', {
                 'ok': False,
                 'error': 'No Stripe payment method is attached to this transaction.'
             }
@@ -111,18 +308,34 @@ class StripeConnectService:
         else:
             attached_customer = getattr(pm_customer, 'id', None)
 
-        if not attached_customer:
+        if attached_customer:
+            return payment_method_id, attached_customer, None
+
+        customer_id = (transaction.stripe_customer_id or '').strip()
+        if not customer_id:
+            user = transaction.user_aggressive
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.get_full_name() or user.username,
+                metadata={'user_id': str(user.id)},
+            )
+            customer_id = getattr(customer, 'id', '') or ''
+
+        try:
             stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
-        elif attached_customer != customer_id:
-            # Safety fallback for mismatched local customer pointers.
-            try:
-                stripe.PaymentMethod.detach(payment_method_id)
-                stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
-            except Exception as exc:
-                return None, customer_id, {
-                    'ok': False,
-                    'error': f'Payment method is attached to a different customer: {str(exc)}'
-                }
+        except Exception:
+            # The mobile confirmation and the Stripe webhook can attach the
+            # same PaymentMethod at nearly the same time. Trust Stripe's latest
+            # state if the other request completed the attachment.
+            payment_method = stripe.PaymentMethod.retrieve(payment_method_id)
+            pm_customer = getattr(payment_method, 'customer', None)
+            if isinstance(pm_customer, str):
+                attached_customer = pm_customer
+            else:
+                attached_customer = getattr(pm_customer, 'id', None)
+            if not attached_customer:
+                raise
+            customer_id = attached_customer
 
         return payment_method_id, customer_id, None
 
@@ -226,8 +439,9 @@ class StripeConnectService:
                     'error': 'No payment method was returned by Stripe.'
                 }
 
-            if pm_obj is None:
-                pm_obj = stripe.PaymentMethod.retrieve(payment_method_id)
+            # Fetch the current object even when SetupIntent expanded it: another
+            # delivery of the same event may already have attached it meanwhile.
+            pm_obj = stripe.PaymentMethod.retrieve(payment_method_id)
 
             card_data = getattr(pm_obj, 'card', {}) or {}
             billing = getattr(pm_obj, 'billing_details', {}) or {}
@@ -253,9 +467,9 @@ class StripeConnectService:
             verify_intent = stripe.PaymentIntent.create(
                 amount=self._identity_verification_minor_amount(),
                 currency='gbp',
+                automatic_payment_methods={'enabled': True, 'allow_redirects': 'never'},
                 customer=customer_id,
                 payment_method=payment_method_id,
-                confirmation_method='automatic',
                 confirm=True,
                 capture_method='manual',
                 off_session=True,
@@ -268,8 +482,17 @@ class StripeConnectService:
             vi_status = getattr(verify_intent, 'status', None)
             test_reference = getattr(verify_intent, 'id', None)
             if vi_status == 'requires_capture':
-                canceled = stripe.PaymentIntent.cancel(getattr(verify_intent, 'id', None))
-                test_reference = getattr(canceled, 'id', test_reference)
+                try:
+                    canceled = stripe.PaymentIntent.cancel(getattr(verify_intent, 'id', None))
+                    test_reference = getattr(canceled, 'id', test_reference)
+                except Exception:
+                    # The app request and the SetupIntent webhook can verify the
+                    # same idempotent PaymentIntent concurrently. If the other
+                    # request has already cancelled it, that is the successful
+                    # final state for this zero-capture verification hold.
+                    latest_intent = stripe.PaymentIntent.retrieve(test_reference)
+                    if getattr(latest_intent, 'status', None) != 'canceled':
+                        raise
             elif vi_status not in ('succeeded', 'processing'):
                 return {
                     'ok': False,
@@ -354,9 +577,9 @@ class StripeConnectService:
             charge_intent = stripe.PaymentIntent.create(
                 amount=self._identity_verification_minor_amount(),
                 currency='gbp',
+                automatic_payment_methods={'enabled': True, 'allow_redirects': 'never'},
                 customer=customer_id,
                 payment_method=payment_method_id,
-                confirmation_method='automatic',
                 confirm=True,
                 off_session=True,
                 metadata={
@@ -446,8 +669,9 @@ class StripeConnectService:
                     'error': 'No payment method was returned by Stripe.'
                 }
 
-            if pm_obj is None:
-                pm_obj = stripe.PaymentMethod.retrieve(payment_method_id)
+            # Fetch the latest object even if SetupIntent expanded it; duplicate
+            # webhook/browser confirmations can attach it between those calls.
+            pm_obj = stripe.PaymentMethod.retrieve(payment_method_id)
 
             card_data = getattr(pm_obj, 'card', {}) or {}
             billing = getattr(pm_obj, 'billing_details', {}) or {}
@@ -463,29 +687,23 @@ class StripeConnectService:
                         'error': 'Long rentals require a Visa credit card or Mastercard credit card for the deposit.'
                     }
 
-            # Create/retrieve Stripe Customer and attach PaymentMethod
-            # This is required for off_session transactions
-            user = transaction.user_aggressive
-            customer = stripe.Customer.create(
-                email=user.email,
-                name=user.get_full_name() or user.username,
-                metadata={'user_id': str(user.id)},
+            # Ensure that the SetupIntent's PaymentMethod is attached before it
+            # is reused off-session for the verification hold.
+            transaction.stripe_payment_method_id = payment_method_id
+            payment_method_id, customer_id, attachment_error = self._ensure_customer_and_payment_method(
+                stripe,
+                transaction=transaction,
             )
-            customer_id = getattr(customer, 'id', None)
-            
-            # Attach PaymentMethod to Customer
-            stripe.PaymentMethod.attach(
-                payment_method_id,
-                customer=customer_id,
-            )
+            if attachment_error:
+                return attachment_error
 
             # Authorize £0.30 and immediately cancel to mimic a verification hold.
             verify_intent = stripe.PaymentIntent.create(
                 amount=30,
                 currency='gbp',
+                automatic_payment_methods={'enabled': True, 'allow_redirects': 'never'},
                 customer=customer_id,
                 payment_method=payment_method_id,
-                confirmation_method='automatic',
                 confirm=True,
                 capture_method='manual',
                 off_session=True,
@@ -494,14 +712,24 @@ class StripeConnectService:
                     'transaction_reference': transaction.transaction_reference,
                     'purpose': 'deposit_card_verification',
                 },
+                # Scope retries to the actual SetupIntent payment method. A later
+                # retry can legitimately use a different method/customer.
+                idempotency_key=f'deposit-card-verification-{transaction.id}-{payment_method_id}',
             )
 
             vi_status = getattr(verify_intent, 'status', None)
             test_reference = getattr(verify_intent, 'id', None)
 
             if vi_status == 'requires_capture':
-                canceled = stripe.PaymentIntent.cancel(getattr(verify_intent, 'id', None))
-                test_reference = getattr(canceled, 'id', test_reference)
+                try:
+                    canceled = stripe.PaymentIntent.cancel(getattr(verify_intent, 'id', None))
+                    test_reference = getattr(canceled, 'id', test_reference)
+                except Exception:
+                    # A concurrent webhook may already have cancelled this
+                    # idempotent verification hold.
+                    latest_intent = stripe.PaymentIntent.retrieve(test_reference)
+                    if getattr(latest_intent, 'status', None) != 'canceled':
+                        raise
             elif vi_status in ('succeeded', 'processing'):
                 # Succeeded can occur for some payment method/card behaviors.
                 pass
@@ -599,16 +827,21 @@ class StripeConnectService:
             intent = stripe.PaymentIntent.create(
                 amount=deposit_minor,
                 currency='gbp',
+                automatic_payment_methods={'enabled': True, 'allow_redirects': 'never'},
+                idempotency_key=f'deposit-authorisation-{transaction.id}',
                 customer=customer_id,
                 payment_method=payment_method_id,
-                confirmation_method='automatic',
                 confirm=True,
-                capture_method='manual',
+                # Card authorisations cannot be relied upon for long rentals.
+                # For >30 days take the full deposit now and refund its final
+                # returned portion at settlement; shorter tiers use a hold.
+                capture_method='automatic' if transaction.get_deposit_policy_tier() == 'long' else 'manual',
                 off_session=True,
                 metadata={
                     'transaction_id': str(transaction.id),
                     'transaction_reference': transaction.transaction_reference,
                     'purpose': 'deposit_hold',
+                    'deposit_policy_tier': transaction.get_deposit_policy_tier(),
                     'delivery_cost': f'{float(getattr(transaction, "delivery_cost", 0) or 0):.2f}',
                     'rentalution_fee': f'{float(getattr(transaction, "rentalution_fee", 0) or 0):.2f}',
                 },
@@ -676,7 +909,7 @@ class StripeConnectService:
 
     def collect_rental_payment(self, *, transaction):
         """
-        Capture rental payment (rental + delivery + Rentalution fee) at rental start.
+        Capture rental payment (rental + delivery + Rentalution service fee) at rental start.
         """
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:
@@ -720,9 +953,11 @@ class StripeConnectService:
             intent = stripe.PaymentIntent.create(
                 amount=total_minor,
                 currency='gbp',
+                automatic_payment_methods={'enabled': True, 'allow_redirects': 'never'},
+                transfer_group=f'rental_{transaction.id}',
+                idempotency_key=f'rental-payment-{transaction.id}',
                 customer=customer_id,
                 payment_method=payment_method_id,
-                confirmation_method='automatic',
                 confirm=True,
                 off_session=True,
                 metadata={
@@ -769,7 +1004,13 @@ class StripeConnectService:
                 stripe_object_id=getattr(intent, 'id', ''),
                 card_brand=card_brand,
                 card_funding=card_funding,
-                context={'payment_intent_status': status},
+                context={
+                    'payment_intent_status': status,
+                    'rental_amount': ((transaction.quantity or 0) * (transaction.price or 0)),
+                    'delivery_amount': transaction.delivery_cost or 0,
+                    'service_fee': transaction.rentalution_fee or 0,
+                    **self._balance_context(stripe, intent),
+                },
             )
 
             return {
@@ -849,6 +1090,7 @@ class StripeConnectService:
                 captured = stripe.PaymentIntent.capture(
                     reference,
                     amount_to_capture=charge_minor,
+                    idempotency_key=f'deposit-capture-{transaction.id}-{charge_minor}',
                 )
                 capture_action = 'capture_full' if charge_minor == deposit_minor else 'capture_partial'
                 self._record_payment_attempt(
@@ -886,6 +1128,7 @@ class StripeConnectService:
                 refund = stripe.Refund.create(
                     payment_intent=reference,
                     amount=refund_minor,
+                    idempotency_key=f'deposit-refund-{transaction.id}-{refund_minor}',
                     metadata={
                         'transaction_id': str(transaction.id),
                         'transaction_reference': transaction.transaction_reference,
@@ -1005,7 +1248,7 @@ class StripeConnectService:
         if stripe_error:
             return stripe_error
 
-        endpoint_secret = getattr(settings, 'STRIPE_CONNECT_WEBHOOK_SECRET', '')
+        endpoint_secret = self._webhook_secret()
         if not endpoint_secret:
             return {
                 'ok': False,
@@ -1029,6 +1272,12 @@ class StripeConnectService:
             if isinstance(meta, dict):
                 return meta.get(key)
             return getattr(meta, key, None)
+
+        if event_type == 'account.updated' and event_object:
+            try:
+                self.sync_connected_account(event_object)
+            except Exception:
+                logger.exception('Stripe Connect account sync failed')
 
         if event_type in ('setup_intent.succeeded', 'setup_intent.setup_failed', 'setup_intent.canceled') and event_object:
             try:
@@ -1094,6 +1343,19 @@ class StripeConnectService:
             'event_type': event_type,
             'provider': 'stripe',
         }
+
+    def _webhook_secret(self):
+        """Read the managed local-listener secret at request time when present."""
+        secret_file = getattr(settings, 'STRIPE_CONNECT_WEBHOOK_SECRET_FILE', '')
+        if secret_file and getattr(settings, 'ENVIRONMENT_NAME', '').lower() != 'production':
+            try:
+                with open(secret_file, 'r', encoding='utf-8') as handle:
+                    secret = handle.read().strip()
+                if secret.startswith('whsec_'):
+                    return secret
+            except OSError:
+                pass
+        return getattr(settings, 'STRIPE_CONNECT_WEBHOOK_SECRET', '')
 
 
 stripe_connect_service = StripeConnectService()

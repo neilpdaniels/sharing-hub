@@ -35,6 +35,15 @@ class AccountRepository {
     return AccountDetails.fromJson(json);
   }
 
+  Future<String> startPayoutOnboarding({required String accessToken}) async {
+    final json = await _apiClient.postJson(
+      '/account/payout-onboarding/',
+      const {},
+      accessToken: accessToken,
+    );
+    return json['url'] as String? ?? '';
+  }
+
   Future<List<PaymentMethodSummary>> fetchPaymentMethods({required String accessToken}) async {
     final json = await _apiClient.getJsonList(
       '/payment-methods/',

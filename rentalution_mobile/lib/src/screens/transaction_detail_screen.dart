@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
 import '../models/account_models.dart';
+import '../services/account_repository.dart';
 import '../models/transaction_models.dart';
 import '../services/friends_repository.dart';
 import '../services/transaction_repository.dart';
@@ -23,19 +24,22 @@ class TransactionDetailScreen extends StatefulWidget {
     required this.accessToken,
     required this.repository,
     required this.friendsRepository,
+    this.accountRepository,
   });
 
   final String transactionReference;
   final String accessToken;
   final TransactionRepository repository;
   final FriendsRepository friendsRepository;
+  final AccountRepository? accountRepository;
 
   @override
   State<TransactionDetailScreen> createState() =>
       _TransactionDetailScreenState();
 }
 
-class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
+class _TransactionDetailScreenState extends State<TransactionDetailScreen>
+    with WidgetsBindingObserver {
   final _messageController = TextEditingController();
   final _pinController = TextEditingController();
   final _messageFocusNode = FocusNode();
@@ -58,10 +62,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   Timer? _livePollTimer;
   Timer? _countdownTimer;
   String _lastLiveSignature = '';
+  bool _payoutDetailsOpen = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refresh();
     _startLivePolling();
   }
@@ -106,12 +112,51 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _livePollTimer?.cancel();
     _countdownTimer?.cancel();
     _messageController.dispose();
     _pinController.dispose();
     _messageFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _payoutDetailsOpen) {
+      _payoutDetailsOpen = false;
+      _refresh();
+    }
+  }
+
+  Future<void> _openPayoutDetails() async {
+    final accountRepository = widget.accountRepository;
+    if (accountRepository == null) {
+      setState(() {
+        _error = 'Open Account Details to set up lender payouts.';
+      });
+      return;
+    }
+    try {
+      final url = await accountRepository.openPayoutDetails(
+        accessToken: widget.accessToken,
+      );
+      _payoutDetailsOpen = true;
+      if (url.isEmpty ||
+          !await launchUrl(
+            Uri.parse(url),
+            mode: LaunchMode.externalApplication,
+          )) {
+        _payoutDetailsOpen = false;
+        throw Exception('Could not open Stripe payout setup.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
+    }
   }
 
   void _startLivePolling() {
@@ -2229,6 +2274,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   _messageComposerCard(),
                   const SizedBox(height: 16),
                   _summaryCard(detail),
+                  if (detail.payoutSettlements.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _payoutSettlementsCard(detail),
+                  ],
                   if (_showDepositProposalProgress(detail)) ...[
                     const SizedBox(height: 16),
                     _depositProposalProgressCard(detail),
@@ -2246,6 +2295,41 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _payoutSettlementsCard(TransactionDetail detail) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Payout settlement',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            for (final settlement in detail.payoutSettlements) ...[
+              Text(
+                '${settlement.kindDisplay}: ${settlement.statusDisplay}',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                'Gross £${settlement.grossAmount.toStringAsFixed(2)} · '
+                'Stripe fee £${settlement.stripeFee.toStringAsFixed(2)} · '
+                'Lender transfer £${settlement.netTransferAmount.toStringAsFixed(2)}'
+                '${settlement.platformShortfall > 0 ? ' · Platform shortfall £${settlement.platformShortfall.toStringAsFixed(2)}' : ''}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (settlement != detail.payoutSettlements.last)
+                const Divider(height: 20),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -2498,6 +2582,38 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final proposalIterationCount = _depositProposalIterationCount(detail);
     final proposalIterationLimit = _depositProposalIterationLimit(detail);
     final proposalMaxReached = proposalIterationCount >= proposalIterationLimit;
+
+    if (detail.meIsLender &&
+        (can('agree_rental') || detail.returnHandoverVerifiedAt != null)) {
+      final settlementPending = detail.returnHandoverVerifiedAt != null;
+      actions.add(
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.withOpacity(0.35)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                settlementPending
+                    ? 'Your rental payment may be ready. Set up payouts to receive it.'
+                    : 'Set up lender payouts before accepting this paid rental.',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              _actionButton(
+                'Set up / manage lender payouts',
+                _openPayoutDetails,
+              ),
+            ],
+          ),
+        ),
+      );
+      actions.add(const SizedBox(height: 8));
+    }
 
     if (detail.status == 'RAGR' &&
         detail.renterAgreedAt == null &&

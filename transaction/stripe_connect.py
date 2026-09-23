@@ -2,6 +2,7 @@ import logging
 import os
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 from common.failures import record_site_failure
 from .models import PaymentAttempt, StripeSettlement
@@ -55,6 +56,14 @@ class StripeConnectService:
             return value.get(key, default)
         return getattr(value, key, default)
 
+    def _allow_payout_link_request(self, profile):
+        """Limit short-lived Stripe links without logging sensitive account data."""
+        key = f'stripe-connect-payout-link:{profile.id}'
+        if not cache.add(key, True, timeout=60):
+            return False
+        logger.info('Stripe Connect payout link requested for profile %s', profile.id)
+        return True
+
     def sync_connected_account(self, account):
         """Persist the non-sensitive onboarding state returned by Stripe."""
         from account.models import Profile
@@ -84,7 +93,35 @@ class StripeConnectService:
         ])
         return profile
 
-    def create_lender_onboarding_link(self, *, profile, refresh_url, return_url):
+    def _individual_payout_prefill(self, profile):
+        """Return only lender profile data that Stripe can safely prefill."""
+        user = profile.user
+        individual = {
+            'first_name': user.first_name or None,
+            'last_name': user.last_name or None,
+            'email': user.email or None,
+            'phone': profile.mobile_number or None,
+        }
+        if profile.date_of_birth:
+            individual['dob'] = {
+                'day': profile.date_of_birth.day,
+                'month': profile.date_of_birth.month,
+                'year': profile.date_of_birth.year,
+            }
+        address = {
+            'line1': profile.address_line_1 or None,
+            'line2': profile.address_line_2 or None,
+            'city': profile.town or None,
+            'state': profile.county or None,
+            'postal_code': profile.postcode or None,
+            'country': settings.STRIPE_CONNECT_PLATFORM_COUNTRY,
+        }
+        individual['address'] = {key: value for key, value in address.items() if value}
+        return {key: value for key, value in individual.items() if value}
+
+    def create_lender_onboarding_link(self, *, profile, refresh_url, return_url, business_type=None):
+        if not self._allow_payout_link_request(profile):
+            return {'ok': False, 'error': 'Please wait a minute before requesting another payout setup link.'}
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:
             return stripe_error
@@ -92,11 +129,25 @@ class StripeConnectService:
             account_id = profile.stripe_connect_account_id
             if not account_id:
                 user = profile.user
-                account = stripe.Account.create(
-                    type='express', country=settings.STRIPE_CONNECT_PLATFORM_COUNTRY, email=user.email,
-                    capabilities={'transfers': {'requested': True}},
-                    metadata={'profile_id': str(profile.id), 'user_id': str(user.id)},
-                )
+                account_params = {
+                    'type': 'express',
+                    'country': settings.STRIPE_CONNECT_PLATFORM_COUNTRY,
+                    'email': user.email,
+                    'capabilities': {'transfers': {'requested': True}},
+                    'business_profile': {
+                        'product_description': (
+                            'Rental income earned by lending items through the '
+                            'Rentalution online marketplace.'
+                        ),
+                    },
+                    'metadata': {'profile_id': str(profile.id), 'user_id': str(user.id)},
+                }
+                if business_type == 'individual':
+                    account_params['business_type'] = 'individual'
+                    account_params['individual'] = self._individual_payout_prefill(profile)
+                elif business_type == 'company':
+                    account_params['business_type'] = 'company'
+                account = stripe.Account.create(**account_params)
                 profile = self.sync_connected_account(account) or profile
                 account_id = getattr(account, 'id', '')
             link = stripe.AccountLink.create(
@@ -107,6 +158,47 @@ class StripeConnectService:
         except Exception as exc:
             logger.exception('Stripe Connect onboarding link creation failed')
             return {'ok': False, 'error': f'Unable to start lender payout setup: {exc}'}
+
+    def create_lender_payout_details_link(self, *, profile, refresh_url, return_url, business_type=None):
+        """Open the appropriate Stripe-hosted page for lender payout details.
+
+        Express accounts manage verified bank details in the Express Dashboard.
+        A lender without an account is sent through onboarding instead.
+        """
+        if not profile.stripe_connect_account_id:
+            return self.create_lender_onboarding_link(
+                profile=profile, refresh_url=refresh_url, return_url=return_url,
+                business_type=business_type,
+            )
+
+        if not self._allow_payout_link_request(profile):
+            return {'ok': False, 'error': 'Please wait a minute before requesting another payout details link.'}
+
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+        try:
+            link = stripe.Account.create_login_link(profile.stripe_connect_account_id)
+            return {'ok': True, 'url': getattr(link, 'url', '')}
+        except Exception as exc:
+            logger.exception('Stripe Express payout-details link creation failed')
+            return {'ok': False, 'error': f'Unable to open Stripe payout details: {exc}'}
+
+    def refresh_lender_payout_status(self, *, profile):
+        """Retrieve an existing Connect account and persist its current state."""
+        if not profile.stripe_connect_account_id:
+            return {'ok': True, 'profile': profile}
+
+        stripe, stripe_error = self._load_stripe_client()
+        if stripe_error:
+            return stripe_error
+        try:
+            account = stripe.Account.retrieve(profile.stripe_connect_account_id)
+            synced_profile = self.sync_connected_account(account) or profile
+            return {'ok': True, 'profile': synced_profile}
+        except Exception as exc:
+            logger.exception('Stripe Connect payout-status refresh failed')
+            return {'ok': False, 'error': f'Unable to refresh lender payout status: {exc}'}
 
     def transfer_rental_proceeds(self, *, transaction):
         """Create exactly one rental-proceeds transfer after verified return."""
@@ -121,7 +213,12 @@ class StripeConnectService:
             return {'ok': True, 'transfer_id': settlement.transfer_id, 'existing': True}
         from account.models import Profile
         profile = Profile.objects.filter(user=transaction.user_passive).first()
-        if not profile or not profile.stripe_connect_account_id or not profile.stripe_connect_transfers_enabled:
+        if (
+            not profile
+            or not profile.stripe_connect_account_id
+            or not profile.stripe_connect_transfers_enabled
+            or not profile.stripe_connect_payouts_enabled
+        ):
             return {'ok': False, 'error': 'Lender is not enabled to receive Stripe transfers.'}
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:
@@ -182,7 +279,12 @@ class StripeConnectService:
 
         from account.models import Profile
         profile = Profile.objects.filter(user=transaction.user_passive).first()
-        if not profile or not profile.stripe_connect_account_id or not profile.stripe_connect_transfers_enabled:
+        if (
+            not profile
+            or not profile.stripe_connect_account_id
+            or not profile.stripe_connect_transfers_enabled
+            or not profile.stripe_connect_payouts_enabled
+        ):
             return {'ok': False, 'error': 'Lender is not enabled to receive Stripe transfers.'}
         stripe, stripe_error = self._load_stripe_client()
         if stripe_error:

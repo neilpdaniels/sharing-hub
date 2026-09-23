@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 
 from common.helpers import is_profile_kyc_verified
 from common.phone_utils import (
@@ -87,3 +88,38 @@ class SecurityUtilsTests(TestCase):
 	@patch('common.security.requests.post', side_effect=Exception('network down'))
 	def test_turnstile_returns_false_on_exception(self, _mock_post):
 		self.assertFalse(verify_turnstile_token('token-123'))
+
+
+class MobilePayoutReturnLinkTests(SimpleTestCase):
+	"""The public app-link files must never advertise unsigned app builds."""
+
+	@override_settings(APPLE_APP_LINK_TEAM_ID='')
+	def test_apple_association_is_unavailable_without_a_team_id(self):
+		response = self.client.get(reverse('apple_app_site_association'))
+		self.assertEqual(response.status_code, 404)
+
+	@override_settings(APPLE_APP_LINK_TEAM_ID='ABCDE12345')
+	def test_apple_association_contains_the_release_app_identifier(self):
+		response = self.client.get(reverse('apple_app_site_association'))
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()['applinks']['details'][0]['appID'],
+			'ABCDE12345.com.rentalution.mobile',
+		)
+
+	@override_settings(ANDROID_APP_LINK_SHA256='AA:BB:CC')
+	def test_android_association_contains_the_release_certificate(self):
+		response = self.client.get(reverse('android_asset_links'))
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()[0]['target']['sha256_cert_fingerprints'],
+			['AA:BB:CC'],
+		)
+
+	def test_payout_return_has_a_safe_browser_fallback(self):
+		response = self.client.get(reverse('mobile_payout_return'))
+		self.assertRedirects(
+			response,
+			'/my_rentalution/my_details/?tab=payouts',
+			fetch_redirect_response=False,
+		)

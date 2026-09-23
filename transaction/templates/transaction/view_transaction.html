@@ -185,6 +185,14 @@
                 </div>
                 {% endif %}
 
+                {% if payout_setup_required %}
+                <div class="alert alert-warning" role="alert">
+                    <strong>Your rental payment is ready. Set up payouts to receive it.</strong>
+                    Your payout remains pending until Stripe confirms your details.
+                    <a class="alert-link" href="{% url 'my_rentalution:my_details' %}?tab=payouts">Set up payouts</a>.
+                </div>
+                {% endif %}
+
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Contact Details</h5>

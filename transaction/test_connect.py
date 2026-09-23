@@ -15,7 +15,9 @@ from transaction.stripe_connect import StripeConnectService
 @override_settings(STRIPE_CONNECT_SECRET_KEY='sk_test_connect', STRIPE_CONNECT_WEBHOOK_SECRET='whsec_test_connect')
 class StripeConnectServiceTests(TestCase):
     def setUp(self):
-        self.lender = User.objects.create_user('connect-lender', 'lender@example.test', 'x')
+        self.lender = User.objects.create_user(
+            'connect-lender', 'lender@example.test', 'x', first_name='Ada', last_name='Lender',
+        )
         self.renter = User.objects.create_user('connect-renter', 'renter@example.test', 'x')
         self.profile = Profile.objects.create(
             user=self.lender, date_of_birth=date(1990, 1, 1), mobile_number='07123456789',
@@ -78,6 +80,29 @@ class StripeConnectServiceTests(TestCase):
         self.assertEqual(result['url'], 'https://connect.stripe.test/link')
         stripe.Account.create.assert_not_called()
         stripe.AccountLink.create.assert_called_once()
+
+    def test_individual_onboarding_prefills_existing_lender_details(self):
+        stripe = Mock()
+        stripe.Account.create.return_value = SimpleNamespace(
+            id='acct_new', metadata={'profile_id': str(self.profile.id)},
+            capabilities={'transfers': 'inactive'}, payouts_enabled=False,
+            requirements={'currently_due': []},
+        )
+        stripe.AccountLink.create.return_value = SimpleNamespace(url='https://connect.stripe.test/link')
+        with patch.object(self.service, '_load_stripe_client', return_value=(stripe, None)):
+            result = self.service.create_lender_onboarding_link(
+                profile=self.profile, refresh_url='https://app.test/refresh',
+                return_url='https://app.test/return', business_type='individual',
+            )
+        self.assertTrue(result['ok'])
+        create_args = stripe.Account.create.call_args.kwargs
+        self.assertEqual(create_args['business_type'], 'individual')
+        self.assertEqual(create_args['individual']['first_name'], 'Ada')
+        self.assertEqual(create_args['individual']['address']['line1'], '1 Test Street')
+        self.assertEqual(
+            create_args['business_profile']['product_description'],
+            'Rental income earned by lending items through the Rentalution online marketplace.',
+        )
 
     def test_transfer_requires_enabled_lender_account(self):
         result = self.service.transfer_rental_proceeds(transaction=self.transaction)

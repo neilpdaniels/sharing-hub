@@ -1145,6 +1145,11 @@ def add_order(request, product_id=None):
         'blocked_dates_json': '[]',
         'booked_dates_json': '[]',
         'blocked_handover_dates_json': '[]',
+        'payout_ready': Profile.objects.filter(
+            user=request.user,
+            stripe_connect_transfers_enabled=True,
+            stripe_connect_payouts_enabled=True,
+        ).exists(),
     }
     return render(request, 'transaction/add_order.html', context)
 
@@ -1365,7 +1370,11 @@ def hit_order(request, order_id=None):
             # A paid booking cannot safely progress until the lender has a
             # Connect account that can receive the eventual separate transfer.
             lender_profile = Profile.objects.filter(user=order.user).first()
-            if price_per_day > 0 and (not lender_profile or not lender_profile.stripe_connect_transfers_enabled):
+            if price_per_day > 0 and (
+                not lender_profile
+                or not lender_profile.stripe_connect_transfers_enabled
+                or not lender_profile.stripe_connect_payouts_enabled
+            ):
                 messages.error(request, 'This lender has not completed payout setup, so paid bookings are not available yet.')
                 return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
 
@@ -1610,6 +1619,18 @@ def view_transaction(request, transaction_reference=None):
             return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
+            rental_total = ((txn.quantity or 0) * (txn.price or 0)) + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0)
+            lender_profile = Profile.objects.filter(user=request.user).first()
+            if rental_total > 0 and (
+                not lender_profile
+                or not lender_profile.stripe_connect_transfers_enabled
+                or not lender_profile.stripe_connect_payouts_enabled
+            ):
+                messages.error(
+                    request,
+                    'Set up lender payouts before accepting this paid rental. Your enquiry is still waiting for you.',
+                )
+                return redirect(f"{reverse('my_rentalution:my_details')}?tab=payouts")
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_AGREED
             txn.lender_agreement_pending_at = timezone.now()
@@ -2897,6 +2918,17 @@ Transaction Ref: {txn.transaction_reference}"""
         and dispute_hold_seconds_remaining <= (48 * 60 * 60)
     )
 
+    payout_setup_required = (
+        is_lender
+        and bool(((txn.quantity or 0) * (txn.price or 0)) + (txn.delivery_cost or 0))
+        and bool(txn.return_handover_verified_at)
+        and not Profile.objects.filter(
+            user=request.user,
+            stripe_connect_transfers_enabled=True,
+            stripe_connect_payouts_enabled=True,
+        ).exists()
+    )
+
     return_review_completed = bool(txn.return_lender_confirmed or txn.return_lender_video_url)
     return_pin_available = bool(txn.return_handover_pin)
     checkout_pin_available = bool(txn.checkout_handover_pin) and txn.checkout_funds_ready()
@@ -3019,6 +3051,7 @@ Transaction Ref: {txn.transaction_reference}"""
         'dispute_hold_deadline': dispute_hold_deadline,
         'dispute_hold_seconds_remaining': dispute_hold_seconds_remaining,
         'urgent_dispute_funds_action': urgent_dispute_funds_action,
+        'payout_setup_required': payout_setup_required,
         'return_review_completed': return_review_completed,
         'return_pin_available': return_pin_available,
         'checkout_pin_available': checkout_pin_available,
@@ -3323,7 +3356,10 @@ def stripe_connect_onboarding(request):
     refresh_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding'))
     return_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding_return'))
     result = stripe_connect_service.create_lender_onboarding_link(
-        profile=profile, refresh_url=refresh_url, return_url=return_url,
+        profile=profile,
+        refresh_url=refresh_url,
+        return_url=return_url,
+        business_type=(request.GET.get('business_type') or '').strip().lower(),
     )
     if not result.get('ok') or not result.get('url'):
         messages.error(request, result.get('error', 'Unable to start Stripe payout setup.'))
@@ -3334,11 +3370,32 @@ def stripe_connect_onboarding(request):
 @login_required
 def stripe_connect_onboarding_return(request):
     profile = get_object_or_404(Profile, user=request.user)
+    # A return from Stripe is not proof of completion, but retrieving the
+    # account gives the lender the freshest status while the webhook arrives.
+    stripe_connect_service.refresh_lender_payout_status(profile=profile)
     messages.success(
         request,
         'Stripe payout setup was submitted. We will update your payout status when Stripe confirms it.',
     )
-    return redirect('myaccount')
+    return redirect(f"{reverse('my_rentalution:my_details')}?tab=payouts")
+
+
+@login_required
+def stripe_connect_payout_details(request):
+    """Redirect a lender to Stripe's hosted payout/bank-details experience."""
+    profile = get_object_or_404(Profile, user=request.user)
+    refresh_url = request.build_absolute_uri(reverse('transaction:stripe_connect_payout_details'))
+    return_url = request.build_absolute_uri(f"{reverse('my_rentalution:my_details')}?tab=payouts")
+    result = stripe_connect_service.create_lender_payout_details_link(
+        profile=profile,
+        refresh_url=refresh_url,
+        return_url=return_url,
+        business_type=(request.GET.get('business_type') or '').strip().lower(),
+    )
+    if not result.get('ok') or not result.get('url'):
+        messages.error(request, result.get('error', 'Unable to open Stripe payout details.'))
+        return redirect(f"{reverse('my_rentalution:my_details')}?tab=payouts")
+    return redirect(result['url'])
 
 class TransactionMessageImageUpload(View):
     def post(self, request):

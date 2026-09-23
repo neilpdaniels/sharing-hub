@@ -56,10 +56,23 @@ def _notify_settlement_parties(transaction, result, *, kind):
             description = f'£{gross_amount:.2f} {label} payout has been recorded.'
             subject = f'{label.title()} settlement complete {transaction.transaction_reference}'
     else:
-        description = f'{label.title()} payout needs staff attention. The rental workflow is unaffected.'
+        if result.get('error') == 'Lender is not enabled to receive Stripe transfers.':
+            description = (
+                f'Your {label} is ready. Set up lender payouts in My details to receive it. '
+                'The payout is pending and will not be sent twice.'
+            )
+        else:
+            description = f'{label.title()} payout needs staff attention. The rental workflow is unaffected.'
         subject = f'{label.title()} settlement pending {transaction.transaction_reference}'
     for sender, recipient in ((transaction.user_passive, transaction.user_aggressive), (transaction.user_aggressive, transaction.user_passive)):
-        _send_system_alert(txn=transaction, user_from=sender, user_to=recipient, subject=subject, description=description)
+        _send_system_alert(
+            txn=transaction,
+            user_from=sender,
+            user_to=recipient,
+            subject=subject,
+            description=description,
+            include_admin=not result.get('ok'),
+        )
 
 
 def _in_reminder_window(now):
@@ -90,7 +103,7 @@ def _format_end_of_day_notice(now):
     return countdown
 
 
-def _send_system_alert(*, txn, user_from, user_to, subject, description):
+def _send_system_alert(*, txn, user_from, user_to, subject, description, include_admin=False):
     from .models import TransactionMessage
 
     TransactionMessage.objects.create(
@@ -100,7 +113,7 @@ def _send_system_alert(*, txn, user_from, user_to, subject, description):
         subject=subject,
         description=description,
         email_to_recepient=True,
-        include_admin=False,
+        include_admin=include_admin,
         is_system_generated=True,
     )
 

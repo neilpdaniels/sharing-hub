@@ -43,4 +43,5 @@ dependencies = [
 [dependency-groups]
 dev = [
     "django-debug-toolbar>=6.2.0",
+    "playwright>=1.57.0",
 ]

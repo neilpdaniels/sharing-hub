@@ -18,7 +18,8 @@ class AccountDetailsScreen extends StatefulWidget {
   State<AccountDetailsScreen> createState() => _AccountDetailsScreenState();
 }
 
-class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
+class _AccountDetailsScreenState extends State<AccountDetailsScreen>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
 
   final _firstNameController = TextEditingController();
@@ -33,16 +34,19 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _payoutDetailsOpen = false;
   AccountDetails? _details;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
@@ -53,6 +57,26 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     _countyController.dispose();
     _postcodeController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _payoutDetailsOpen) {
+      _payoutDetailsOpen = false;
+      _refreshPayoutStatusAfterReturn();
+    }
+  }
+
+  Future<void> _refreshPayoutStatusAfterReturn() async {
+    try {
+      await widget.accountRepository.refreshPayoutStatus(
+        accessToken: widget.accessToken,
+      );
+    } catch (_) {
+      // The stored webhook state remains available if Stripe is temporarily
+      // unavailable; _load below still gives the user the latest local state.
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -94,12 +118,37 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     _postcodeController.text = details.postcode;
   }
 
-  Future<void> _startPayoutOnboarding() async {
+  Future<void> _openPayoutDetails() async {
     try {
-      final url = await widget.accountRepository.startPayoutOnboarding(
-        accessToken: widget.accessToken,
+      final businessType = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Who will receive payouts?'),
+          content: const Text(
+            'Choose Individual if you lend as yourself or a sole trader. '
+            'We will prefill the name, address and contact details in this account. '
+            'Choose Company only for a registered company.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'company'),
+              child: const Text('Company'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'individual'),
+              child: const Text('Individual'),
+            ),
+          ],
+        ),
       );
+      if (businessType == null || !mounted) return;
+      final url = await widget.accountRepository.openPayoutDetails(
+        accessToken: widget.accessToken,
+        businessType: businessType,
+      );
+      _payoutDetailsOpen = true;
       if (url.isEmpty || !await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+        _payoutDetailsOpen = false;
         throw Exception('Could not open Stripe payout setup.');
       }
     } catch (e) {
@@ -172,16 +221,25 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
                         children: [
                           const Text('Lender payouts', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          if (_details?.stripeConnectTransfersEnabled ?? false)
+                          if ((_details?.stripeConnectTransfersEnabled ?? false) &&
+                              (_details?.stripeConnectPayoutsEnabled ?? false))
                             const Text('Your Stripe payout account can receive rental transfers.')
                           else ...[
-                            const Text('Complete secure Stripe payout setup before accepting paid rentals.'),
+                            const Text(
+                              'Check your prefilled details, then securely enter your sort code and account number with Stripe before accepting paid rentals.',
+                            ),
                             if ((_details?.stripeConnectRequirements ?? const []).isNotEmpty)
-                              Text('Stripe still needs: ${_details!.stripeConnectRequirements.join(', ')}'),
+                              const Text(
+                                'Stripe needs some additional information. Open payout details to continue securely.',
+                              ),
                             const SizedBox(height: 8),
                             OutlinedButton(
-                              onPressed: _startPayoutOnboarding,
-                              child: const Text('Set up lender payouts'),
+                              onPressed: _openPayoutDetails,
+                              child: Text(
+                                (_details?.stripeConnectTransfersEnabled ?? false)
+                                    ? 'Change bank / payout details'
+                                    : 'Set up lender payouts',
+                              ),
                             ),
                           ],
                         ],

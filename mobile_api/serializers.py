@@ -313,6 +313,7 @@ class TransactionDetailSerializer(TransactionListSerializer):
     dispute_final_statement_deadline = serializers.SerializerMethodField()
     dispute_final_statement_seconds_remaining = serializers.SerializerMethodField()
     dispute_final_statement_open = serializers.SerializerMethodField()
+    payout_settlements = serializers.SerializerMethodField()
 
     class Meta(TransactionListSerializer.Meta):
         fields = TransactionListSerializer.Meta.fields + (
@@ -355,10 +356,26 @@ class TransactionDetailSerializer(TransactionListSerializer):
             'dispute_final_statement_deadline',
             'dispute_final_statement_seconds_remaining',
             'dispute_final_statement_open',
+            'payout_settlements',
         )
 
     def get_deposit_proposal_iteration_limit(self, obj):
         return 5
+
+    def get_payout_settlements(self, obj):
+        return [
+            {
+                'kind': settlement.kind,
+                'kind_display': settlement.get_kind_display(),
+                'status': settlement.status,
+                'status_display': settlement.get_status_display(),
+                'gross_amount': settlement.gross_amount,
+                'stripe_fee': settlement.stripe_fee,
+                'net_transfer_amount': settlement.net_transfer_amount,
+                'platform_shortfall': settlement.platform_shortfall,
+            }
+            for settlement in obj.stripe_settlements.order_by('created', 'id')
+        ]
 
     def get_deposit_proposal_warning_message(self, obj):
         count = max(0, min(5, int(getattr(obj, 'deposit_proposal_iteration_count', 0) or 0)))

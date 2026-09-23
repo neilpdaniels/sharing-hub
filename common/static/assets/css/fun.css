@@ -1110,7 +1110,9 @@ a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !importan
     position: fixed;
     top: 0;
     left: 0;
-    height: 100vh;
+    /* `#rh-layout` is rendered at 80%.  Compensate so this fixed panel
+       still reaches the physical bottom of the viewport. */
+    height: 125vh;
     overflow-y: auto;
     z-index: 1000;
     transition: transform 0.25s ease;

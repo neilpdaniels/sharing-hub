@@ -35,13 +35,36 @@ class AccountRepository {
     return AccountDetails.fromJson(json);
   }
 
-  Future<String> startPayoutOnboarding({required String accessToken}) async {
+  Future<String> startPayoutOnboarding({
+    required String accessToken,
+    String? businessType,
+  }) async {
     final json = await _apiClient.postJson(
       '/account/payout-onboarding/',
-      const {},
+      businessType == null ? const {} : {'business_type': businessType},
       accessToken: accessToken,
     );
     return json['url'] as String? ?? '';
+  }
+
+  Future<String> openPayoutDetails({
+    required String accessToken,
+    String? businessType,
+  }) async {
+    final json = await _apiClient.postJson(
+      '/account/payout-details/',
+      businessType == null ? const {} : {'business_type': businessType},
+      accessToken: accessToken,
+    );
+    return json['url'] as String? ?? '';
+  }
+
+  Future<void> refreshPayoutStatus({required String accessToken}) async {
+    await _apiClient.postJson(
+      '/account/payout-status/refresh/',
+      const {},
+      accessToken: accessToken,
+    );
   }
 
   Future<List<PaymentMethodSummary>> fetchPaymentMethods({required String accessToken}) async {

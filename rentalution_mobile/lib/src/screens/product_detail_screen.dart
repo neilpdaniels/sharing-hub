@@ -13,6 +13,7 @@ import '../services/api_client.dart';
 import '../services/catalog_repository.dart';
 import '../services/friends_repository.dart';
 import '../services/transaction_repository.dart';
+import '../services/account_repository.dart';
 import 'transaction_detail_screen.dart';
 
 Future<bool> _confirmAddAsFriendDialog(
@@ -24,7 +25,9 @@ Future<bool> _confirmAddAsFriendDialog(
     builder: (dialogContext) {
       return AlertDialog(
         title: const Text('Confirm Friend Request'),
-        content: Text('Do you want to request $displayName adds you as friend?'),
+        content: Text(
+          'Do you want to request $displayName adds you as friend?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -61,6 +64,7 @@ class ProductDetailScreen extends StatefulWidget {
     this.productSlug,
     this.catalogRepository,
     this.transactionRepository,
+    this.accountRepository,
     this.friendsRepository,
     this.accessToken,
     this.searchLocation,
@@ -72,6 +76,7 @@ class ProductDetailScreen extends StatefulWidget {
   final String? productSlug;
   final CatalogRepository? catalogRepository;
   final TransactionRepository? transactionRepository;
+  final AccountRepository? accountRepository;
   final FriendsRepository? friendsRepository;
   final String? accessToken;
   final String? searchLocation;
@@ -138,10 +143,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         return;
       }
       final accepted = hub.accepted.any((friend) => friend.userId == lenderId);
-      final pendingSent =
-          hub.pendingSent.any((friend) => friend.userId == lenderId);
-      final pendingReceived =
-          hub.pendingReceived.any((friend) => friend.userId == lenderId);
+      final pendingSent = hub.pendingSent.any(
+        (friend) => friend.userId == lenderId,
+      );
+      final pendingReceived = hub.pendingReceived.any(
+        (friend) => friend.userId == lenderId,
+      );
       setState(() {
         if (accepted) {
           _friendStatus = 'accepted';
@@ -263,9 +270,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   product.categoryTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontSize: 12,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontSize: 12),
                 ),
               ),
             ],
@@ -275,7 +282,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             borderRadius: BorderRadius.circular(14),
             child: product.imageUrl.isNotEmpty
                 ? CachedNetworkImage(
-                  imageUrl: product.imageUrl,
+                    imageUrl: product.imageUrl,
                     height: 250,
                     placeholder: (context, url) => Container(
                       height: 250,
@@ -458,7 +465,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final attrs = product.attributes
         .where(
           (attribute) =>
-              attribute.name.trim().isNotEmpty && attribute.value.trim().isNotEmpty,
+              attribute.name.trim().isNotEmpty &&
+              attribute.value.trim().isNotEmpty,
         )
         .toList(growable: false);
 
@@ -732,16 +740,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       if (mounted) {
         setState(() {
@@ -757,7 +765,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Confirm Friend Request'),
-          content: Text('Do you want to request $displayName adds you as friend?'),
+          content: Text(
+            'Do you want to request $displayName adds you as friend?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -913,8 +923,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 memCacheHeight: 1000,
                                 maxWidthDiskCache: 1600,
                                 maxHeightDiskCache: 1400,
-                                imageBuilder: (context, imageProvider) =>
-                                    Image(
+                                imageBuilder: (context, imageProvider) => Image(
                                   image: imageProvider,
                                   fit: BoxFit.cover,
                                   filterQuality: FilterQuality.medium,
@@ -973,10 +982,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     .withOpacity(0.35),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.22),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.22),
                                 ),
                               ),
                               child: Row(
@@ -985,15 +993,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                   Icon(
                                     Icons.verified_user_outlined,
                                     size: 18,
-                                    color: Theme.of(context).colorScheme.primary,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
                                       'Verified users only - you can enquire, but you will need Stripe identity verification before the rental can start. This helps reduce fraud and no-shows.',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -1003,9 +1013,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     child: Icon(
                                       Icons.info_outline,
                                       size: 18,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
                                     ),
                                   ),
                                 ],
@@ -1091,10 +1101,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                       ),
                                       if (order.lender.username.isNotEmpty)
                                         InkWell(
-                                          onTap: () => _openLenderDetails(
-                                            order.lender,
+                                          onTap: () =>
+                                              _openLenderDetails(order.lender),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
                                           ),
-                                          borderRadius: BorderRadius.circular(6),
                                           child: Padding(
                                             padding: const EdgeInsets.symmetric(
                                               vertical: 2,
@@ -1103,9 +1114,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                             child: Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 10,
-                                                vertical: 6,
-                                              ),
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: Theme.of(context)
                                                     .colorScheme
@@ -1120,10 +1131,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                                     .textTheme
                                                     .bodySmall
                                                     ?.copyWith(
-                                                      color:
-                                                          Theme.of(context)
-                                                              .colorScheme
-                                                              .primary,
+                                                      color: Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
                                                       fontWeight:
                                                           FontWeight.w600,
                                                     ),
@@ -1172,8 +1182,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                           : () async {
                                               final confirmed =
                                                   await _confirmAddAsFriend(
-                                                _lenderDisplayName(order.lender),
-                                              );
+                                                    _lenderDisplayName(
+                                                      order.lender,
+                                                    ),
+                                                  );
                                               if (!confirmed) {
                                                 return;
                                               }
@@ -1185,8 +1197,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                           ? const SizedBox(
                                               width: 16,
                                               height: 16,
-                                              child:
-                                                  CircularProgressIndicator(
+                                              child: CircularProgressIndicator(
                                                 strokeWidth: 2,
                                               ),
                                             )
@@ -1197,10 +1208,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                         _friendStatus == 'accepted'
                                             ? 'Already friends'
                                             : _friendStatus == 'pending_sent'
-                                                ? 'Friend request sent'
-                                                : _friendStatus == 'pending_received'
-                                                    ? 'Respond in Friends'
-                                          : 'Add as friend',
+                                            ? 'Friend request sent'
+                                            : _friendStatus ==
+                                                  'pending_received'
+                                            ? 'Respond in Friends'
+                                            : 'Add as friend',
                                       ),
                                     ),
                             ),
@@ -1323,15 +1335,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               final handoverCount = handoverDates.length;
               final selectedLabel =
                   '${_formatDate(selectedRange.start)} - ${_formatDate(selectedRange.end)}';
-              final selectedDays = DateTime.utc(
-                selectedRange.end.year,
-                selectedRange.end.month,
-                selectedRange.end.day,
-              ).difference(DateTime.utc(
-                selectedRange.start.year,
-                selectedRange.start.month,
-                selectedRange.start.day,
-              )).inDays + 1;
+              final selectedDays =
+                  DateTime.utc(
+                        selectedRange.end.year,
+                        selectedRange.end.month,
+                        selectedRange.end.day,
+                      )
+                      .difference(
+                        DateTime.utc(
+                          selectedRange.start.year,
+                          selectedRange.start.month,
+                          selectedRange.start.day,
+                        ),
+                      )
+                      .inDays +
+                  1;
 
               return AlertDialog(
                 title: const Text('Send Enquiry'),
@@ -1486,6 +1504,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               repository: transactionRepository,
               accessToken: accessToken,
               friendsRepository: widget.friendsRepository!,
+              accountRepository: widget.accountRepository,
             ),
           ),
         );
@@ -1825,7 +1844,9 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
   Future<void> _loadFriendStatus() async {
     final friendsRepository = widget.friendsRepository;
     final accessToken = widget.accessToken;
-    if (friendsRepository == null || accessToken == null || accessToken.isEmpty) {
+    if (friendsRepository == null ||
+        accessToken == null ||
+        accessToken.isEmpty) {
       return;
     }
     setState(() {
@@ -1836,8 +1857,12 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
       if (!mounted) return;
       final lenderId = widget.lender.id;
       final accepted = hub.accepted.any((friend) => friend.userId == lenderId);
-      final pendingSent = hub.pendingSent.any((friend) => friend.userId == lenderId);
-      final pendingReceived = hub.pendingReceived.any((friend) => friend.userId == lenderId);
+      final pendingSent = hub.pendingSent.any(
+        (friend) => friend.userId == lenderId,
+      );
+      final pendingReceived = hub.pendingReceived.any(
+        (friend) => friend.userId == lenderId,
+      );
       setState(() {
         if (accepted) {
           _friendStatus = 'accepted';
@@ -1886,7 +1911,10 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
     return _confirmAddAsFriendDialog(context, displayName);
   }
 
-  Future<void> _showFriendRequestSent(BuildContext context, String displayName) async {
+  Future<void> _showFriendRequestSent(
+    BuildContext context,
+    String displayName,
+  ) async {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -1906,7 +1934,8 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canRequestFriend = _isAuthenticated &&
+    final canRequestFriend =
+        _isAuthenticated &&
         widget.friendsRepository != null &&
         _friendStatus == null &&
         !_loadingFriendStatus;
@@ -1977,7 +2006,9 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
                   _metaRow(
                     context,
                     'Postcode',
-                    widget.lender.postcode.isEmpty ? '-' : widget.lender.postcode,
+                    widget.lender.postcode.isEmpty
+                        ? '-'
+                        : widget.lender.postcode,
                   ),
                   _metaRow(context, 'Verification', _verificationSummary()),
                   const SizedBox(height: 8),
@@ -2033,18 +2064,19 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
                             return;
                           }
                           try {
-                            final message = await widget.friendsRepository!.sendFriendRequest(
-                              accessToken: widget.accessToken!,
-                              userId: widget.lender.id,
-                            );
+                            final message = await widget.friendsRepository!
+                                .sendFriendRequest(
+                                  accessToken: widget.accessToken!,
+                                  userId: widget.lender.id,
+                                );
                             if (context.mounted) {
                               await _showFriendRequestSent(
                                 context,
                                 _lenderDisplayName(widget.lender),
                               );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(message)),
-                              );
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text(message)));
                             }
                           } catch (e) {
                             if (context.mounted) {
@@ -2059,10 +2091,10 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
                           _friendStatus == 'accepted'
                               ? 'Already friends'
                               : _friendStatus == 'pending_sent'
-                                  ? 'Friend request sent'
-                                  : _friendStatus == 'pending_received'
-                                      ? 'Respond in Friends'
-                                      : 'Add as friend',
+                              ? 'Friend request sent'
+                              : _friendStatus == 'pending_received'
+                              ? 'Respond in Friends'
+                              : 'Add as friend',
                         ),
                       ),
                     ),
@@ -2073,14 +2105,14 @@ class _LenderDetailScreenState extends State<_LenderDetailScreen> {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _LenderListingsScreen(
-                                lender: widget.lender,
-                                catalogRepository: widget.catalogRepository,
-                              ),
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _LenderListingsScreen(
+                              lender: widget.lender,
+                              catalogRepository: widget.catalogRepository,
                             ),
-                          );
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.inventory_2_outlined),
                       label: const Text('View all listings from this lender'),

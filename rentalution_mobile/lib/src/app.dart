@@ -597,6 +597,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
           accessToken: session.accessToken,
           repository: widget.transactionRepository,
           friendsRepository: widget.friendsRepository,
+          accountRepository: widget.accountRepository,
         ),
       ),
     );

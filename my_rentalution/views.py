@@ -135,7 +135,7 @@ def dashboard(request):
 @login_required
 def my_details(request):
     tab = (request.GET.get('tab') or 'account').strip().lower()
-    if tab not in {'account', 'cards'}:
+    if tab not in {'account', 'cards', 'payouts'}:
         tab = 'account'
 
     profile = get_object_or_404(Profile, user=request.user)

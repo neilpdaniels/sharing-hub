@@ -3,11 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/catalog_models.dart';
 import '../models/order_models.dart';
 import '../services/catalog_repository.dart';
 import '../services/order_repository.dart';
+import '../services/account_repository.dart';
 
 class ListingFormScreen extends StatefulWidget {
   const ListingFormScreen({
@@ -15,6 +17,7 @@ class ListingFormScreen extends StatefulWidget {
     required this.accessToken,
     required this.orderRepository,
     required this.catalogRepository,
+    required this.accountRepository,
     this.existingOrder,
     this.initialProductId,
     this.initialProductName,
@@ -24,6 +27,7 @@ class ListingFormScreen extends StatefulWidget {
   final String accessToken;
   final OrderRepository orderRepository;
   final CatalogRepository catalogRepository;
+  final AccountRepository accountRepository;
   final OrderSummary? existingOrder;
   final int? initialProductId;
   final String? initialProductName;
@@ -70,6 +74,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   String _collectionPolicy = 'MC';
 
   bool _saving = false;
+  bool? _payoutReady;
   bool _searchingProducts = false;
   bool _collectionIsNotHomeAddress = false;
   bool _showVerifiedUsersOnlyInfo = false;
@@ -101,8 +106,46 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   void initState() {
     super.initState();
     _initFromExistingOrder();
+    unawaited(_loadPayoutStatus());
     if (widget.existingOrder != null) {
       unawaited(_loadListingAttributeDefinitionsForExistingOrder());
+    }
+  }
+
+  Future<void> _loadPayoutStatus() async {
+    try {
+      final account = await widget.accountRepository.fetchAccountDetails(
+        accessToken: widget.accessToken,
+      );
+      if (!mounted) return;
+      setState(() {
+        _payoutReady =
+            account.stripeConnectTransfersEnabled &&
+            account.stripeConnectPayoutsEnabled;
+      });
+    } catch (_) {
+      // Do not block listing drafts if account status cannot be fetched.
+    }
+  }
+
+  Future<void> _openPayoutDetails() async {
+    try {
+      final url = await widget.accountRepository.openPayoutDetails(
+        accessToken: widget.accessToken,
+      );
+      if (url.isEmpty ||
+          !await launchUrl(
+            Uri.parse(url),
+            mode: LaunchMode.externalApplication,
+          )) {
+        throw Exception('Could not open Stripe payout setup.');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     }
   }
 
@@ -259,7 +302,8 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
         .toList(growable: false);
     final initialValues = <int, String>{
       for (final attribute in initialAttributes)
-        if (attribute.valueSource == 'listing') attribute.order: attribute.value,
+        if (attribute.valueSource == 'listing')
+          attribute.order: attribute.value,
     };
 
     for (final definition in listingDefs) {
@@ -274,7 +318,10 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     }
 
     final obsoleteOrders = _listingAttributeControllers.keys
-        .where((order) => !listingDefs.any((definition) => definition.order == order))
+        .where(
+          (order) =>
+              !listingDefs.any((definition) => definition.order == order),
+        )
         .toList(growable: false);
     for (final order in obsoleteOrders) {
       _listingAttributeControllers.remove(order)?.dispose();
@@ -447,7 +494,8 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
       messages.add('Enter a collection postcode.');
     }
     for (final definition in _listingAttributeDefinitions) {
-      final value = _listingAttributeControllers[definition.order]?.text.trim() ?? '';
+      final value =
+          _listingAttributeControllers[definition.order]?.text.trim() ?? '';
       if (value.isEmpty) {
         messages.add('Choose ${definition.name.toLowerCase()}.');
       }
@@ -613,14 +661,14 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
 
   Map<String, dynamic> _buildPayload() {
     final priceBands = <Map<String, dynamic>>[];
-    void addBand(TextEditingController daysController, TextEditingController priceController) {
+    void addBand(
+      TextEditingController daysController,
+      TextEditingController priceController,
+    ) {
       final days = int.tryParse(daysController.text.trim()) ?? 0;
       final price = double.tryParse(priceController.text.trim()) ?? 0;
       if (days > 0 && price >= 0) {
-        priceBands.add({
-          'duration_days': days,
-          'price_per_day': price,
-        });
+        priceBands.add({'duration_days': days, 'price_per_day': price});
       }
     }
 
@@ -655,7 +703,8 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     };
 
     for (final definition in _listingAttributeDefinitions) {
-      final value = _listingAttributeControllers[definition.order]?.text.trim() ?? '';
+      final value =
+          _listingAttributeControllers[definition.order]?.text.trim() ?? '';
       if (value.isNotEmpty) {
         payload['attribute_${definition.order}_value'] = value;
       }
@@ -886,10 +935,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                 const SizedBox(height: 8),
               ],
               if (_productSearchResults.isNotEmpty) ...[
-                Text(
-                  'Suggested matches',
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text('Suggested matches', style: theme.textTheme.bodySmall),
                 const SizedBox(height: 8),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 240),
@@ -965,7 +1011,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
               if (_productSearchResults.isNotEmpty) ...[
                 const SizedBox(height: 8),
               ],
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
             ],
             if (_listingAttributeDefinitions.isNotEmpty) ...[
               Align(
@@ -991,14 +1037,17 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: DropdownButtonFormField<String>(
-                      initialValue: definition.allowedValues.contains(currentValue)
+                      initialValue:
+                          definition.allowedValues.contains(currentValue)
                           ? currentValue
                           : '',
                       decoration: InputDecoration(labelText: definition.name),
                       items: [
                         DropdownMenuItem<String>(
                           value: '',
-                          child: Text('Select ${definition.name.toLowerCase()}'),
+                          child: Text(
+                            'Select ${definition.name.toLowerCase()}',
+                          ),
                         ),
                         ...definition.allowedValues.map(
                           (value) => DropdownMenuItem<String>(
@@ -1242,8 +1291,8 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                   _isFriendsOnly
                       ? 'Friends only hides public pricing, so only the friends price matters.'
                       : _isPublicOnly
-                          ? 'Public only listings use the public price and deposit only.'
-                          : 'Friends and public listings can show both a public rate and a friends rate.',
+                      ? 'Public only listings use the public price and deposit only.'
+                      : 'Friends and public listings can show both a public rate and a friends rate.',
                 ),
               ),
             ),
@@ -1592,70 +1641,104 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
       appBar: AppBar(title: Text(title)),
       body: Form(
         key: _formKey,
-        child: Stepper(
-          type: StepperType.vertical,
-          currentStep: _currentStep,
-          onStepContinue: () {
-            if (!_validateStep(_currentStep)) {
-              return;
-            }
-            if (_currentStep == _buildSteps().length - 1) {
-              _save();
-              return;
-            }
-            setState(() {
-              _currentStep += 1;
-            });
-          },
-          onStepCancel: () {
-            if (_currentStep == 0) {
-              Navigator.of(context).maybePop();
-              return;
-            }
-            setState(() {
-              _currentStep -= 1;
-            });
-          },
-          onStepTapped: (index) {
-            if (index > _currentStep && !_validateStep(_currentStep)) {
-              return;
-            }
-            setState(() {
-              _currentStep = index;
-            });
-          },
-          controlsBuilder: (context, details) {
-            final isLast = _currentStep == _buildSteps().length - 1;
-            return Row(
-              children: [
-                FilledButton.icon(
-                  onPressed: _saving ? null : details.onStepContinue,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          isLast
-                              ? Icons.check_circle_outline
-                              : Icons.arrow_forward,
+        child: Column(
+          children: [
+            if (_payoutReady == false)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Card(
+                  color: Colors.amber.withOpacity(0.12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Set up lender payouts before this listing can accept paid rentals.',
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
-                  label: Text(
-                    isLast
-                        ? (widget.isEdit ? 'Save listing' : 'Create listing')
-                        : 'Next',
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: _openPayoutDetails,
+                          child: const Text('Set up payouts'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                TextButton(
-                  onPressed: _saving ? null : details.onStepCancel,
-                  child: Text(_currentStep == 0 ? 'Close' : 'Back'),
-                ),
-              ],
-            );
-          },
-          steps: _buildSteps(),
+              ),
+            Expanded(
+              child: Stepper(
+                type: StepperType.vertical,
+                currentStep: _currentStep,
+                onStepContinue: () {
+                  if (!_validateStep(_currentStep)) {
+                    return;
+                  }
+                  if (_currentStep == _buildSteps().length - 1) {
+                    _save();
+                    return;
+                  }
+                  setState(() {
+                    _currentStep += 1;
+                  });
+                },
+                onStepCancel: () {
+                  if (_currentStep == 0) {
+                    Navigator.of(context).maybePop();
+                    return;
+                  }
+                  setState(() {
+                    _currentStep -= 1;
+                  });
+                },
+                onStepTapped: (index) {
+                  if (index > _currentStep && !_validateStep(_currentStep)) {
+                    return;
+                  }
+                  setState(() {
+                    _currentStep = index;
+                  });
+                },
+                controlsBuilder: (context, details) {
+                  final isLast = _currentStep == _buildSteps().length - 1;
+                  return Row(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _saving ? null : details.onStepContinue,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                isLast
+                                    ? Icons.check_circle_outline
+                                    : Icons.arrow_forward,
+                              ),
+                        label: Text(
+                          isLast
+                              ? (widget.isEdit
+                                    ? 'Save listing'
+                                    : 'Create listing')
+                              : 'Next',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      TextButton(
+                        onPressed: _saving ? null : details.onStepCancel,
+                        child: Text(_currentStep == 0 ? 'Close' : 'Back'),
+                      ),
+                    ],
+                  );
+                },
+                steps: _buildSteps(),
+              ),
+            ),
+          ],
         ),
       ),
     );

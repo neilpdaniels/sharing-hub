@@ -11,6 +11,8 @@ Run these commands from the repository root unless stated otherwise. The scripts
 | `./run_rentalution_mobile` | Starts the Flutter mobile app using the `dev` flavor. Displays a numbered device menu for connected USB Android devices, wireless Android devices, and Linux desktop. | `./run_rentalution_mobile` |
 | `./run_rentalution_mobile_dev` | Starts the Flutter app using the `dev` flavor without a device menu. Loads `.rentalution_mobile.dev.env` when present and defaults to the MagicDNS host `neil-laptop` when `API_BASE_URL` is not set. | `./run_rentalution_mobile_dev` |
 | `./run_rentalution_mobile_prod` | Starts the Flutter app using the `prod` flavor in release mode. Loads `.rentalution_mobile.prod.env` when present and defaults to `https://rentalution.co.uk/api/v1`. | `./run_rentalution_mobile_prod` |
+| `./run_payout_browser_tests` | Installs Playwright Chromium if needed, then runs real-browser website payout-gate regression tests against a disposable Django database. | `./run_payout_browser_tests` |
+| `./run_mobile_integration_tests` | Runs Flutter integration tests on a selected emulator/device; set `FLUTTER_DEVICE_ID` to avoid an interactive device choice. | `FLUTTER_DEVICE_ID=<device-id> ./run_mobile_integration_tests` |
 
 ### Mobile Wrappers
 

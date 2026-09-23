@@ -384,6 +384,53 @@ class WebTransactionWorkflowExtensionTests(TestCase):
 			price_as_pct_spot_value=20,
 		)
 
+	def _make_lender_payout_ready(self):
+		return Profile.objects.create(
+			user=self.lender,
+			date_of_birth=timezone.now().date() - timedelta(days=365 * 30),
+			mobile_number='07700900123',
+			address_line_1='1 Test Street',
+			town='London',
+			postcode='SW1A1AA',
+			stripe_connect_transfers_enabled=True,
+			stripe_connect_payouts_enabled=True,
+		)
+
+	def test_paid_enquiry_redirects_to_payout_setup_when_lender_is_not_ready(self):
+		txn = self._create_txn(
+			status=Transaction.RENTAL_ENQUIRY,
+			start_offset_days=2,
+			end_offset_days=5,
+		)
+
+		self.client.force_login(self.lender)
+		response = self.client.post(
+			reverse('transaction:view_transaction', kwargs={'transaction_reference': txn.transaction_reference}),
+			{'action': 'agree_rental'},
+		)
+
+		self.assertRedirects(response, '/my_rentalution/my_details/?tab=payouts', fetch_redirect_response=False)
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_ENQUIRY)
+
+	def test_paid_enquiry_can_be_accepted_when_lender_payouts_are_ready(self):
+		txn = self._create_txn(
+			status=Transaction.RENTAL_ENQUIRY,
+			start_offset_days=2,
+			end_offset_days=5,
+		)
+		self._make_lender_payout_ready()
+
+		self.client.force_login(self.lender)
+		response = self.client.post(
+			reverse('transaction:view_transaction', kwargs={'transaction_reference': txn.transaction_reference}),
+			{'action': 'agree_rental'},
+		)
+
+		self.assertEqual(response.status_code, 302)
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_AGREED)
+
 	def test_workflow_payload_exposes_user_specific_allowed_actions(self):
 		txn = self._create_txn(
 			status=Transaction.RENTAL_AGREED,

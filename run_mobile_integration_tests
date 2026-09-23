@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+MOBILE_ROOT="$PROJECT_ROOT/rentalution_mobile"
+
+cd "$MOBILE_ROOT"
+
+# Set FLUTTER_DEVICE_ID (for example, an Android emulator ID from
+# `flutter devices`) to select a target non-interactively. Without it, Flutter
+# offers the connected emulator/device choices.
+if [[ -n "${FLUTTER_DEVICE_ID:-}" ]]; then
+  flutter test integration_test -d "$FLUTTER_DEVICE_ID" "$@"
+else
+  flutter test integration_test "$@"
+fi

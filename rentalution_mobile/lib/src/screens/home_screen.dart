@@ -1032,6 +1032,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handlePayoutReturnRoute(
+        WidgetsBinding.instance.platformDispatcher.defaultRouteName,
+      );
+    });
     WidgetsBinding.instance.addObserver(this);
     _loadCategories();
     _resolveInitialLocation();
@@ -1040,6 +1045,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _loadFavouriteOrders();
       _loadInbox();
     }
+  }
+
+  Future<void> _handlePayoutReturnRoute(String route) async {
+    final uri = Uri.tryParse(route);
+    final path = uri?.path ?? route;
+    if (path != '/app/payouts/return/' && path != '/app/payouts/return') {
+      return;
+    }
+    await _openAccountDetails();
+  }
+
+  @override
+  Future<bool> didPushRouteInformation(
+    RouteInformation routeInformation,
+  ) async {
+    await _handlePayoutReturnRoute(routeInformation.uri.toString());
+    final path = routeInformation.uri.path;
+    return path == '/app/payouts/return/' || path == '/app/payouts/return';
   }
 
   @override
@@ -1853,6 +1876,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           accessToken: accessToken,
           orderRepository: widget.orderRepository,
           catalogRepository: widget.catalogRepository,
+          accountRepository: widget.accountRepository,
           existingOrder: order,
         ),
       ),
@@ -1912,6 +1936,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           accessToken: accessToken,
           orderRepository: widget.orderRepository,
           catalogRepository: widget.catalogRepository,
+          accountRepository: widget.accountRepository,
           initialProductId: initialProductId,
           initialProductName: initialProductName,
           initialPostcode: initialPostcode,
@@ -3598,6 +3623,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           productSlug: _selectedProductSlug,
           catalogRepository: widget.catalogRepository,
           transactionRepository: widget.transactionRepository,
+          accountRepository: widget.accountRepository,
           accessToken: widget.accessToken,
           searchLocation: _effectiveSearchLocation(),
           initialDistanceKm: _selectedDistance,
@@ -3746,6 +3772,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           accessToken: accessToken,
           repository: widget.transactionRepository,
           friendsRepository: widget.friendsRepository,
+          accountRepository: widget.accountRepository,
         ),
         Positioned(
           top: 0,

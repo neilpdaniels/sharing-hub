@@ -156,6 +156,7 @@ class TransactionDetail extends TransactionSummary {
     required this.disputeFinalStatementDeadline,
     required this.disputeFinalStatementSecondsRemaining,
     required this.disputeFinalStatementOpen,
+    required this.payoutSettlements,
   });
 
   final String enquiryMessage;
@@ -194,6 +195,7 @@ class TransactionDetail extends TransactionSummary {
   final DateTime? disputeFinalStatementDeadline;
   final int? disputeFinalStatementSecondsRemaining;
   final bool disputeFinalStatementOpen;
+  final List<PayoutSettlement> payoutSettlements;
 
   bool get canSubmitVideoEvidence => workflowPayload.allowedActions.any(
     (action) => const {
@@ -327,8 +329,42 @@ class TransactionDetail extends TransactionSummary {
           (json['dispute_final_statement_seconds_remaining'] as num?)?.toInt(),
       disputeFinalStatementOpen:
           json['dispute_final_statement_open'] as bool? ?? false,
+      payoutSettlements:
+          (json['payout_settlements'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(PayoutSettlement.fromJson)
+              .toList(growable: false),
     );
   }
+}
+
+class PayoutSettlement {
+  PayoutSettlement({
+    required this.kindDisplay,
+    required this.statusDisplay,
+    required this.grossAmount,
+    required this.stripeFee,
+    required this.netTransferAmount,
+    required this.platformShortfall,
+  });
+
+  final String kindDisplay;
+  final String statusDisplay;
+  final double grossAmount;
+  final double stripeFee;
+  final double netTransferAmount;
+  final double platformShortfall;
+
+  factory PayoutSettlement.fromJson(
+    Map<String, dynamic> json,
+  ) => PayoutSettlement(
+    kindDisplay: json['kind_display'] as String? ?? 'Payout',
+    statusDisplay: json['status_display'] as String? ?? 'Pending',
+    grossAmount: (json['gross_amount'] as num?)?.toDouble() ?? 0,
+    stripeFee: (json['stripe_fee'] as num?)?.toDouble() ?? 0,
+    netTransferAmount: (json['net_transfer_amount'] as num?)?.toDouble() ?? 0,
+    platformShortfall: (json['platform_shortfall'] as num?)?.toDouble() ?? 0,
+  );
 }
 
 class DisputeCaseSummary {

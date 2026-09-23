@@ -44,6 +44,11 @@ check_var FCM_SENDER_ID
 check_var FCM_SERVICE_ACCOUNT_FILE
 check_var DEFAULT_FROM_EMAIL
 check_var SITE_URL
+if [ "${MOBILE_APP_LINKS_REQUIRED:-0}" = "1" ]; then
+    check_var MOBILE_APP_LINK_HOST
+    check_var APPLE_APP_LINK_TEAM_ID
+    check_var ANDROID_APP_LINK_SHA256
+fi
 check_var ENVIRONMENT_NAME
 check_var ENVIRONMENT_COLOR
 

@@ -22,6 +22,9 @@ SILENCED_SYSTEM_CHECKS = ['models.W042']
 ENVIRONMENT_NAME = os.environ.get('ENVIRONMENT_NAME', 'Development')
 ENVIRONMENT_COLOR = os.environ.get('ENVIRONMENT_COLOR', 'blue')
 SITE_URL = os.environ.get('SITE_URL', 'https://rentalution.co.uk')
+MOBILE_APP_LINK_HOST = os.environ.get('MOBILE_APP_LINK_HOST', 'rentalution.co.uk').strip().lower()
+APPLE_APP_LINK_TEAM_ID = os.environ.get('APPLE_APP_LINK_TEAM_ID', '').strip()
+ANDROID_APP_LINK_SHA256 = os.environ.get('ANDROID_APP_LINK_SHA256', '').strip()
 # Optional public origin for the browser-based evidence QR.  This is useful
 # locally when the page is opened on localhost but the QR is scanned by a phone.
 PHONE_EVIDENCE_BASE_URL = os.environ.get('PHONE_EVIDENCE_BASE_URL', '').rstrip('/')

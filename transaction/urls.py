@@ -30,6 +30,7 @@ urlpatterns = [
     path('stripe/connect/webhook/', views.stripe_connect_webhook, name='stripe_connect_webhook'),
     path('stripe/connect/onboarding/', views.stripe_connect_onboarding, name='stripe_connect_onboarding'),
     path('stripe/connect/onboarding/return/', views.stripe_connect_onboarding_return, name='stripe_connect_onboarding_return'),
+    path('stripe/connect/payout-details/', views.stripe_connect_payout_details, name='stripe_connect_payout_details'),
     path('dispute/<str:case_number>/review/', views.dispute_case_review, name='dispute_case_review'),
     path('admin/transactions/', views.admin_transaction_browser, name='admin_transaction_browser'),
 

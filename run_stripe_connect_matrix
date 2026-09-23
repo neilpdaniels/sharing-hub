@@ -18,7 +18,7 @@ if (($# == 0)); then
   echo "Stripe Connect Sandbox matrix:"
   echo "  1) Check deposit policies and start the managed webhook listener if needed"
   echo "  2) Run successful payment/deposit checks (Sandbox; test payments are cleaned up)"
-  echo "  3) Run successful checks plus decline-card checks (Sandbox)"
+  echo "  3) Run successful checks plus all supported decline-card checks (Sandbox)"
   echo "  q) Cancel"
   echo ""
   while true; do

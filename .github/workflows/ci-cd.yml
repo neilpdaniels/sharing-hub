@@ -111,6 +111,7 @@ jobs:
             export WEB_IMAGE="${{ env.IMAGE_NAME }}:latest"
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps web sh scripts/check_prod_env.sh
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
             sudo install -m 0644 /tmp/rentalution-nginx/deploy/nginx/rentalution.conf /etc/nginx/sites-available/rentalution
             sudo ln -sfn /etc/nginx/sites-available/rentalution /etc/nginx/sites-enabled/rentalution

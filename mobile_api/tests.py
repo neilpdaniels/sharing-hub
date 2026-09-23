@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -692,6 +692,55 @@ class TransactionActionWorkflowTests(TestCase):
         self.assertIn('add_deposit_card', renter_actions)
         self.assertNotIn('confirm_lender_contract', renter_actions)
         self.assertNotIn('collect_deposit', renter_actions)
+
+    def test_paid_enquiry_cannot_be_accepted_without_lender_payout_setup(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_ENQUIRY,
+            start_offset_days=2,
+            end_offset_days=5,
+        )
+
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {'action': 'agree_rental'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['code'], 'payout_setup_required')
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.RENTAL_ENQUIRY)
+
+    def test_paid_enquiry_can_be_accepted_when_lender_payouts_are_ready(self):
+        txn = self._create_txn(
+            status=Transaction.RENTAL_ENQUIRY,
+            start_offset_days=2,
+            end_offset_days=5,
+        )
+        Profile.objects.update_or_create(
+            user=self.lender,
+            defaults={
+                'stripe_connect_transfers_enabled': True,
+                'stripe_connect_payouts_enabled': True,
+                'date_of_birth': date(1990, 1, 1),
+                'mobile_number': '07700900123',
+                'address_line_1': '1 Test Street',
+                'town': 'London',
+                'postcode': 'SW1A1AA',
+            },
+        )
+
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            reverse('mobile_api:transactions_actions', kwargs={'transaction_reference': txn.transaction_reference}),
+            {'action': 'agree_rental'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        txn.refresh_from_db()
+        self.assertEqual(txn.transaction_status, Transaction.RENTAL_AGREED)
 
     def test_mobile_report_missing_rental_and_feedback_path(self):
         txn = self._create_txn(

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
+SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
+
+source "$VENV_PATH"
+cd "$PROJECT_ROOT"
+export DJANGO_SETTINGS_MODULE="$SETTINGS_MODULE"
+: "${RENTALUTION_SECRET_KEY:=browser-test-only}"
+export RENTALUTION_SECRET_KEY
+
+uv run playwright install chromium
+uv run python manage.py test transaction.test_payout_browser --settings="$SETTINGS_MODULE" "$@"

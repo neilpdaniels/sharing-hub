@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
+SETTINGS_MODULE="${SETTINGS_MODULE:-rentalution.settings.local}"
+
+if [[ ! -f "$VENV_PATH" ]]; then
+  echo "Virtual environment not found: $VENV_PATH" >&2
+  exit 1
+fi
+
+# Match the main server/test scripts: this activation carries the local Django
+# and Stripe environment variables as well as selecting the project Python.
+source "$VENV_PATH"
+cd "$PROJECT_ROOT"
+export DJANGO_SETTINGS_MODULE="$SETTINGS_MODULE"
+
+if (($# == 0)); then
+  echo ""
+  echo "Stripe lifecycle scenario (Sandbox only):"
+  echo "  1) Show the full-release plan (no Stripe objects created)"
+  echo "  2) Run full deposit release — rental charge + lender transfer + cancelled deposit hold"
+  echo "  3) Run partial deposit award — rental charge + lender transfer + £20 deposit capture"
+  echo "  4) Run fee-shortfall award — rental charge + lender transfer + £1 deposit capture"
+  echo "  q) Cancel"
+  echo ""
+  echo "Execution resets only the marked scenario fixtures and creates Stripe Sandbox test objects."
+  while true; do
+    read -r -p "Choose: " selection || exit 0
+    case "$selection" in
+      1) set -- --case full-release; break ;;
+      2) set -- --case full-release --execute; break ;;
+      3) set -- --case partial-award --execute; break ;;
+      4) set -- --case fee-shortfall --execute; break ;;
+      q|Q) exit 0 ;;
+      *) echo "Please choose 1, 2, 3, 4, or q." ;;
+    esac
+  done
+
+  if [[ " $* " == *" --execute "* ]]; then
+    while true; do
+      read -r -p "Enabled Stripe Sandbox Connect account (acct_...): " destination_account || exit 0
+      if [[ "$destination_account" == acct_* ]]; then
+        set -- "$@" --destination-account "$destination_account"
+        break
+      fi
+      echo "Enter an account ID beginning with acct_."
+    done
+  fi
+fi
+
+uv run python manage.py stripe_lifecycle_scenario --settings="$SETTINGS_MODULE" "$@"

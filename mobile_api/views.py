@@ -1031,13 +1031,59 @@ class MobilePayoutOnboardingView(APIView):
         if profile is None:
             raise ValidationError('Profile not found.')
         refresh_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding'))
-        return_url = request.build_absolute_uri(reverse('transaction:stripe_connect_onboarding_return'))
+        return_url = f'https://{settings.MOBILE_APP_LINK_HOST}{reverse("mobile_payout_return")}'
         result = stripe_connect_service.create_lender_onboarding_link(
-            profile=profile, refresh_url=refresh_url, return_url=return_url,
+            profile=profile,
+            refresh_url=refresh_url,
+            return_url=return_url,
+            business_type=(request.data.get('business_type') or '').strip().lower(),
         )
         if not result.get('ok') or not result.get('url'):
             return Response({'detail': result.get('error', 'Unable to start payout setup.')}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'url': result['url'], 'account_id': result.get('account_id', '')}, status=status.HTTP_200_OK)
+
+
+class MobilePayoutDetailsView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        profile = Profile.objects.filter(user=request.user).first()
+        if profile is None:
+            raise ValidationError('Profile not found.')
+        refresh_url = request.build_absolute_uri(reverse('transaction:stripe_connect_payout_details'))
+        return_url = f'https://{settings.MOBILE_APP_LINK_HOST}{reverse("mobile_payout_return")}'
+        result = stripe_connect_service.create_lender_payout_details_link(
+            profile=profile,
+            refresh_url=refresh_url,
+            return_url=return_url,
+            business_type=(request.data.get('business_type') or '').strip().lower(),
+        )
+        if not result.get('ok') or not result.get('url'):
+            return Response({'detail': result.get('error', 'Unable to open payout details.')}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'url': result['url']}, status=status.HTTP_200_OK)
+
+
+class MobilePayoutStatusRefreshView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        profile = Profile.objects.filter(user=request.user).first()
+        if profile is None:
+            raise ValidationError('Profile not found.')
+        result = stripe_connect_service.refresh_lender_payout_status(profile=profile)
+        if not result.get('ok'):
+            return Response({'detail': result.get('error', 'Unable to refresh payout status.')}, status=status.HTTP_400_BAD_REQUEST)
+        profile = result.get('profile') or profile
+        return Response(
+            {
+                'profile': {
+                    'stripe_connect_transfers_enabled': profile.stripe_connect_transfers_enabled,
+                    'stripe_connect_payouts_enabled': profile.stripe_connect_payouts_enabled,
+                    'stripe_connect_requirements': profile.stripe_connect_requirements,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class MobileKycStatusView(APIView):
@@ -2137,6 +2183,20 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             return txn_msg_image.video.url if txn_msg_image.video else ''
 
         if action == 'agree_rental' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:
+            rental_total = ((txn.quantity or 0) * (txn.price or 0)) + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0)
+            profile = Profile.objects.filter(user=request.user).first()
+            if rental_total > 0 and (
+                profile is None
+                or not profile.stripe_connect_transfers_enabled
+                or not profile.stripe_connect_payouts_enabled
+            ):
+                return Response(
+                    {
+                        'detail': 'Set up lender payouts before accepting this paid rental. Your enquiry is still waiting for you.',
+                        'code': 'payout_setup_required',
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             txn.prev_transaction_status = txn.transaction_status
             txn.transaction_status = txn.RENTAL_AGREED
             txn.lender_agreement_pending_at = timezone.now()

@@ -97,7 +97,7 @@
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-2 mb-3">
                         <div class="card earn-card">
                             <div class="card-body">
                                 <div class="earn-label">Tax Period Total (Net)</div>
@@ -105,7 +105,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-2 mb-3">
                         <div class="card earn-card">
                             <div class="card-body">
                                 <div class="earn-label">Tax Period Gross</div>
@@ -113,7 +113,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-2 mb-3">
                         <div class="card earn-card">
                             <div class="card-body">
                                 <div class="earn-label">Fees In Period</div>
@@ -121,12 +121,28 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-2 mb-3">
                         <div class="card earn-card">
                             <div class="card-body">
                                 <div class="earn-label">Pending Payments</div>
                                 <div class="earn-figure">GBP {{ pending_total|floatformat:2 }}</div>
                                 <small class="text-muted">{{ pending_rows|length }} booking{{ pending_rows|length|pluralize }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <div class="card earn-card">
+                            <div class="card-body">
+                                <div class="earn-label">Paid to Your Stripe Account</div>
+                                <div class="earn-figure">GBP {{ filtered_paid_out_total|floatformat:2 }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <div class="card earn-card">
+                            <div class="card-body">
+                                <div class="earn-label">Awaiting Stripe Transfer</div>
+                                <div class="earn-figure">GBP {{ awaiting_payout_total|floatformat:2 }}</div>
                             </div>
                         </div>
                     </div>

@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -108,6 +109,14 @@ class StripeConnectServiceTests(TestCase):
         result = self.service.transfer_rental_proceeds(transaction=self.transaction)
         self.assertFalse(result['ok'])
         self.assertIn('not enabled', result['error'])
+
+    def test_rental_total_accepts_decimal_values_on_an_unsaved_instance(self):
+        """Lifecycle tooling may reuse an instance before Django reloads FloatFields."""
+        self.transaction.price = Decimal('30.00')
+        self.transaction.delivery_cost = Decimal('10.00')
+        self.transaction.rentalution_fee = Decimal('4.00')
+
+        self.assertEqual(self.service._rental_total_minor(self.transaction), 4400)
 
     def test_transfer_is_idempotent_and_tied_to_original_charge(self):
         self.profile.stripe_connect_account_id = 'acct_enabled'

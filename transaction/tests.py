@@ -320,6 +320,35 @@ class PaymentSummaryTests(TestCase):
 			response = self.client.get(reverse('transaction:payment_summary'))
 			self.assertEqual(response.status_code, 404)
 
+	def test_admin_transaction_payment_summary_reconciles_deposit_release(self):
+		PaymentAttempt.objects.create(
+			transaction=self.txn, status=PaymentAttempt.STATUS_SUCCESS,
+			failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT, amount=0,
+			context={'resolution_action': 'release_hold'},
+		)
+		self.client.force_login(self.staff)
+		response = self.client.get(reverse(
+			'transaction:admin_transaction_payment_summary', args=[self.txn.transaction_reference],
+		))
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'authorisation was cancelled')
+		self.assertContains(response, 'Transaction payment summary')
+
+	def test_rentalution_payments_summary_lists_captured_service_fee(self):
+		self.txn.payment_status = Transaction.PAYMENT_CAPTURED_PLACEHOLDER
+		self.txn.rentalution_fee = 4
+		self.txn.save(update_fields=['payment_status', 'rentalution_fee'])
+		PaymentAttempt.objects.create(
+			transaction=self.txn, status=PaymentAttempt.STATUS_SUCCESS,
+			failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE, amount=29,
+			stripe_object_id='pi_rental_fee', context={'stripe_processing_fee': 1.25},
+		)
+		self.client.force_login(self.staff)
+		response = self.client.get(reverse('transaction:rentalution_payments_summary'))
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Rentalution payments')
+		self.assertContains(response, '£4.00')
+
 	@patch('transaction.views.stripe_connect_service.collect_rental_payment')
 	def test_rental_payment_failure_records_attempt_and_blocks_pin(self, mock_collect):
 		mock_collect.return_value = {'ok': False, 'error': 'card_declined', 'provider': 'stripe'}

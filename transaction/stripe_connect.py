@@ -1,5 +1,6 @@
 import logging
 import os
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.core.cache import cache
@@ -44,9 +45,25 @@ class StripeConnectService:
 
     def _to_minor_units(self, amount):
         try:
-            return int(round(max(0, float(amount or 0)) * 100))
-        except (TypeError, ValueError):
+            # Convert through str so Decimal values and binary floats have the
+            # same, predictable conversion at the Stripe boundary.
+            value = Decimal(str(amount or 0))
+            return int(max(Decimal('0'), value).quantize(Decimal('0.01')) * 100)
+        except (InvalidOperation, TypeError, ValueError):
             return 0
+
+    def _transaction_amount(self, value):
+        """Normalise model values before combining them as money amounts."""
+        try:
+            return Decimal(str(value or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            return Decimal('0')
+
+    def _rental_amount(self, transaction):
+        return self._transaction_amount(transaction.quantity) * self._transaction_amount(transaction.price)
+
+    def _rental_proceeds_amount(self, transaction):
+        return self._rental_amount(transaction) + self._transaction_amount(transaction.delivery_cost)
 
     def _identity_verification_minor_amount(self):
         return self._to_minor_units(getattr(settings, 'STRIPE_IDENTITY_VERIFICATION_AMOUNT', 1.50))
@@ -206,7 +223,7 @@ class StripeConnectService:
             transaction=transaction, kind=StripeSettlement.KIND_RENTAL,
             defaults={
                 'idempotency_key': f'rental-transfer-{transaction.id}',
-                'gross_amount': ((transaction.quantity or 0) * (transaction.price or 0)) + (transaction.delivery_cost or 0),
+                'gross_amount': float(self._rental_proceeds_amount(transaction)),
             },
         )
         if settlement.status == StripeSettlement.STATUS_SUCCEEDED:
@@ -228,7 +245,7 @@ class StripeConnectService:
             source_charge = getattr(payment_intent, 'latest_charge', '')
             if not isinstance(source_charge, str):
                 source_charge = getattr(source_charge, 'id', '')
-            amount = self._to_minor_units((transaction.quantity * transaction.price) + transaction.delivery_cost)
+            amount = self._to_minor_units(self._rental_proceeds_amount(transaction))
             if amount <= 0 or not source_charge:
                 return {'ok': False, 'error': 'Rental payment is not available for transfer.'}
             transfer = stripe.Transfer.create(
@@ -376,9 +393,9 @@ class StripeConnectService:
             return {}
 
     def _rental_total_minor(self, transaction):
-        rental_amount = (transaction.quantity or 0) * (transaction.price or 0)
-        delivery_amount = transaction.delivery_cost or 0
-        rentalution_amount = transaction.rentalution_fee or 0
+        rental_amount = self._rental_amount(transaction)
+        delivery_amount = self._transaction_amount(transaction.delivery_cost)
+        rentalution_amount = self._transaction_amount(transaction.rentalution_fee)
         return self._to_minor_units(rental_amount + delivery_amount + rentalution_amount)
 
     def _long_rental_requires_credit_or_mastercard(self, transaction):
@@ -1066,9 +1083,9 @@ class StripeConnectService:
                     'transaction_id': str(transaction.id),
                     'transaction_reference': transaction.transaction_reference,
                     'purpose': 'rental_payment',
-                    'rental_price': f'{float((transaction.quantity or 0) * (transaction.price or 0)):.2f}',
-                    'delivery_cost': f'{float(getattr(transaction, "delivery_cost", 0) or 0):.2f}',
-                    'rentalution_fee': f'{float(getattr(transaction, "rentalution_fee", 0) or 0):.2f}',
+                    'rental_price': f'{self._rental_amount(transaction):.2f}',
+                    'delivery_cost': f'{self._transaction_amount(transaction.delivery_cost):.2f}',
+                    'rentalution_fee': f'{self._transaction_amount(transaction.rentalution_fee):.2f}',
                 },
             )
 
@@ -1108,9 +1125,9 @@ class StripeConnectService:
                 card_funding=card_funding,
                 context={
                     'payment_intent_status': status,
-                    'rental_amount': ((transaction.quantity or 0) * (transaction.price or 0)),
-                    'delivery_amount': transaction.delivery_cost or 0,
-                    'service_fee': transaction.rentalution_fee or 0,
+                    'rental_amount': float(self._rental_amount(transaction)),
+                    'delivery_amount': float(self._transaction_amount(transaction.delivery_cost)),
+                    'service_fee': float(self._transaction_amount(transaction.rentalution_fee)),
                     **self._balance_context(stripe, intent),
                 },
             )

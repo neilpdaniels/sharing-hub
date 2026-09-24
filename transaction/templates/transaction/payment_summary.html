@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container mt-4">
   <h3 class="mb-1">Payment Summary</h3>
-  <p class="text-muted">Admin-only view for Stripe capture outcomes and failure points.</p>
+  <p class="text-muted">Admin-only view for Stripe capture outcomes and failure points. <a href="{% url 'transaction:rentalution_payments_summary' %}">View Rentalution payments</a>.</p>
 
   <div class="row mb-3">
     <div class="col-md-4"><div class="card"><div class="card-body"><strong>Success</strong><div>{{ totals.success }}</div></div></div></div>
@@ -12,22 +12,44 @@
   </div>
 
   <div class="card mb-4">
+    <div class="card-header"><strong>Rentalution service-fee ledger</strong></div>
+    <div class="card-body table-responsive">
+      <p class="small text-muted">Each row reconciles a renter charge with the lender payout and Rentalution’s service fee. Platform net is shown only once Stripe has reported its processing fee.</p>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Transaction</th><th>Renter paid</th><th>Rental</th><th>Delivery</th><th>Rentalution fee</th><th>Lender transfer</th><th>Stripe fee</th><th>Platform net</th></tr></thead>
+        <tbody>
+          {% for row in rentalution_fee_rows %}
+          <tr>
+            <td><a href="{% url 'transaction:admin_transaction_payment_summary' row.txn.transaction_reference %}">{{ row.txn.transaction_reference }}</a></td>
+            <td>£{{ row.renter_paid|floatformat:2 }}</td><td>£{{ row.rental_amount|floatformat:2 }}</td><td>£{{ row.delivery_amount|floatformat:2 }}</td>
+            <td><strong>£{{ row.service_fee|floatformat:2 }}</strong></td>
+            <td>{% if row.lender_transfer is not None %}£{{ row.lender_transfer|floatformat:2 }}{% else %}<span class="text-muted">Awaiting transfer</span>{% endif %}</td>
+            <td>{% if row.stripe_fee is not None %}£{{ row.stripe_fee|floatformat:2 }}{% else %}<span class="text-muted">Not reported yet</span>{% endif %}</td>
+            <td>{% if row.platform_net is not None %}£{{ row.platform_net|floatformat:2 }}{% else %}<span class="text-muted">Pending Stripe fee</span>{% endif %}</td>
+          </tr>
+          {% empty %}<tr><td colspan="8" class="text-muted">No captured rental payments with a Rentalution service fee yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card mb-4">
     <div class="card-header"><strong>Platform financial totals</strong></div>
     <div class="card-body">
       <div class="row">
         <div class="col-md-4"><strong>Gross rental + delivery volume</strong><div>£{{ transaction_financial_totals.gross_volume|floatformat:2 }}</div></div>
-        <div class="col-md-4"><strong>Service-fee revenue</strong><div>£{{ transaction_financial_totals.service_fee_revenue|floatformat:2 }}</div></div>
+        <div class="col-md-4"><strong>Rentalution service-fee revenue (before Stripe fees)</strong><div>£{{ transaction_financial_totals.service_fee_revenue|floatformat:2 }}</div></div>
         <div class="col-md-4"><strong>Deposit authorisations held</strong><div>£{{ transaction_financial_totals.held_deposits|floatformat:2 }}</div></div>
       </div>
     </div>
   </div>
 
   <div class="card mb-4">
-    <div class="card-header"><strong>Failure points</strong></div>
+    <div class="card-header"><strong>Payment attempts by stage</strong></div>
     <div class="card-body">
       <ul class="mb-0">
         {% for row in by_point %}
-        <li>{{ row.failure_point }}: {{ row.total }}</li>
+        <li>{{ row.failure_point }}: {{ row.total }} attempt{{ row.total|pluralize }}</li>
         {% empty %}
         <li class="text-muted">No payment attempts yet.</li>
         {% endfor %}
@@ -40,13 +62,13 @@
     <div class="card-body table-responsive">
       <p class="small text-muted">Gross £{{ settlement_totals.gross|default:0|floatformat:2 }} · Stripe fees £{{ settlement_totals.fees|default:0|floatformat:2 }} · Lender transfers £{{ settlement_totals.transferred|default:0|floatformat:2 }} · Shortfalls £{{ settlement_totals.shortfalls|default:0|floatformat:2 }}</p>
       <table class="table table-sm mb-0">
-        <thead><tr><th>Transaction</th><th>Type</th><th>Status</th><th>Gross</th><th>Fee</th><th>Transfer</th><th>Shortfall</th><th>Failure</th><th></th></tr></thead>
+        <thead><tr><th>Transaction</th><th>Type</th><th>Status</th><th>Gross</th><th>Fee</th><th>Transfer</th><th>Shortfall</th><th>Outcome / failure</th><th></th></tr></thead>
         <tbody>
           {% for settlement in settlements %}
           <tr>
-            <td><a href="{% url 'transaction:view_transaction' settlement.transaction.transaction_reference %}">{{ settlement.transaction.transaction_reference }}</a></td>
+            <td><a href="{% url 'transaction:admin_transaction_payment_summary' settlement.transaction.transaction_reference %}">{{ settlement.transaction.transaction_reference }}</a></td>
             <td>{{ settlement.get_kind_display }}</td><td>{{ settlement.get_status_display }}</td>
-            <td>£{{ settlement.gross_amount|floatformat:2 }}</td><td>£{{ settlement.stripe_fee|floatformat:2 }}</td><td>£{{ settlement.net_transfer_amount|floatformat:2 }}</td><td>£{{ settlement.platform_shortfall|floatformat:2 }}</td><td>{{ settlement.failure_reason|default:'-' }}</td>
+            <td>£{{ settlement.gross_amount|floatformat:2 }}</td><td>£{{ settlement.stripe_fee|floatformat:2 }}</td><td>£{{ settlement.net_transfer_amount|floatformat:2 }}</td><td>£{{ settlement.platform_shortfall|floatformat:2 }}</td><td>{{ settlement.outcome }}</td>
             <td>{% if settlement.status == 'failed' %}<form method="post" action="{% url 'transaction:retry_stripe_settlement' settlement.id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry</button></form>{% endif %}</td>
           </tr>
           {% empty %}<tr><td colspan="9" class="text-muted">No Connect settlements yet.</td></tr>{% endfor %}
@@ -69,21 +91,21 @@
             <th>Stripe fee</th>
             <th>Net</th>
             <th>Card</th>
-            <th>Failure</th>
+            <th>Outcome / failure</th>
           </tr>
         </thead>
         <tbody>
           {% for attempt in attempts %}
           <tr>
             <td>{{ attempt.created_at|date:'d M Y H:i' }}</td>
-            <td><a href="{% url 'transaction:view_transaction' attempt.transaction.transaction_reference %}">{{ attempt.transaction.transaction_reference }}</a></td>
+            <td><a href="{% url 'transaction:admin_transaction_payment_summary' attempt.transaction.transaction_reference %}">{{ attempt.transaction.transaction_reference }}</a></td>
             <td>{{ attempt.get_failure_point_display }}</td>
             <td>{{ attempt.get_status_display }}</td>
             <td>{{ attempt.amount }} {{ attempt.currency }}</td>
             <td>{{ attempt.context.stripe_processing_fee|default:'-' }}</td>
             <td>{{ attempt.context.stripe_net_amount|default:'-' }}</td>
             <td>{{ attempt.card_brand }} {{ attempt.card_funding }}</td>
-            <td>{{ attempt.error_message|default:'-' }}</td>
+            <td>{{ attempt.outcome }}</td>
           </tr>
           {% empty %}
           <tr><td colspan="9" class="text-muted">No attempts yet.</td></tr>

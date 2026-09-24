@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from django.core.paginator import Paginator, EmptyPage,\
                         PageNotAnInteger
-from transaction.models import Transaction, TransactionMessage, TransactionCharge
+from transaction.models import StripeSettlement, Transaction, TransactionMessage, TransactionCharge
 from itertools import chain
 from operator import attrgetter
 from django.db.models import Q, Prefetch
@@ -404,6 +404,15 @@ def _is_realized_for_lender(txn):
     return txn.payment_status == Transaction.PAYMENT_CAPTURED_PLACEHOLDER or txn.payment_collected_placeholder
 
 
+def _lender_rental_proceeds(txn):
+    """Amount owed to the lender: rental price for all items plus delivery.
+
+    The Rentalution service fee is paid by the renter and is deliberately not
+    included in lender earnings.
+    """
+    return ((txn.quantity or 0) * (txn.price or 0)) + (txn.delivery_cost or 0)
+
+
 def _order_money_summary(user, orders):
     order_ids = [order.id for order in orders]
     if not order_ids:
@@ -416,7 +425,7 @@ def _order_money_summary(user, orders):
     money_earned = 0.0
     money_pending = 0.0
     for txn in txns:
-        amount = float(txn.price or 0)
+        amount = float(_lender_rental_proceeds(txn))
         if txn.payment_status == Transaction.PAYMENT_CAPTURED_PLACEHOLDER or txn.payment_collected_placeholder:
             money_earned += amount
         elif txn.payment_status == Transaction.PAYMENT_PENDING and amount > 0:
@@ -444,6 +453,12 @@ def earnings(request):
                 'transactioncharge_set',
                 queryset=TransactionCharge.objects.filter(user_to_pay=request.user),
             )
+            ,
+            Prefetch(
+                'stripe_settlements',
+                queryset=StripeSettlement.objects.filter(kind=StripeSettlement.KIND_RENTAL),
+                to_attr='rental_settlements',
+            ),
         )
     )
 
@@ -452,8 +467,14 @@ def earnings(request):
 
     for txn in lender_transactions:
         fee_total = sum((charge.price or 0) for charge in txn.transactioncharge_set.all())
-        gross_amount = txn.price or 0
+        gross_amount = _lender_rental_proceeds(txn)
         net_amount = gross_amount - fee_total
+        rental_settlement = next(
+            (settlement for settlement in txn.rental_settlements
+             if settlement.status == StripeSettlement.STATUS_SUCCEEDED),
+            None,
+        )
+        paid_out_amount = rental_settlement.net_transfer_amount if rental_settlement else 0
         earning_date = _earning_date_for_transaction(txn)
 
         if _is_realized_for_lender(txn):
@@ -463,6 +484,7 @@ def earnings(request):
                 'gross': gross_amount,
                 'fees': fee_total,
                 'net': net_amount,
+                'paid_out': paid_out_amount,
             })
         elif txn.payment_status == Transaction.PAYMENT_PENDING and gross_amount > 0:
             pending_rows.append({
@@ -499,6 +521,8 @@ def earnings(request):
     filtered_gross_total = sum(item['gross'] for item in filtered_realized)
     filtered_fee_total = sum(item['fees'] for item in filtered_realized)
     filtered_net_total = sum(item['net'] for item in filtered_realized)
+    filtered_paid_out_total = sum(item['paid_out'] for item in filtered_realized)
+    awaiting_payout_total = max(0, filtered_net_total - filtered_paid_out_total)
 
     context = {
         'start_date': start_date,
@@ -507,6 +531,8 @@ def earnings(request):
         'filtered_gross_total': filtered_gross_total,
         'filtered_fee_total': filtered_fee_total,
         'filtered_net_total': filtered_net_total,
+        'filtered_paid_out_total': filtered_paid_out_total,
+        'awaiting_payout_total': awaiting_payout_total,
         'pending_total': pending_total,
         'pending_rows': pending_rows,
         'chart_labels_json': json.dumps(chart_labels),

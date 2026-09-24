@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+  .money-summary { border: 1px solid #cfe1e6; border-radius: .6rem; padding: 1rem; background: #f8fbfc; }
+  .money-summary__amount { color: #1f3f4b; font-size: 1.45rem; font-weight: 800; }
+  .deposit-bar { display: flex; height: 2rem; overflow: hidden; border-radius: .4rem; background: #e9ecef; }
+  .deposit-bar__released { background: #73b58c; }.deposit-bar__lender { background: #4b8db8; }.deposit-bar__fee { background: #d69a3a; }
+</style>
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div><h3 class="mb-1">Transaction payment summary</h3><p class="text-muted mb-0">Admin-only reconciliation for {{ txn.transaction_reference }}.</p></div>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'transaction:payment_summary' %}">Back to payment summary</a>
+  </div>
+
+  <div class="card mb-4"><div class="card-header"><strong>What was agreed</strong></div><div class="card-body">
+    <table class="table table-sm mb-0"><tbody>
+      <tr><th>Rental</th><td class="text-right">£{{ rental_amount|floatformat:2 }}</td><td>Payment for the item.</td></tr>
+      <tr><th>Delivery</th><td class="text-right">£{{ delivery_amount|floatformat:2 }}</td><td>Paid to the lender with the rental.</td></tr>
+      <tr><th>Rentalution service fee</th><td class="text-right">£{{ txn.rentalution_fee|floatformat:2 }}</td><td>Paid to Rentalution.</td></tr>
+      <tr class="table-light"><th>Total renter payment</th><th class="text-right">£{{ renter_charge|floatformat:2 }}</th><th>£{{ rental_amount|floatformat:2 }} + £{{ delivery_amount|floatformat:2 }} + £{{ txn.rentalution_fee|floatformat:2 }}</th></tr>
+      <tr><th>Refundable deposit</th><td class="text-right">£{{ txn.deposit|floatformat:2 }}</td><td>Security amount; separate from the rental payment.</td></tr>
+    </tbody></table>
+  </div></div>
+
+  <div class="card mb-4"><div class="card-header"><strong>What happened</strong></div><div class="card-body"><div class="row">
+    <div class="col-md-4 mb-3"><div class="money-summary"><div class="text-muted small">Renter paid</div><div class="money-summary__amount">£{{ renter_charge|floatformat:2 }}</div><small>Rental payment captured successfully.</small></div></div>
+    <div class="col-md-4 mb-3"><div class="money-summary"><div class="text-muted small">Sent to lender</div><div class="money-summary__amount">{% if rental_settlement %}£{{ rental_settlement.net_transfer_amount|floatformat:2 }}{% else %}£0.00{% endif %}</div><small>Rental and delivery proceeds{% if rental_settlement %}: {{ rental_settlement.get_status_display }}{% endif %}.</small></div></div>
+    <div class="col-md-4 mb-3"><div class="money-summary"><div class="text-muted small">Paid to Rentalution</div><div class="money-summary__amount">£{{ txn.rentalution_fee|floatformat:2 }}</div><small>Service fee, before any Stripe processing fee.</small></div></div>
+  </div></div></div>
+
+  <div class="card mb-4"><div class="card-header"><strong>Where the deposit went</strong></div><div class="card-body">
+    {% if deposit_allocation_available %}
+      <p><strong>{{ deposit_outcome }}</strong></p>
+      <div class="deposit-bar mb-3" aria-label="Deposit allocation chart"><div class="deposit-bar__released" style="width: {{ deposit_released_percent }}%"></div><div class="deposit-bar__lender" style="width: {{ deposit_lender_percent }}%"></div><div class="deposit-bar__fee" style="width: {{ deposit_fee_percent }}%"></div></div>
+      <div class="row"><div class="col-md-4"><strong>Released to renter</strong><br>£{{ deposit_released|floatformat:2 }}</div><div class="col-md-4"><strong>Sent to lender</strong><br>£{{ deposit_to_lender|floatformat:2 }}</div><div class="col-md-4"><strong>Stripe fee</strong><br>£{{ deposit_stripe_fee|floatformat:2 }}</div></div>
+    {% else %}
+      <p class="mb-1"><strong>£{{ txn.deposit|floatformat:2 }} deposit is awaiting settlement.</strong></p><small class="text-muted">No money has been allocated from it yet.</small>
+    {% endif %}
+  </div></div>
+
+  <div class="card mb-4"><div class="card-header"><strong>Connect settlements</strong></div><div class="card-body table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Type</th><th>Status</th><th>Gross</th><th>Stripe fee</th><th>Transfer</th><th>Reference</th><th>Failure</th></tr></thead><tbody>{% for settlement in settlements %}<tr><td>{{ settlement.get_kind_display }}</td><td>{{ settlement.get_status_display }}</td><td>£{{ settlement.gross_amount|floatformat:2 }}</td><td>£{{ settlement.stripe_fee|floatformat:2 }}</td><td>£{{ settlement.net_transfer_amount|floatformat:2 }}</td><td>{{ settlement.transfer_id|default:'-' }}</td><td>{{ settlement.failure_reason|default:'-' }}</td></tr>{% empty %}<tr><td colspan="7" class="text-muted">No Connect settlements recorded.</td></tr>{% endfor %}</tbody></table></div></div>
+
+  <div class="card"><div class="card-header"><strong>Payment attempts</strong></div><div class="card-body table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Date</th><th>Stage</th><th>Status</th><th>Amount</th><th>Stripe reference</th><th>Outcome / failure</th></tr></thead><tbody>{% for attempt in attempts %}<tr><td>{{ attempt.created_at|date:'d M Y H:i' }}</td><td>{{ attempt.get_failure_point_display }}</td><td>{{ attempt.get_status_display }}</td><td>£{{ attempt.amount|floatformat:2 }}</td><td>{{ attempt.stripe_object_id|default:'-' }}</td><td>{{ attempt.outcome }}</td></tr>{% empty %}<tr><td colspan="6" class="text-muted">No payment attempts recorded.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}

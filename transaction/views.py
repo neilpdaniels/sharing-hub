@@ -3293,13 +3293,85 @@ def payment_summary(request):
         .annotate(total=models.Count('id'))
         .order_by('failure_point')
     )
-    latest = attempts.select_related('transaction').order_by('-created_at')[:100]
-    settlements = StripeSettlement.objects.select_related('transaction').order_by('-updated_at')[:100]
+    latest = list(attempts.select_related('transaction').order_by('-created_at')[:100])
+    settlements = list(StripeSettlement.objects.select_related('transaction').order_by('-updated_at')[:100])
+
+    def deposit_outcome(transaction, action):
+        outcomes = {
+            'release_hold': f'Released — £{transaction.deposit:.2f} authorisation cancelled; renter not charged.',
+            'already_released': f'Already released — renter not charged from £{transaction.deposit:.2f} authorisation.',
+            'refund_full': f'Returned to renter — £{transaction.deposit:.2f} refunded in full.',
+            'refund_partial': 'Partly returned to renter; remaining amount retained as a deposit award.',
+            'capture_full': 'Captured in full as a lender deposit award.',
+            'capture_partial': 'Partly captured as a lender deposit award.',
+        }
+        return outcomes.get(action, 'Deposit settlement completed.')
+
+    latest_deposit_actions = {}
+    for attempt in attempts.filter(failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT).order_by('-created_at'):
+        latest_deposit_actions.setdefault(attempt.transaction_id, attempt.context.get('resolution_action', ''))
+    for settlement in settlements:
+        if settlement.kind == StripeSettlement.KIND_DEPOSIT:
+            settlement.outcome = deposit_outcome(
+                settlement.transaction, latest_deposit_actions.get(settlement.transaction_id, ''),
+            )
+        elif settlement.status == StripeSettlement.STATUS_SUCCEEDED:
+            settlement.outcome = 'Transferred to lender.'
+        else:
+            settlement.outcome = 'Transfer is awaiting action.'
+    for attempt in latest:
+        if attempt.failure_point == PaymentAttempt.POINT_DEPOSIT_SETTLEMENT:
+            attempt.outcome = deposit_outcome(attempt.transaction, attempt.context.get('resolution_action', ''))
+        elif attempt.failure_point == PaymentAttempt.POINT_DEPOSIT_AUTH and attempt.status == PaymentAttempt.STATUS_SUCCESS:
+            attempt.outcome = f'Deposit authorised: £{attempt.amount:.2f}.'
+        elif attempt.failure_point == PaymentAttempt.POINT_RENTAL_CAPTURE and attempt.status == PaymentAttempt.STATUS_SUCCESS:
+            attempt.outcome = f'Renter charged: £{attempt.amount:.2f}.'
+        else:
+            attempt.outcome = attempt.error_message or '-'
     settlement_totals = StripeSettlement.objects.aggregate(
         gross=models.Sum('gross_amount'), fees=models.Sum('stripe_fee'),
         transferred=models.Sum('net_transfer_amount'), shortfalls=models.Sum('platform_shortfall'),
     )
     paid_transactions = Transaction.objects.filter(payment_status=Transaction.PAYMENT_CAPTURED_PLACEHOLDER)
+    rentalution_fee_transactions = list(
+        paid_transactions.select_related('product').prefetch_related(
+            models.Prefetch(
+                'payment_attempts',
+                queryset=PaymentAttempt.objects.filter(
+                    status=PaymentAttempt.STATUS_SUCCESS,
+                    failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+                ).order_by('-created_at'),
+                to_attr='successful_rental_captures',
+            ),
+            models.Prefetch(
+                'stripe_settlements',
+                queryset=StripeSettlement.objects.filter(
+                    kind=StripeSettlement.KIND_RENTAL,
+                    status=StripeSettlement.STATUS_SUCCEEDED,
+                ).order_by('-updated_at'),
+                to_attr='successful_rental_transfers',
+            ),
+        ).filter(rentalution_fee__gt=0).order_by('-payment_collection_requested_at', '-id')[:100]
+    )
+    rentalution_fee_rows = []
+    for txn in rentalution_fee_transactions:
+        rental_amount = (txn.quantity or 0) * (txn.price or 0)
+        delivery_amount = txn.delivery_cost or 0
+        capture = next(iter(txn.successful_rental_captures), None)
+        stripe_fee = None
+        if capture and capture.context.get('stripe_processing_fee') is not None:
+            stripe_fee = float(capture.context['stripe_processing_fee'])
+        transfer = next(iter(txn.successful_rental_transfers), None)
+        rentalution_fee_rows.append({
+            'txn': txn,
+            'renter_paid': rental_amount + delivery_amount + (txn.rentalution_fee or 0),
+            'rental_amount': rental_amount,
+            'delivery_amount': delivery_amount,
+            'service_fee': txn.rentalution_fee or 0,
+            'lender_transfer': transfer.net_transfer_amount if transfer else None,
+            'stripe_fee': stripe_fee,
+            'platform_net': (txn.rentalution_fee or 0) - stripe_fee if stripe_fee is not None else None,
+        })
     held_deposits = Transaction.objects.filter(
         deposit_collection_status=Transaction.COLLECT_SUCCESS,
         deposit_status__in=[Transaction.DEPOSIT_PENDING, Transaction.DEPOSIT_HELD_PLACEHOLDER, Transaction.DEPOSIT_MEDIATION],
@@ -3316,6 +3388,170 @@ def payment_summary(request):
         'settlements': settlements,
         'settlement_totals': settlement_totals,
         'transaction_financial_totals': transaction_financial_totals,
+        'rentalution_fee_rows': rentalution_fee_rows,
+    })
+
+
+@staff_member_required
+def rentalution_payments_summary(request):
+    """Staff-only ledger of service-fee payments earned by Rentalution."""
+    if getattr(settings, 'ENVIRONMENT_NAME', '').lower() == 'production':
+        raise Http404
+
+    transactions = Transaction.objects.filter(
+        payment_status=Transaction.PAYMENT_CAPTURED_PLACEHOLDER,
+        rentalution_fee__gt=0,
+    ).prefetch_related(
+        models.Prefetch(
+            'payment_attempts',
+            queryset=PaymentAttempt.objects.filter(
+                status=PaymentAttempt.STATUS_SUCCESS,
+                failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
+            ).order_by('-created_at'),
+            to_attr='successful_rental_captures',
+        ),
+    ).order_by('-payment_collection_requested_at', '-id')
+
+    rows = []
+    monthly_fees = {}
+    total_service_fees = total_reported_stripe_fees = 0.0
+    fee_reporting_complete = True
+    for txn in transactions:
+        capture = next(iter(txn.successful_rental_captures), None)
+        stripe_fee = None
+        if capture and capture.context.get('stripe_processing_fee') is not None:
+            stripe_fee = float(capture.context['stripe_processing_fee'])
+        else:
+            fee_reporting_complete = False
+        rental_amount = (txn.quantity or 0) * (txn.price or 0)
+        renter_paid = rental_amount + (txn.delivery_cost or 0) + (txn.rentalution_fee or 0)
+        earned_date = txn.payment_collection_requested_at or (capture.created_at if capture else txn.amended)
+        service_fee = float(txn.rentalution_fee or 0)
+        total_service_fees += service_fee
+        if stripe_fee is not None:
+            total_reported_stripe_fees += stripe_fee
+        if earned_date:
+            month = earned_date.date().replace(day=1)
+            monthly_fees[month] = monthly_fees.get(month, 0) + service_fee
+        rows.append({
+            'txn': txn,
+            'date': earned_date,
+            'renter_paid': renter_paid,
+            'service_fee': service_fee,
+            'stripe_fee': stripe_fee,
+            'platform_net': service_fee - stripe_fee if stripe_fee is not None else None,
+            'stripe_reference': capture.stripe_object_id if capture else '',
+        })
+
+    running_total = 0
+    chart_labels, chart_values = [], []
+    for month in sorted(monthly_fees):
+        running_total += monthly_fees[month]
+        chart_labels.append(month.strftime('%b %Y'))
+        chart_values.append(round(running_total, 2))
+
+    return render(request, 'transaction/rentalution_payments_summary.html', {
+        'rows': rows,
+        'total_service_fees': total_service_fees,
+        'total_reported_stripe_fees': total_reported_stripe_fees,
+        'net_platform_receipts': total_service_fees - total_reported_stripe_fees if fee_reporting_complete else None,
+        'chart_labels_json': json.dumps(chart_labels),
+        'chart_values_json': json.dumps(chart_values),
+    })
+
+
+@staff_member_required
+def admin_transaction_payment_summary(request, transaction_reference):
+    """Auditable, staff-only reconciliation of one booking's payment flow."""
+    if getattr(settings, 'ENVIRONMENT_NAME', '').lower() == 'production':
+        raise Http404
+
+    txn = get_object_or_404(
+        Transaction.objects.prefetch_related(
+            models.Prefetch('payment_attempts', queryset=PaymentAttempt.objects.order_by('-created_at')),
+            models.Prefetch('stripe_settlements', queryset=StripeSettlement.objects.order_by('-updated_at')),
+        ),
+        transaction_reference=transaction_reference,
+    )
+    attempts = list(txn.payment_attempts.all())
+    settlements = list(txn.stripe_settlements.all())
+
+    def latest_attempt(point):
+        return next((attempt for attempt in attempts if attempt.failure_point == point), None)
+
+    rental_capture = latest_attempt(PaymentAttempt.POINT_RENTAL_CAPTURE)
+    deposit_authorisation = latest_attempt(PaymentAttempt.POINT_DEPOSIT_AUTH)
+    deposit_settlement = latest_attempt(PaymentAttempt.POINT_DEPOSIT_SETTLEMENT)
+    rental_settlement = next((item for item in settlements if item.kind == StripeSettlement.KIND_RENTAL), None)
+    deposit_award = next((item for item in settlements if item.kind == StripeSettlement.KIND_DEPOSIT), None)
+
+    rental_amount = (txn.quantity or 0) * (txn.price or 0)
+    delivery_amount = txn.delivery_cost or 0
+    renter_charge = rental_amount + delivery_amount + (txn.rentalution_fee or 0)
+    deposit_action = (deposit_settlement.context.get('resolution_action', '') if deposit_settlement else '')
+    deposit_outcomes = {
+        'release_hold': f'Released — the £{txn.deposit:.2f} authorisation was cancelled; the renter was not charged.',
+        'already_released': f'Already released — the renter was not charged from the £{txn.deposit:.2f} authorisation.',
+        'refund_full': f'Returned to renter — £{txn.deposit:.2f} was refunded in full.',
+        'refund_partial': 'Partially returned to renter; the remaining amount was retained as a deposit award.',
+        'capture_full': 'Captured in full as a deposit award for the lender.',
+        'capture_partial': 'Partially captured as a deposit award for the lender.',
+    }
+    if deposit_settlement:
+        deposit_outcome = deposit_outcomes.get(deposit_action, 'Deposit settlement completed.')
+    elif deposit_authorisation and deposit_authorisation.status == PaymentAttempt.STATUS_SUCCESS:
+        deposit_outcome = f'Authorised — £{txn.deposit:.2f} is awaiting settlement.'
+    else:
+        deposit_outcome = 'No deposit authorisation has been recorded.'
+
+    deposit_captured = deposit_settlement.amount if deposit_settlement else 0
+    if deposit_action in ('release_hold', 'already_released'):
+        deposit_captured = 0
+    deposit_released = max(0, (txn.deposit or 0) - deposit_captured)
+    deposit_stripe_fee = deposit_award.stripe_fee if deposit_award else 0
+    deposit_to_lender = deposit_award.net_transfer_amount if deposit_award else 0
+    deposit_total = txn.deposit or 0
+    deposit_allocation_available = bool(deposit_settlement or deposit_award)
+    if deposit_total:
+        deposit_released_percent = (deposit_released / deposit_total) * 100
+        deposit_lender_percent = (deposit_to_lender / deposit_total) * 100
+        deposit_fee_percent = min(100 - deposit_released_percent - deposit_lender_percent, (deposit_stripe_fee / deposit_total) * 100)
+    else:
+        deposit_released_percent = deposit_lender_percent = deposit_fee_percent = 0
+
+    for attempt in attempts:
+        if attempt.failure_point == PaymentAttempt.POINT_DEPOSIT_SETTLEMENT:
+            attempt.outcome = deposit_outcomes.get(
+                attempt.context.get('resolution_action', ''), 'Deposit settlement completed.',
+            )
+        elif attempt.failure_point == PaymentAttempt.POINT_DEPOSIT_AUTH and attempt.status == PaymentAttempt.STATUS_SUCCESS:
+            attempt.outcome = f'Deposit authorised: £{attempt.amount:.2f}.'
+        elif attempt.failure_point == PaymentAttempt.POINT_RENTAL_CAPTURE and attempt.status == PaymentAttempt.STATUS_SUCCESS:
+            attempt.outcome = f'Renter charged: £{attempt.amount:.2f}.'
+        else:
+            attempt.outcome = attempt.error_message or '-'
+
+    return render(request, 'transaction/admin_transaction_payment_summary.html', {
+        'txn': txn,
+        'attempts': attempts,
+        'settlements': settlements,
+        'rental_amount': rental_amount,
+        'delivery_amount': delivery_amount,
+        'renter_charge': renter_charge,
+        'rental_capture': rental_capture,
+        'rental_settlement': rental_settlement,
+        'deposit_authorisation': deposit_authorisation,
+        'deposit_settlement': deposit_settlement,
+        'deposit_award': deposit_award,
+        'deposit_outcome': deposit_outcome,
+        'deposit_captured': deposit_captured,
+        'deposit_released': deposit_released,
+        'deposit_to_lender': deposit_to_lender,
+        'deposit_stripe_fee': deposit_stripe_fee,
+        'deposit_allocation_available': deposit_allocation_available,
+        'deposit_released_percent': deposit_released_percent,
+        'deposit_lender_percent': deposit_lender_percent,
+        'deposit_fee_percent': deposit_fee_percent,
     })
 
 

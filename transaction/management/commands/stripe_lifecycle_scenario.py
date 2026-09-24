@@ -72,8 +72,10 @@ class Command(BaseCommand):
         txn = Transaction.objects.get(transpact_text_status='SCENARIO:scenario-rental-ready')
         # Make all amount components visible in the resulting PaymentIntent:
         # £30 rental + £10 delivery + £4 platform fee = £44 renter charge.
-        txn.delivery_cost = Decimal('10.00')
-        txn.rentalution_fee = Decimal('4.00')
+        # These are FloatFields. Keep the in-memory instance aligned with the
+        # persisted field type because it is reused throughout this runner.
+        txn.delivery_cost = 10.00
+        txn.rentalution_fee = 4.00
         txn.save(update_fields=['delivery_cost', 'rentalution_fee', 'amended'])
 
         lender_profile = Profile.objects.get(user=txn.user_passive)

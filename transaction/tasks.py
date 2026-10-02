@@ -869,6 +869,21 @@ def async_resolve_deposit_hold(transaction_id, return_amount):
             charged_amount = float(result.get('charged_amount') or 0)
             returned_amount = float(result.get('returned_amount') or 0)
 
+            if result.get('refund_pending'):
+                settlement_note = (
+                    f'[STRIPE_REFUND_PENDING] refund_status={result.get("refund_status", "pending")} '
+                    f'refund={resolution_ref} award={charged_amount:.2f}'
+                )
+                existing_notes = (transaction.deposit_resolution_notes or '').strip()
+                if settlement_note not in existing_notes:
+                    transaction.deposit_resolution_notes = f'{existing_notes}\n{settlement_note}'.strip()
+                    transaction.save(update_fields=['deposit_resolution_notes', 'amended'])
+                logger.info(
+                    'Deposit refund pending for transaction %s; lender transfer deferred.',
+                    transaction.transaction_reference,
+                )
+                return result
+
             settlement_note = (
                 f'[STRIPE_SETTLEMENT] action={action} charged={charged_amount:.2f} '
                 f'returned={returned_amount:.2f} ref={resolution_ref}'
@@ -902,6 +917,32 @@ def async_resolve_deposit_hold(transaction_id, return_amount):
         logger.error(f'Transaction {transaction_id} not found for deposit settlement')
     except Exception as e:
         logger.exception(f'Async deposit settlement failed: {str(e)}')
+
+
+@shared_task
+def async_transfer_deposit_award(transaction_id, award_amount):
+    """Transfer a lender deposit award after Stripe confirms its refund succeeded."""
+    try:
+        transaction = Transaction.objects.get(id=transaction_id)
+        result = stripe_connect_service.transfer_deposit_award(
+            transaction=transaction,
+            payment_intent_id=transaction.deposit_collection_reference,
+            award_amount=award_amount,
+        )
+        if not result.get('ok'):
+            logger.error(
+                'Deposit award transfer failed for transaction %s: %s',
+                transaction.transaction_reference,
+                result.get('error'),
+            )
+        _notify_settlement_parties(transaction, result, kind='deposit')
+        return result
+    except Transaction.DoesNotExist:
+        logger.error('Transaction %s not found for deposit award transfer', transaction_id)
+        return {'ok': False, 'error': 'Transaction not found.'}
+    except Exception as exc:
+        logger.exception('Async deposit award transfer failed: %s', exc)
+        return {'ok': False, 'error': str(exc)}
 
 
 @shared_task

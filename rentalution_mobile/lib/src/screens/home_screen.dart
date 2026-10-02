@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/auth_models.dart';
+import '../models/account_models.dart';
 import '../models/catalog_models.dart';
 import '../models/order_models.dart';
 import '../models/transaction_models.dart';
@@ -120,6 +121,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _homeRefreshInFlight = false;
   bool _appInForeground = true;
   int _searchSuggestionRequestId = 0;
+  int? _expandedHomeBenefitIndex;
 
   List<CategorySummary> _categories = const [];
   List<CategorySummary> _categoryTrail = const [];
@@ -131,6 +133,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<OrderSummary> _orders = const [];
   List<OrderSummary> _favouriteOrders = const [];
   List<InboxMessage> _inboxMessages = const [];
+  List<ServiceFeeBand> _serviceFeeBands = const [];
+  bool _longTermRentalsEnabled = false;
+  int _maxRentalDays = 30;
 
   String? _selectedCategorySlug;
   int? _selectedDistance;
@@ -150,6 +155,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _favouritesLoading = false;
   bool _inboxLoading = false;
   bool _locating = false;
+  bool _serviceFeeLoading = false;
+  bool _serviceFeeUnavailable = false;
 
   // Detail page navigation state
   String?
@@ -1038,6 +1045,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     });
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadRentalFeatureConfig());
     _loadCategories();
     _resolveInitialLocation();
     if (_isAuthenticated) {
@@ -1045,6 +1053,103 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _loadFavouriteOrders();
       _loadInbox();
     }
+  }
+
+  Future<void> _loadRentalFeatureConfig() async {
+    try {
+      final config = await widget.accountRepository.fetchRentalFeatureConfig();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _longTermRentalsEnabled = config.longTermRentalsEnabled;
+        _maxRentalDays = config.maxRentalDays;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _longTermRentalsEnabled = false;
+        _maxRentalDays = 30;
+      });
+    }
+  }
+
+  Future<void> _loadServiceFeeBands() async {
+    if (_serviceFeeLoading) {
+      return;
+    }
+
+    setState(() {
+      _serviceFeeLoading = true;
+      _serviceFeeUnavailable = false;
+    });
+    try {
+      final bands = await widget.accountRepository.fetchServiceFeeBands();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _serviceFeeBands = bands;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _serviceFeeUnavailable = true;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _serviceFeeLoading = false;
+        });
+      }
+    }
+  }
+
+  String _platformFeeDescription() {
+    if (_serviceFeeLoading && _serviceFeeBands.isEmpty) {
+      return 'Loading the current service fee…';
+    }
+    if (_serviceFeeUnavailable && _serviceFeeBands.isEmpty) {
+      return 'The current fee could not be loaded. The exact service fee is shown in the cost breakdown before you confirm.';
+    }
+    if (_serviceFeeBands.isEmpty) {
+      return 'The exact service fee is shown in the cost breakdown before you confirm.';
+    }
+
+    String formatRate(ServiceFeeBand band) {
+      if (band.priceStyle == 'P') {
+        final rate = band.price == band.price.roundToDouble()
+            ? band.price.toStringAsFixed(0)
+            : band.price.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
+        return '$rate%';
+      }
+      return '£${band.price.toStringAsFixed(2)}';
+    }
+
+    if (_serviceFeeBands.length == 1) {
+      final band = _serviceFeeBands.single;
+      final fee = formatRate(band);
+      final basis = band.priceStyle == 'P'
+          ? 'of the rental and delivery total'
+          : 'per completed rental';
+      return 'The service fee is $fee $basis, charged only when a rental is completed. The exact amount is shown in the cost breakdown before you confirm.';
+    }
+
+    final rules = <String>[];
+    for (var index = 0; index < _serviceFeeBands.length; index++) {
+      final band = _serviceFeeBands[index];
+      final range = index == 0
+          ? 'up to £${band.maxPrice.toStringAsFixed(2)}'
+          : index == _serviceFeeBands.length - 1
+          ? 'over £${_serviceFeeBands[index - 1].maxPrice.toStringAsFixed(2)}'
+          : 'over £${_serviceFeeBands[index - 1].maxPrice.toStringAsFixed(2)} up to £${band.maxPrice.toStringAsFixed(2)}';
+      rules.add('$range: ${formatRate(band)}');
+    }
+    return 'The service fee is based on the rental and delivery total: ${rules.join('; ')}. It is charged only when a rental is completed, and the exact amount is shown before you confirm.';
   }
 
   Future<void> _handlePayoutReturnRoute(String route) async {
@@ -1877,6 +1982,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           orderRepository: widget.orderRepository,
           catalogRepository: widget.catalogRepository,
           accountRepository: widget.accountRepository,
+          longTermRentalsEnabled: _longTermRentalsEnabled,
+          maxRentalDays: _maxRentalDays,
           existingOrder: order,
         ),
       ),
@@ -1937,6 +2044,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           orderRepository: widget.orderRepository,
           catalogRepository: widget.catalogRepository,
           accountRepository: widget.accountRepository,
+          longTermRentalsEnabled: _longTermRentalsEnabled,
+          maxRentalDays: _maxRentalDays,
           initialProductId: initialProductId,
           initialProductName: initialProductName,
           initialPostcode: initialPostcode,
@@ -2532,93 +2641,178 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final currentCategories = _currentBrowseCategories();
     final textTheme = Theme.of(context).textTheme;
+    const homeBenefits = <({IconData icon, String title, String body})>[
+      (
+        icon: Icons.handshake_outlined,
+        title: 'Borrow',
+        body: 'Find useful items nearby for a fraction of buying new.',
+      ),
+      (
+        icon: Icons.savings_outlined,
+        title: 'Lend & Earn',
+        body:
+            'List items you own and earn while they would otherwise sit unused.',
+      ),
+      (
+        icon: Icons.verified_user_outlined,
+        title: 'Protected',
+        body:
+            'Deposit holds, condition evidence and a clear returns flow protect both sides.',
+      ),
+      (
+        icon: Icons.eco_outlined,
+        title: 'Reuse',
+        body:
+            'Sharing reduces production and waste. The most sustainable item is one already made.',
+      ),
+    ];
+    final expandedBenefit = _expandedHomeBenefitIndex == null
+        ? null
+        : homeBenefits[_expandedHomeBenefitIndex!];
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('Why rentalution exists'),
-          const SizedBox(height: 8),
+          _sectionTitle('Borrow nearby. Earn from what you own.'),
+          const SizedBox(height: 4),
           Text(
-            'Borrowing from your neighbours is better for your wallet and better for the planet. rentalution connects people who need things with people who own them, nearby.',
-            style: textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Every rental follows a structured process with deposit holds, condition verification, and a clear dispute path so both sides are protected.',
+            'Rent useful items from neighbours with clear protections built in.',
             style: textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          _buildHomePill(
-            icon: Icons.handshake_outlined,
-            title: 'Borrow what you need',
-            body:
-                'Find almost any item you need from people nearby for a fraction of buying new.',
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return GridView.count(
+                crossAxisCount: constraints.maxWidth >= 760 ? 4 : 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                mainAxisExtent: 64,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: List.generate(homeBenefits.length, (index) {
+                  final benefit = homeBenefits[index];
+                  final isExpanded = _expandedHomeBenefitIndex == index;
+                  return _buildHomePill(
+                    icon: benefit.icon,
+                    title: benefit.title,
+                    isExpanded: isExpanded,
+                    onTap: () => setState(() {
+                      _expandedHomeBenefitIndex = isExpanded ? null : index;
+                    }),
+                  );
+                }),
+              );
+            },
           ),
-          _buildHomePill(
-            icon: Icons.savings_outlined,
-            title: 'Earn from what you own',
-            body:
-                'List items you already own and earn while they would otherwise sit unused.',
-          ),
-          _buildHomePill(
-            icon: Icons.verified_user_outlined,
-            title: 'Protected transactions',
-            body:
-                'Deposit holds, condition evidence and a clear returns flow protect lenders and borrowers.',
-          ),
-          _buildHomePill(
-            icon: Icons.eco_outlined,
-            title: 'Better for the planet',
-            body:
-                'Sharing reduces production and waste. The most sustainable item is one already made.',
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: expandedBenefit == null
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    key: ValueKey(_expandedHomeBenefitIndex),
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Card(
+                      margin: EdgeInsets.zero,
+                      child: ListTile(
+                        leading: Icon(
+                          expandedBenefit.icon,
+                          color: RentalutionPalette.brandTeal,
+                        ),
+                        title: Text(expandedBenefit.title),
+                        subtitle: Text(expandedBenefit.body),
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(height: 18),
-          _sectionTitle('Common questions'),
-          const SizedBox(height: 8),
-          _buildFaqCard(
-            question: 'Who am I renting from?',
-            answer:
-                'You rent directly from other users nearby. rentalution matches you and handles the transaction structure.',
-          ),
-          _buildFaqCard(
-            question: 'Is my deposit safe?',
-            answer:
-                'Deposits are held as card authorisation holds and are released once both sides confirm return.',
-          ),
-          _buildFaqCard(
-            question: 'What if something goes wrong?',
-            answer:
-                'The returns process supports condition evidence and includes a dispute path for fair resolution.',
-          ),
-          _buildFaqCard(
-            question: 'What does rentalution charge?',
-            answer:
-                'Registration and listing are free. A small percentage fee is charged only on completed rentals.',
+          Card(
+            margin: EdgeInsets.zero,
+            child: ExpansionTile(
+              leading: const Icon(Icons.help_outline),
+              title: const Text('Common questions'),
+              subtitle: const Text('Rentals, deposits and support'),
+              children: [
+                _buildFaqCard(
+                  question: 'Who am I renting from?',
+                  answer:
+                      'You rent directly from other users nearby. rentalution matches you and handles the transaction structure.',
+                ),
+                _buildFaqCard(
+                  question: 'Is my deposit safe?',
+                  answer: _longTermRentalsEnabled
+                      ? 'Deposits are handled according to rental length. For longer rentals the deposit is charged and the returned portion is refunded after return.'
+                      : 'Deposits are held as card authorisation holds and released after return unless an agreed outcome requires a deduction.',
+                ),
+                _buildFaqCard(
+                  question: 'What if something goes wrong?',
+                  answer:
+                      'The returns process supports condition evidence and includes a dispute path for fair resolution.',
+                ),
+                _buildFaqCard(
+                  question: 'What does rentalution charge?',
+                  answer:
+                      'Registration and listing are free. A small percentage fee is charged only on completed rentals.',
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 18),
-          _sectionTitle('Transparent pricing'),
-          const SizedBox(height: 8),
-          _buildFeeCard(
-            title: 'Free',
-            body:
-                'Accounts are free. Listing items and sending rental enquiries are always free.',
-          ),
-          _buildFeeCard(
-            title: 'Platform fee',
-            body:
-                'A small percentage fee is charged on completed rentals only.',
-          ),
-          _buildFeeCard(
-            title: 'Deposit hold',
-            body:
-                'Deposits are card authorisation holds and are not captured unless needed for dispute resolution.',
-          ),
-          _buildFeeCard(
-            title: 'No hidden fees',
-            body:
-                'Both sides see the full cost breakdown before confirming a rental.',
+          Card(
+            margin: EdgeInsets.zero,
+            child: ExpansionTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('Transparent pricing'),
+              subtitle: const Text('Fees and deposit holds'),
+              onExpansionChanged: (expanded) {
+                if (expanded) {
+                  unawaited(_loadServiceFeeBands());
+                }
+              },
+              children: [
+                _buildFeeCard(
+                  title: 'Free',
+                  body:
+                      'Accounts are free. Listing items and sending rental enquiries are always free.',
+                ),
+                _buildFeeCard(
+                  title: 'Platform fee',
+                  body: _platformFeeDescription(),
+                ),
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: ExpansionTile(
+                    title: const Text('Deposit handling'),
+                    children: [
+                      _buildFeeCard(
+                        title: 'Short term · up to 6 days',
+                        body:
+                            'The deposit is held as a card authorisation. After return, it is released unless an agreed return or dispute outcome requires a deduction.',
+                      ),
+                      _buildFeeCard(
+                        title: 'Medium term · 7–30 days',
+                        body:
+                            'The deposit is held as a card authorisation on a Visa or Mastercard credit card. After return, it is released unless an agreed return or dispute outcome requires a deduction.',
+                      ),
+                      if (_longTermRentalsEnabled)
+                        _buildFeeCard(
+                          title: 'Long term · over 30 days',
+                          body:
+                              'The full deposit is charged rather than held as a card authorisation. Any amount due back is refunded after return. A small additional fee applies because the deposit is charged upfront.',
+                        ),
+                    ],
+                  ),
+                ),
+                _buildFeeCard(
+                  title: 'No hidden fees',
+                  body:
+                      'Both sides see the full cost breakdown before confirming a rental.',
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 18),
           _sectionTitle('Browse categories'),
@@ -2642,42 +2836,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildHomePill({
     required IconData icon,
     required String title,
-    required String body,
+    required bool isExpanded,
+    required VoidCallback onTap,
   }) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: Icon(icon, color: RentalutionPalette.brandTeal),
-        title: Text(title),
-        subtitle: Text(body),
-      ),
-    );
-  }
-
-  Widget _buildFaqCard({required String question, required String answer}) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(question, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(answer, style: Theme.of(context).textTheme.bodyMedium),
-          ],
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              Icon(icon, color: RentalutionPalette.brandTeal),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Icon(
+                isExpanded ? Icons.expand_less : Icons.expand_more,
+                size: 20,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildFaqCard({required String question, required String answer}) {
+    return ExpansionTile(
+      title: Text(question),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [Text(answer, style: Theme.of(context).textTheme.bodyMedium)],
+    );
+  }
+
   Widget _buildFeeCard({required String title, required String body}) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(body),
-      ),
+    return ExpansionTile(
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [Text(body, style: Theme.of(context).textTheme.bodyMedium)],
     );
   }
 
@@ -2777,14 +2981,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return LayoutBuilder(
       builder: (context, constraints) {
         final screenWidth = constraints.maxWidth;
+        final isLandscape =
+            MediaQuery.of(context).orientation == Orientation.landscape;
 
-        // Determine number of columns based on screen width
-        int columns;
-        if (screenWidth < 900) {
-          columns = 2; // 2 columns on phones and small tablets
-        } else {
-          columns = 3; // 3 columns on larger tablets/screens
-        }
+        final columns = switch (screenWidth) {
+          >= 1200 => 4,
+          >= 760 => 3,
+          _ => 2,
+        };
 
         return GridView.builder(
           shrinkWrap: true,
@@ -2793,7 +2997,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             crossAxisCount: columns,
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
-            childAspectRatio: 1.0,
+            childAspectRatio: isLandscape
+                ? columns == 3
+                      ? 1.4
+                      : 1.5
+                : 1.0,
           ),
           itemCount: categories.length,
           itemBuilder: (context, index) {
@@ -2817,29 +3025,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: isPending ? null : () => _openBrowseCategory(cat),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: _categoryThumb(
-                                cat.thumbnailUrl.isNotEmpty
-                                    ? cat.thumbnailUrl
-                                    : cat.imageUrl,
-                              ),
+                      child: LayoutBuilder(
+                        builder: (context, cardConstraints) {
+                          final imageUrl = cat.thumbnailUrl.isNotEmpty
+                              ? cat.thumbnailUrl
+                              : cat.imageUrl;
+                          final thumbnailHeight =
+                              (cardConstraints.maxWidth * 0.4)
+                                  .clamp(112.0, 160.0)
+                                  .toDouble();
+
+                          return Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (isLandscape)
+                                  SizedBox(
+                                    height: thumbnailHeight,
+                                    width: double.infinity,
+                                    child: _categoryThumb(imageUrl),
+                                  )
+                                else
+                                  Expanded(child: _categoryThumb(imageUrl)),
+                                const SizedBox(height: 8),
+                                Text(
+                                  cat.title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              cat.title,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -3624,6 +3845,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           catalogRepository: widget.catalogRepository,
           transactionRepository: widget.transactionRepository,
           accountRepository: widget.accountRepository,
+          longTermRentalsEnabled: _longTermRentalsEnabled,
+          maxRentalDays: _maxRentalDays,
           accessToken: widget.accessToken,
           searchLocation: _effectiveSearchLocation(),
           initialDistanceKm: _selectedDistance,
@@ -3648,6 +3871,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onOpenOrder: _openOrderListing,
           onAmendOrder: _amendOrder,
           onCancelOrder: _cancelOrder,
+          longTermRentalsEnabled: _longTermRentalsEnabled,
+          maxRentalDays: _maxRentalDays,
         ),
         Positioned(
           top: 0,

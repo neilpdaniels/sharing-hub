@@ -19,6 +19,14 @@ from simple_history.models import HistoricalRecords
 # File size limits (in bytes)
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
 MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_RENTAL_DAYS = 89
+MAX_STANDARD_RENTAL_DAYS = 30
+
+
+def get_max_rental_days():
+    if getattr(settings, 'LONG_TERM_RENTALS_ENABLED', False):
+        return MAX_RENTAL_DAYS
+    return MAX_STANDARD_RENTAL_DAYS
 
 def validate_image_size(file_obj):
     """Validate image file size (max 5 MB)."""
@@ -496,6 +504,8 @@ class Transaction(models.Model):
 
         if rental_days <= 0:
             errors.append('Please choose a valid rental date range.')
+        elif rental_days > get_max_rental_days():
+            errors.append(f'Rentals cannot exceed {get_max_rental_days()} days.')
 
         return errors
 

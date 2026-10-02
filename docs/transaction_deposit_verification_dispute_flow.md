@@ -2,12 +2,16 @@
 
 This document is the working reference for the rental lifecycle. Keep it aligned with the backend rules in `transaction/models.py` and the UI copy in the web and mobile apps.
 
+## Rental-duration feature switch
+
+Long-term rentals are disabled by default. Set `LONG_TERM_RENTALS_ENABLED=1` in the deployment `.env` and restart the web service to allow them again. When disabled, new listings and bookings are capped at 30 inclusive days; when enabled, the global cap is 89 inclusive days. Existing transactions keep their original deposit settlement behavior.
+
 ## Order Addition
 
 This is the listing setup flow a lender uses before any rental exists.
 
 1. The lender creates or edits an order/listing.
-2. The lender sets the daily price, deposit, collection or delivery rules, and maximum rental duration.
+2. The lender sets the daily price, deposit, collection or delivery rules, and maximum rental duration, up to the system-wide 89-day booking limit.
 3. The lender can add price bands for longer bookings.
 4. If the lender allows 7 to 30 day rentals, the UI should make the deposit card rule clear.
 5. If the lender allows rentals over 30 days, the UI should explain that the full deposit has to be taken and returned later rather than held as a card authorisation, and that fees are higher because of the extra payment handling.
@@ -15,6 +19,7 @@ This is the listing setup flow a lender uses before any rental exists.
 
 ## Deposit tiers
 
+- All bookings are limited to 89 inclusive calendar days; individual listings can set a lower maximum.
 - `Sub 7 days`: standard deposit handling.
 - `7 to 30 days`: the deposit card must be a Visa credit card or Mastercard credit card.
 - `Over 30 days`: the full deposit is taken and returned later rather than held as a card authorisation, and the fees are higher because of the extra payment handling.

@@ -1252,27 +1252,63 @@ class StripeConnectService:
                         'transaction_id': str(transaction.id),
                         'transaction_reference': transaction.transaction_reference,
                         'purpose': 'deposit_settlement_refund',
+                        'deposit_award_amount': f'{charge_minor / 100:.2f}',
                         'delivery_cost': f'{float(getattr(transaction, "delivery_cost", 0) or 0):.2f}',
                         'rentalution_fee': f'{float(getattr(transaction, "rentalution_fee", 0) or 0):.2f}',
                     },
                 )
                 refund_action = 'refund_full' if charge_minor == 0 else 'refund_partial'
+                refund_id = getattr(refund, 'id', reference)
+                refund_status = (getattr(refund, 'status', '') or '').lower()
+                attempt_context = {
+                    'resolution_action': refund_action,
+                    'refund_status': refund_status,
+                    'refund_amount': refund_minor / 100.0,
+                    'award_amount': charge_minor / 100.0,
+                }
+                if refund_status == 'succeeded':
+                    attempt_status = PaymentAttempt.STATUS_SUCCESS
+                elif refund_status in ('pending', 'processing', 'requires_action', ''):
+                    attempt_status = PaymentAttempt.STATUS_PENDING
+                else:
+                    attempt_status = PaymentAttempt.STATUS_FAILURE
                 self._record_payment_attempt(
                     transaction=transaction,
-                    status=PaymentAttempt.STATUS_SUCCESS,
+                    status=attempt_status,
                     failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
                     amount=charge_minor / 100.0,
-                    stripe_object_id=getattr(refund, 'id', reference),
-                    context={'resolution_action': refund_action},
+                    stripe_object_id=refund_id,
+                    error_message=(
+                        f'Deposit refund failed (status: {refund_status}).'
+                        if attempt_status == PaymentAttempt.STATUS_FAILURE
+                        else ''
+                    ),
+                    context=attempt_context,
                 )
+                if attempt_status == PaymentAttempt.STATUS_PENDING:
+                    return {
+                        'ok': True,
+                        'provider': 'stripe',
+                        'refund_pending': True,
+                        'resolution_action': 'refund_pending',
+                        'resolution_reference': refund_id,
+                        'charged_amount': charge_minor / 100.0,
+                        'returned_amount': refund_minor / 100.0,
+                        'refund_status': refund_status,
+                    }
+                if attempt_status == PaymentAttempt.STATUS_FAILURE:
+                    return {
+                        'ok': False,
+                        'error': f'Deposit refund failed (status: {refund_status}).',
+                    }
                 return {
                     'ok': True,
                     'provider': 'stripe',
                     'resolution_action': refund_action,
-                    'resolution_reference': getattr(refund, 'id', reference),
+                    'resolution_reference': refund_id,
                     'charged_amount': charge_minor / 100.0,
                     'returned_amount': refund_minor / 100.0,
-                    'payment_intent_status': status,
+                    'refund_status': refund_status,
                 }
 
             if status == 'canceled':
@@ -1456,6 +1492,84 @@ class StripeConnectService:
                     txn.save()
             except Exception as exc:
                 logger.exception('Stripe webhook processing failed for %s: %s', event_type, exc)
+
+        if event_type in ('refund.updated', 'refund.failed') and event_object:
+            metadata = getattr(event_object, 'metadata', {}) or {}
+            if _meta_value(metadata, 'purpose') == 'deposit_settlement_refund':
+                try:
+                    from .models import PaymentAttempt, Transaction
+
+                    transaction_id = _meta_value(metadata, 'transaction_id')
+                    transaction = Transaction.objects.filter(id=transaction_id).first()
+                    refund_id = getattr(event_object, 'id', '') or ''
+                    if transaction and refund_id:
+                        attempt = PaymentAttempt.objects.filter(
+                            transaction=transaction,
+                            failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+                            stripe_object_id=refund_id,
+                        ).first()
+                        context = dict(attempt.context or {}) if attempt else {}
+                        award_amount = float(
+                            _meta_value(metadata, 'deposit_award_amount')
+                            or context.get('award_amount')
+                            or 0
+                        )
+                        refund_status = (
+                            'failed'
+                            if event_type == 'refund.failed'
+                            else (getattr(event_object, 'status', '') or '').lower()
+                        )
+                        if refund_status == 'succeeded':
+                            attempt_status = PaymentAttempt.STATUS_SUCCESS
+                        elif refund_status in ('failed', 'canceled'):
+                            attempt_status = PaymentAttempt.STATUS_FAILURE
+                        else:
+                            attempt_status = PaymentAttempt.STATUS_PENDING
+
+                        context.update({
+                            'refund_status': refund_status,
+                            'award_amount': award_amount,
+                        })
+                        if attempt:
+                            attempt.status = attempt_status
+                            attempt.error_message = (
+                                f'Deposit refund failed (status: {refund_status}).'
+                                if attempt_status == PaymentAttempt.STATUS_FAILURE
+                                else ''
+                            )
+                            attempt.context = context
+                            attempt.save(update_fields=['status', 'error_message', 'context'])
+                        else:
+                            PaymentAttempt.objects.create(
+                                transaction=transaction,
+                                status=attempt_status,
+                                failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+                                stripe_object_id=refund_id,
+                                amount=award_amount,
+                                error_message=(
+                                    f'Deposit refund failed (status: {refund_status}).'
+                                    if attempt_status == PaymentAttempt.STATUS_FAILURE
+                                    else ''
+                                ),
+                                context=context,
+                            )
+
+                        note = f'[STRIPE_REFUND] status={refund_status} ref={refund_id}'
+                        notes = (transaction.deposit_resolution_notes or '').strip()
+                        if note not in notes:
+                            transaction.deposit_resolution_notes = f'{notes}\n{note}'.strip()
+                            transaction.save(update_fields=['deposit_resolution_notes', 'amended'])
+
+                        if attempt_status == PaymentAttempt.STATUS_SUCCESS:
+                            from .tasks import async_transfer_deposit_award
+
+                            async_transfer_deposit_award.delay(transaction.id, award_amount)
+                except Exception as exc:
+                    logger.exception('Stripe refund webhook processing failed: %s', exc)
+                    return {
+                        'ok': False,
+                        'error': 'Failed to process deposit refund webhook.',
+                    }
 
         return {
             'ok': True,

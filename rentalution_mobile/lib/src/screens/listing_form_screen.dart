@@ -22,6 +22,8 @@ class ListingFormScreen extends StatefulWidget {
     this.initialProductId,
     this.initialProductName,
     this.initialPostcode,
+    this.longTermRentalsEnabled = false,
+    this.maxRentalDays = 30,
   });
 
   final String accessToken;
@@ -32,6 +34,8 @@ class ListingFormScreen extends StatefulWidget {
   final int? initialProductId;
   final String? initialProductName;
   final String? initialPostcode;
+  final bool longTermRentalsEnabled;
+  final int maxRentalDays;
 
   bool get isEdit => existingOrder != null;
 
@@ -202,7 +206,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     );
 
     _maxRentalDaysController.text = order.maxRentalDays > 0
-        ? order.maxRentalDays.toString()
+        ? order.maxRentalDays.clamp(1, widget.maxRentalDays).toString()
         : '7';
     if (order.priceBands.isNotEmpty) {
       final bands = order.priceBands.take(3).toList(growable: false);
@@ -430,9 +434,15 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
         );
         return false;
       }
-      if (maxRentalDays == null || maxRentalDays < 1) {
+      if (maxRentalDays == null ||
+          maxRentalDays < 1 ||
+          maxRentalDays > widget.maxRentalDays) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Maximum rental days is required.')),
+          SnackBar(
+            content: Text(
+              'Maximum rental duration is ${widget.maxRentalDays} days.',
+            ),
+          ),
         );
         return false;
       }
@@ -476,8 +486,10 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
       messages.add('Enter a valid price per day.');
     }
     if (int.tryParse(_maxRentalDaysController.text.trim()) == null ||
-        int.tryParse(_maxRentalDaysController.text.trim())! < 1) {
-      messages.add('Enter maximum rental days.');
+        int.tryParse(_maxRentalDaysController.text.trim())! < 1 ||
+        int.tryParse(_maxRentalDaysController.text.trim())! >
+            widget.maxRentalDays) {
+      messages.add('Maximum rental duration is ${widget.maxRentalDays} days.');
     }
     if (_postcodeController.text.trim().isEmpty) {
       messages.add('Add a postcode.');
@@ -1147,15 +1159,17 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
             TextFormField(
               controller: _maxRentalDaysController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Maximum rental duration (days)',
                 helperText:
-                    'If you allow rentals from 7 to 30 days, deposits must be on Visa credit cards or Mastercard credit cards. Rentals over 30 days are supported, but the full deposit has to be taken and returned later rather than held as a card authorisation, so fees are higher.',
+                    'Maximum ${widget.maxRentalDays} days. Rentals from 7 to 30 days require a Visa or Mastercard credit card for the deposit.${widget.longTermRentalsEnabled ? ' For rentals over 30 days, the full deposit is charged and returned after the rental.' : ''}',
               ),
               validator: (value) {
                 final parsed = int.tryParse((value ?? '').trim());
-                if (parsed == null || parsed < 1) {
-                  return 'Enter a valid number of days';
+                if (parsed == null ||
+                    parsed < 1 ||
+                    parsed > widget.maxRentalDays) {
+                  return 'Enter a duration from 1 to ${widget.maxRentalDays} days';
                 }
                 return null;
               },

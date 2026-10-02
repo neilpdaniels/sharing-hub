@@ -7,7 +7,9 @@ class AccountRepository {
 
   final ApiClient _apiClient;
 
-  Future<AccountDetails> fetchAccountDetails({required String accessToken}) async {
+  Future<AccountDetails> fetchAccountDetails({
+    required String accessToken,
+  }) async {
     final json = await _apiClient.getJsonObject(
       '/account/me/',
       accessToken: accessToken,
@@ -67,7 +69,9 @@ class AccountRepository {
     );
   }
 
-  Future<List<PaymentMethodSummary>> fetchPaymentMethods({required String accessToken}) async {
+  Future<List<PaymentMethodSummary>> fetchPaymentMethods({
+    required String accessToken,
+  }) async {
     final json = await _apiClient.getJsonList(
       '/payment-methods/',
       accessToken: accessToken,
@@ -117,14 +121,10 @@ class AccountRepository {
     required String setupIntentId,
     required String paymentMethodId,
   }) async {
-    final json = await _apiClient.postJson(
-      '/payment-methods/confirm/',
-      {
-        'setup_intent_id': setupIntentId,
-        'payment_method_id': paymentMethodId,
-      },
-      accessToken: accessToken,
-    );
+    final json = await _apiClient.postJson('/payment-methods/confirm/', {
+      'setup_intent_id': setupIntentId,
+      'payment_method_id': paymentMethodId,
+    }, accessToken: accessToken);
     return PaymentMethodSummary(
       id: 0,
       cardBrand: json['card_brand'] as String? ?? 'Card',
@@ -138,11 +138,9 @@ class AccountRepository {
     required String accessToken,
     required int paymentMethodId,
   }) async {
-    return _apiClient.postJson(
-      '/kyc/start/',
-      {'payment_method_id': paymentMethodId},
-      accessToken: accessToken,
-    );
+    return _apiClient.postJson('/kyc/start/', {
+      'payment_method_id': paymentMethodId,
+    }, accessToken: accessToken);
   }
 
   Future<String> fetchStripePublishableKey({
@@ -153,5 +151,19 @@ class AccountRepository {
       accessToken: accessToken,
     );
     return json['stripe_publishable_key'] as String? ?? '';
+  }
+
+  Future<List<ServiceFeeBand>> fetchServiceFeeBands() async {
+    final json = await _apiClient.getJsonObject('/config/');
+    final bands = json['service_fee_bands'] as List<dynamic>? ?? const [];
+    return bands
+        .whereType<Map<String, dynamic>>()
+        .map(ServiceFeeBand.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<RentalFeatureConfig> fetchRentalFeatureConfig() async {
+    final json = await _apiClient.getJsonObject('/config/');
+    return RentalFeatureConfig.fromJson(json);
   }
 }

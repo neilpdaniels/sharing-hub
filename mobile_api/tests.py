@@ -4,14 +4,62 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from account.models import Profile
-from common.models import Category, CategoryAttribute, Order, Product
+from common.models import (
+    Category,
+    CategoryAttribute,
+    Order,
+    Product,
+    TransactionFee,
+    TransactionFeeBand,
+)
 from friends.models import Friendship
 from transaction.models import Transaction, TransactionMessageImage
+
+
+class MobileAppConfigViewTests(TestCase):
+    @override_settings(LONG_TERM_RENTALS_ENABLED=False)
+    def test_public_config_returns_live_service_fee_bands(self):
+        fee = TransactionFee.objects.create(
+            name='Rentalution service fee',
+            fee_type=TransactionFee.VALUE,
+        )
+        band = TransactionFeeBand.objects.create(
+            transaction_fee=fee,
+            price=10,
+            max_price=999999,
+            price_style=TransactionFeeBand.PERCENTAGE,
+        )
+
+        url = reverse('mobile_api:config')
+        first_response = self.client.get(url)
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertFalse(first_response.json()['long_term_rentals_enabled'])
+        self.assertEqual(first_response.json()['max_rental_days'], 30)
+        self.assertEqual(
+            first_response.json()['service_fee_bands'],
+            [{'price': 10, 'max_price': 999999, 'price_style': 'P'}],
+        )
+
+        band.price = 12
+        band.save(update_fields=['price'])
+        second_response = self.client.get(url)
+
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.json()['service_fee_bands'][0]['price'], 12)
+
+    @override_settings(LONG_TERM_RENTALS_ENABLED=True)
+    def test_public_config_reports_enabled_long_term_rental_limit(self):
+        response = self.client.get(reverse('mobile_api:config'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['long_term_rentals_enabled'])
+        self.assertEqual(response.json()['max_rental_days'], 89)
 
 
 class LenderListingsViewTests(TestCase):

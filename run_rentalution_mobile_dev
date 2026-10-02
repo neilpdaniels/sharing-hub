@@ -11,6 +11,17 @@ fi
 
 cd "$ROOT_DIR/rentalution_mobile"
 
+PLATFORM="${1:-android}"
+flutter_args=(run)
+case "$PLATFORM" in
+  android) flutter_args+=(--flavor dev) ;;
+  ios) ;;
+  *)
+    echo "Usage: $0 [android|ios]"
+    exit 2
+    ;;
+esac
+
 API_BASE_URL="${API_BASE_URL:-http://neil-laptop:8000/api/v1}"
 APP_NAME="${APP_NAME:-Rentalution Dev}"
 STRIPE_CONNECT_PUBLIC_KEY="${STRIPE_CONNECT_PUBLIC_KEY:-}"
@@ -22,8 +33,7 @@ fi
 
 echo "Using API_BASE_URL=$API_BASE_URL"
 
-flutter run \
-  --flavor dev \
+flutter "${flutter_args[@]}" \
   --dart-define=APP_NAME="$APP_NAME" \
   --dart-define=API_BASE_URL="$API_BASE_URL" \
   --dart-define=STRIPE_PUBLISHABLE_KEY="$STRIPE_CONNECT_PUBLIC_KEY"

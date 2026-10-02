@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from account.models import Profile
 from common.models import Category, Order, Product
-from transaction.models import StripeSettlement, Transaction
+from transaction.models import PaymentAttempt, StripeSettlement, Transaction
 from transaction.stripe_connect import StripeConnectService
 
 
@@ -186,6 +186,102 @@ class StripeConnectServiceTests(TestCase):
         settlement = StripeSettlement.objects.get(transaction=self.transaction, kind='deposit')
         self.assertEqual(settlement.status, StripeSettlement.STATUS_SUCCEEDED)
         self.assertEqual(settlement.gross_amount, 0)
+
+    def test_pending_deposit_refund_is_recorded_as_pending(self):
+        self.transaction.deposit = 100
+        self.transaction.deposit_collection_reference = 'pi_deposit'
+        self.transaction.save(update_fields=['deposit', 'deposit_collection_reference'])
+        stripe = Mock()
+        stripe.PaymentIntent.retrieve.return_value = SimpleNamespace(
+            status='succeeded', amount_received=10000,
+        )
+        stripe.Refund.create.return_value = SimpleNamespace(id='re_pending', status='pending')
+
+        with patch.object(self.service, '_load_stripe_client', return_value=(stripe, None)):
+            result = self.service.resolve_deposit_hold(
+                transaction=self.transaction,
+                return_amount=100,
+            )
+
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['refund_pending'])
+        attempt = PaymentAttempt.objects.get(
+            transaction=self.transaction,
+            failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+            stripe_object_id='re_pending',
+        )
+        self.assertEqual(attempt.status, PaymentAttempt.STATUS_PENDING)
+        self.assertEqual(attempt.context['award_amount'], 0)
+
+    def test_successful_refund_webhook_queues_award_transfer(self):
+        attempt = PaymentAttempt.objects.create(
+            transaction=self.transaction,
+            status=PaymentAttempt.STATUS_PENDING,
+            failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+            stripe_object_id='re_deposit',
+            amount=15,
+            context={'refund_status': 'pending', 'award_amount': 15},
+        )
+        stripe = Mock()
+        stripe.Webhook.construct_event.return_value = SimpleNamespace(
+            type='refund.updated',
+            data=SimpleNamespace(object=SimpleNamespace(
+                id='re_deposit',
+                status='succeeded',
+                metadata={
+                    'transaction_id': str(self.transaction.id),
+                    'purpose': 'deposit_settlement_refund',
+                    'deposit_award_amount': '15.00',
+                },
+            )),
+        )
+
+        with (
+            patch.object(self.service, '_load_stripe_client', return_value=(stripe, None)),
+            patch('transaction.tasks.async_transfer_deposit_award.delay') as transfer_task,
+        ):
+            result = self.service.process_webhook(payload=b'{}', signature='signed')
+
+        self.assertTrue(result['ok'])
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.status, PaymentAttempt.STATUS_SUCCESS)
+        self.assertEqual(attempt.context['refund_status'], 'succeeded')
+        transfer_task.assert_called_once_with(self.transaction.id, 15)
+
+    def test_failed_deposit_refund_webhook_does_not_queue_award_transfer(self):
+        attempt = PaymentAttempt.objects.create(
+            transaction=self.transaction,
+            status=PaymentAttempt.STATUS_PENDING,
+            failure_point=PaymentAttempt.POINT_DEPOSIT_SETTLEMENT,
+            stripe_object_id='re_failed',
+            amount=15,
+            context={'refund_status': 'pending', 'award_amount': 15},
+        )
+        stripe = Mock()
+        stripe.Webhook.construct_event.return_value = SimpleNamespace(
+            type='refund.failed',
+            data=SimpleNamespace(object=SimpleNamespace(
+                id='re_failed',
+                status='failed',
+                metadata={
+                    'transaction_id': str(self.transaction.id),
+                    'purpose': 'deposit_settlement_refund',
+                    'deposit_award_amount': '15.00',
+                },
+            )),
+        )
+
+        with (
+            patch.object(self.service, '_load_stripe_client', return_value=(stripe, None)),
+            patch('transaction.tasks.async_transfer_deposit_award.delay') as transfer_task,
+        ):
+            result = self.service.process_webhook(payload=b'{}', signature='signed')
+
+        self.assertTrue(result['ok'])
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.status, PaymentAttempt.STATUS_FAILURE)
+        self.assertEqual(attempt.context['refund_status'], 'failed')
+        transfer_task.assert_not_called()
 
     def test_card_confirmation_reuses_an_already_attached_payment_method(self):
         stripe = Mock()

@@ -27,6 +27,12 @@
 docker compose up -d --build
 ```
 
+Long-term rentals are disabled by default. Keep `LONG_TERM_RENTALS_ENABLED=0` in `.env` to cap bookings at 30 days. To re-enable rentals up to 89 days after approval, set it to `1` and recreate the web service so Django reads the new value:
+
+```bash
+docker compose up -d --force-recreate web
+```
+
 ## What to check
 
 - Django starts on port `8000`

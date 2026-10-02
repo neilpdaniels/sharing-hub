@@ -174,9 +174,11 @@
           {% bootstrap_field order_form.price %}
           {% bootstrap_field order_form.max_rental_days %}
           <div class="alert alert-warning mt-2 mb-3" style="display:block;">
-            <strong>Long rental note</strong><br/>
+            <strong>Deposit rules</strong><br/>
             If you allow rentals from 7 to 30 days, deposit cards must be Visa credit cards or Mastercard credit cards. Payment cards can still be different.
+            {% if LONG_TERM_RENTALS_ENABLED %}
             Rentals over 30 days are supported, but the full deposit has to be taken and returned later rather than held as a card authorisation, so fees are higher.
+            {% endif %}
           </div>
           {% bootstrap_field order_form.deposit %}
           <div class="alert alert-info mt-3 mb-0" style="display:block;">

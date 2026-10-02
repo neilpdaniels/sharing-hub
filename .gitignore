@@ -15,6 +15,11 @@ db.sqlite3
 .rentalution_mobile.prod.env
 .rentalution_mobile.local.sh
 rentalution_mobile/.env
+rentalution_mobile/ios/Podfile
+rentalution_mobile/ios/Podfile.lock
+rentalution_mobile/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+rentalution_mobile/ios/Runner.xcworkspace/xcshareddata/swiftpm/
+rentalution_mobile/macos/Podfile
 media/
 tmp/midjourney_catalog_workflow/
 tmp/midjourney_category_prompts/

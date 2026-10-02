@@ -11,7 +11,13 @@ from sorl.thumbnail import get_thumbnail
 from account.models import PaymentMethod, Profile
 from common.models import Category, FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, Product
 from mobile_api.models import MobileDevice
-from transaction.models import Transaction, TransactionFeedback, TransactionMessage, TransactionMessageImage
+from transaction.models import (
+    Transaction,
+    TransactionFeedback,
+    TransactionMessage,
+    TransactionMessageImage,
+    get_max_rental_days,
+)
 
 
 class UserSummarySerializer(serializers.Serializer):
@@ -714,6 +720,7 @@ class OrderSummarySerializer(serializers.ModelSerializer):
     attribute_four_value = serializers.CharField(read_only=True, allow_blank=True)
     attribute_five_value = serializers.CharField(read_only=True, allow_blank=True)
     attributes = serializers.SerializerMethodField()
+    max_rental_days = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -773,6 +780,11 @@ class OrderSummarySerializer(serializers.ModelSerializer):
 
     def get_attributes(self, obj):
         return obj.get_attribute_pairs()
+
+    def get_max_rental_days(self, obj):
+        configured_max = get_max_rental_days()
+        listing_max = obj.max_rental_days or configured_max
+        return min(int(listing_max), configured_max)
 
     def get_listing_image_url(self, obj):
         urls = self.get_listing_image_urls(obj)
@@ -909,6 +921,19 @@ class OrderSummarySerializer(serializers.ModelSerializer):
 
 
 class OrderAmendSerializer(serializers.ModelSerializer):
+    max_rental_days = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=0,
+    )
+
+    def validate_max_rental_days(self, value):
+        if value is not None and value > get_max_rental_days():
+            raise serializers.ValidationError(
+                f'Maximum rental duration is {get_max_rental_days()} days.'
+            )
+        return value
+
     class Meta:
         model = Order
         fields = (
@@ -945,6 +970,18 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField(write_only=True)
     expiry_date = serializers.DateField(write_only=True)
     price_bands = LetPriceBandSerializer(many=True, required=False)
+    max_rental_days = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=0,
+    )
+
+    def validate_max_rental_days(self, value):
+        if value is not None and value > get_max_rental_days():
+            raise serializers.ValidationError(
+                f'Maximum rental duration is {get_max_rental_days()} days.'
+            )
+        return value
 
     class Meta:
         model = Order

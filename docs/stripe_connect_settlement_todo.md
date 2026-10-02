@@ -132,6 +132,7 @@ charge (£30 rental + £10 delivery + £4 service fee) and an £80 deposit.
 - [ ] Dispute award: verify no capture before decision and correct capture/transfer afterward.
 - [ ] Duplicate action, task retry, and webhook replay: verify exactly one charge/capture/transfer per entitlement.
 - [ ] Transfer failure/insufficient platform balance: verify pending state, staff visibility, and safe retry.
+- [ ] Subscribe the platform webhook to `refund.updated` and `refund.failed`; verify pending refunds do not transfer deposit awards and successful refunds resume settlement.
 - [ ] Mobile and web workflow parity tests.
 
 ## 9. Release Gates

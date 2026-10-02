@@ -159,7 +159,11 @@
                         <p class="mb-1"><strong>Deposit:</strong> £{{ transaction.deposit|format_price }}</p>
                         {% if transaction.get_rental_length_days > 6 %}
                         <div class="alert alert-warning py-2 px-3 mb-2 mt-2" style="font-size:0.92rem;">
-                            Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.
+                            {% if transaction.get_rental_length_days > 30 %}
+                            This rental’s full deposit is charged and returned after the rental rather than held as a card authorisation.
+                            {% else %}
+                            Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit.
+                            {% endif %}
                         </div>
                         {% endif %}
                         <p class="mb-1"><strong>Deposit status:</strong> {{ transaction.get_deposit_status_display }}</p>

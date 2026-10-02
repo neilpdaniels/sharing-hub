@@ -149,9 +149,13 @@ def get_transaction_notification_payload(user, session=None):
     }
 
 def from_settings(request):
+    from transaction.models import get_max_rental_days
+
     return {
         'ENVIRONMENT_NAME': settings.ENVIRONMENT_NAME,
         'ENVIRONMENT_COLOR': settings.ENVIRONMENT_COLOR,
+        'LONG_TERM_RENTALS_ENABLED': settings.LONG_TERM_RENTALS_ENABLED,
+        'MAX_RENTAL_DAYS': get_max_rental_days(),
     }
 
 

@@ -71,6 +71,8 @@ class ProductDetailScreen extends StatefulWidget {
     this.initialDistanceKm,
     this.onOpenListMyItem,
     this.onRequireLogin,
+    this.longTermRentalsEnabled = false,
+    this.maxRentalDays = 30,
   });
 
   final String? productSlug;
@@ -83,6 +85,8 @@ class ProductDetailScreen extends StatefulWidget {
   final int? initialDistanceKm;
   final Future<void> Function(ProductDetail product)? onOpenListMyItem;
   final VoidCallback? onRequireLogin;
+  final bool longTermRentalsEnabled;
+  final int maxRentalDays;
 
   @override
   State<ProductDetailScreen> createState() => _ProductDetailScreenState();
@@ -1288,6 +1292,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return;
     }
 
+    final maximumDays =
+        order.maxRentalDays > 0 && order.maxRentalDays < widget.maxRentalDays
+        ? order.maxRentalDays
+        : widget.maxRentalDays;
     DateTimeRange selectedRange = initialRange;
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -1312,6 +1320,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         final isBoundaryUnavailable = handoverDates.contains(
                           normalizedDay,
                         );
+                        if (selectedStartDay != null &&
+                            selectedEndDay == null &&
+                            normalizedDay
+                                        .difference(_dateOnly(selectedStartDay))
+                                        .inDays
+                                        .abs() +
+                                    1 >
+                                maximumDays) {
+                          return false;
+                        }
                         return !blockedDates.contains(normalizedDay) &&
                             !isBoundaryUnavailable &&
                             !normalizedDay.isAfter(_lastEnquiryDate(order));
@@ -1376,22 +1394,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        order.maxRentalDays > 0
-                            ? 'Max rental days: ${order.maxRentalDays}'
-                            : 'Max rental days: not set',
+                        'Max rental days: $maximumDays',
                         style: Theme.of(dialogContext).textTheme.bodySmall,
                       ),
-                      if (order.maxRentalDays > 6) ...[
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                      if (_selectedRangeHasLongRental(selectedRange)) ...[
+                      if (selectedDays >= 7 && selectedDays <= 30) ...[
                         const SizedBox(height: 8),
                         const Text(
                           'Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. You can still use a different card for payment.',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                      if (widget.longTermRentalsEnabled &&
+                          selectedDays > 30) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'For rentals over 30 days, the full deposit is charged and returned after the rental.',
                         ),
                       ],
                       if (blockedCount > 0 || handoverCount > 0) ...[
@@ -1580,10 +1597,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   DateTime _dateOnly(DateTime value) {
     return DateTime(value.year, value.month, value.day);
-  }
-
-  bool _selectedRangeHasLongRental(DateTimeRange range) {
-    return range.duration.inDays + 1 >= 7;
   }
 
   String _formatDate(DateTime value) {

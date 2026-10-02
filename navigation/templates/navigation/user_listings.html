@@ -57,9 +57,7 @@
                   {% if order.get_delivery_price_summary %}
                   <small>({{ order.get_delivery_price_summary }})</small>
                   {% endif %}
-                  {% if order.max_rental_days %}
-                  • Max {{ order.max_rental_days }} day{{ order.max_rental_days|pluralize }}
-                  {% endif %}
+                  • Max {% if order.max_rental_days and order.max_rental_days < MAX_RENTAL_DAYS %}{{ order.max_rental_days }}{% else %}{{ MAX_RENTAL_DAYS }}{% endif %} day(s)
                 </p>
 
                 {% if order.postcode %}

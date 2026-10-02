@@ -38,8 +38,16 @@ from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, Ord
 from friends.models import BlockedUser, Friendship, FriendsHelper
 from mobile_api.models import MobileDevice
 from transaction.forms import RentalEnquiryForm
-from transaction.models import Transaction, TransactionFeedback, TransactionImage, TransactionMessage, TransactionMessageImage
+from transaction.models import (
+    Transaction,
+    TransactionFeedback,
+    TransactionImage,
+    TransactionMessage,
+    TransactionMessageImage,
+    get_max_rental_days,
+)
 from transaction.helpers import (
+    get_rentalution_fee_reference,
     get_transaction_pricing,
     sync_transaction_fee_charges,
     sync_transaction_pricing,
@@ -1190,8 +1198,21 @@ class MobileAppConfigView(APIView):
     permission_classes = (AllowAny,)
 
     def get(self, request, *args, **kwargs):
+        service_fee = get_rentalution_fee_reference()
         return Response({
             'stripe_publishable_key': getattr(settings, 'STRIPE_CONNECT_PUBLIC_KEY', ''),
+            'long_term_rentals_enabled': settings.LONG_TERM_RENTALS_ENABLED,
+            'max_rental_days': get_max_rental_days(),
+            'service_fee_bands': [
+                {
+                    'price': band.price,
+                    'max_price': band.max_price,
+                    'price_style': band.price_style,
+                }
+                for band in service_fee.transactionfeeband_set.all().order_by(
+                    'max_price', 'price'
+                )
+            ],
         })
 
 

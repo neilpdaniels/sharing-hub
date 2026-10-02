@@ -1,6 +1,6 @@
 from django import forms
 from common.models import Order, OrderImage, LetPriceBand
-from .models import TransactionMessage, TransactionMessageImage
+from .models import TransactionMessage, TransactionMessageImage, get_max_rental_days
 from datetime import datetime, date
 import logging
 
@@ -23,6 +23,11 @@ class AdminTransactionDatesForm(forms.Form):
         start, end = cleaned.get('rental_start_date'), cleaned.get('rental_end_date')
         if start and end and end < start:
             self.add_error('rental_end_date', 'The end date must be on or after the start date.')
+        elif start and end and (end - start).days + 1 > get_max_rental_days():
+            self.add_error(
+                'rental_end_date',
+                f'Rentals cannot exceed {get_max_rental_days()} days.',
+            )
         return cleaned
 
 
@@ -109,7 +114,9 @@ class OrderAddForm(forms.ModelForm):
             'collection_details': forms.TextInput(attrs={'placeholder': 'e.g. available for collection Mon–Fri 9am–5pm'}),
             'collection_address': forms.TextInput(attrs={'placeholder': 'e.g. Unit 4, 12 High Street, Mobberley'}),
             'collection_postcode': forms.TextInput(attrs={'placeholder': 'e.g. WA16 8NN'}),
-            'max_rental_days': forms.NumberInput(attrs={'min': 1, 'placeholder': '7'}),
+            'max_rental_days': forms.NumberInput(
+                attrs={'min': 1, 'placeholder': '7'}
+            ),
             'delivery_within_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 1000, 'placeholder': '10'}),
             'delivery_cost_per_km': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01, 'placeholder': '0.00'}),
             'delivery_cost': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'step': 0.01, 'placeholder': '0.00'}),
@@ -126,9 +133,11 @@ class OrderAddForm(forms.ModelForm):
         self.fields['collection_is_not_home_address'].help_text = 'Tick this if buyers should collect from a different address or postcode.'
         self.fields['collection_address'].help_text = 'Shown only when collection is not at your home address.'
         self.fields['collection_postcode'].help_text = 'Collection postcode for this listing.'
+        maximum_days = get_max_rental_days()
+        self.fields['max_rental_days'].max_value = maximum_days
+        self.fields['max_rental_days'].widget.attrs['max'] = maximum_days
         self.fields['max_rental_days'].help_text = (
-            'If you allow rentals over 5 days, deposit cards must be Visa or Mastercard credit cards. '
-            'Payment cards can still be different. Rentals over 30 days are not supported yet.'
+            f'Bookings can be up to {maximum_days} days. Rentals from 7 to 30 days require a Visa or Mastercard credit card for the deposit.'
         )
         self.fields['verified_users_only'].help_text = (
             'This means the renter must have completed Stripe identity verification. '
@@ -349,6 +358,10 @@ class RentalEnquiryForm(forms.Form):
             raise forms.ValidationError('Selected dates must be before the listing expiry date.')
 
         rental_days = (end - start).days + 1
+        if rental_days > get_max_rental_days():
+            raise forms.ValidationError(
+                f'Rentals cannot exceed {get_max_rental_days()} days.'
+            )
         if self.max_rental_days and rental_days > int(self.max_rental_days):
             raise forms.ValidationError(f'This listing allows a maximum of {self.max_rental_days} day(s) per booking.')
 

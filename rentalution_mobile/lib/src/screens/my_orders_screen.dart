@@ -18,6 +18,8 @@ class MyOrdersScreen extends StatelessWidget {
     required this.onOpenOrder,
     required this.onAmendOrder,
     required this.onCancelOrder,
+    this.longTermRentalsEnabled = false,
+    this.maxRentalDays = 30,
   });
 
   final List<OrderSummary> orders;
@@ -27,6 +29,8 @@ class MyOrdersScreen extends StatelessWidget {
   final Future<void> Function(OrderSummary order) onOpenOrder;
   final AmendOrderCallback onAmendOrder;
   final CancelOrderCallback onCancelOrder;
+  final bool longTermRentalsEnabled;
+  final int maxRentalDays;
 
   double get _moneyEarned =>
       orders.fold(0, (total, order) => total + order.moneyEarned);
@@ -193,9 +197,9 @@ class MyOrdersScreen extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '£${value.toStringAsFixed(2)}',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
           ],
         ),
@@ -207,7 +211,7 @@ class MyOrdersScreen extends StatelessWidget {
     final thumbUrl = order.listingThumbnailUrl.isNotEmpty
         ? order.listingThumbnailUrl
         : order.listingImageUrl.isNotEmpty
-            ? order.listingImageUrl
+        ? order.listingImageUrl
         : (order.listingImageUrls.isNotEmpty
               ? order.listingImageUrls.first
               : '');
@@ -252,7 +256,9 @@ class MyOrdersScreen extends StatelessWidget {
                                   width: 72,
                                   height: 72,
                                   color: const Color(0x11000000),
-                                  child: const Icon(Icons.broken_image_outlined),
+                                  child: const Icon(
+                                    Icons.broken_image_outlined,
+                                  ),
                                 ),
                           ),
                   ),
@@ -277,7 +283,9 @@ class MyOrdersScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               if (order.expiryDate != null)
-                Text('Expires: ${order.expiryDate!.toLocal()}'.split('.').first),
+                Text(
+                  'Expires: ${order.expiryDate!.toLocal()}'.split('.').first,
+                ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -368,7 +376,9 @@ class MyOrdersScreen extends StatelessWidget {
       text: _stripAvailabilityMarker(order.collectionDetails),
     );
     final maxRentalDaysController = TextEditingController(
-      text: order.maxRentalDays > 0 ? order.maxRentalDays.toString() : '7',
+      text: order.maxRentalDays > 0
+          ? order.maxRentalDays.clamp(1, maxRentalDays).toString()
+          : '7',
     );
     final listingAttributes = order.attributes
         .where((attribute) => attribute.valueSource == 'listing')
@@ -497,7 +507,8 @@ class MyOrdersScreen extends StatelessWidget {
                                 title: const Text(
                                   'Collection is not at my home address',
                                 ),
-                                controlAffinity: ListTileControlAffinity.leading,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
                               ),
                               if (collectionIsNotHomeAddress) ...[
                                 const SizedBox(height: 8),
@@ -619,10 +630,10 @@ class MyOrdersScreen extends StatelessWidget {
                       TextField(
                         controller: maxRentalDaysController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Max rental days',
                           helperText:
-                              'Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.',
+                              'Maximum $maxRentalDays days${longTermRentalsEnabled ? '. Long rentals charge the deposit upfront.' : ''}.',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -680,6 +691,18 @@ class MyOrdersScreen extends StatelessWidget {
                     final maxRentalDays = int.tryParse(
                       maxRentalDaysController.text.trim(),
                     );
+                    if (maxRentalDays != null &&
+                        (maxRentalDays < 1 ||
+                            maxRentalDays > this.maxRentalDays)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Maximum rental duration is ${this.maxRentalDays} days.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
                     final price = double.tryParse(priceController.text.trim());
                     if (price != null) {
                       fields['price'] = price;

@@ -12,6 +12,7 @@ from common.models import System
 from transaction.forms import RentalEnquiryForm
 from transaction.models import PaymentAttempt, Transaction, TransactionFeedback, TransactionMessage
 from transaction.tasks import (
+	async_resolve_deposit_hold,
     auto_cancel_overdue_first_day_bookings,
     auto_close_feedback_windows,
     escalate_overdue_disputes,
@@ -65,6 +66,93 @@ class TransactionDepositPolicyTests(TestCase):
 		self.assertEqual(standard_txn.calculate_deposit_handling(), Transaction.DEPOSIT_HELD_AND_RETURNED)
 		self.assertEqual(long_txn.calculate_deposit_handling(), Transaction.DEPOSIT_TAKEN_AND_HELD)
 
+	@override_settings(LONG_TERM_RENTALS_ENABLED=True)
+	def test_rental_enquiry_caps_duration_at_89_inclusive_days(self):
+		start = timezone.localdate() + timedelta(days=1)
+		allowed = RentalEnquiryForm(data={
+			'rental_start_date': start.isoformat(),
+			'rental_end_date': (start + timedelta(days=88)).isoformat(),
+		}, max_rental_days=90)
+		too_long = RentalEnquiryForm(data={
+			'rental_start_date': start.isoformat(),
+			'rental_end_date': (start + timedelta(days=89)).isoformat(),
+		}, max_rental_days=90)
+
+		self.assertTrue(allowed.is_valid(), allowed.errors)
+		self.assertFalse(too_long.is_valid())
+		self.assertIn('89 days', str(too_long.errors))
+
+	def test_disabled_long_term_rentals_caps_enquiry_at_30_days(self):
+		start = timezone.localdate() + timedelta(days=1)
+		allowed = RentalEnquiryForm(data={
+			'rental_start_date': start.isoformat(),
+			'rental_end_date': (start + timedelta(days=29)).isoformat(),
+		}, max_rental_days=90)
+		too_long = RentalEnquiryForm(data={
+			'rental_start_date': start.isoformat(),
+			'rental_end_date': (start + timedelta(days=30)).isoformat(),
+		}, max_rental_days=90)
+
+		self.assertTrue(allowed.is_valid(), allowed.errors)
+		self.assertFalse(too_long.is_valid())
+		self.assertIn('30 days', str(too_long.errors))
+
+		self.assertEqual(self._create_txn(1, 30).validate_rental_length(), [])
+		self.assertIn(
+			'Rentals cannot exceed 30 days.',
+			self._create_txn(1, 31).validate_rental_length(),
+		)
+
+	@override_settings(LONG_TERM_RENTALS_ENABLED=True)
+	def test_transaction_validation_caps_duration_at_89_inclusive_days(self):
+		allowed = self._create_txn(1, 89)
+		too_long = self._create_txn(1, 90)
+
+		self.assertEqual(allowed.validate_rental_length(), [])
+		self.assertIn('Rentals cannot exceed 89 days.', too_long.validate_rental_length())
+
+	def test_disabled_long_term_rentals_caps_duration_at_30_days(self):
+		start = timezone.localdate() + timedelta(days=1)
+		allowed = RentalEnquiryForm(data={
+			'rental_start_date': start.isoformat(),
+			'rental_end_date': (start + timedelta(days=29)).isoformat(),
+		}, max_rental_days=90)
+		too_long = RentalEnquiryForm(data={
+			'rental_start_date': start.isoformat(),
+			'rental_end_date': (start + timedelta(days=30)).isoformat(),
+		}, max_rental_days=90)
+
+		self.assertTrue(allowed.is_valid(), allowed.errors)
+		self.assertFalse(too_long.is_valid())
+		self.assertIn('30 days', str(too_long.errors))
+		self.assertEqual(self._create_txn(1, 30).validate_rental_length(), [])
+		self.assertIn(
+			'Rentals cannot exceed 30 days.',
+			self._create_txn(1, 31).validate_rental_length(),
+		)
+
+	@patch('transaction.tasks.stripe_connect_service.transfer_deposit_award')
+	@patch('transaction.tasks.stripe_connect_service.resolve_deposit_hold')
+	def test_pending_refund_defers_lender_transfer(
+		self, mock_resolve, mock_transfer,
+	):
+		transaction = self._create_txn(1, 31)
+		mock_resolve.return_value = {
+			'ok': True,
+			'refund_pending': True,
+			'resolution_action': 'refund_pending',
+			'resolution_reference': 're_pending',
+			'refund_status': 'pending',
+			'charged_amount': 25,
+			'returned_amount': 50,
+		}
+
+		async_resolve_deposit_hold.run(transaction.id, 50)
+
+		mock_transfer.assert_not_called()
+		transaction.refresh_from_db()
+		self.assertIn('[STRIPE_REFUND_PENDING]', transaction.deposit_resolution_notes)
+
 	def test_restricted_deposit_card_allows_only_visa_credit_or_mastercard_credit(self):
 		self.assertTrue(Transaction.is_restricted_deposit_card('visa', 'credit'))
 		self.assertTrue(Transaction.is_restricted_deposit_card('mastercard', 'credit'))
@@ -72,6 +160,7 @@ class TransactionDepositPolicyTests(TestCase):
 		self.assertFalse(Transaction.is_restricted_deposit_card('mastercard', 'debit'))
 		self.assertFalse(Transaction.is_restricted_deposit_card('amex', 'credit'))
 
+	@override_settings(LONG_TERM_RENTALS_ENABLED=True)
 	def test_rental_enquiry_form_accepts_over_30_day_bookings(self):
 		start = timezone.localdate() + timedelta(days=1)
 		end = start + timedelta(days=30)

@@ -48,9 +48,10 @@ class AccountDetails {
           profile['stripe_connect_transfers_enabled'] as bool? ?? false,
       stripeConnectPayoutsEnabled:
           profile['stripe_connect_payouts_enabled'] as bool? ?? false,
-      stripeConnectRequirements: (profile['stripe_connect_requirements'] as List? ?? const [])
-          .map((value) => value.toString())
-          .toList(growable: false),
+      stripeConnectRequirements:
+          (profile['stripe_connect_requirements'] as List? ?? const [])
+              .map((value) => value.toString())
+              .toList(growable: false),
     );
   }
 }
@@ -77,6 +78,44 @@ class PaymentMethodSummary {
       cardFunding: json['card_funding'] as String? ?? '',
       cardLast4: json['card_last4'] as String? ?? '',
       isDefault: json['is_default'] as bool? ?? false,
+    );
+  }
+}
+
+class ServiceFeeBand {
+  const ServiceFeeBand({
+    required this.price,
+    required this.maxPrice,
+    required this.priceStyle,
+  });
+
+  final double price;
+  final double maxPrice;
+  final String priceStyle;
+
+  factory ServiceFeeBand.fromJson(Map<String, dynamic> json) {
+    return ServiceFeeBand(
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      maxPrice: (json['max_price'] as num?)?.toDouble() ?? 0,
+      priceStyle: json['price_style'] as String? ?? '',
+    );
+  }
+}
+
+class RentalFeatureConfig {
+  const RentalFeatureConfig({
+    required this.longTermRentalsEnabled,
+    required this.maxRentalDays,
+  });
+
+  final bool longTermRentalsEnabled;
+  final int maxRentalDays;
+
+  factory RentalFeatureConfig.fromJson(Map<String, dynamic> json) {
+    return RentalFeatureConfig(
+      longTermRentalsEnabled:
+          json['long_term_rentals_enabled'] as bool? ?? false,
+      maxRentalDays: json['max_rental_days'] as int? ?? 30,
     );
   }
 }

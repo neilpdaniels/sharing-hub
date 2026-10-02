@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -2367,6 +2368,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         endDrawer: _showFilterDrawerAction ? _buildHomeFilterDrawer() : null,
         body: NotificationListener<ScrollNotification>(
           onNotification: (notification) {
+            if (!Platform.isAndroid) {
+              return false;
+            }
             if (notification is ScrollUpdateNotification) {
               final delta = notification.scrollDelta ?? 0;
               final metrics = notification.metrics;
@@ -2394,7 +2398,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         bottomNavigationBar: AnimatedOpacity(
-          opacity: _navBarOpacity,
+          opacity: Platform.isAndroid ? _navBarOpacity : 1.0,
           duration: const Duration(milliseconds: 250),
           child: BottomNavigationBar(
             currentIndex: _selectedIndex,

@@ -3,4 +3,4 @@ set -eu
 
 worker_name="${1:-worker}@$(hostname)"
 
-uv run celery -A rentalution inspect ping -d "$worker_name" --timeout=5 | grep -q pong
+uv run celery -A rentalution inspect ping --timeout=5 | grep -F -q -- "${worker_name}: OK"

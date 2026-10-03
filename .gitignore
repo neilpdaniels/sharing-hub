@@ -11,6 +11,8 @@ wheels/
 celerybeat-schedule.db
 logs/
 db.sqlite3
+.env
+staticfiles/
 .rentalution_mobile.dev.env
 .rentalution_mobile.prod.env
 .rentalution_mobile.local.sh

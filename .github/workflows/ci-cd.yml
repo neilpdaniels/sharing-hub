@@ -142,8 +142,20 @@ jobs:
               fi
               sleep 2
             done
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker sh -c 'sh scripts/check_celery_runtime.sh "video-worker@$(hostname)"'
+            celery_ready=0
+            for attempt in $(seq 1 30); do
+              if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh >/dev/null 2>&1 \
+                && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker sh -c 'sh scripts/check_celery_runtime.sh "video-worker@$(hostname)"' >/dev/null 2>&1; then
+                celery_ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$celery_ready" -ne 1 ]; then
+              echo "Celery workers did not respond to ping within 60 seconds." >&2
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 worker video-worker
+              exit 1
+            fi
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T flower uv run python -c '
             from urllib.error import HTTPError
             from urllib.request import urlopen

@@ -41,6 +41,7 @@ check_var TURNSTILE_SITE_KEY
 check_var TURNSTILE_SECRET_KEY
 check_var FCM_PROJECT_ID
 check_var FCM_SENDER_ID
+check_var FLOWER_BASIC_AUTH
 check_var FCM_SERVICE_ACCOUNT_FILE
 check_var DEFAULT_FROM_EMAIL
 check_var SITE_URL

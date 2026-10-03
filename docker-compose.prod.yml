@@ -37,7 +37,7 @@ services:
   video-worker:
     image: ${WEB_IMAGE}
     build: null
-    command: uv run celery -A rentalution worker -Q video --loglevel=info --concurrency=2
+    command: uv run celery -A rentalution worker -Q video --loglevel=info --autoscale=2,1 --hostname=video-worker@%h
     env_file:
       - .env
     volumes:
@@ -48,5 +48,41 @@ services:
       - redis
     restart: unless-stopped
 
+
+  worker:
+    image: ${WEB_IMAGE}
+    command: uv run celery -A rentalution worker -Q celery --loglevel=info --autoscale=4,1 --hostname=worker@%h
+    env_file:
+      - .env
+    volumes:
+      - ./media:/app/media
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  beat:
+    image: ${WEB_IMAGE}
+    command: uv run celery -A rentalution beat --loglevel=info --schedule=/var/lib/celery/celerybeat-schedule
+    env_file:
+      - .env
+    volumes:
+      - celery_beat_data:/var/lib/celery
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  flower:
+    image: ${WEB_IMAGE}
+    command: uv run celery -A rentalution flower --address=0.0.0.0 --port=5555 --basic_auth=${FLOWER_BASIC_AUTH}
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:5555:5555"
+    depends_on:
+      - redis
+    restart: unless-stopped
 volumes:
   postgres_data:
+  celery_beat_data:

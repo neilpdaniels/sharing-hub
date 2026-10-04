@@ -115,6 +115,8 @@ flutter:
 
 flutter_launcher_icons:
   android: true
+  adaptive_icon_background: "#10AAA8"
+  adaptive_icon_foreground: assets/images/app_icon_1024.png
   ios: true
   web:
     generate: true

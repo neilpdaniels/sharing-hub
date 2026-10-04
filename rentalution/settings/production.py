@@ -28,6 +28,23 @@ CSRF_TRUSTED_ORIGINS = [
 CSRF_COOKIE_DOMAIN = os.environ.get('DJANGO_CSRF_COOKIE_DOMAIN', '.rentalution.co.uk')
 SESSION_COOKIE_DOMAIN = os.environ.get('DJANGO_SESSION_COOKIE_DOMAIN', '.rentalution.co.uk')
 
+# Email (Zoho SMTP over STARTTLS). Credentials stay in the production
+# environment rather than the repository.
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.zoho.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '1') == '1'
+EMAIL_HOST_USER = os.environ.get(
+    'EMAIL_HOST_USER',
+    'application@rentalution.co.uk',
+)
+EMAIL_HOST_PASSWORD = os.environ.get('APP_EMAIL_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get(
+    'DEFAULT_FROM_EMAIL',
+    'application@rentalution.co.uk',
+)
+SERVER_EMAIL = os.environ.get('SERVER_EMAIL', 'admin@rentalution.co.uk')
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',

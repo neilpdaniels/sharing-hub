@@ -13,7 +13,7 @@ from datetime import timedelta
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import service_account
 
-from common.models import Order
+from common.models import Order, OrderImage
 from account.models import Profile
 from .models import DisputeCase, StripeSettlement, Transaction
 from .stripe_connect import stripe_connect_service
@@ -21,6 +21,51 @@ from common.failures import record_site_failure
 
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task
+def process_order_image(image_id):
+    """Convert and resize an advert image outside the web upload request."""
+    from io import BytesIO
+
+    from django.core.files.base import ContentFile
+    from PIL import Image, ImageOps
+
+    try:
+        image_obj = OrderImage.objects.get(pk=image_id)
+    except OrderImage.DoesNotExist:
+        logger.info('OrderImage %s was removed before processing started.', image_id)
+        return
+
+    original_name = image_obj.image.name
+    try:
+        with image_obj.image.open('rb') as source:
+            with Image.open(source) as opened_image:
+                processed_image = ImageOps.exif_transpose(opened_image)
+                if processed_image.mode != 'RGB':
+                    processed_image = processed_image.convert('RGB')
+                processed_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+
+                output = BytesIO()
+                processed_image.save(output, format='JPEG', quality=85, optimize=True)
+
+        filename = '{}.jpg'.format(original_name.rsplit('.', 1)[0])
+        image_obj.image.save(filename, ContentFile(output.getvalue()), save=False)
+        image_obj.processing_status = OrderImage.READY
+        image_obj.processing_error = ''
+        image_obj.saveNoImageModification(
+            update_fields=['image', 'processing_status', 'processing_error'],
+        )
+        # Keep the original briefly: the upload response has already handed
+        # its URL to the browser. A retention job can remove these originals
+        # later without breaking an in-progress listing form.
+        logger.info('Processed OrderImage %s.', image_id)
+    except Exception as exc:
+        OrderImage.objects.filter(pk=image_id).update(
+            processing_status=OrderImage.FAILED,
+            processing_error=str(exc)[:255],
+        )
+        logger.exception('Failed to process OrderImage %s.', image_id)
 
 
 def _notify_payment_failure_parties(transaction, error_message, *, point):

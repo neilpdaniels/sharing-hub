@@ -6,10 +6,6 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from common.helpers import RandomFileName 
 from .validators import MaxOrderPriceValidator
-from PIL import Image
-from io import BytesIO
-from django.core.files.uploadedfile import InMemoryUploadedFile
-import sys
 from simple_history.models import HistoricalRecords
 from django.urls import reverse
 import random
@@ -651,6 +647,15 @@ class FavouriteOrder(models.Model):
 
 
 class OrderImage(models.Model):
+    PROCESSING = 'processing'
+    READY = 'ready'
+    FAILED = 'failed'
+    PROCESSING_STATUS_CHOICES = (
+        (PROCESSING, 'Processing'),
+        (READY, 'Ready'),
+        (FAILED, 'Failed'),
+    )
+
     order = models.ForeignKey(Order, related_name='images', on_delete=models.CASCADE, blank=True, null=True)
     image = models.ImageField(upload_to=RandomFileName('images/orders/'))
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -658,38 +663,20 @@ class OrderImage(models.Model):
     active = models.BooleanField(default=True)
     first_image = models.BooleanField(default=True)
     is_main = models.BooleanField(default=False, help_text='Main image shown in listing thumbnail')
+    processing_status = models.CharField(
+        max_length=12,
+        choices=PROCESSING_STATUS_CHOICES,
+        default=READY,
+        db_index=True,
+    )
+    processing_error = models.CharField(max_length=255, blank=True, default='')
 
     def saveNoImageModification(self, *args, **kwargs):
         super(OrderImage, self).save(*args, **kwargs)
 
     def save(self, *args, **kwargs):
-        #Opening the uploaded image
-        im = Image.open(self.image)
-        output = BytesIO()
-        fill_color = 'white'  # your background
-        if im.mode in ('RGBA', 'LA'):
-            background = Image.new(im.mode[:-1], im.size, fill_color)
-            background.paste(im, im.split()[-1])
-            im = background
-
-        #Resize/modify the image
-        max_h = 1600
-        if im.size[0] > max_h:
-            ratio = im.size[0] / max_h
-            v_height = im.size[1] / ratio
-            im = im.resize( (max_h, int(v_height)) )
-        max_v = 1600
-        if im.size[1] > max_v:
-            ratio = im.size[1] / max_v
-            h_height = im.size[0] / ratio
-            im = im.resize( (int(h_height), max_v) )
-		
-        #after modifications, save it to the output
-        im.save(output, format='JPEG', quality=100)
-        output.seek(0)
-
-        #change the imagefield value to be the newley modifed image value
-        self.image = InMemoryUploadedFile(output,'ImageField', "%s.jpg" %self.image.name.split('.')[0], 'image/jpeg', sys.getsizeof(output), None)
+        # Conversion happens in the Celery worker after the original upload
+        # has been stored, keeping the web request lightweight.
         super(OrderImage, self).save(*args, **kwargs)
 
 

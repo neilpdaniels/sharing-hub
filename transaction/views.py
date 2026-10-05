@@ -71,6 +71,7 @@ from .tasks import (
     async_retry_stripe_settlement,
     async_setup_deposit_card_and_test_hold,
     async_transfer_rental_proceeds,
+    process_order_image,
 )
 
 
@@ -1255,10 +1256,17 @@ class OrderImageUpload(View):
         if form.is_valid() and request.user is not None:
             image = form.save(commit=False)
             image.user = request.user
-            image.save()
+            image.processing_status = OrderImage.PROCESSING
+            # Persist the original immediately and process it only after the
+            # request's database transaction has committed.
+            image.saveNoImageModification()
+            db_transaction.on_commit(
+                lambda image_id=image.id: process_order_image.delay(image_id),
+            )
             data = {'is_valid': True, 'order_image_id': image.id ,
                     'image_name': image.image.name, 
-                    'image_url': image.image.url}
+                    'image_url': image.image.url,
+                    'processing_status': image.processing_status}
         else:
             data = {'is_valid': False}
         return JsonResponse(data)

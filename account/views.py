@@ -407,7 +407,7 @@ def register(request):
                         request.session.pop('pending_registration_email', None)
                         login(request, new_user)
                         messages.success(request, 'Registration complete and email verified.')
-                        return redirect(reverse('navigation:browseCategory', args=('metals',)))
+                        return redirect('homepage')
 
     context = {
         'user_form': user_form,
@@ -625,8 +625,7 @@ def activate_account(request, uidb64, token):
         user.save()
         user.profile.save()
         login(request, user)
-        product_url = request.build_absolute_uri(reverse('navigation:browseCategory', args=('metals', )))
-        return redirect(product_url)
+        return redirect('homepage')
     else:
         return render(request, 'account_activation_invalid.html')
 

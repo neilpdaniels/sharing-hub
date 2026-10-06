@@ -1,6 +1,8 @@
 import random
 import string
 
+from .models import Transaction
+
 # TODO work out why migrations breaks when i change this
 
 def random_string_generator(size=10, chars=string.ascii_lowercase + string.digits):
@@ -11,4 +13,4 @@ def unique_txn_ref_generator():
     qs_exists= Transaction.objects.filter(transaction_reference = new_txn_ref).exists()
     if qs_exists:
         return unique_txn_ref_generator()
-    return order_new_id
+    return new_txn_ref

@@ -14,6 +14,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 # Keep this file as a compatibility reference only; production uses
 # rentalution.settings.production via the settings package in rentalution/settings/.
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

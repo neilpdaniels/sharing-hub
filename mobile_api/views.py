@@ -9,6 +9,7 @@ from django.contrib.auth.forms import PasswordChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.db.models import BooleanField, Q, Value
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import generics, status
@@ -31,7 +32,7 @@ from common.catalog.attributes import (
     field_name_for_definition,
     sortable_attribute_definitions,
 )
-from common.helpers import get_ordered_top_categories
+from common.helpers import get_ordered_top_categories, is_profile_kyc_verified
 from common.geocoding import PostcodeGeocoder
 from common.failures import record_site_failure
 from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, OrderImage, Product

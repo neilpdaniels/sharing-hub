@@ -74,6 +74,7 @@ from .tasks import (
     process_order_image,
 )
 
+logger = logging.getLogger(__name__)
 
 PHONE_EVIDENCE_ACTIONS = frozenset({
     'initiate_rental',
@@ -3235,7 +3236,7 @@ def raise_dispute(request, transaction_reference=None):
                 txn_message_image_form = TransactionMessageImageForm(instance=transaction)
                 context = {
                     'transaction' : transaction,
-                    'txn_message_form' : txn_message_form,
+                    'txn_message_form' : txn_messsage_form,
                     'txn_message_image_form' : txn_message_image_form
                 }
                 return render(request, 'transaction/raise_dispute.html', context)

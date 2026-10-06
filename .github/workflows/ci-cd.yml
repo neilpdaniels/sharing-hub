@@ -156,9 +156,10 @@ jobs:
             celery_ready=0
             worker_ping=""
             video_worker_ping=""
+            video_worker_name="video-worker@$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker hostname)"
             for attempt in $(seq 1 30); do
               if worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh 2>&1)" \
-                && video_worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker sh -c 'sh scripts/check_celery_runtime.sh "video-worker@$(hostname)"' 2>&1)"; then
+                && video_worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh "$video_worker_name" 2>&1)"; then
                 celery_ready=1
                 break
               fi

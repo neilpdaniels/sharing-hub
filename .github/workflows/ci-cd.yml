@@ -155,25 +155,21 @@ jobs:
             printf '[%s] Deploy stage: verify Celery workers\n' "$(date -Is)"
             celery_ready=0
             worker_ping=""
-            video_worker_ping=""
+            worker_name="worker@$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker hostname)"
             video_worker_name="video-worker@$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker hostname)"
             for attempt in $(seq 1 30); do
-              if worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh 2>&1)" \
-                && video_worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh "$video_worker_name" 2>&1)"; then
+              if worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh "$worker_name" "$video_worker_name" 2>&1)"; then
                 celery_ready=1
                 break
               fi
               printf '[%s] Celery probe attempt %s/30 did not pass\n' "$(date -Is)" "$attempt" >&2
               printf 'worker probe: %s\n' "$worker_ping" >&2
-              printf 'video-worker probe: %s\n' "$video_worker_ping" >&2
               sleep 2
             done
             if [ "$celery_ready" -ne 1 ]; then
               echo "Celery workers did not respond to ping within 60 seconds." >&2
               echo "worker probe:" >&2
               printf '%s\n' "$worker_ping" >&2
-              echo "video-worker probe:" >&2
-              printf '%s\n' "$video_worker_ping" >&2
               docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 worker video-worker
               exit 1
             fi

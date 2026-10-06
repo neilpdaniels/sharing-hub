@@ -114,6 +114,10 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # The image pull plus the bounded Celery readiness retry can exceed
+          # ssh-action's implicit 10-minute command timeout.
+          command_timeout: 20m
+          debug: true
           script: |
             set -e
             cd "${{ env.DEPLOY_PATH }}"
@@ -129,7 +133,7 @@ jobs:
             sudo install -d -m 0755 media staticfiles
             sudo chown -R 10001:10001 media staticfiles
             docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps web sh scripts/check_prod_env.sh
-            echo "Deploy stage: start application containers"
+            printf '[%s] Deploy stage: start application containers\n' "$(date -Is)"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
             for attempt in $(seq 1 30); do
               running_services="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml ps --status running --services)"
@@ -148,7 +152,7 @@ jobs:
               fi
               sleep 2
             done
-            echo "Deploy stage: verify Celery workers"
+            printf '[%s] Deploy stage: verify Celery workers\n' "$(date -Is)"
             celery_ready=0
             worker_ping=""
             video_worker_ping=""
@@ -158,6 +162,9 @@ jobs:
                 celery_ready=1
                 break
               fi
+              printf '[%s] Celery probe attempt %s/30 did not pass\n' "$(date -Is)" "$attempt" >&2
+              printf 'worker probe: %s\n' "$worker_ping" >&2
+              printf 'video-worker probe: %s\n' "$video_worker_ping" >&2
               sleep 2
             done
             if [ "$celery_ready" -ne 1 ]; then
@@ -169,7 +176,7 @@ jobs:
               docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 worker video-worker
               exit 1
             fi
-            echo "Deploy stage: verify Flower"
+            printf '[%s] Deploy stage: verify Flower\n' "$(date -Is)"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T flower uv run python -c '
             from urllib.error import HTTPError
             from urllib.request import urlopen
@@ -180,12 +187,12 @@ jobs:
                 if error.code != 401:
                     raise
             '
-            echo "Deploy stage: install Nginx configuration"
+            printf '[%s] Deploy stage: install Nginx configuration\n' "$(date -Is)"
             sudo install -m 0644 /tmp/rentalution-nginx/deploy/nginx/rentalution.conf /etc/nginx/sites-available/rentalution
             sudo ln -sfn /etc/nginx/sites-available/rentalution /etc/nginx/sites-enabled/rentalution
-            echo "Deploy stage: renew or issue TLS certificate"
+            printf '[%s] Deploy stage: renew or issue TLS certificate\n' "$(date -Is)"
             sudo certbot --nginx -d rentalution.co.uk -d www.rentalution.co.uk --non-interactive --agree-tos --redirect --keep-until-expiring -m "${{ secrets.CERTBOT_EMAIL }}"
-            echo "Deploy stage: validate and reload Nginx"
+            printf '[%s] Deploy stage: validate and reload Nginx\n' "$(date -Is)"
             sudo nginx -t
             sudo systemctl reload nginx
-            echo "Deployment complete"
+            printf '[%s] Deployment complete\n' "$(date -Is)"

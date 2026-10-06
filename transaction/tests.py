@@ -1124,7 +1124,7 @@ class TransitionNotificationTests(TestCase):
 		self.assertIsNotNone(msg)
 		self.assertTrue(msg.is_system_generated)
 		self.assertTrue(msg.email_to_recepient)
-		self.assertIn('Rental agreement', msg.description)
+		self.assertIn('Review and confirm the rental agreement', msg.description)
 		self.assertIn('Next step:', msg.description)
 
 	def test_dispute_transition_marks_include_admin(self):

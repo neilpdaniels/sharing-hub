@@ -20,6 +20,30 @@ from transaction.tasks import (
 )
 
 
+class ProductSearchTests(TestCase):
+
+	def setUp(self):
+		self.user = User.objects.create_user(username='product-searcher', password='x')
+		self.client.force_login(self.user)
+		self.top_category = Category.objects.create(title='Tools')
+		self.second_level_category = Category.objects.create(
+			title='Power tools', parent_category=self.top_category,
+		)
+		self.leaf_category = Category.objects.create(
+			title='Cordless drills', parent_category=self.second_level_category,
+		)
+		self.product = Product.objects.create(category_id=self.leaf_category, name='Cordless drill')
+
+	def test_category_search_includes_all_descendants(self):
+		response = self.client.get(
+			reverse('transaction:product_search_ajax'),
+			{'category': self.top_category.id},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual([row['id'] for row in response.json()['results']], [self.product.id])
+
+
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)
 class TransactionDepositPolicyTests(TestCase):
 	def setUp(self):

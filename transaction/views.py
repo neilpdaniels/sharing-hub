@@ -4,6 +4,7 @@ import hashlib
 import logging
 import random
 import base64
+from collections import defaultdict
 from io import BytesIO
 from datetime import datetime, timedelta, time as dt_time
 from operator import attrgetter
@@ -1069,16 +1070,21 @@ def product_search_ajax(request):
         qs = qs.filter(name__icontains=q)
     if category_id:
         try:
-            # include the chosen category AND all its children
-            cat_ids = list(
-                Category.objects.filter(
-                    pk=int(category_id)
-                ).values_list('pk', flat=True)
-            ) + list(
-                Category.objects.filter(
-                    parent_category_id=int(category_id)
-                ).values_list('pk', flat=True)
-            )
+            selected_category_id = int(category_id)
+            children_by_parent = defaultdict(list)
+            for child_id, parent_id in Category.objects.values_list('pk', 'parent_category_id'):
+                children_by_parent[parent_id].append(child_id)
+
+            # Listing categories can be nested several levels deep. Build the
+            # complete subtree in memory to avoid one query per category level.
+            cat_ids = []
+            pending_ids = [selected_category_id]
+            while pending_ids:
+                current_id = pending_ids.pop()
+                if current_id in cat_ids:
+                    continue
+                cat_ids.append(current_id)
+                pending_ids.extend(children_by_parent[current_id])
             qs = qs.filter(category_id__in=cat_ids)
         except (ValueError, TypeError):
             pass

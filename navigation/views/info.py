@@ -59,7 +59,7 @@ def suggestCategory(request):
             next_url = request.POST.get('next')
             if next_url:
                 return redirect(next_url)
-            return redirect('navigation:seeAll')
+            return redirect('homepage')
     else:
         form = CategorySuggestionForm()
 
@@ -69,5 +69,4 @@ def suggestCategory(request):
         'next': request.GET.get('next', ''),
     }
     return render(request, 'navigation/suggest_category.html', context)
-
 

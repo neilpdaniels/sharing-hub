@@ -126,9 +126,10 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
             # The application image now runs as UID/GID 10001, including Celery.
             # These bind mounts must remain writable after that privilege drop.
-            sudo install -d -m 0755 -o 10001 -g 10001 media staticfiles
+            sudo install -d -m 0755 media staticfiles
             sudo chown -R 10001:10001 media staticfiles
             docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps web sh scripts/check_prod_env.sh
+            echo "Deploy stage: start application containers"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
             for attempt in $(seq 1 30); do
               running_services="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml ps --status running --services)"
@@ -147,10 +148,13 @@ jobs:
               fi
               sleep 2
             done
+            echo "Deploy stage: verify Celery workers"
             celery_ready=0
+            worker_ping=""
+            video_worker_ping=""
             for attempt in $(seq 1 30); do
-              if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh >/dev/null 2>&1 \
-                && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker sh -c 'sh scripts/check_celery_runtime.sh "video-worker@$(hostname)"' >/dev/null 2>&1; then
+              if worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh 2>&1)" \
+                && video_worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker sh -c 'sh scripts/check_celery_runtime.sh "video-worker@$(hostname)"' 2>&1)"; then
                 celery_ready=1
                 break
               fi
@@ -158,9 +162,14 @@ jobs:
             done
             if [ "$celery_ready" -ne 1 ]; then
               echo "Celery workers did not respond to ping within 60 seconds." >&2
+              echo "worker probe:" >&2
+              printf '%s\n' "$worker_ping" >&2
+              echo "video-worker probe:" >&2
+              printf '%s\n' "$video_worker_ping" >&2
               docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 worker video-worker
               exit 1
             fi
+            echo "Deploy stage: verify Flower"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T flower uv run python -c '
             from urllib.error import HTTPError
             from urllib.request import urlopen
@@ -171,8 +180,12 @@ jobs:
                 if error.code != 401:
                     raise
             '
+            echo "Deploy stage: install Nginx configuration"
             sudo install -m 0644 /tmp/rentalution-nginx/deploy/nginx/rentalution.conf /etc/nginx/sites-available/rentalution
             sudo ln -sfn /etc/nginx/sites-available/rentalution /etc/nginx/sites-enabled/rentalution
+            echo "Deploy stage: renew or issue TLS certificate"
             sudo certbot --nginx -d rentalution.co.uk -d www.rentalution.co.uk --non-interactive --agree-tos --redirect --keep-until-expiring -m "${{ secrets.CERTBOT_EMAIL }}"
+            echo "Deploy stage: validate and reload Nginx"
             sudo nginx -t
             sudo systemctl reload nginx
+            echo "Deployment complete"

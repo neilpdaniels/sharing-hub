@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -16,6 +17,7 @@ from transaction.stripe_connect import StripeConnectService
 @override_settings(STRIPE_CONNECT_SECRET_KEY='sk_test_connect', STRIPE_CONNECT_WEBHOOK_SECRET='whsec_test_connect')
 class StripeConnectServiceTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.lender = User.objects.create_user(
             'connect-lender', 'lender@example.test', 'x', first_name='Ada', last_name='Lender',
         )
@@ -121,7 +123,11 @@ class StripeConnectServiceTests(TestCase):
     def test_transfer_is_idempotent_and_tied_to_original_charge(self):
         self.profile.stripe_connect_account_id = 'acct_enabled'
         self.profile.stripe_connect_transfers_enabled = True
-        self.profile.save(update_fields=['stripe_connect_account_id', 'stripe_connect_transfers_enabled'])
+        self.profile.stripe_connect_payouts_enabled = True
+        self.profile.save(update_fields=[
+            'stripe_connect_account_id', 'stripe_connect_transfers_enabled',
+            'stripe_connect_payouts_enabled',
+        ])
         stripe = Mock()
         stripe.PaymentIntent.retrieve.return_value = SimpleNamespace(latest_charge='ch_rental')
         stripe.Transfer.create.return_value = SimpleNamespace(id='tr_rental')
@@ -142,7 +148,11 @@ class StripeConnectServiceTests(TestCase):
     def test_deposit_award_deducts_actual_fee_before_lender_transfer(self):
         self.profile.stripe_connect_account_id = 'acct_enabled'
         self.profile.stripe_connect_transfers_enabled = True
-        self.profile.save(update_fields=['stripe_connect_account_id', 'stripe_connect_transfers_enabled'])
+        self.profile.stripe_connect_payouts_enabled = True
+        self.profile.save(update_fields=[
+            'stripe_connect_account_id', 'stripe_connect_transfers_enabled',
+            'stripe_connect_payouts_enabled',
+        ])
         stripe = Mock()
         stripe.PaymentIntent.retrieve.return_value = SimpleNamespace(latest_charge='ch_deposit')
         stripe.Charge.retrieve.return_value = SimpleNamespace(
@@ -162,7 +172,11 @@ class StripeConnectServiceTests(TestCase):
     def test_deposit_award_smaller_than_fee_records_shortfall_without_transfer(self):
         self.profile.stripe_connect_account_id = 'acct_enabled'
         self.profile.stripe_connect_transfers_enabled = True
-        self.profile.save(update_fields=['stripe_connect_account_id', 'stripe_connect_transfers_enabled'])
+        self.profile.stripe_connect_payouts_enabled = True
+        self.profile.save(update_fields=[
+            'stripe_connect_account_id', 'stripe_connect_transfers_enabled',
+            'stripe_connect_payouts_enabled',
+        ])
         stripe = Mock()
         stripe.PaymentIntent.retrieve.return_value = SimpleNamespace(latest_charge='ch_deposit')
         stripe.Charge.retrieve.return_value = SimpleNamespace(

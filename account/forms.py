@@ -144,6 +144,10 @@ class ProfileImageForm(forms.ModelForm):
 
 class ProfileEditForm(forms.ModelForm):
     required_css_class = 'required'
+    date_of_birth = forms.DateField(
+        required=True,
+        input_formats=['%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d'],
+    )
 
     class Meta:
         model = Profile

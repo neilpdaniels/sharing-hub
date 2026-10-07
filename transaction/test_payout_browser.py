@@ -6,6 +6,7 @@ these tests create their own disposable database records and never call Stripe.
 
 import os
 import re
+from unittest import SkipTest
 from datetime import timedelta
 
 from django.conf import settings
@@ -30,7 +31,7 @@ class LenderPayoutBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         if sync_playwright is None:
-            raise cls.skipTest('Install browser test dependencies with ./run_payout_browser_tests.')
+            raise SkipTest('Install browser test dependencies with ./run_payout_browser_tests.')
         # Playwright's sync bridge uses an event loop internally. Django sees
         # that loop when this class creates its disposable test data, even
         # though the test itself is synchronous. Scope this bypass to this
@@ -46,7 +47,7 @@ class LenderPayoutBrowserTests(StaticLiveServerTestCase):
                 cls._playwright.stop()
             super().tearDownClass()
             cls._restore_async_unsafe_environment()
-            raise cls.skipTest(
+            raise SkipTest(
                 f'Chromium is not installed for Playwright ({exc}). '
                 'Run ./run_payout_browser_tests once to install it.'
             )

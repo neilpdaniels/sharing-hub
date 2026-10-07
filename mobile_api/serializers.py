@@ -380,7 +380,7 @@ class TransactionDetailSerializer(TransactionListSerializer):
                 'net_transfer_amount': settlement.net_transfer_amount,
                 'platform_shortfall': settlement.platform_shortfall,
             }
-            for settlement in obj.stripe_settlements.order_by('created', 'id')
+            for settlement in obj.stripe_settlements.order_by('created_at', 'id')
         ]
 
     def get_deposit_proposal_warning_message(self, obj):

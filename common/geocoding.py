@@ -11,6 +11,7 @@ import requests
 import logging
 from decimal import Decimal
 from typing import Optional, Dict, Tuple
+from django.conf import settings
 from django.core.cache import cache
 from math import radians, cos, sin, asin, sqrt
 
@@ -79,6 +80,8 @@ class PostcodeGeocoder:
         """
         if not town:
             return None
+        if not getattr(settings, 'GEOCODING_ENABLED', True):
+            return None
 
         cache_key = f'town_coords_{town.lower().replace(" ", "_")}'
         cached = cache.get(cache_key)
@@ -131,6 +134,8 @@ class PostcodeGeocoder:
             Dict with 'latitude' and 'longitude' as Decimal, or None if not found
         """
         if not postcode:
+            return None
+        if not getattr(settings, 'GEOCODING_ENABLED', True):
             return None
             
         # Normalize postcode (remove spaces, uppercase)

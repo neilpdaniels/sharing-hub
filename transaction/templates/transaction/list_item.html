@@ -124,29 +124,32 @@
 
     var tpl = document.getElementById('li-card-tpl');
     results.forEach(function (p) {
-      var node = tpl.content.cloneNode(true);
-      var $col  = $(node).find('.col-sm-6');
-      var $card = $col.find('.li-card');
-      var $img  = $col.find('img');
-      var $ph   = $col.find('.li-card-img-placeholder');
+      var col = tpl.content.firstElementChild.cloneNode(true);
+      var card = col.querySelector('.li-card');
+      var img = col.querySelector('img');
+      var placeholder = col.querySelector('.li-card-img-placeholder');
 
-      $card.attr('href', buildCardUrl(p.id));
-      $col.find('.li-card-name').text(p.name);
-      $col.find('.li-card-cat span').text(p.category || '');
+      card.href = buildCardUrl(p.id);
+      col.querySelector('.li-card-name').textContent = p.name;
+      col.querySelector('.li-card-cat span').textContent = p.category || '';
 
       if (p.image_url) {
-        $img.attr('src', p.image_url).attr('alt', p.name).show();
-        $ph.hide();
+        img.src = p.image_url;
+        img.alt = p.name;
+        img.style.display = '';
+        placeholder.style.display = 'none';
       }
 
-      // hover effect
-      $card.on('mouseenter', function () {
-        $(this).css({'box-shadow':'0 4px 18px rgba(0,0,0,0.12)', 'transform':'translateY(-2px)'});
-      }).on('mouseleave', function () {
-        $(this).css({'box-shadow':'', 'transform':''});
+      card.addEventListener('mouseenter', function () {
+        card.style.boxShadow = '0 4px 18px rgba(0,0,0,0.12)';
+        card.style.transform = 'translateY(-2px)';
+      });
+      card.addEventListener('mouseleave', function () {
+        card.style.boxShadow = '';
+        card.style.transform = '';
       });
 
-      $results.append($col);
+      $results[0].appendChild(col);
     });
 
     var n = results.length;

@@ -31,7 +31,7 @@ jobs:
 
       - name: Run Django checks
         env:
-          DJANGO_SETTINGS_MODULE: rentalution.settings.local
+          DJANGO_SETTINGS_MODULE: rentalution.settings.test
           RENTALUTION_SECRET_KEY: ci-check-secret-key
           DJANGO_SECRET_KEY: ci-check-secret-key
         run: uv run python manage.py check

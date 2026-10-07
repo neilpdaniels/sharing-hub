@@ -575,6 +575,7 @@ def edit(request):
                     )
 
                 updated_profile.save()
+                return redirect('edit')
             else:
                 messages.error(request, 'Profile updates not saved')
 

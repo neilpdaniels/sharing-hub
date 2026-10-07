@@ -565,6 +565,7 @@ def dispute_case_review(request, case_number):
         external_notes = (request.POST.get('external_resolution_notes') or '').strip()
         owner_id = request.POST.get('owner_id') or ''
         deposit_return_amount_raw = (request.POST.get('deposit_return_amount') or '').strip()
+        payment_offset_amount_raw = (request.POST.get('payment_offset_amount') or '').strip()
         resolution_decision = (request.POST.get('resolution_decision') or '').strip()
         owner = None
         if owner_id:
@@ -703,23 +704,32 @@ def dispute_case_review(request, case_number):
             )
 
             try:
-                deposit_return_amount = max(0.0, float(deposit_return_amount_raw or 0))
+                deposit_return_amount = min(
+                    txn.deposit or 0,
+                    max(0.0, float(deposit_return_amount_raw or 0)),
+                )
             except ValueError:
                 deposit_return_amount = 0.0
+            try:
+                payment_offset_amount = max(0.0, float(payment_offset_amount_raw or 0))
+            except ValueError:
+                payment_offset_amount = 0.0
 
             lender_share_ratio = max(0.0, min(100.0, float(request.POST.get('settlement_ratio') or 50))) / 100.0
             borrower_share_ratio = 1.0 - lender_share_ratio
 
             if outcome == DisputeCase.OUTCOME_LENDER:
-                deposit_return_amount = 0.0
                 txn.deposit_status = txn.DEPOSIT_RETURNED_REDUCED
                 txn.transaction_status = txn.DISPUTE_DECIDED
             elif outcome == DisputeCase.OUTCOME_SPLIT:
                 txn.deposit_status = txn.DEPOSIT_RETURNED_FULL if deposit_return_amount >= (txn.deposit or 0) else txn.DEPOSIT_RETURNED_REDUCED
                 txn.transaction_status = txn.DISPUTE_DECIDED
             elif outcome in (DisputeCase.OUTCOME_BORROWER, DisputeCase.OUTCOME_VOID, DisputeCase.OUTCOME_REFUND):
-                deposit_return_amount = txn.deposit or 0
-                txn.deposit_status = txn.DEPOSIT_RETURNED_FULL
+                txn.deposit_status = (
+                    txn.DEPOSIT_RETURNED_FULL
+                    if deposit_return_amount >= (txn.deposit or 0)
+                    else txn.DEPOSIT_RETURNED_REDUCED
+                )
                 txn.transaction_status = txn.DISPUTE_DECIDED
             else:
                 txn.deposit_status = txn.DEPOSIT_MEDIATION
@@ -743,7 +753,7 @@ def dispute_case_review(request, case_number):
             ])
 
             case.deposit_return_amount = deposit_return_amount
-            case.payment_offset_amount = 0
+            case.payment_offset_amount = payment_offset_amount
             case.save(update_fields=['deposit_return_amount', 'payment_offset_amount', 'amended'])
 
             # Every final dispute decision must settle the manual authorisation:
@@ -752,6 +762,11 @@ def dispute_case_review(request, case_number):
                 async_resolve_deposit_hold.delay(
                     transaction_id=txn.id,
                     return_amount=deposit_return_amount,
+                )
+            if payment_offset_amount > 0 and txn.payment_collection_reference:
+                stripe_connect_service.refund_rental_payment(
+                    transaction=txn,
+                    refund_amount=payment_offset_amount,
                 )
 
             TransactionMessage.objects.create(
@@ -1051,11 +1066,12 @@ class OrderFormHandler:
 @login_required
 def list_item(request):
     """Step 1: search for the product you want to list, then continue to add_order."""
-    try:
-        root = Category.objects.get(parent_category__isnull=True)
-        categories = Category.objects.filter(parent_category=root).order_by('title')
-    except Category.DoesNotExist:
-        categories = Category.objects.none()
+    # ``Top`` is the canonical taxonomy root. Ignore stray root categories
+    # created by development and test tooling.
+    root = Category.objects.filter(
+        title__iexact='top', parent_category__isnull=True,
+    ).first()
+    categories = Category.objects.filter(parent_category=root).order_by('title') if root else Category.objects.none()
     return render(request, 'transaction/list_item.html', {'categories': categories})
 
 
@@ -1382,17 +1398,6 @@ def hit_order(request, order_id=None):
             rental_days = (end_date - start_date).days + 1
             price_per_day = _price_per_day_for_days(rental_days)
 
-            # A paid booking cannot safely progress until the lender has a
-            # Connect account that can receive the eventual separate transfer.
-            lender_profile = Profile.objects.filter(user=order.user).first()
-            if price_per_day > 0 and (
-                not lender_profile
-                or not lender_profile.stripe_connect_transfers_enabled
-                or not lender_profile.stripe_connect_payouts_enabled
-            ):
-                messages.error(request, 'This lender has not completed payout setup, so paid bookings are not available yet.')
-                return redirect(request.build_absolute_uri(reverse('navigation:productPage', kwargs={'product_slug': order.product.slug})))
-
             product = order.product
 
             txn = Transaction.objects.create(
@@ -1430,7 +1435,6 @@ def hit_order(request, order_id=None):
             
             # Check if high-risk product and set KYC requirements
             if product.is_high_risk():
-                from account.models import Profile
                 renter_profile = Profile.objects.get(user=request.user)
                 lender_profile = Profile.objects.get(user=order.user)
                 

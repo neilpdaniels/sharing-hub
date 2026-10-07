@@ -25,7 +25,8 @@ class ProductSearchTests(TestCase):
 	def setUp(self):
 		self.user = User.objects.create_user(username='product-searcher', password='x')
 		self.client.force_login(self.user)
-		self.top_category = Category.objects.create(title='Tools')
+		self.root_category = Category.objects.create(title='Top')
+		self.top_category = Category.objects.create(title='Tools', parent_category=self.root_category)
 		self.second_level_category = Category.objects.create(
 			title='Power tools', parent_category=self.top_category,
 		)
@@ -42,6 +43,17 @@ class ProductSearchTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual([row['id'] for row in response.json()['results']], [self.product.id])
+
+	def test_list_item_uses_the_top_taxonomy_root(self):
+		other_root = Category.objects.create(title='Camping')
+
+		response = self.client.get(reverse('transaction:list_item'))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			list(response.context['categories'].values_list('id', flat=True)),
+			[self.top_category.id],
+		)
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)
@@ -463,19 +475,20 @@ class PaymentSummaryTests(TestCase):
 		self.assertContains(response, '£4.00')
 
 	@patch('transaction.views.stripe_connect_service.collect_rental_payment')
-	def test_rental_payment_failure_records_attempt_and_blocks_pin(self, mock_collect):
+	def test_rental_payment_failure_blocks_handover_pin(self, mock_collect):
 		mock_collect.return_value = {'ok': False, 'error': 'card_declined', 'provider': 'stripe'}
-		self.client.force_login(self.renter)
+		self.txn.deposit_card_setup_status = Transaction.CARD_READY
+		self.txn.deposit_test_hold_status = Transaction.TEST_HOLD_SUCCESS
+		self.txn.save(update_fields=['deposit_card_setup_status', 'deposit_test_hold_status'])
+		self.client.force_login(self.lender)
 		response = self.client.post(
 			reverse('transaction:view_transaction', kwargs={'transaction_reference': self.txn.transaction_reference}),
-			{'action': 'confirm_stripe_card', 'payment_method_id': 'pm_test', 'setup_intent_id': 'seti_test'},
+			{'action': 'initiate_rental', 'checkout_video_url': 'https://example.test/checkout.mp4'},
 		)
-		self.assertIn(response.status_code, (200, 302))
-		self.assertTrue(PaymentAttempt.objects.filter(
-			transaction=self.txn,
-			status=PaymentAttempt.STATUS_FAILURE,
-			failure_point=PaymentAttempt.POINT_RENTAL_CAPTURE,
-		).exists())
+		self.assertEqual(response.status_code, 302)
+		mock_collect.assert_called_once_with(transaction=self.txn)
+		self.txn.refresh_from_db()
+		self.assertFalse(self.txn.checkout_handover_pin)
 
 
 
@@ -982,6 +995,8 @@ class DisputeWorkflowTests(TestCase):
             deposit=80,
             current_spot_value=100,
             price_as_pct_spot_value=30,
+            payment_collection_reference='pi_rental',
+            deposit_collection_reference='pi_deposit',
             deposit_resolution_notes='Deposit dispute',
             transaction_status_raised_by=self.lender,
         )

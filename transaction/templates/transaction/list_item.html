@@ -104,24 +104,26 @@
   var $prompt   = $('#li-prompt');
   var debounceTimer = null;
   var lastXhr = null;
+  var searchSequence = 0;
 
   function buildCardUrl(productId) {
     return ADD_ORDER_URL.replace('/0/', '/' + productId + '/');
   }
 
   function renderResults(data) {
+    var results = Array.isArray(data && data.results) ? data.results : [];
     $results.empty();
     $empty.hide();
     $prompt.hide();
 
-    if (!data.results.length) {
+    if (!results.length) {
       $status.text('');
       $empty.show();
       return;
     }
 
     var tpl = document.getElementById('li-card-tpl');
-    data.results.forEach(function (p) {
+    results.forEach(function (p) {
       var node = tpl.content.cloneNode(true);
       var $col  = $(node).find('.col-sm-6');
       var $card = $col.find('.li-card');
@@ -147,13 +149,14 @@
       $results.append($col);
     });
 
-    var n = data.results.length;
+    var n = results.length;
     $status.text(n === 24 ? 'Showing first 24 results — refine your search to narrow down.' : n + ' result' + (n === 1 ? '' : 's'));
   }
 
   function doSearch() {
     var q   = $search.val().trim();
     var cat = $category.val();
+    var sequence = ++searchSequence;
 
     if (!q && !cat) {
       $results.empty();
@@ -163,14 +166,34 @@
       return;
     }
 
-    if (lastXhr) { lastXhr.abort(); }
+    if (lastXhr) {
+      lastXhr.abort();
+      lastXhr = null;
+    }
     $status.html('<i class="fas fa-spinner fa-spin me-1"></i> Searching…');
 
-    lastXhr = $.getJSON(SEARCH_URL, { q: q, category: cat }, function (data) {
+    lastXhr = $.ajax({
+      url: SEARCH_URL,
+      data: { q: q, category: cat },
+      dataType: 'json',
+      timeout: 10000
+    }).done(function (data) {
+      if (sequence !== searchSequence) {
+        return;
+      }
       renderResults(data);
-    }).fail(function (xhr) {
-      if (xhr.statusText !== 'abort') {
-        $status.text('Search failed — please try again.');
+    }).fail(function (xhr, status) {
+      if (sequence === searchSequence && status !== 'abort') {
+        $results.empty();
+        $empty.hide();
+        $prompt.hide();
+        $status.text(status === 'timeout'
+          ? 'Search timed out. Please try again.'
+          : 'Search failed — please try again.');
+      }
+    }).always(function () {
+      if (sequence === searchSequence) {
+        lastXhr = null;
       }
     });
   }

@@ -51,6 +51,9 @@ TURNSTILE_HOSTNAMES = frozenset(
     if hostname.strip()
 )
 
+# Listing images are resized and converted to JPEG by the Celery worker.
+ORDER_IMAGE_UPLOAD_MAX_BYTES = int(os.environ.get('ORDER_IMAGE_UPLOAD_MAX_BYTES', str(20 * 1024 * 1024)))
+
 # Avatar generation (Replicate)
 AVATAR_GENERATION_ENABLED = os.environ.get('AVATAR_GENERATION_ENABLED', '0') == '1'
 REPLICATE_API_TOKEN = os.environ.get('REPLICATE_API_TOKEN', '')

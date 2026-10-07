@@ -501,7 +501,7 @@ class Order(models.Model):
     LET_VISIBILITY_CHOICES = (
         (FRIENDS_ONLY, 'Let to friends only'),
         (PUBLIC_ONLY, 'Let to public only'),
-        (FRIENDS_AND_PUBLIC, 'Let to both'),
+        (FRIENDS_AND_PUBLIC, 'Let to anyone'),
     )
     let_visibility = models.CharField(
         max_length=8,

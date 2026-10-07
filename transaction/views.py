@@ -1291,7 +1291,16 @@ class OrderImageUpload(View):
                     'image_url': image.image.url,
                     'processing_status': image.processing_status}
         else:
-            data = {'is_valid': False}
+            errors = form.errors.get_json_data(escape_html=True)
+            message = next(
+                (
+                    error['message']
+                    for field_errors in errors.values()
+                    for error in field_errors
+                ),
+                'We could not upload that image. Please try another photo.',
+            )
+            data = {'is_valid': False, 'error': message}
         return JsonResponse(data)
 
 

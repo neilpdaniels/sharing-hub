@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 from common.models import Order, OrderImage, LetPriceBand
 from .models import TransactionMessage, TransactionMessageImage, get_max_rental_days
 from datetime import datetime, date
@@ -125,6 +126,10 @@ class OrderAddForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.listing_attribute_field_names = []
+        # Friends-only listings use the mates rate as their primary rate.  Do
+        # not let browser-side display toggles turn this required model field
+        # into a confusing "This field is required" error on submit.
+        self.fields['price'].required = False
         if self.instance and self.instance.pk:
             self.fields['collection_is_not_home_address'].initial = not self.instance.collection_is_home_address
         self.fields['delivery_within_km'].help_text = 'Delivery is charged per km up to this distance.'
@@ -193,6 +198,17 @@ class OrderAddForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+
+        let_visibility = cleaned_data.get('let_visibility')
+        price = cleaned_data.get('price')
+        mates_rate = cleaned_data.get('mates_rates')
+        if let_visibility == Order.FRIENDS_ONLY:
+            if mates_rate is None:
+                self.add_error('mates_rates', 'Enter a price per day for friends.')
+            else:
+                cleaned_data['price'] = mates_rate
+        elif price is None:
+            self.add_error('price', 'Enter a price per day.')
 
         collection_policy = cleaned_data.get('collection_policy')
         radius_km = cleaned_data.get('radius_km')
@@ -381,6 +397,15 @@ class OrderImageForm(forms.ModelForm):
     class Meta:
         model = OrderImage
         fields = ('image', )
+
+    def clean_image(self):
+        image = self.cleaned_data['image']
+        maximum_size = getattr(settings, 'ORDER_IMAGE_UPLOAD_MAX_BYTES', 20 * 1024 * 1024)
+        if image.size > maximum_size:
+            raise forms.ValidationError(
+                f'Choose an image smaller than {maximum_size // (1024 * 1024)} MB.'
+            )
+        return image
 
 class TransactionCreateForm(forms.Form):
     """Form for creating a new transaction with pricing and delivery terms."""

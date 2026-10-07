@@ -1378,7 +1378,7 @@ def hit_order(request, order_id=None):
         )
         if order_hit_form.is_valid():
             turnstile_token = request.POST.get('cf-turnstile-response', '')
-            if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+            if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', ''), expected_action='rental_enquiry'):
                 messages.error(request, 'Human verification failed. Please try again.')
                 # Re-render form without proceeding
                 context = {
@@ -1951,7 +1951,7 @@ Transaction Ref: {txn.transaction_reference}"""
 
             if message_turnstile_required:
                 turnstile_token = request.POST.get('cf-turnstile-response', '')
-                if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+                if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', ''), expected_action='transaction_message'):
                     if is_ajax:
                         return JsonResponse({'ok': False, 'error': 'Human verification failed. Please complete the checkbox and try again.'}, status=400)
                     messages.error(request, 'Human verification failed. Please try again.')
@@ -2028,7 +2028,7 @@ Transaction Ref: {txn.transaction_reference}"""
             is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
             if message_turnstile_required:
                 turnstile_token = request.POST.get('cf-turnstile-response', '')
-                if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', '')):
+                if not verify_turnstile_token(turnstile_token, request.META.get('REMOTE_ADDR', ''), expected_action='transaction_message'):
                     if is_ajax:
                         return JsonResponse({'ok': False, 'error': 'Human verification failed. Please complete the checkbox and try again.'}, status=400)
                     messages.error(request, 'Human verification failed. Please try again.')

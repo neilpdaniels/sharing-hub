@@ -557,7 +557,7 @@
                         <ul class="small mb-3 pl-3" id="messageMediaList"></ul>
                         {% if message_turnstile_required %}
                         <div class="mb-3">
-                            <div class="cf-turnstile" data-sitekey="{{ TURNSTILE_SITE_KEY }}" data-theme="light"></div>
+                            <div class="cf-turnstile" data-sitekey="{{ TURNSTILE_SITE_KEY }}" data-action="transaction_message" data-theme="light"></div>
                             {% if captcha_error %}
                                 <small class="text-danger">{{ captcha_error }}</small>
                             {% endif %}

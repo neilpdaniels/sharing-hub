@@ -74,7 +74,7 @@ class TurnstileLoginView(auth_views.LoginView):
     def form_valid(self, form):
         if self._show_turnstile():
             token = (self.request.POST.get('cf-turnstile-response') or '').strip()
-            if not verify_turnstile_token(token, self.request.META.get('REMOTE_ADDR', '')):
+            if not verify_turnstile_token(token, self.request.META.get('REMOTE_ADDR', ''), expected_action='login'):
                 form.add_error(None, 'Human verification failed. Please complete the checkbox and try again.')
                 return self.form_invalid(form)
 
@@ -302,7 +302,7 @@ def register(request):
             user_form = UserRegistrationStartForm(request.POST, request.FILES)
             if user_form.is_valid():
                 token = (request.POST.get('cf-turnstile-response') or '').strip()
-                if not verify_turnstile_token(token, request.META.get('REMOTE_ADDR', '')):
+                if not verify_turnstile_token(token, request.META.get('REMOTE_ADDR', ''), expected_action='registration'):
                     messages.error(request, 'Human verification failed. Please try again.')
                 else:
                     cleaned = user_form.cleaned_data

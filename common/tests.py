@@ -66,28 +66,45 @@ class KycHelperTests(TestCase):
 
 
 class SecurityUtilsTests(TestCase):
-	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='')
-	def test_turnstile_skips_validation_without_secret(self):
-		self.assertTrue(verify_turnstile_token('any-token'))
+	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='', TURNSTILE_HOSTNAMES=frozenset({'rentalution.co.uk'}))
+	def test_turnstile_rejects_when_secret_is_not_configured(self):
+		self.assertFalse(verify_turnstile_token('any-token', expected_action='registration'))
 
-	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret')
+	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret', TURNSTILE_HOSTNAMES=frozenset({'rentalution.co.uk'}))
 	def test_turnstile_rejects_empty_token(self):
-		self.assertFalse(verify_turnstile_token(''))
+		self.assertFalse(verify_turnstile_token('', expected_action='registration'))
 
-	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret')
+	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret', TURNSTILE_HOSTNAMES=frozenset({'rentalution.co.uk'}))
 	@patch('common.security.requests.post')
 	def test_turnstile_accepts_success_payload(self, mock_post):
 		mock_response = Mock()
-		mock_response.json.return_value = {'success': True}
+		mock_response.json.return_value = {
+			'success': True,
+			'action': 'registration',
+			'hostname': 'rentalution.co.uk',
+		}
 		mock_post.return_value = mock_response
 
-		self.assertTrue(verify_turnstile_token('token-123', '127.0.0.1'))
+		self.assertTrue(verify_turnstile_token('token-123', '127.0.0.1', expected_action='registration'))
 		mock_post.assert_called_once()
 
-	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret')
+	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret', TURNSTILE_HOSTNAMES=frozenset({'rentalution.co.uk'}))
 	@patch('common.security.requests.post', side_effect=Exception('network down'))
 	def test_turnstile_returns_false_on_exception(self, _mock_post):
-		self.assertFalse(verify_turnstile_token('token-123'))
+		self.assertFalse(verify_turnstile_token('token-123', expected_action='registration'))
+
+	@override_settings(CLOUDFLARE_TURNSTILE_SECRET_KEY='secret', TURNSTILE_HOSTNAMES=frozenset({'rentalution.co.uk'}))
+	@patch('common.security.requests.post')
+	def test_turnstile_rejects_wrong_action_or_hostname(self, mock_post):
+		mock_response = Mock()
+		mock_response.json.return_value = {
+			'success': True,
+			'action': 'login',
+			'hostname': 'attacker.example',
+		}
+		mock_post.return_value = mock_response
+
+		self.assertFalse(verify_turnstile_token('token-123', expected_action='registration'))
 
 
 class MobilePayoutReturnLinkTests(SimpleTestCase):

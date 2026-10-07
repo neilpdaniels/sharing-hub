@@ -7,7 +7,17 @@ import psycopg2  # noqa: F401
 DEBUG = False
 
 CLOUDFLARE_TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '0x4AAAAAAD5p_nGqBL1K_60S')
-CLOUDFLARE_TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY', '')
+CLOUDFLARE_TURNSTILE_SECRET_KEY = os.environ.get(
+    'TURNSTILE_SECRET', os.environ.get('TURNSTILE_SECRET_KEY', '')
+)
+TURNSTILE_HOSTNAMES = frozenset(
+    hostname.strip().lower()
+    for hostname in os.environ.get(
+        'TURNSTILE_HOSTNAMES',
+        'rentalution.co.uk,www.rentalution.co.uk',
+    ).split(',')
+    if hostname.strip()
+)
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', SECRET_KEY)
 

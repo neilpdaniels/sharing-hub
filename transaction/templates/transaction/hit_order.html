@@ -159,7 +159,7 @@
 
                                                 {% bootstrap_field order_hit_form.enquiry_message %}
                         <div class="mb-3">
-                            <div class="cf-turnstile" data-sitekey="{{ TURNSTILE_SITE_KEY }}" data-theme="light"></div>
+                            <div class="cf-turnstile" data-sitekey="{{ TURNSTILE_SITE_KEY }}" data-action="rental_enquiry" data-theme="light"></div>
                             {% if captcha_error %}
                                 <small class="text-danger">{{ captcha_error }}</small>
                             {% endif %}

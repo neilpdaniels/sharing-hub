@@ -30,7 +30,7 @@ def help_and_support(request):
         message = (request.POST.get('message') or '').strip()
 
         token = (request.POST.get('cf-turnstile-response') or '').strip()
-        if not verify_turnstile_token(token, request.META.get('REMOTE_ADDR', '')):
+        if not verify_turnstile_token(token, request.META.get('REMOTE_ADDR', ''), expected_action='support'):
             captcha_error = 'Human verification failed. Please try again.'
 
         if not captcha_error and (not name or not email or not subject or not message):

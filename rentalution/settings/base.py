@@ -39,9 +39,17 @@ SECRET_KEY = os.environ.get('RENTALUTION_SECRET_KEY', os.environ.get('DJANGO_SEC
 
 ALLOWED_HOSTS = ['*']
 
-# Cloudflare Turnstile
-CLOUDFLARE_TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '')
-CLOUDFLARE_TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY', '')
+# Cloudflare Turnstile. The site key is public; the secret must only be set in
+# the deployment environment.
+CLOUDFLARE_TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY', '0x4AAAAAAD5p_nGqBL1K_60S')
+CLOUDFLARE_TURNSTILE_SECRET_KEY = os.environ.get(
+    'TURNSTILE_SECRET', os.environ.get('TURNSTILE_SECRET_KEY', '')
+)
+TURNSTILE_HOSTNAMES = frozenset(
+    hostname.strip().lower()
+    for hostname in os.environ.get('TURNSTILE_HOSTNAMES', '').split(',')
+    if hostname.strip()
+)
 
 # Avatar generation (Replicate)
 AVATAR_GENERATION_ENABLED = os.environ.get('AVATAR_GENERATION_ENABLED', '0') == '1'

@@ -71,17 +71,23 @@
       <h5>Lender payouts</h5>
       {% if profile.stripe_connect_transfers_enabled and profile.stripe_connect_payouts_enabled %}
       <p class="text-success">Your Stripe payout account is ready to receive rental transfers.</p>
+      <p class="text-muted small">Your bank details are set up. You can securely review or change them in Stripe at any time.</p>
       {% elif profile.stripe_connect_account_id %}
       <p class="mb-2">Your payout setup needs action before you can accept paid rentals.</p>
       {% if profile.stripe_connect_requirements %}
       <p class="text-muted small">Stripe needs some additional information. Open payout details to continue securely.</p>
+      {% else %}
+      <p class="text-muted small">Stripe may still be reviewing your details. Open payout details if you need to finish or amend anything.</p>
       {% endif %}
       {% else %}
       <p class="mb-2">Set up lender payouts before accepting paid rentals. Stripe will show your prefilled details for you to check, then ask for your sort code and account number securely.</p>
       {% endif %}
       <p class="text-muted small">Rentalution does not store your bank account or BACS details.</p>
+      {% if payout_status_refresh_failed %}
+      <p class="text-muted small">We could not refresh the latest Stripe status just now. Please try again shortly.</p>
+      {% endif %}
       {% if profile.stripe_connect_account_id %}
-      <a href="{% url 'transaction:stripe_connect_payout_details' %}" class="btn btn-primary">Change bank / payout details</a>
+      <a href="{% url 'transaction:stripe_connect_payout_details' %}" class="btn btn-primary">{% if profile.stripe_connect_transfers_enabled and profile.stripe_connect_payouts_enabled %}Manage bank / payout details{% else %}Continue payout setup{% endif %}</a>
       {% else %}
       <form method="get" action="{% url 'transaction:stripe_connect_payout_details' %}" class="mt-3">
         <label for="payout-business-type" class="form-label">Who will receive the payouts?</label>

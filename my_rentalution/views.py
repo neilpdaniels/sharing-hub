@@ -23,6 +23,7 @@ from datetime import date
 
 from account.models import PaymentMethod, Profile
 from rentalution.context_processors import get_transaction_notification_payload
+from transaction.stripe_connect import stripe_connect_service
 
 
 def _format_rental_window(transaction):
@@ -140,11 +141,22 @@ def my_details(request):
 
     profile = get_object_or_404(Profile, user=request.user)
     payment_methods = request.user.payment_methods.all()
+    payout_status_refresh_failed = False
+
+    # A user can return here directly from Stripe's Express dashboard, which
+    # does not necessarily hit our onboarding-return URL. Refreshing on the
+    # payout tab keeps the message aligned with Stripe's current account state.
+    if tab == 'payouts' and profile.stripe_connect_account_id:
+        result = stripe_connect_service.refresh_lender_payout_status(profile=profile)
+        payout_status_refresh_failed = not result.get('ok')
+        if result.get('profile'):
+            profile = result['profile']
 
     context = {
         'active_tab': tab,
         'profile': profile,
         'payment_methods': payment_methods,
+        'payout_status_refresh_failed': payout_status_refresh_failed,
     }
     return render(request, 'my_rentalution/my_details.html', context)
 

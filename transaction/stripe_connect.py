@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
+from common.phone_utils import format_to_e164
 from common.failures import record_site_failure
 from .models import PaymentAttempt, StripeSettlement
 
@@ -117,7 +118,9 @@ class StripeConnectService:
             'first_name': user.first_name or None,
             'last_name': user.last_name or None,
             'email': user.email or None,
-            'phone': profile.mobile_number or None,
+            # Profiles keep UK mobiles in their familiar domestic form (07…).
+            # Stripe Connect requires international E.164 (+44…) format.
+            'phone': format_to_e164(profile.mobile_number) or None,
         }
         if profile.date_of_birth:
             individual['dob'] = {

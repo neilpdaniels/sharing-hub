@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 
-from common.phone_utils import normalize_to_domestic
+from common.phone_utils import is_valid_uk_phone, normalize_to_domestic
 from .form_mixins import AvatarFieldsMixin
 from .profanity import username_contains_blocked_word
 from .models import Profile
@@ -62,7 +62,10 @@ class UserRegistrationStartForm(AvatarFieldsMixin):
 
     def clean_mobile_number(self):
         number = self.cleaned_data['mobile_number'].strip()
-        return normalize_to_domestic(number)
+        normalized = normalize_to_domestic(number)
+        if not is_valid_uk_phone(normalized):
+            raise forms.ValidationError('Enter a valid UK mobile number.')
+        return normalized
 
     def clean_email(self):
         email = self.cleaned_data['email'].strip().lower()
@@ -137,6 +140,13 @@ class ProfileAddForm(forms.ModelForm):
             raise forms.ValidationError("You must be at least 18 to register")
         return date_of_birth
 
+    def clean_mobile_number(self):
+        number = (self.cleaned_data.get('mobile_number') or '').strip()
+        normalized = normalize_to_domestic(number)
+        if not is_valid_uk_phone(normalized):
+            raise forms.ValidationError('Enter a valid UK mobile number.')
+        return normalized
+
 class ProfileImageForm(forms.ModelForm):
     class Meta:
         model = Profile
@@ -156,4 +166,7 @@ class ProfileEditForm(forms.ModelForm):
 
     def clean_mobile_number(self):
         number = (self.cleaned_data.get('mobile_number') or '').strip()
-        return normalize_to_domestic(number)
+        normalized = normalize_to_domestic(number)
+        if not is_valid_uk_phone(normalized):
+            raise forms.ValidationError('Enter a valid UK mobile number.')
+        return normalized

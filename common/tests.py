@@ -33,6 +33,9 @@ class PhoneUtilsTests(TestCase):
 	def test_is_valid_uk_phone(self):
 		self.assertTrue(is_valid_uk_phone('07700900123'))
 		self.assertTrue(is_valid_uk_phone('+447700900123'))
+		self.assertTrue(is_valid_uk_phone('00447700900123'))
+		self.assertFalse(is_valid_uk_phone('+14155552671'))
+		self.assertFalse(is_valid_uk_phone('02079460000'))
 		self.assertFalse(is_valid_uk_phone('12345'))
 
 

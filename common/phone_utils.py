@@ -8,7 +8,7 @@ def format_to_e164(raw_number):
     Handles various input formats:
     - 07xxx xxx xxx → +447xxx
     - +447xxx → +447xxx
-    - 007xxx → +447xxx
+    - 00447xxx → +447xxx
     - 447xxx → +447xxx
 
     Args:
@@ -20,26 +20,10 @@ def format_to_e164(raw_number):
     if not raw_number:
         return ''
 
-    # Remove all spaces and dashes
-    cleaned = raw_number.replace(' ', '').replace('-', '')
-
-    # Handle +00 prefix
-    if cleaned.startswith('00'):
-        return '+' + cleaned[2:]
-
-    # Extract only digits
-    digits = ''.join(ch for ch in cleaned if ch.isdigit())
-
-    # Handle 44 prefix (UK international code without +)
-    if digits.startswith('44'):
-        return '+' + digits
-
-    # Handle 0 prefix (UK domestic format)
-    if digits.startswith('0'):
-        return '+44' + digits[1:]
-
-    # Default: assume missing 0 prefix and add UK country code
-    return '+44' + digits
+    domestic = normalize_to_domestic(raw_number)
+    if not is_valid_uk_phone(domestic):
+        return ''
+    return '+44' + domestic[1:]
 
 
 def normalize_to_domestic(raw_number):
@@ -52,18 +36,14 @@ def normalize_to_domestic(raw_number):
     Returns:
         str: Normalized domestic format number
     """
-    number = (raw_number or '').strip()
-
-    # Strip leading + and country code if user typed +44
-    if number.startswith('+44'):
-        number = '0' + number[3:].lstrip()
-
-    # If no leading 0, prepend one
-    if number and not number.startswith('0'):
-        number = '0' + number
-
-    # Remove spaces/dashes for storage
-    return number.replace(' ', '').replace('-', '')
+    digits = ''.join(ch for ch in (raw_number or '') if ch.isdigit())
+    if digits.startswith('0044'):
+        digits = digits[2:]
+    if digits.startswith('44'):
+        digits = '0' + digits[2:]
+    elif digits.startswith('7') and len(digits) == 10:
+        digits = '0' + digits
+    return digits
 
 
 def mask_mobile_number(raw_number):
@@ -97,12 +77,5 @@ def is_valid_uk_phone(raw_number):
 
     digits = ''.join(ch for ch in (raw_number or '') if ch.isdigit())
 
-    # UK mobile numbers should have 11 digits (including leading 0)
-    # or 12 digits (with 44 prefix)
-    if digits.startswith('44'):
-        return len(digits) == 12
-    elif digits.startswith('0'):
-        return len(digits) == 11
-    else:
-        # If no prefix, should be 10 digits
-        return len(digits) == 10
+    domestic = normalize_to_domestic(digits)
+    return len(domestic) == 11 and domestic.startswith('07')

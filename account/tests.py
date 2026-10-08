@@ -33,6 +33,16 @@ class UserRegistrationStartFormTests(TestCase):
 		self.assertTrue(form.is_valid(), form.errors)
 		self.assertEqual(form.cleaned_data['mobile_number'], '07700900123')
 
+	def test_registration_rejects_non_uk_mobile_number(self):
+		form = UserRegistrationStartForm(data={
+			'first_name': 'Test', 'last_name': 'User', 'username': 'test-user',
+			'email': 'test-user@example.com', 'date_of_birth': '01-01-1990',
+			'mobile_number': '+14155552671', 'address_line_1': '1 Test Street',
+			'town': 'London', 'postcode': 'SW1A 1AA',
+		})
+		self.assertFalse(form.is_valid())
+		self.assertIn('mobile_number', form.errors)
+
 	def test_rejects_duplicate_username(self):
 		User.objects.create_user(username='neil_123', email='a@example.com', password='x')
 		form = UserRegistrationStartForm(data=self._valid_payload())

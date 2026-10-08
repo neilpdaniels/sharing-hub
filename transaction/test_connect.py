@@ -101,6 +101,7 @@ class StripeConnectServiceTests(TestCase):
         create_args = stripe.Account.create.call_args.kwargs
         self.assertEqual(create_args['business_type'], 'individual')
         self.assertEqual(create_args['individual']['first_name'], 'Ada')
+        self.assertEqual(create_args['individual']['phone'], '+447123456789')
         self.assertEqual(create_args['individual']['address']['line1'], '1 Test Street')
         self.assertEqual(
             create_args['business_profile']['product_description'],

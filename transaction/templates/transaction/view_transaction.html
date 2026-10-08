@@ -175,6 +175,17 @@
                     </div>
                 </div>
 
+                {% if is_lender and transaction.transaction_status == transaction.RENTAL_DAY_AWAITING_VERIFICATION %}
+                <div class="card mb-3 border-{% if checkout_handover_safety.state == 'ready' %}success{% elif checkout_handover_safety.state == 'blocked' %}danger{% else %}warning{% endif %}">
+                    <div class="card-body">
+                        <h5 class="mb-1 {% if checkout_handover_safety.state == 'ready' %}text-success{% elif checkout_handover_safety.state == 'blocked' %}text-danger{% else %}text-warning{% endif %}">
+                            {% if checkout_handover_safety.state == 'ready' %}✓ {% elif checkout_handover_safety.state == 'blocked' %}✕ {% else %}! {% endif %}{{ checkout_handover_safety.title }}
+                        </h5>
+                        <p class="mb-0">{{ checkout_handover_safety.detail }}</p>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% if stripe_settlements %}
                 <div class="card mb-3">
                     <div class="card-body">

@@ -17,6 +17,7 @@ from google.oauth2 import service_account
 from common.models import Order, OrderImage
 from common.emails import send_branded_email
 from account.models import Profile
+from account.models import NotificationPreference
 from .models import DisputeCase, StripeSettlement, Transaction
 from .stripe_connect import stripe_connect_service
 from common.failures import record_site_failure
@@ -73,6 +74,9 @@ def _transaction_url(txn):
 
 
 def _send_lifecycle_email(txn, user, event):
+    preferences, _ = NotificationPreference.objects.get_or_create(user=user)
+    if not preferences.email_rental_updates:
+        return 0
     order = txn.order_passive
     item_name = getattr(getattr(order, 'product', None), 'name', 'your rental')
     details = [
@@ -1238,7 +1242,7 @@ def send_new_message_push_notification(message_id):
     if message.transaction and message.transaction.transaction_status == message.transaction.RENTAL_ENQUIRY:
         notification_type = 'transaction_enquiry'
 
-    devices = MobileDevice.objects.filter(user=message.user_to, active=True)
+    devices = MobileDevice.objects.filter(user=message.user_to, active=True, notify_in_app_alerts=True)
     if notification_type == 'transaction_enquiry':
         devices = devices.filter(notify_transaction_enquiry=True)
     else:

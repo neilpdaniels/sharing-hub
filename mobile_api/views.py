@@ -2370,7 +2370,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 raise ValidationError(exc.messages)
             return Response({'status': 'ok', 'message': 'Non-return reported. Dispute review is now open.'})
 
-        if action == 'use_existing_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
+        if action == 'use_existing_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED, txn.RENTAL_DAY_AWAITING_VERIFICATION):
             method_id = data.get('payment_method_id')
             if not method_id:
                 raise ValidationError('payment_method_id is required.')
@@ -2395,7 +2395,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.save()
             return Response({'status': 'ok', 'message': 'Existing card linked.'})
 
-        if action == 'add_deposit_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
+        if action == 'add_deposit_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED, txn.RENTAL_DAY_AWAITING_VERIFICATION):
             cardholder_name = (data.get('cardholder_name') or '').strip()
             card_brand = (data.get('card_brand') or '').strip()
             card_last4 = (data.get('card_last4') or '').strip()
@@ -2419,7 +2419,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
             txn.save(update_fields=['deposit_card_setup_status', 'amended'])
             return Response({'status': 'ok', 'message': 'Card setup started.'})
 
-        if action == 'create_stripe_setup_intent' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
+        if action == 'create_stripe_setup_intent' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED, txn.RENTAL_DAY_AWAITING_VERIFICATION):
             if txn.deposit_collected_placeholder:
                 raise ValidationError('Card setup is no longer available once deposit is collected.')
 
@@ -2451,7 +2451,7 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 'client_secret': setup_result.get('client_secret') or '',
             })
 
-        if action == 'confirm_stripe_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED):
+        if action == 'confirm_stripe_card' and is_renter and txn.transaction_status in (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED, txn.RENTAL_DAY_AWAITING_VERIFICATION):
             payment_method_id = (request.data.get('payment_method_id') or '').strip()
             setup_intent_id = (data.get('setup_intent_id') or '').strip()
             if not payment_method_id:
@@ -2467,6 +2467,23 @@ class TransactionActionView(TransactionAccessMixin, APIView):
                 payment_method_id=payment_method_id,
             )
             return Response({'status': 'ok', 'message': 'Stripe card confirmation submitted.'})
+
+        if action == 'retry_rental_payment' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
+            if self._is_rental_payment_collected(txn):
+                return Response({'status': 'ok', 'message': 'Rental payment is already confirmed.'})
+            if not self._has_verified_payment_card(txn):
+                raise ValidationError('Add or change your payment card before retrying payment.')
+            payment_result = stripe_connect_service.collect_rental_payment(transaction=txn)
+            if not payment_result.get('ok'):
+                raise ValidationError('Payment could not be taken. Try a different card or contact your bank.')
+            txn.payment_status = payment_result.get('payment_status', txn.PAYMENT_CAPTURED_PLACEHOLDER)
+            txn.payment_collection_requested_at = payment_result.get('collection_requested_at', timezone.now())
+            txn.payment_collection_reference = payment_result.get('collection_reference', '')
+            txn.payment_collected_placeholder = True
+            txn.save(update_fields=['payment_status', 'payment_collection_requested_at', 'payment_collection_reference', 'payment_collected_placeholder', 'amended'])
+            if txn.deposit > 0 and self._can_collect_deposit(txn) and txn.deposit_collection_status != txn.COLLECT_SUCCESS:
+                async_collect_deposit_hold.delay(transaction_id=txn.id)
+            return Response({'status': 'ok', 'message': 'Payment received. Deposit confirmation is now in progress.'})
 
         if action == 'collect_deposit' and is_lender and txn.transaction_status in (
             txn.RENTAL_AGREED,

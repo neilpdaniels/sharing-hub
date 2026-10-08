@@ -723,6 +723,37 @@ class Transaction(models.Model):
         )
         return payment_ready and deposit_ready
 
+    def get_checkout_handover_safety(self):
+        """A deliberately unambiguous status for lender collection decisions."""
+        if self.checkout_handover_verified_at:
+            return {
+                'state': 'complete', 'title': 'Handover completed',
+                'detail': 'The collection handover has been verified.',
+            }
+        if not self.checkout_funds_ready():
+            missing = []
+            payment_due = ((self.quantity or 0) * (self.price or 0)) + (self.delivery_cost or 0) + (self.rentalution_fee or 0)
+            if payment_due > 0 and self.payment_status != self.PAYMENT_CAPTURED_PLACEHOLDER:
+                missing.append('rental payment')
+            if self.deposit > 0 and not (
+                self.deposit_collected_placeholder or self.deposit_collection_status == self.COLLECT_SUCCESS
+                or self.deposit_status == self.DEPOSIT_HELD_PLACEHOLDER
+            ):
+                missing.append('deposit')
+            return {
+                'state': 'blocked', 'title': 'Do not hand over the item',
+                'detail': '{} not confirmed yet.'.format(' and '.join(missing).capitalize()),
+            }
+        if not self.checkout_handover_pin:
+            return {
+                'state': 'waiting', 'title': 'Funds secured — waiting for collection code',
+                'detail': 'The borrower must complete the checkout evidence step before the code is shown.',
+            }
+        return {
+            'state': 'ready', 'title': 'Safe to hand over',
+            'detail': 'Rental payment and deposit are confirmed. Verify the borrower’s collection code to complete handover.',
+        }
+
     def get_workflow_message(self):
         if self.transaction_status == self.CANCEL_ACCEPTED:
             if '[NO_COLLECTION_CONFIRMED]' in (self.deposit_resolution_notes or ''):
@@ -810,6 +841,8 @@ class Transaction(models.Model):
         elif status == self.RENTAL_DAY_AWAITING_VERIFICATION:
             if is_lender and not self.checkout_condition_video_url and start_due and self.has_verified_payment_card():
                 actions.append('initiate_rental')
+            if is_renter and not self.checkout_funds_ready():
+                actions.extend(['change_payment_card', 'retry_rental_payment'])
             if is_renter and self.checkout_condition_video_url:
                 actions.extend(['confirm_checkout_evidence', 'submit_checkout_borrower_evidence'])
             if is_lender and self.checkout_handover_pin and self.checkout_funds_ready():

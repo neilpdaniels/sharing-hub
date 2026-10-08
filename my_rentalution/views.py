@@ -23,6 +23,8 @@ from datetime import date
 
 from account.models import PaymentMethod, Profile
 from rentalution.context_processors import get_transaction_notification_payload
+from account.models import NotificationPreference
+from mobile_api.models import MobileDevice
 from transaction.stripe_connect import stripe_connect_service
 
 
@@ -136,12 +138,25 @@ def dashboard(request):
 @login_required
 def my_details(request):
     tab = (request.GET.get('tab') or 'account').strip().lower()
-    if tab not in {'account', 'cards', 'payouts'}:
+    if tab not in {'account', 'cards', 'payouts', 'notifications'}:
         tab = 'account'
 
     profile = get_object_or_404(Profile, user=request.user)
     payment_methods = request.user.payment_methods.all()
+    notification_preferences, _ = NotificationPreference.objects.get_or_create(user=request.user)
     payout_status_refresh_failed = False
+
+    if request.method == 'POST' and tab == 'notifications':
+        notification_preferences.email_rental_updates = request.POST.get('email_rental_updates') == 'on'
+        notification_preferences.email_conversation_messages = request.POST.get('email_conversation_messages') == 'on'
+        notification_preferences.save(update_fields=['email_rental_updates', 'email_conversation_messages', 'updated_at'])
+        MobileDevice.objects.filter(user=request.user, active=True).update(
+            notify_transaction_enquiry=request.POST.get('notify_transaction_enquiry') == 'on',
+            notify_transaction_messages=request.POST.get('notify_transaction_messages') == 'on',
+            notify_in_app_alerts=request.POST.get('notify_in_app_alerts') == 'on',
+        )
+        messages.success(request, 'Notification preferences saved.')
+        return redirect(f"{reverse('my_rentalution:my_details')}?tab=notifications")
 
     # A user can return here directly from Stripe's Express dashboard, which
     # does not necessarily hit our onboarding-return URL. Refreshing on the
@@ -157,6 +172,8 @@ def my_details(request):
         'profile': profile,
         'payment_methods': payment_methods,
         'payout_status_refresh_failed': payout_status_refresh_failed,
+        'notification_preferences': notification_preferences,
+        'mobile_notification_preferences': MobileDevice.objects.filter(user=request.user, active=True).order_by('-updated').first(),
     }
     return render(request, 'my_rentalution/my_details.html', context)
 

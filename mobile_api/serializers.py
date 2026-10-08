@@ -320,6 +320,10 @@ class TransactionDetailSerializer(TransactionListSerializer):
     dispute_final_statement_seconds_remaining = serializers.SerializerMethodField()
     dispute_final_statement_open = serializers.SerializerMethodField()
     payout_settlements = serializers.SerializerMethodField()
+    checkout_handover_safety = serializers.SerializerMethodField()
+
+    def get_checkout_handover_safety(self, obj):
+        return obj.get_checkout_handover_safety()
 
     class Meta(TransactionListSerializer.Meta):
         fields = TransactionListSerializer.Meta.fields + (
@@ -363,6 +367,7 @@ class TransactionDetailSerializer(TransactionListSerializer):
             'dispute_final_statement_seconds_remaining',
             'dispute_final_statement_open',
             'payout_settlements',
+            'checkout_handover_safety',
         )
 
     def get_deposit_proposal_iteration_limit(self, obj):

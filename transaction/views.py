@@ -1550,7 +1550,7 @@ def view_transaction(request, transaction_reference=None):
                 phone_evidence_action = action
         except signing.BadSignature:
             messages.error(request, 'This phone recording link has expired. Generate a new QR code from the booking.')
-    card_setup_allowed_statuses = (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED)
+    card_setup_allowed_statuses = (txn.RENTAL_ENQUIRY, txn.RENTAL_AGREED, txn.RENTAL_DAY_AWAITING_VERIFICATION)
 
     def _get_contract_deadline(transaction):
         return transaction.get_contract_deadline()
@@ -1958,6 +1958,25 @@ Transaction Ref: {txn.transaction_reference}"""
                     request,
                     'Deposit collection in progress. You will receive email confirmation when complete.'
                 )
+
+        elif action == 'retry_rental_payment' and is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION:
+            if _is_rental_payment_collected(txn):
+                messages.info(request, 'Rental payment is already confirmed.')
+            elif not _has_verified_payment_card(txn):
+                messages.error(request, 'Add or change your payment card, then try again.')
+            else:
+                payment_result = stripe_connect_service.collect_rental_payment(transaction=txn)
+                if not payment_result.get('ok'):
+                    messages.error(request, 'Payment could not be taken. Please try a different card or contact your bank.')
+                else:
+                    txn.payment_status = payment_result.get('payment_status', txn.PAYMENT_CAPTURED_PLACEHOLDER)
+                    txn.payment_collection_requested_at = payment_result.get('collection_requested_at', timezone.now())
+                    txn.payment_collection_reference = payment_result.get('collection_reference', '')
+                    txn.payment_collected_placeholder = True
+                    txn.save(update_fields=['payment_status', 'payment_collection_requested_at', 'payment_collection_reference', 'payment_collected_placeholder', 'amended'])
+                    if txn.deposit > 0 and _can_collect_deposit(txn) and txn.deposit_collection_status != txn.COLLECT_SUCCESS:
+                        async_collect_deposit_hold.delay(transaction_id=txn.id)
+                    messages.success(request, 'Payment received. We are now confirming the deposit before collection can proceed.')
 
         elif action == 'send_message' and (is_lender or is_renter):
             body = (request.POST.get('message_body') or '').strip()
@@ -2921,7 +2940,10 @@ Transaction Ref: {txn.transaction_reference}"""
         is_renter
         and txn.transaction_status in card_setup_allowed_statuses
         and needs_payment_card
-        and txn.deposit_card_setup_status != txn.CARD_READY
+        and (txn.deposit_card_setup_status != txn.CARD_READY or (
+            txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION
+            and not _is_rental_payment_collected(txn)
+        ))
         and not txn.deposit_collected_placeholder
     ):
         setup_result = stripe_connect_service.create_setup_intent(transaction=txn)
@@ -3082,6 +3104,8 @@ Transaction Ref: {txn.transaction_reference}"""
         'setup_intent_client_secret': setup_intent_client_secret,
         'setup_intent_id': setup_intent_id,
         'can_setup_deposit_card': can_setup_deposit_card,
+        'can_retry_rental_payment': is_renter and txn.transaction_status == txn.RENTAL_DAY_AWAITING_VERIFICATION and not _is_rental_payment_collected(txn),
+        'checkout_handover_safety': txn.get_checkout_handover_safety(),
         'dispute_in_progress': dispute_in_progress,
         'dispute_hold_deadline': dispute_hold_deadline,
         'dispute_hold_seconds_remaining': dispute_hold_seconds_remaining,

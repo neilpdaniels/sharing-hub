@@ -61,7 +61,7 @@
 <div class="card mb-3">
     <div class="card-body">
         <h5 class="card-title">Deposit Card Setup</h5>
-        {% if transaction.deposit_card_setup_status == transaction.CARD_READY and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS %}
+        {% if transaction.deposit_card_setup_status == transaction.CARD_READY and transaction.deposit_test_hold_status == transaction.TEST_HOLD_SUCCESS and not can_retry_rental_payment %}
         <div class="border rounded p-3 mb-3" style="background:#f0fff4; border-color:#9ae6b4; color:#22543d;">
             <strong>Card ready:</strong> {{ transaction.deposit_card_brand|default:"Card" }} ending {{ transaction.deposit_card_last4 }}
             <div class="mt-1">£0.30 test hold completed successfully{% if transaction.deposit_test_hold_at %} at {{ transaction.deposit_test_hold_at }}{% endif %}.</div>
@@ -333,6 +333,14 @@
         </div>
         {% endif %}
         
+        {% endif %}
+        {% if can_retry_rental_payment %}
+        <form method="post" class="mt-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="retry_rental_payment">
+            <button type="submit" class="btn btn-warning btn-block card-setup-submit">Retry rental payment</button>
+        </form>
+        <p class="small text-muted mt-2 mb-0">If a payment failed, choose a different card above, then retry the payment.</p>
         {% endif %}
     </div>
 </div>

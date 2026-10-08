@@ -18,6 +18,9 @@
     <li class="nav-item">
       <a class="nav-link {% if active_tab == 'payouts' %}active{% endif %}" href="{% url 'my_rentalution:my_details' %}?tab=payouts">Payout details</a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'notifications' %}active{% endif %}" href="{% url 'my_rentalution:my_details' %}?tab=notifications">Notifications</a>
+    </li>
   </ul>
 
   {% if active_tab == 'account' %}
@@ -101,6 +104,40 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
+
+  {% if active_tab == 'notifications' %}
+  <form method="post" class="card border-0 shadow-sm">
+    {% csrf_token %}
+    <div class="card-body">
+      <h5>Notification preferences</h5>
+      <p class="text-muted">Important rental updates stay useful; optional conversation alerts can be turned on if you want them.</p>
+      <h6 class="mt-4">Email</h6>
+      <div class="custom-control custom-switch mb-3">
+        <input class="custom-control-input" type="checkbox" id="email_rental_updates" name="email_rental_updates" {% if notification_preferences.email_rental_updates %}checked{% endif %}>
+        <label class="custom-control-label" for="email_rental_updates"><strong>Important rental updates</strong><br><span class="text-muted small">Enquiries, confirmations, cancellations, disputes, deposits, payment and handover updates.</span></label>
+      </div>
+      <div class="custom-control custom-switch mb-3">
+        <input class="custom-control-input" type="checkbox" id="email_conversation_messages" name="email_conversation_messages" {% if notification_preferences.email_conversation_messages %}checked{% endif %}>
+        <label class="custom-control-label" for="email_conversation_messages"><strong>Every new transaction message</strong><br><span class="text-muted small">Off by default to avoid email overload. Messages always remain in your Rentalution inbox.</span></label>
+      </div>
+      <h6 class="mt-4">App alerts</h6>
+      <div class="custom-control custom-switch mb-3">
+        <input class="custom-control-input" type="checkbox" id="notify_in_app_alerts" name="notify_in_app_alerts" {% if not mobile_notification_preferences or mobile_notification_preferences.notify_in_app_alerts %}checked{% endif %}>
+        <label class="custom-control-label" for="notify_in_app_alerts"><strong>Enable app alerts</strong><br><span class="text-muted small">Turn off all mobile push notifications from Rentalution.</span></label>
+      </div>
+      <div class="custom-control custom-switch mb-3">
+        <input class="custom-control-input" type="checkbox" id="notify_transaction_enquiry" name="notify_transaction_enquiry" {% if not mobile_notification_preferences or mobile_notification_preferences.notify_transaction_enquiry %}checked{% endif %}>
+        <label class="custom-control-label" for="notify_transaction_enquiry"><strong>New rental enquiries</strong></label>
+      </div>
+      <div class="custom-control custom-switch mb-4">
+        <input class="custom-control-input" type="checkbox" id="notify_transaction_messages" name="notify_transaction_messages" {% if not mobile_notification_preferences or mobile_notification_preferences.notify_transaction_messages %}checked{% endif %}>
+        <label class="custom-control-label" for="notify_transaction_messages"><strong>Transaction messages and rental updates</strong></label>
+      </div>
+      <button class="btn btn-primary" type="submit">Save notification preferences</button>
+      <p class="small text-muted mt-3 mb-0">App settings apply to all active Rentalution devices signed into this account.</p>
+    </div>
+  </form>
   {% endif %}
 </div>
 {% endblock %}

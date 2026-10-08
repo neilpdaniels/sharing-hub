@@ -5,6 +5,7 @@ from django.conf import settings
 from .models import DisputeCase, Transaction, TransactionMessage
 from .tasks import send_new_message_push_notification, send_transaction_message_email
 from common.models import System
+from account.models import NotificationPreference
 
 
 MAJOR_STATUS_NOTIFICATION_SET = {
@@ -228,7 +229,16 @@ def trigger_message_push_notification(sender, instance, created, **kwargs):
 
     def notify_recipient():
         send_new_message_push_notification.delay(instance.id)
-        if instance.email_to_recepient:
+        preferences, _ = NotificationPreference.objects.get_or_create(user=instance.user_to)
+        is_rental_update = (
+            instance.is_system_generated
+            or instance.transaction.transaction_status == Transaction.RENTAL_ENQUIRY
+        )
+        should_email = (
+            preferences.email_rental_updates if is_rental_update
+            else preferences.email_conversation_messages
+        )
+        if instance.email_to_recepient and should_email:
             send_transaction_message_email.delay(instance.id)
 
     db_transaction.on_commit(notify_recipient)

@@ -197,3 +197,11 @@ class PaymentMethod(models.Model):
     def __str__(self):
         funding = f' {self.card_funding}' if self.card_funding else ''
         return f'{self.card_brand}{funding} ****{self.card_last4} for {self.user.username}'
+
+
+class NotificationPreference(models.Model):
+    """Account-level choices; device-level push choices remain on MobileDevice."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notification_preferences')
+    email_rental_updates = models.BooleanField(default=True)
+    email_conversation_messages = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)

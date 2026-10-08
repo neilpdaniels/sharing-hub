@@ -36,6 +36,10 @@ def send_branded_email(*, subject, recipient, heading, intro, cta_label='', cta_
         from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
         to=[recipient],
     )
+    # A cid image must share a multipart/related container with the HTML.
+    # Some clients display it as a broken image when Django's default
+    # multipart/mixed container is used instead.
+    message.mixed_subtype = 'related'
     message.attach_alternative(html_body, 'text/html')
     logo_path = Path(settings.BASE_DIR) / 'brand' / 'images' / 'rentalution.png'
     if logo_path.is_file():

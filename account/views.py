@@ -87,6 +87,28 @@ class TurnstileLoginView(auth_views.LoginView):
         return super().form_invalid(form)
 
 
+class TurnstilePasswordResetView(auth_views.PasswordResetView):
+    """Require a Turnstile token before sending a password-reset email."""
+
+    template_name = 'registration/password_reset_form.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['TURNSTILE_SITE_KEY'] = getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', '')
+        return context
+
+    def form_valid(self, form):
+        token = (self.request.POST.get('cf-turnstile-response') or '').strip()
+        if not verify_turnstile_token(
+            token,
+            self.request.META.get('REMOTE_ADDR', ''),
+            expected_action='password_reset',
+        ):
+            form.add_error(None, 'Human verification failed. Please complete the checkbox and try again.')
+            return self.form_invalid(form)
+        return super().form_valid(form)
+
+
 def _is_safe_relative_path(path):
     if not path:
         return False

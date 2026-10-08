@@ -4,7 +4,7 @@ from . import views
 
 # app_name='account'
 urlpatterns = [
-    path('password_reset/', auth_views.PasswordResetView.as_view(
+    path('password_reset/', views.TurnstilePasswordResetView.as_view(
         html_email_template_name='registration/password_reset_email_html.html',
         extra_email_context={'password_reset_steps': ['Choose a strong new password.', 'Sign in again with your new password.']},
     ), name='password_reset'),

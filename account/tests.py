@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -101,6 +102,36 @@ class UsernameCheckTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertFalse(response.json()['available'])
 		self.assertEqual(response.json()['error'], 'Username not available.')
+
+
+class PasswordResetTurnstileTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(
+			username='reset-user', email='reset@example.com', password='secret'
+		)
+
+	def test_password_reset_shows_turnstile(self):
+		response = self.client.get(reverse('password_reset'))
+		self.assertContains(response, 'cf-turnstile')
+		self.assertContains(response, 'data-action="password_reset"')
+
+	@patch('account.views.verify_turnstile_token', return_value=False)
+	def test_password_reset_rejects_missing_or_invalid_turnstile(self, verify_token):
+		response = self.client.post(reverse('password_reset'), {'email': self.user.email})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Human verification failed')
+		verify_token.assert_called_once()
+
+	@patch('account.views.verify_turnstile_token', return_value=True)
+	def test_password_reset_allows_verified_turnstile(self, verify_token):
+		response = self.client.post(reverse('password_reset'), {
+			'email': self.user.email,
+			'cf-turnstile-response': 'verified-token',
+		})
+
+		self.assertRedirects(response, reverse('password_reset_done'))
+		verify_token.assert_called_once()
 
 
 class StripeIdentityVerificationTests(TestCase):

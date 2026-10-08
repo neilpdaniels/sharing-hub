@@ -200,6 +200,11 @@
     {% endif %}
 
     <div class="rh-sidebar-foot">
+      {% if request.user.is_authenticated %}
+      <a href="{% url 'logout' %}?next={{ request.path }}" class="rh-nav-link rh-sidebar-logout">
+        <i class="fas fa-sign-out-alt rh-nav-icon"></i><span>Log out</span>
+      </a>
+      {% endif %}
       <a href="{% url 'pages:helpAndSupport' %}" class="rh-nav-link{% if request.resolver_match.namespace == 'pages' and request.resolver_match.url_name == 'helpAndSupport' %} rh-nav-link--active{% endif %}">
         <i class="fas fa-question-circle rh-nav-icon"></i><span>Help &amp; Support</span>
       </a>
@@ -261,7 +266,7 @@
         </a>
         {% endif %}
         <span class="rh-topbar-greeting">Hey {{ request.user.first_name|capfirst|default:request.user.username|capfirst }}!</span>
-        <a href="{% url 'logout' %}?next={{ request.path }}" class="rh-topbar-logout">Logout</a>
+        <a href="{% url 'logout' %}?next={{ request.path }}" class="rh-topbar-logout" aria-label="Log out" title="Log out"><i class="fas fa-sign-out-alt rh-topbar-logout-icon" aria-hidden="true"></i><span>Logout</span></a>
         {% else %}
         <a href="{% url 'login' %}?next={{ request.path }}" class="rh-topbar-login">Login</a>
         <a href="{% url 'register' %}" class="rh-promo-btn rh-promo-btn--sm">Register</a>

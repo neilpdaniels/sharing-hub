@@ -1555,6 +1555,8 @@ a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !importan
     color: var(--rh-text) !important;
 }
 
+.rh-topbar-logout-icon { display: none; }
+
 /* ─── Footer compact bar (fixed, full-width, hide-on-scroll) ─── */
 #footer {
     background: var(--rh-primary) !important;
@@ -1731,6 +1733,16 @@ a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !importan
     .rh-topbar-greeting {
         display: none;
     }
+    .rh-topbar-logout {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .rh-topbar-logout span { display: none; }
+    .rh-topbar-logout-icon { display: inline-block; }
 }
 
 /* Keep #wrapper from having old transform animation */

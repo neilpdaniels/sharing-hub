@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load bootstrap4 %}
 {% load thumbnail %}
+{% load static %}
 
 {% block headerContent %}{% endblock %}
 {% block title %}{% if edit_mode %}Edit listing{% else %}Lend your item{% endif %}{% endblock %}
@@ -352,7 +353,7 @@
             <div id="drop-zone"
                  style="border:2px dashed #adb5bd; border-radius:6px; padding:30px; text-align:center; color:#6c757d; cursor:pointer; margin-bottom:12px;">
               <span class="fas fa-cloud-upload-alt fa-2x mb-2 d-block"></span>
-              Take a photo, drag one here, or <strong>click to browse</strong> <small class="d-block mt-1">Up to 20 MB each; photos are compressed after upload.</small>
+              Take a photo, drag one here, or <strong>click to browse</strong> <small class="d-block mt-1">Phone photos are resized before upload for a faster, more reliable upload.</small>
             </div>
             <input id="fileupload" type="file" name="image" style="display:none;" multiple
                    accept="image/*" capture="environment"
@@ -397,6 +398,7 @@
 {% block pageJavascript %}
   <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.iframe-transport.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>
+  <script src="{% static 'transaction/listing-image-upload.js' %}"></script>
 {% endblock %}
 
 {% block domready %}
@@ -875,6 +877,22 @@ try {
     dropZone: $('#drop-zone'),
     dataType: 'json',
     sequentialUploads: true,
+    autoUpload: false,
+    add: function(e, data) {
+      $('#modal-progress').modal('show');
+      $('.modal-title').text('Preparing photo…');
+      RentalutionListingImages.prepare(data.files, function(current, total) {
+        $('.modal-title').text('Preparing photo ' + current + ' of ' + total + '…');
+      }).then(function(files) {
+        data.files = files;
+        $('.modal-title').text('Uploading…');
+        data.submit();
+      }).catch(function() {
+        $('#modal-progress').modal('hide');
+        $('#photo-error').remove();
+        $('#photos-card .card-body').prepend('<div id="photo-error" class="alert alert-danger">We could not prepare that photo. Please choose a JPG or PNG under 20 MB.</div>');
+      });
+    },
     stop: function() { $('#modal-progress').modal('hide'); },
     progressall: function(e, data) {
       var pct = parseInt(data.loaded / data.total * 100, 10) + '%';
@@ -907,7 +925,7 @@ try {
     },
     fail: function(e, data) {
       $('#photo-error').remove();
-      $('#photos-card .card-body').prepend('<div id="photo-error" class="alert alert-danger">Upload failed. Please try a photo smaller than 20 MB.</div>');
+      $('#photos-card .card-body').prepend('<div id="photo-error" class="alert alert-danger">Upload failed. Please try again, or choose a JPG or PNG under 20 MB.</div>');
     }
   });
 } catch(e) { console.warn('File upload plugin not available:', e); }

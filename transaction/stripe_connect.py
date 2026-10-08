@@ -1479,12 +1479,25 @@ class StripeConnectService:
                                 txn.deposit_card_setup_status = result.get('card_setup_status', txn.CARD_READY)
                                 txn.deposit_cardholder_name = result.get('cardholder_name', txn.deposit_cardholder_name)
                                 txn.deposit_card_brand = result.get('card_brand', txn.deposit_card_brand)
+                                txn.deposit_card_funding = result.get('card_funding', txn.deposit_card_funding)
                                 txn.deposit_card_last4 = result.get('card_last4', txn.deposit_card_last4)
                                 txn.deposit_test_hold_status = result.get('test_hold_status', txn.TEST_HOLD_SUCCESS)
                                 txn.deposit_test_hold_amount = result.get('test_hold_amount', txn.deposit_test_hold_amount)
                                 txn.deposit_test_hold_at = result.get('test_hold_at', timezone.now())
                                 txn.deposit_test_hold_reference = result.get('test_hold_reference', txn.deposit_test_hold_reference)
                                 txn.stripe_customer_id = result.get('stripe_customer_id', txn.stripe_customer_id)
+                                if payment_method_id:
+                                    from account.models import PaymentMethod
+                                    PaymentMethod.objects.update_or_create(
+                                        stripe_payment_method_id=payment_method_id,
+                                        defaults={
+                                            'user': txn.user_aggressive,
+                                            'stripe_setup_intent_id': setup_intent_id or '',
+                                            'card_brand': txn.deposit_card_brand or 'Card',
+                                            'card_funding': txn.deposit_card_funding or '',
+                                            'card_last4': txn.deposit_card_last4 or 'xxxx',
+                                        },
+                                    )
                             else:
                                 txn.deposit_card_setup_status = txn.CARD_FAILED
                                 txn.deposit_test_hold_status = txn.TEST_HOLD_FAILED

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load bootstrap4 %}
 {% load common_lib %}
+{% load static %}
 {% block headerContent %}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css">
 {% endblock %}
@@ -56,7 +57,7 @@
     
     {# 2. FILE INPUT TO BE USED BY THE PLUG-IN #}
     <input id="fileupload" type="file" name="image"
-           style="display: none;"
+           style="display: none;" accept="image/*"
            data-url="{% url 'transaction:order_image_upload' %}"
            data-form-data='{
                 "csrfmiddlewaretoken": "{{ csrf_token }}",
@@ -116,6 +117,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery.ui.widget@1.10.3/jquery.ui.widget.js"></script>   
     <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.iframe-transport.min.js"></script>   
     <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-file-upload/9.22.0/js/jquery.fileupload.js"></script>   
+    <script src="{% static 'transaction/listing-image-upload.js' %}"></script>
 {% endblock %}
 {% block domready %}
 /* page set up javascript block */
@@ -189,7 +191,21 @@ $('#id_expiry_date').datetimepicker({
   $("#fileupload").fileupload({
       dataType: 'json',
       sequentialUploads: true,  /* 1. SEND THE FILES ONE BY ONE */
-      disableImageResize: 'false',
+      autoUpload: false,
+      add: function (e, data) {
+        $('#modal-progress').modal('show');
+        $('.modal-title').text('Preparing photo…');
+        RentalutionListingImages.prepare(data.files, function (current, total) {
+          $('.modal-title').text('Preparing photo ' + current + ' of ' + total + '…');
+        }).then(function (files) {
+          data.files = files;
+          $('.modal-title').text('Uploading…');
+          data.submit();
+        }).catch(function () {
+          $('#modal-progress').modal('hide');
+          alert('We could not prepare that photo. Please choose a JPG or PNG under 20 MB.');
+        });
+      },
       start: function (e) {  /* 2. WHEN THE UPLOADING PROCESS STARTS, SHOW THE MODAL */
         $("#modal-progress").modal("show");
       },

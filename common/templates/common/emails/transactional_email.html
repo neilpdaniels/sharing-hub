@@ -4,12 +4,12 @@
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f4ef;padding:28px 12px;">
     <tr><td align="center">
       <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;">
-        <tr><td style="background:#27c4bd;padding:26px 36px;color:#08304a;">
-          <div style="font-size:27px;font-weight:800;letter-spacing:-1px;">rentalution <span style="color:#ff6b61;">●</span></div>
-          <div style="font-size:14px;margin-top:5px;">Borrow what you need. Earn from what you own.</div>
+        <tr><td style="background:#ffffff;padding:24px 36px;border-bottom:4px solid #27c4bd;">
+          <a href="{{ site_url }}" style="text-decoration:none;">
+            <img src="{{ logo_url }}" width="265" alt="Rentalution — Borrow what you need. Earn from what you own." style="display:block;width:265px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;">
+          </a>
         </td></tr>
         <tr><td style="padding:34px 36px 16px;">
-          <div style="font-size:38px;line-height:1;margin-bottom:18px;">{% if steps %}🧭{% else %}✨{% endif %}</div>
           <h1 style="font-size:27px;line-height:1.2;margin:0 0 14px;color:#17324d;">{{ heading }}</h1>
           <p style="font-size:16px;line-height:1.55;margin:0 0 20px;color:#40556a;">{{ intro }}</p>
           {% if details %}
@@ -18,7 +18,7 @@
           </table>
           {% endif %}
           {% if steps %}
-          <div style="margin:0 0 22px;">{% for step in steps %}<div style="padding:11px 0;border-bottom:1px solid #edf0f2;font-size:15px;line-height:1.45;color:#40556a;"><span style="display:inline-block;background:#ff6b61;color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-weight:bold;margin-right:9px;">{{ forloop.counter }}</span>{{ step }}</div>{% endfor %}</div>
+          <div style="margin:0 0 22px;">{% for step in steps %}<div style="padding:11px 0;border-bottom:1px solid #edf0f2;font-size:15px;line-height:1.45;color:#40556a;"><strong style="color:#17324d;">{{ forloop.counter }}.</strong>&nbsp;{{ step }}</div>{% endfor %}</div>
           {% endif %}
           {% if cta_url %}<p style="margin:8px 0 20px;"><a href="{{ cta_url }}" style="display:inline-block;background:#ff6b61;color:#ffffff;text-decoration:none;padding:14px 21px;border-radius:9px;font-weight:700;">{{ cta_label }}</a></p>{% endif %}
         </td></tr>

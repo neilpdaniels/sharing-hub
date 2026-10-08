@@ -1671,6 +1671,16 @@ def view_transaction(request, transaction_reference=None):
             txn.save()
             _reserve_transaction_dates(txn)
 
+            TransactionMessage.objects.create(
+                user_from=request.user,
+                user_to=txn.user_aggressive,
+                transaction=txn,
+                subject=f'Enquiry accepted {txn.transaction_reference}',
+                description='The lender has accepted your enquiry. Review and confirm the rental agreement to continue.',
+                email_to_recepient=True,
+                is_system_generated=True,
+            )
+
             messages.success(request, 'Rental agreement generated. Please confirm the contract terms.')
 
         elif action == 'reject_enquiry' and is_lender and txn.transaction_status == txn.RENTAL_ENQUIRY:

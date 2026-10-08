@@ -16,7 +16,7 @@ from google.oauth2 import service_account
 
 from common.models import Order, OrderImage
 from common.emails import send_branded_email
-from account.models import Profile
+from account.models import PaymentMethod, Profile
 from account.models import NotificationPreference
 from .models import DisputeCase, StripeSettlement, Transaction
 from .stripe_connect import stripe_connect_service
@@ -896,6 +896,16 @@ def async_confirm_card_setup(transaction_id, setup_intent_id, payment_method_id)
             transaction.deposit_test_hold_reference = result.get('test_hold_reference', '')
             
             transaction.save()
+            PaymentMethod.objects.update_or_create(
+                stripe_payment_method_id=payment_method_id,
+                defaults={
+                    'user': transaction.user_aggressive,
+                    'stripe_setup_intent_id': setup_intent_id or '',
+                    'card_brand': transaction.deposit_card_brand or 'Card',
+                    'card_funding': transaction.deposit_card_funding or '',
+                    'card_last4': transaction.deposit_card_last4 or 'xxxx',
+                },
+            )
             logger.info(f'Card setup confirmed for transaction {transaction.transaction_reference}')
         else:
             # Update transaction with failure status

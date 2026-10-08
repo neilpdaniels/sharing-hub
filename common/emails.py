@@ -19,6 +19,15 @@ def send_branded_email(*, subject, recipient, heading, intro, cta_label='', cta_
         'cta_url': cta_url,
         'details': details or [],
         'steps': steps or [],
+        # Email clients need an absolute URL for images.  This is the same
+        # Rentalution wordmark used by the website, rather than a CSS/text
+        # recreation in each message.
+        'site_url': getattr(settings, 'SITE_URL', 'https://rentalution.co.uk').rstrip('/'),
+        'logo_url': (
+            getattr(settings, 'SITE_URL', 'https://rentalution.co.uk').rstrip('/')
+            + getattr(settings, 'STATIC_URL', '/static/')
+            + 'assets/images/logo-rentalution.png'
+        ),
     }
     html_body = render_to_string('common/emails/transactional_email.html', context)
     text_body = strip_tags(html_body).replace('&nbsp;', ' ')

@@ -355,7 +355,7 @@
                 </button>
               </form>
               {% endif %}
-              <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list{% if location %}&location={{ location|urlencode }}{% endif %}{% if max_distance != None %}&distance_filter={{ max_distance }}{% endif %}{% if sort_by == 'distance' %}&sort_by=nearest{% elif sort_by == 'price' %}&sort_by=cheapest{% else %}&sort_by=newest{% endif %}"
+              <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.order_reference }}&view_mode=list{% if location %}&location={{ location|urlencode }}{% endif %}{% if max_distance != None %}&distance_filter={{ max_distance }}{% endif %}{% if sort_by == 'distance' %}&sort_by=nearest{% elif sort_by == 'price' %}&sort_by=cheapest{% else %}&sort_by=newest{% endif %}"
                  class="btn btn-sm btn-outline-primary">View</a>
               <a href="{% url 'transaction:add_order' order.product.id %}"
                  class="btn btn-sm btn-info">Lend your item</a>

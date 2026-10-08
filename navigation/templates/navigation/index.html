@@ -227,7 +227,7 @@
         <div class="rh-popular-carousel-viewport" id="rh-popular-carousel-home">
             <div class="rh-popular-carousel-track">
                 {% for order in popular_orders %}
-                    <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="text-decoration-none">
+                    <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.order_reference }}&view_mode=list" class="text-decoration-none">
                         <article class="rh-popular-card">
                             {% if order.images.first %}
                                 {% thumbnail order.images.first.image "320x160" crop="center" as im %}

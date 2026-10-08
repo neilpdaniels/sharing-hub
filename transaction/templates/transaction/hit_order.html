@@ -142,19 +142,14 @@
                                                 </div>
 
                                                 <div class="alert alert-info" id="pricing-summary" style="font-size:0.9rem;">
-                                                    <div><strong>Applied daily price:</strong> £<span id="price-per-day">{{ order.price|floatformat:2 }}</span></div>
-                                                    <div><strong>Band:</strong> <span id="price-band-note">Base daily price</span></div>
-                                                    <div><strong>Estimated rental subtotal:</strong> £<span id="price-subtotal">{{ order.price|floatformat:2 }}</span></div>
+                                                    <div><strong>Price per day:</strong> £<span id="price-per-day">{{ order.price|floatformat:2 }}</span></div>
+                                                    <div><strong>Total before fees:</strong> £<span id="price-subtotal">{{ order.price|floatformat:2 }}</span></div>
+                                                    <div><strong>Fees:</strong> shown before you agree.</div>
+                                                    <div id="price-band-note" class="mt-1 text-success" style="display:none;"></div>
                                                     <div id="pricing-long-rental-note" class="mt-2 font-weight-bold text-warning" style="display:none;">Rentals from 7 to 30 days require a Visa credit card or Mastercard credit card for the deposit. You can still use a different card for payment.</div>
                                                                                     {% if LONG_TERM_RENTALS_ENABLED %}
                                                                                     <div id="pricing-very-long-rental-note" class="mt-2 font-weight-bold text-danger" style="display:none;">Rentals over 30 days need the full deposit to be taken and returned later rather than held as a card authorisation, so fees are higher.</div>
                                                                                     {% endif %}
-                                                                                    {% if order.max_rental_days and order.max_rental_days < MAX_RENTAL_DAYS %}
-                                                                                    <div class="text-muted">Maximum booking length: {{ order.max_rental_days }} day(s)</div>
-                                                                                    {% else %}
-                                                                                    <div class="text-muted">Maximum booking length: {{ MAX_RENTAL_DAYS }} day(s)</div>
-                                                    {% endif %}
-                                                    <div class="text-muted mt-2">By sending this enquiry you agree that any unresolved booking dispute may be escalated to the dispute team and decided from the evidence provided.</div>
                                                 </div>
 
                                                 {% bootstrap_field order_hit_form.enquiry_message %}
@@ -220,7 +215,7 @@
         for (var i = 0; i < sorted.length; i++) {
             var band = sorted[i];
             if (days <= parseInt(band.duration_days, 10)) {
-                return { rate: parseFloat(band.price_per_day), label: 'Up to ' + band.duration_days + ' day(s)' };
+                return { rate: parseFloat(band.price_per_day), label: 'up to ' + band.duration_days + ' days' };
             }
         }
         return { rate: basePrice, label: 'Base daily price' };
@@ -246,7 +241,10 @@
         var days = dayCount(range.start, range.end);
         var pricing = getRateForDays(days);
         document.getElementById('price-per-day').textContent = pricing.rate.toFixed(2);
-        document.getElementById('price-band-note').textContent = pricing.label;
+        var discountNote = document.getElementById('price-band-note');
+        var hasDiscount = days > 0 && pricing.rate < basePrice;
+        discountNote.textContent = hasDiscount ? 'Longer-rental price applied (' + pricing.label + ').' : '';
+        discountNote.style.display = hasDiscount ? 'block' : 'none';
         document.getElementById('price-subtotal').textContent = (days > 0 ? (days * pricing.rate) : pricing.rate).toFixed(2);
         var longRental = days >= 7 && days <= 30;
         var veryLongRental = days > 30;

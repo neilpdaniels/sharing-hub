@@ -22,6 +22,9 @@ def get_transaction_notification_payload(user, session=None):
     today = Transaction.workflow_today()
 
     def _requires_action_and_label(txn):
+        if txn.transaction_status == Transaction.RENTAL_ENQUIRY and txn.user_passive_id == user.id:
+            return True, 'Review new rental enquiry'
+
         actions = set(txn.get_allowed_actions_for_user(user))
         # These labels are deliberately ordered. For example, once a handover
         # code exists, entering it is more useful than re-offering evidence.

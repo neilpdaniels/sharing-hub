@@ -23,7 +23,7 @@
         <div class="thread-message-time">{{ message.created|date:'d/m/Y H:i' }}</div>
         <div class="thread-message-sender">
             {% if message.include_admin or message.is_system_generated %}
-                Admin
+                Rentalution
             {% else %}
                 {{ message.user_from.first_name|default:message.user_from.get_full_name|default:message.user_from.username }}
             {% endif %}

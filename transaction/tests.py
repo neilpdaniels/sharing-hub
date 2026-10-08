@@ -9,6 +9,7 @@ from django.utils import timezone
 from common.models import Category, Order, OrderBlockedDate, Product
 from account.models import Profile
 from common.models import System
+from rentalution.context_processors import get_transaction_notification_payload
 from transaction.forms import RentalEnquiryForm
 from transaction.models import PaymentAttempt, Transaction, TransactionFeedback, TransactionMessage
 from transaction.tasks import (
@@ -17,6 +18,7 @@ from transaction.tasks import (
     auto_close_feedback_windows,
     escalate_overdue_disputes,
     send_pending_action_reminders,
+    send_transaction_message_email,
 )
 
 
@@ -270,6 +272,19 @@ class WebTransactionDateHoldTests(TestCase):
 
 		txn = Transaction.objects.get(order_passive=self.order, user_aggressive=self.renter_one)
 		self.assertEqual(txn.transaction_status, Transaction.RENTAL_ENQUIRY)
+		enquiry_message = TransactionMessage.objects.get(transaction=txn, user_to=self.lender)
+		self.assertTrue(enquiry_message.email_to_recepient)
+		notifications = get_transaction_notification_payload(self.lender)
+		self.assertEqual(notifications['txn_notice_count'], 1)
+		self.assertEqual(
+			notifications['txn_notice_items'][0]['action_label'],
+			'Review new rental enquiry',
+		)
+		with patch('transaction.tasks.send_branded_email') as send_email:
+			result = send_transaction_message_email.run(enquiry_message.id)
+		self.assertEqual(result, {'ok': True, 'sent': True})
+		send_email.assert_called_once()
+		self.assertEqual(send_email.call_args.kwargs['recipient'], self.lender.email)
 
 		blocked_count = OrderBlockedDate.objects.filter(
 			order=self.order,

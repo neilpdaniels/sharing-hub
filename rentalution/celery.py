@@ -31,6 +31,10 @@ app.conf.beat_schedule  = {
         'task': 'transaction.tasks.send_pending_action_reminders',
         'schedule': crontab(minute='5', hour='*'),
     },
+    'send-rental-day-reminders': {
+        'task': 'transaction.tasks.send_rental_day_reminders',
+        'schedule': crontab(minute='0', hour='10'),
+    },
     # 'add-task-kitco-gold-am': {
     #     'task': 'reference_price.tasks.scrapeKitcoGoldPrice',
     #     'schedule': crontab(minute='35,45,59', hour='10', day_of_week='0-6'),

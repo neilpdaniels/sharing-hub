@@ -40,7 +40,7 @@
                 <span class="js-favourite-icon fas fa-heart" aria-hidden="true"></span>
               </button>
             </form>
-            <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="btn btn-sm btn-outline-primary">View</a>
+            <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.order_reference }}&view_mode=list" class="btn btn-sm btn-outline-primary">View</a>
           </div>
         </div>
       </div>

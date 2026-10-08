@@ -239,6 +239,9 @@ class Transaction(models.Model):
     return_verification_reminder_at = models.DateTimeField(blank=True, null=True)
     feedback_reminder_at = models.DateTimeField(blank=True, null=True)
     deposit_reminder_at = models.DateTimeField(blank=True, null=True)
+    rental_ready_email_sent_at = models.DateTimeField(blank=True, null=True)
+    rental_day_reminder_sent_for = models.DateField(blank=True, null=True)
+    return_day_reminder_sent_for = models.DateField(blank=True, null=True)
     deposit_proposed_return_amount = models.FloatField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(999999)],

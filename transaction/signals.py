@@ -1,24 +1,15 @@
 from django.db.models.signals import post_save
+from django.db import transaction as db_transaction
 from django.dispatch import receiver
 from django.conf import settings
 from .models import DisputeCase, Transaction, TransactionMessage
-from .tasks import send_new_message_push_notification
+from .tasks import send_new_message_push_notification, send_transaction_message_email
 from common.models import System
 
 
 MAJOR_STATUS_NOTIFICATION_SET = {
-    Transaction.RENTAL_AGREED,
-    Transaction.RENTAL_DAY_AWAITING_VERIFICATION,
-    Transaction.RENTAL_ONGOING,
-    Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
-    Transaction.RENTAL_RETURNED_DEPOSIT_PENDING,
     Transaction.RENTAL_RETURNED_DEPOSIT_CONTESTED,
     Transaction.DISPUTE_REQUESTED,
-    Transaction.AWAITING_FEEDBACK,
-    Transaction.FEEDBACK_ONE_SIDED,
-    Transaction.RENTAL_PROCESS_COMPLETED,
-    Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
-    Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
     Transaction.DISPUTE_DECIDED,
     Transaction.CANCEL_ACCEPTED,
 }
@@ -233,5 +224,11 @@ def trigger_message_push_notification(sender, instance, created, **kwargs):
 
     if instance.is_system_generated and not instance.email_to_recepient:
         TransactionMessage.objects.filter(pk=instance.pk).update(email_to_recepient=True)
+        instance.email_to_recepient = True
 
-    send_new_message_push_notification.delay(instance.id)
+    def notify_recipient():
+        send_new_message_push_notification.delay(instance.id)
+        if instance.email_to_recepient:
+            send_transaction_message_email.delay(instance.id)
+
+    db_transaction.on_commit(notify_recipient)

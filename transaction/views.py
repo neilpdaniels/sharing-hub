@@ -73,6 +73,7 @@ from .tasks import (
     async_setup_deposit_card_and_test_hold,
     async_transfer_rental_proceeds,
     process_order_image,
+    send_rental_ready_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -1349,12 +1350,15 @@ def get_fee(request):
     return JsonResponse(content)
 
 @login_required
-def hit_order(request, order_id=None):
+def hit_order(request, order_id=None, order_reference=None):
     verify_redirect = _require_mobile_verification(request)
     if verify_redirect is not None:
         return verify_redirect
 
-    order = get_object_or_404(Order, id=order_id)
+    if order_reference:
+        order = get_object_or_404(Order, order_reference=order_reference)
+    else:
+        order = get_object_or_404(Order, id=order_id)
     manual_blocked_dates = set(
         order.blocked_dates.filter(reason=OrderBlockedDate.MANUAL).values_list('date', flat=True)
     )
@@ -1473,8 +1477,9 @@ def hit_order(request, order_id=None):
                     user_from=request.user,
                     user_to=order.user,
                     transaction=txn,
-                    subject=f'Transaction {txn.transaction_reference}',
+                    subject=f'New rental enquiry for {order.product.name}',
                     description=enquiry_message,
+                    email_to_recepient=True,
                 )
             else:
                 TransactionMessage.objects.create(
@@ -1483,6 +1488,7 @@ def hit_order(request, order_id=None):
                     transaction=txn,
                     subject=f'New enquiry {txn.transaction_reference}',
                     description='You have a new enquiry on your listing.',
+                    email_to_recepient=True,
                     is_system_generated=True,
                 )
 
@@ -1778,6 +1784,7 @@ Transaction Ref: {txn.transaction_reference}"""
                     description='The borrower confirmed the rental agreement.',
                     is_system_generated=True,
                 )
+                send_rental_ready_email.delay(txn.id)
                 messages.success(request, 'Rental confirmed! Proceeding to next stage.')
 
         elif action == 'reject_rental_agreement' and is_renter and txn.transaction_status == txn.RENTAL_AGREED and not txn.renter_agreed_at:

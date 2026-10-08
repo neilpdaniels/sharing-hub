@@ -459,7 +459,7 @@
                                       <span class="js-favourite-icon {% if order.is_favourite %}fas{% else %}far{% endif %} fa-heart" aria-hidden="true"></span>
                                     </button>
                                   </form>
-                                  <a class="btn btn-success js-enquire-link" href="{% url 'transaction:hit_order' order.id %}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
+                                  <a class="btn btn-success js-enquire-link" href="{% url 'transaction:hit_order_reference' order.order_reference %}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
                                     {% endif %}
                                 {% else %}
                                 <a class="btn btn-success js-enquire-link" href="{% url 'login' %}?next={{ request.path }}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
@@ -525,7 +525,7 @@
               "imgUrl": {% if order.main_image %}{% thumbnail order.main_image.image "68x52" crop="center" as im %}"{{ im.url }}"{% endthumbnail %}{% else %}null{% endif %},
               "editUrl": "{% if request.user == order.user %}{% url 'transaction:edit_order' order.id %}{% endif %}",
               "deleteUrl": "{% if request.user == order.user %}{% url 'transaction:expire_order' order.id %}{% endif %}",
-              "rentUrl": "{% if request.user.is_authenticated and request.user != order.user %}{% url 'transaction:hit_order' order.id %}{% endif %}",
+              "rentUrl": "{% if request.user.is_authenticated and request.user != order.user %}{% url 'transaction:hit_order_reference' order.order_reference %}{% endif %}",
               "loginRentUrl": "{% if not request.user.is_authenticated %}{% url 'login' %}?next={{ request.path }}{% endif %}"
             }{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}]
             </script>
@@ -1068,7 +1068,14 @@ $('#showBidsAndOffers').on("click",
         (function() {
           var focusOrderRaw = '{{ request.GET.focus_order|default_if_none:""|escapejs }}';
           if (!focusOrderRaw) return;
-          var focusOrderId = (focusOrderRaw.match(/^\d+$/) || [null])[0];
+          // New links use the opaque listing reference. Keep numeric IDs here
+          // so existing bookmarks continue to open the right listing.
+          var focusOrderIdsByReference = {
+            {% for order in sell_orders %}
+            '{{ order.order_reference|escapejs }}': '{{ order.id }}',{% endfor %}
+          };
+          var focusOrderId = focusOrderIdsByReference[focusOrderRaw]
+            || (focusOrderRaw.match(/^\d+$/) || [null])[0];
           if (!focusOrderId) return;
 
           var $card = $('#card_order_' + focusOrderId);

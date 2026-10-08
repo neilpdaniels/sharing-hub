@@ -751,7 +751,11 @@ class MobilePasswordResetRequestView(APIView):
             request=request,
             use_https=request.is_secure(),
             email_template_name='registration/password_reset_email.html',
+            html_email_template_name='registration/password_reset_email_html.html',
             subject_template_name='registration/password_reset_subject.txt',
+            extra_email_context={
+                'password_reset_steps': ['Choose a strong new password.', 'Sign in again with your new password.'],
+            },
         )
         return Response(
             {'status': 'ok', 'message': 'If the email exists, a reset link has been sent.'},

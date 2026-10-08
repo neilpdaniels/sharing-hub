@@ -8,12 +8,14 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from django.conf import settings
+from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import service_account
 
 from common.models import Order, OrderImage
+from common.emails import send_branded_email
 from account.models import Profile
 from .models import DisputeCase, StripeSettlement, Transaction
 from .stripe_connect import stripe_connect_service
@@ -21,6 +23,145 @@ from common.failures import record_site_failure
 
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task
+def send_transaction_message_email(message_id):
+    """Email a recipient about an in-site transaction message when requested."""
+    from .models import TransactionMessage
+
+    try:
+        message = TransactionMessage.objects.select_related(
+            'user_from', 'user_to', 'transaction__order_passive__product',
+        ).get(pk=message_id)
+    except TransactionMessage.DoesNotExist:
+        logger.info('TransactionMessage %s was removed before email delivery.', message_id)
+        return {'ok': False, 'reason': 'message_not_found'}
+
+    if not message.email_to_recepient or not message.user_to.email:
+        return {'ok': True, 'sent': False, 'reason': 'email_not_requested_or_missing'}
+
+    transaction_reference = getattr(message.transaction, 'transaction_reference', '')
+    item_name = getattr(getattr(getattr(message.transaction, 'order_passive', None), 'product', None), 'name', '')
+    detail_url = ''
+    if transaction_reference:
+        detail_url = '{}{}'.format(
+            getattr(settings, 'SITE_URL', '').rstrip('/'),
+            reverse('transaction:view_transaction', kwargs={'transaction_reference': transaction_reference}),
+        )
+    try:
+        send_branded_email(
+            subject=message.subject or 'New Rentalution message',
+            recipient=message.user_to.email,
+            heading=message.subject or 'New Rentalution message',
+            intro=(message.description or '').strip() or 'Open Rentalution to view the update.',
+            cta_label='Open Rentalution',
+            cta_url=detail_url,
+            details=[('Listing', item_name)] if item_name else [],
+        )
+    except Exception:
+        logger.exception('Failed to email TransactionMessage %s.', message_id)
+        return {'ok': False, 'reason': 'send_failed'}
+    return {'ok': True, 'sent': True}
+
+
+def _transaction_url(txn):
+    return '{}{}'.format(
+        getattr(settings, 'SITE_URL', '').rstrip('/'),
+        reverse('transaction:view_transaction', kwargs={'transaction_reference': txn.transaction_reference}),
+    )
+
+
+def _send_lifecycle_email(txn, user, event):
+    order = txn.order_passive
+    item_name = getattr(getattr(order, 'product', None), 'name', 'your rental')
+    details = [
+        ('Item', item_name),
+        ('Collection', txn.rental_start_date.strftime('%A %-d %B') if txn.rental_start_date else 'To be agreed'),
+        ('Return', txn.rental_end_date.strftime('%A %-d %B') if txn.rental_end_date else 'To be agreed'),
+    ]
+    collection_note = getattr(order, 'collection_details', '') or ''
+    collection_address = getattr(order, 'collection_address', '') or getattr(order, 'collection_postcode', '') or ''
+    if event == 'ready':
+        heading = 'Your rental is good to go'
+        intro = 'Your rental has been confirmed. Here is the simple plan for collection and return.'
+        steps = [
+            'Agree any final collection timing in the Rentalution message thread.',
+            'On collection day, follow the handover prompts and use the PIN / QR code when shown.',
+            'Keep the item safe, then complete the return handover on the agreed return date.',
+        ]
+    elif event == 'collection':
+        heading = 'Collection is tomorrow'
+        intro = 'A quick reminder so collection day is smooth for both of you.'
+        steps = [
+            'Check the agreed collection time and location in your Rentalution messages.',
+            'The lender records checkout evidence; the borrower reviews it.',
+            'Complete the handover using the one-time PIN / QR code shown in Rentalution.',
+        ]
+    else:
+        heading = 'Return is tomorrow'
+        intro = 'A quick reminder to make the return handover simple and well recorded.'
+        steps = [
+            'Confirm the return time and location with the other person in Rentalution.',
+            'The borrower returns the item and the lender records return evidence.',
+            'Complete the return handover using the one-time PIN / QR code shown in Rentalution.',
+        ]
+    if collection_note:
+        details.append(('Collection note', collection_note))
+    if collection_address:
+        details.append(('Location', collection_address))
+    return send_branded_email(
+        subject=f'{heading} · {item_name}', recipient=user.email, heading=heading,
+        intro=intro, details=details, steps=steps,
+        cta_label='Open rental details', cta_url=_transaction_url(txn),
+    )
+
+
+@shared_task
+def send_rental_ready_email(transaction_id):
+    """Tell both parties the agreed rental and its handover process are ready."""
+    txn = Transaction.objects.select_related('user_passive', 'user_aggressive', 'order_passive__product').get(pk=transaction_id)
+    if txn.rental_ready_email_sent_at or not (txn.lender_agreed_at and txn.renter_agreed_at):
+        return {'sent': False, 'reason': 'not_ready_or_already_sent'}
+    for user in (txn.user_passive, txn.user_aggressive):
+        _send_lifecycle_email(txn, user, 'ready')
+    txn.rental_ready_email_sent_at = timezone.now()
+    txn.save(update_fields=['rental_ready_email_sent_at', 'amended'])
+    return {'sent': True}
+
+
+@shared_task
+def send_rental_day_reminders():
+    """Send one collection and one return reminder the day before each handover."""
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    collection_sent = return_sent = 0
+    confirmed = {'lender_agreed_at__isnull': False, 'renter_agreed_at__isnull': False}
+    collection_qs = Transaction.objects.filter(
+        **confirmed, transaction_status=Transaction.RENTAL_AGREED,
+        rental_start_date=tomorrow,
+    ).exclude(rental_day_reminder_sent_for=tomorrow).select_related(
+        'user_passive', 'user_aggressive', 'order_passive__product',
+    )
+    for txn in collection_qs:
+        for user in (txn.user_passive, txn.user_aggressive):
+            _send_lifecycle_email(txn, user, 'collection')
+        txn.rental_day_reminder_sent_for = tomorrow
+        txn.save(update_fields=['rental_day_reminder_sent_for', 'amended'])
+        collection_sent += 1
+
+    return_qs = Transaction.objects.filter(
+        **confirmed, transaction_status__in=[Transaction.RENTAL_ONGOING, Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION],
+        rental_end_date=tomorrow,
+    ).exclude(return_day_reminder_sent_for=tomorrow).select_related(
+        'user_passive', 'user_aggressive', 'order_passive__product',
+    )
+    for txn in return_qs:
+        for user in (txn.user_passive, txn.user_aggressive):
+            _send_lifecycle_email(txn, user, 'return')
+        txn.return_day_reminder_sent_for = tomorrow
+        txn.save(update_fields=['return_day_reminder_sent_for', 'amended'])
+        return_sent += 1
+    return {'collection': collection_sent, 'return': return_sent}
 
 
 @shared_task

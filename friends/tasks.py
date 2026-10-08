@@ -1,7 +1,7 @@
 from celery import shared_task
-from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.conf import settings
+from common.emails import send_branded_email
 from common.failures import record_site_failure
 
 
@@ -16,20 +16,11 @@ def send_friend_request_notification(from_user_id, to_user_id):
 
     from_name = from_user.get_full_name() or from_user.username
     subject = f"{from_name} wants to connect on rentalution"
-    message = (
-        f"Hi {to_user.first_name or to_user.username},\n\n"
-        f"{from_name} ({from_user.email}) has sent you a friend request on rentalution.\n\n"
-        f"Log in to accept or decline:\n"
-        f"{getattr(settings, 'SITE_URL', 'https://rentalution.co.uk')}/friends/\n\n"
-        f"The rentalution team"
-    )
     try:
-        send_mail(
-            subject,
-            message,
-            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk'),
-            [to_user.email],
-            fail_silently=False,
+        send_branded_email(
+            subject=subject, recipient=to_user.email, heading='You have a new connection request',
+            intro=f'{from_name} has sent you a friend request on Rentalution.',
+            cta_label='Review request', cta_url=f"{getattr(settings, 'SITE_URL', 'https://rentalution.co.uk')}/friends/",
         )
     except Exception as exc:
         record_site_failure(
@@ -57,20 +48,12 @@ def send_friend_invite_email(from_user_id, invitee_email):
     from_name = from_user.get_full_name() or from_user.username
     site_url = getattr(settings, 'SITE_URL', 'https://rentalution.co.uk')
     subject = f"{from_name} has invited you to join rentalution"
-    message = (
-        f"Hi,\n\n"
-        f"{from_name} ({from_user.email}) thinks you might enjoy rentalution — "
-        f"a community marketplace for sharing and trading.\n\n"
-        f"Sign up for free at:\n{site_url}/account/register/\n\n"
-        f"The rentalution team"
-    )
     try:
-        send_mail(
-            subject,
-            message,
-            getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk'),
-            [invitee_email],
-            fail_silently=False,
+        send_branded_email(
+            subject=subject, recipient=invitee_email, heading='You’re invited to Rentalution',
+            intro=f'{from_name} thinks you might enjoy borrowing and lending locally.',
+            cta_label='Join Rentalution', cta_url=f'{site_url}/account/register/',
+            steps=['Create your free account.', 'Find what you need or list something you own.'],
         )
     except Exception as exc:
         record_site_failure(

@@ -68,7 +68,7 @@
                 {% endif %}
 
                 <div class="search-result-actions">
-                  <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.id }}&view_mode=list" class="btn btn-sm btn-outline-primary">View listing</a>
+                  <a href="{% url 'navigation:productPage' order.product.slug %}?focus_order={{ order.order_reference }}&view_mode=list" class="btn btn-sm btn-outline-primary">View listing</a>
                 </div>
               </div>
             </div>

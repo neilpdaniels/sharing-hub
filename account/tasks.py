@@ -1,7 +1,7 @@
 from celery import shared_task
-from django.core.mail import send_mail
 import logging
 
+from common.emails import send_branded_email
 from common.failures import record_site_failure
 
 logger = logging.getLogger(__name__)
@@ -10,16 +10,14 @@ logger = logging.getLogger(__name__)
 def send_registration_verification_email(email, code, resume_link):
     """Send registration verification code email asynchronously."""
     try:
-        send_mail(
+        send_branded_email(
             subject='Your rentalution verification code',
-            message=(
-                'Your rentalution registration code is: ' + code + '\n\n'
-                'This code expires in 15 minutes.\n\n'
-                'Resume verification: ' + resume_link
-            ),
-            from_email=None,
-            recipient_list=[email],
-            fail_silently=False,
+            recipient=email,
+            heading='Finish setting up your account',
+            intro=f'Use this verification code to continue: {code}. It expires in 15 minutes.',
+            cta_label='Continue registration',
+            cta_url=resume_link,
+            steps=['Enter the six-digit code.', 'Add the details needed to use Rentalution.', 'You’ll be ready to borrow and list items.'],
         )
     except Exception as exc:
         record_site_failure(
@@ -96,10 +94,7 @@ def process_profile_image(profile_id):
 
 @shared_task
 def send_random_mail():
-    message = 'blah'
-    subject = 'blah'
-    mail_sent = send_mail(subject,
-                        message,
-                        'admin@rentalution.co.uk',
-                        ['testuser@rentalution.co.uk'])
-    return mail_sent
+    return send_branded_email(
+        subject='Rentalution test email', recipient='testuser@rentalution.co.uk',
+        heading='Your email design is working', intro='This is a test email from Rentalution.',
+    )

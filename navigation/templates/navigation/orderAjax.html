@@ -1,7 +1,19 @@
 {% load static %}
 {% load thumbnail %}
 {% load common_lib %}
-<style>.badge-gold { background-color: #b8860b; color: #fff; }</style>
+<style>
+  .badge-gold { background-color: #b8860b; color: #fff; }
+  .order-lender-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-top:10px; padding-top:10px; border-top:1px solid #e6ecef; }
+  .order-lender-meta { flex:1 1 320px; min-width:0; }
+  .order-lender-score { display:inline-block; margin-left:8px; }
+  .order-lender-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .order-lender-actions form { margin:0; }
+  .order-lender-actions .btn { min-width:132px; }
+  @media (max-width: 575.98px) {
+    .order-lender-actions { width:100%; }
+    .order-lender-actions .btn { flex:1 1 140px; }
+  }
+</style>
 {% if order %}
 <div class="pt-2 pb-1 border-top">
 
@@ -114,10 +126,11 @@
         </div>
     </div>
 
-    <div class="small">
+    <div class="small order-lender-bar">
+      <div class="order-lender-meta">
         <span class="font-weight-bold">Lender: </span>
         {% include "user_profile_modal.html" with user=order.user %}
-        <span class="text-muted ml-2">
+        <span class="text-muted order-lender-score">
             Paid score:
             {% if order_user_feedback_stats.has_completed_feedback_score %}
             {{ order_user_feedback_stats.completed_transaction_feedback_score|floatformat:1 }}/5
@@ -133,6 +146,8 @@
             {% endif %}
             ({{ order_user_feedback_stats.completed_free_transactions }} txns)
         </span>
+      </div>
+      <div class="order-lender-actions">
         {% if request.user.is_authenticated and request.user != order.user %}
             {% if friendship_status == 'ACCEPTED' %}
             <span class="badge badge-success ml-2">Friend</span>
@@ -145,7 +160,7 @@
             {% elif friendship_status == 'BLOCKED' %}
             <span class="badge badge-danger ml-2">Blocked</span>
             {% else %}
-            <form id="add-friend-form-{{ order.user.id }}" method="post" action="{% url 'friends:add_friend_user' order.user.id %}" class="d-inline ml-2">
+            <form id="add-friend-form-{{ order.user.id }}" method="post" action="{% url 'friends:add_friend_user' order.user.id %}">
                 {% csrf_token %}
                 <button type="button" class="btn btn-sm btn-outline-primary" data-toggle="modal" data-target="#addFriendConfirmModal-{{ order.user.id }}">Add as friend</button>
             </form>
@@ -176,7 +191,7 @@
             {% endif %}
             
             {# Block/Unblock button #}
-            <form id="block-form-{{ order.user.id }}" method="post" action="{% url 'friends:block_user' order.user.id %}" class="d-inline ml-1 mr-1">
+            <form id="block-form-{{ order.user.id }}" method="post" action="{% url 'friends:block_user' order.user.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="report_flagged" id="block-report-{{ order.user.id }}" value="">
                 <button type="button" class="btn btn-sm btn-outline-danger" data-toggle="modal" data-target="#blockConfirmModal-{{ order.user.id }}">
@@ -217,6 +232,7 @@
                 </div>
             </div>
         {% endif %}
+      </div>
     </div>
 
 </div>

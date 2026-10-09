@@ -8,8 +8,6 @@
         role="button"
         tabindex="0"
         aria-label="Open message {{ message.id }}"
-        onclick="const btn=document.getElementById('expand_message_{{ message.id }}'); if (btn) { btn.click(); return false; }"
-        onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); const btn=document.getElementById('expand_message_{{ message.id }}'); if (btn) { btn.click(); return false; } }"
     >
         <button
             type="button"
@@ -179,6 +177,10 @@
         display: -webkit-box;
         -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
+    }
+
+    .thread-message.is-scrolling {
+        cursor: default;
     }
 
     @media (max-width: 767.98px) {

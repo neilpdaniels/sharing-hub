@@ -40,7 +40,7 @@
             {% endif %}
 
     <div class="row">
-        <div class="col-lg-8">
+        <div class="col-lg-8 order-2 order-lg-1">
             <h3 class="mb-1">Rental Transaction</h3>
             <p class="text-muted mb-3">Reference: {{ transaction.transaction_reference }}</p>
 
@@ -151,7 +151,7 @@
                     <div class="card-body">
                         <h5 class="card-title">{{ transaction.product.name }}</h5>
                         <p class="mb-1"><strong>Status:</strong> {{ transaction.get_status_display_verbose }}</p>
-                        <p class="mb-1"><strong>Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }}</p>
+                        <p class="mb-1"><strong>Dates:</strong> {{ transaction.rental_start_date }} to {{ transaction.rental_end_date }} · {{ transaction.get_rental_length_days }} rental day{{ transaction.get_rental_length_days|pluralize }}</p>
                         {% if request.user.is_staff %}
                         <a class="btn btn-sm btn-outline-primary mb-2" href="{% url 'transaction:edit_transaction_dates' transaction.transaction_reference %}">Edit rental dates (admin)</a>
                         {% endif %}
@@ -427,7 +427,7 @@
             </div>
         </div>
 
-        <div class="col-lg-4">
+        <div class="col-lg-4 order-1 order-lg-2">
             <div class="card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">Your Role</h5>
@@ -580,6 +580,12 @@
                 </div>
             </div>
 
+            {% if allowed_actions %}
+            <section class="transaction-actions" aria-labelledby="transaction-actions-title">
+            <div class="transaction-actions-heading">
+                <h4 id="transaction-actions-title">What you need to do</h4>
+                <p>Complete any action shown here before continuing with the rental.</p>
+            </div>
             {% if 'agree_rental' in allowed_actions or 'reject_enquiry' in allowed_actions %}
             <div class="card mb-3">
                 <div class="card-body">
@@ -767,7 +773,8 @@
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_checkout_evidence">
-                        <button class="btn btn-success btn-block" type="submit">Accept Condition &amp; Show Collection Code</button>
+                        <p class="text-muted mb-2">Check the lender’s evidence. Confirming reveals your collection code.</p>
+                        <button class="btn btn-success btn-block" type="submit">Confirm</button>
                     </form>
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
@@ -877,7 +884,8 @@
                     <form method="post" class="mb-2">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_return_evidence">
-                        <button class="btn btn-success btn-block" type="submit">Accept Condition &amp; Show Return Code</button>
+                        <p class="text-muted mb-2">Check the borrower’s evidence. Confirming reveals the return code.</p>
+                        <button class="btn btn-success btn-block" type="submit">Confirm</button>
                     </form>
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
@@ -1136,6 +1144,8 @@
             {% endif %}
             {% endif %}
 
+            </section>
+            {% endif %}
             {% if transaction.deposit_resolution_notes %}
             <div class="card mb-3">
                 <div class="card-body">
@@ -1395,6 +1405,59 @@
 
     .transaction-messages .message-card-hint {
         font-size: 0.68rem;
+    }
+
+    .video-evidence-file {
+        display: block;
+        width: 100%;
+        padding: 0.65rem;
+        border: 2px dashed #2ec4b6;
+        border-radius: 8px;
+        background: #f2fcfb;
+        cursor: pointer;
+    }
+
+    .video-evidence-file::file-selector-button {
+        margin-right: 0.65rem;
+        border: 0;
+        border-radius: 6px;
+        padding: 0.45rem 0.75rem;
+        background: #2ec4b6;
+        color: #073b4c;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .video-evidence-selection {
+        display: block;
+        margin-top: 0.45rem;
+        font-size: 0.85rem;
+        color: #58707d;
+    }
+
+    .transaction-actions {
+        border: 1px solid #b8e4e0;
+        border-radius: 14px;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        background: #f5fffe;
+    }
+
+    .transaction-actions-heading {
+        padding: 0.3rem 0.3rem 0.6rem;
+    }
+
+    .transaction-actions-heading h4 {
+        font-size: 1.05rem;
+        font-weight: 800;
+        margin: 0 0 0.2rem;
+        color: #123d4a;
+    }
+
+    .transaction-actions-heading p {
+        margin: 0;
+        font-size: 0.86rem;
+        color: #58707d;
     }
 
     @media (max-width: 767.98px) {
@@ -1828,8 +1891,36 @@ document.querySelectorAll('.transaction-messages [id^="expand_message_"]').forEa
 });
 
 document.querySelectorAll('.transaction-messages .message-row[data-message-id]').forEach((row) => {
+    let touchStart = null;
+    let movedWhileTouching = false;
+
+    row.addEventListener('touchstart', (event) => {
+        const touch = event.touches[0];
+        touchStart = touch ? { x: touch.clientX, y: touch.clientY } : null;
+        movedWhileTouching = false;
+    }, { passive: true });
+
+    row.addEventListener('touchmove', (event) => {
+        const touch = event.touches[0];
+        if (!touchStart || !touch) return;
+        if (Math.abs(touch.clientX - touchStart.x) > 8 || Math.abs(touch.clientY - touchStart.y) > 8) {
+            movedWhileTouching = true;
+            row.classList.add('is-scrolling');
+        }
+    }, { passive: true });
+
+    row.addEventListener('touchend', () => {
+        touchStart = null;
+        row.classList.remove('is-scrolling');
+    }, { passive: true });
+
     row.addEventListener('click', (event) => {
         if (event.target.closest('a, button, input, textarea, select, label')) {
+            return;
+        }
+        if (movedWhileTouching) {
+            movedWhileTouching = false;
+            row.classList.remove('is-scrolling');
             return;
         }
         const messageRef = row.getAttribute('data-message-id');
@@ -1850,16 +1941,24 @@ document.querySelectorAll('.transaction-messages .message-row[data-message-id]')
     });
 });
 
-document.querySelectorAll('.transaction-messages .message-row[data-message-id]').forEach((row) => {
-    row.addEventListener('touchend', (event) => {
-        if (event.target.closest('a, button, input, textarea, select, label')) {
-            return;
-        }
-        const messageRef = row.getAttribute('data-message-id');
-        if (messageRef) {
-            openMessageModal(messageRef);
-        }
-    });
+document.querySelectorAll('form[enctype="multipart/form-data"] input[type="file"][accept^="video/"]').forEach((input) => {
+    const form = input.closest('form');
+    const submit = form && form.querySelector('button[type="submit"]');
+    if (!form || !submit) return;
+
+    input.classList.add('video-evidence-file');
+    const status = document.createElement('small');
+    status.className = 'video-evidence-selection';
+    input.insertAdjacentElement('afterend', status);
+
+    function updateVideoEvidenceSelection() {
+        const file = input.files && input.files[0];
+        submit.disabled = !file;
+        status.textContent = file ? ('Selected: ' + file.name) : 'Choose a video before submitting.';
+    }
+
+    input.addEventListener('change', updateVideoEvidenceSelection);
+    updateVideoEvidenceSelection();
 });
 
 function formatRemaining(totalSeconds) {

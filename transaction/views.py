@@ -1415,7 +1415,10 @@ def hit_order(request, order_id=None, order_reference=None):
 
             txn = Transaction.objects.create(
                 price=price_per_day,
-                quantity=1,
+                # Quantity is the billed rental-day count.  Date ranges are
+                # inclusive: collection today and return tomorrow is two days;
+                # collection and return on the same date is one day.
+                quantity=rental_days,
                 order_passive=order,
                 order_passive_description=order.description,
                 product=order.product,

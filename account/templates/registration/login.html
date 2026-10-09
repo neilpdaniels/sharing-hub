@@ -10,6 +10,25 @@
 {% block title %}Log in{% endblock %}
 {% block page_header %}{% endblock %}
 
+{% block styles %}
+<style>
+    .password-toggle-wrap { position: relative; }
+    .password-toggle-wrap input { padding-right: 3rem !important; }
+    .password-toggle {
+        position: absolute;
+        right: .55rem;
+        bottom: .38rem;
+        border: 0;
+        background: transparent;
+        color: #58707d;
+        padding: .45rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .password-toggle:focus { outline: 2px solid #2ec4b6; outline-offset: 2px; border-radius: 4px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="sh-auth-wrap">
     <div class="sh-auth-card">
@@ -56,4 +75,28 @@
 
     </div>
 </div>
+{% endblock %}
+
+{% block domready %}
+(function () {
+    var password = document.getElementById('id_password');
+    if (!password) return;
+    var wrapper = password.closest('.form-group') || password.parentElement;
+    wrapper.classList.add('password-toggle-wrap');
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'password-toggle';
+    toggle.setAttribute('aria-label', 'Show password');
+    toggle.setAttribute('title', 'Show password');
+    toggle.innerHTML = '<i class="fas fa-eye" aria-hidden="true"></i>';
+    toggle.addEventListener('click', function () {
+        var isVisible = password.type === 'text';
+        password.type = isVisible ? 'password' : 'text';
+        toggle.setAttribute('aria-label', isVisible ? 'Show password' : 'Hide password');
+        toggle.setAttribute('title', isVisible ? 'Show password' : 'Hide password');
+        toggle.innerHTML = '<i class="fas fa-eye' + (isVisible ? '' : '-slash') + '" aria-hidden="true"></i>';
+        password.focus();
+    });
+    wrapper.appendChild(toggle);
+}());
 {% endblock %}

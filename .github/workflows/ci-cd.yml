@@ -130,16 +130,16 @@ jobs:
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             # Reclaim old image layers before downloading the replacement.
             docker system prune -af
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml pull
             # The application image now runs as UID/GID 10001, including Celery.
             # These bind mounts must remain writable after that privilege drop.
             sudo install -d -m 0755 media staticfiles
             sudo chown -R 10001:10001 media staticfiles
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps web sh scripts/check_prod_env.sh
+            docker compose -f docker-compose.prod.yml run --rm --no-deps web sh scripts/check_prod_env.sh
             printf '[%s] Deploy stage: start application containers\n' "$(date -Is)"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml up -d
             for attempt in $(seq 1 30); do
-              running_services="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml ps --status running --services)"
+              running_services="$(docker compose -f docker-compose.prod.yml ps --status running --services)"
               missing_services=""
               for service in web db redis worker video-worker catalog-ai-worker beat flower; do
                 echo "$running_services" | grep -qx "$service" || missing_services="$missing_services $service"
@@ -149,8 +149,8 @@ jobs:
               fi
               if [ "$attempt" -eq 30 ]; then
                 echo "Services failed to remain running:$missing_services" >&2
-                docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-                docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker beat flower
+                docker compose -f docker-compose.prod.yml ps
+                docker compose -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker beat flower
                 exit 1
               fi
               sleep 2
@@ -158,11 +158,11 @@ jobs:
             printf '[%s] Deploy stage: verify Celery workers\n' "$(date -Is)"
             celery_ready=0
             worker_ping=""
-            worker_name="worker@$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker hostname)"
-            video_worker_name="video-worker@$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T video-worker hostname)"
-            catalog_ai_worker_name="catalog-ai-worker@$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T catalog-ai-worker hostname)"
+            worker_name="worker@$(docker compose -f docker-compose.prod.yml exec -T worker hostname)"
+            video_worker_name="video-worker@$(docker compose -f docker-compose.prod.yml exec -T video-worker hostname)"
+            catalog_ai_worker_name="catalog-ai-worker@$(docker compose -f docker-compose.prod.yml exec -T catalog-ai-worker hostname)"
             for attempt in $(seq 1 30); do
-              if worker_ping="$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh "$worker_name" "$video_worker_name" "$catalog_ai_worker_name" 2>&1)"; then
+              if worker_ping="$(docker compose -f docker-compose.prod.yml exec -T worker sh scripts/check_celery_runtime.sh "$worker_name" "$video_worker_name" "$catalog_ai_worker_name" 2>&1)"; then
                 celery_ready=1
                 break
               fi
@@ -174,11 +174,11 @@ jobs:
               echo "Celery workers did not respond to ping within 60 seconds." >&2
               echo "worker probe:" >&2
               printf '%s\n' "$worker_ping" >&2
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker
+              docker compose -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker
               exit 1
             fi
             printf '[%s] Deploy stage: verify Flower\n' "$(date -Is)"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T flower uv run python -c '
+            docker compose -f docker-compose.prod.yml exec -T flower uv run python -c '
             from urllib.error import HTTPError
             from urllib.request import urlopen
 

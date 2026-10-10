@@ -201,7 +201,10 @@ def apply_taxonomy_recommendation(recommendation: CategoryTaxonomyRecommendation
             if (getattr(category, f'attribute_{legacy_suffix}_name') or '').strip():
                 raise TaxonomyApplicationError('That attribute position is already configured; do not overwrite it.')
             name = ' '.join(str(action.get('name') or '').split())
-            value_source = str(action.get('value_source') or '').strip().lower()
+            # Listing is the safe default for a peer-to-peer catalogue: the
+            # lender supplies it for their specific item. Product is reserved
+            # for a curated, immutable value shared by every listing.
+            value_source = str(action.get('value_source') or CategoryAttribute.VALUE_SOURCE_LISTING).strip().lower()
             allowed_values = [
                 ' '.join(str(value).split())
                 for value in (action.get('allowed_values') or [])

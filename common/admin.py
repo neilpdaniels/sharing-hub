@@ -44,6 +44,15 @@ class CategoryAttributeAdmin(admin.ModelAdmin):
         'allowed_values_text',
     )
 
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        field = super().formfield_for_choice_field(db_field, request, **kwargs)
+        if db_field.name == 'value_source':
+            field.help_text = (
+                'Use Listing for values a lender chooses for their individual item, such as size, age range or '
+                'power source. Use Product only for a fixed, curated catalogue value inherited by every listing.'
+            )
+        return field
+
 
 @admin.register(CategoryTag)
 class CategoryTagAdmin(admin.ModelAdmin):

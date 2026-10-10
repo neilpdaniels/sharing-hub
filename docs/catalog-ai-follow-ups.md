@@ -22,7 +22,9 @@ is never used as a reason to block a member from the rest of Rentalution.
   terms, unanswered suggestions and current attribute values.
 - It can recommend evidence-backed pruning/merges for stale, thin leaf
   categories; splitting truly broad categories; or a filter attribute when a
-  distinction (such as power source) should not fragment the tree.
+  distinction (such as power source or age range) should not fragment the
+  tree. New AI suggestions default to listing-level values, so lenders choose
+  the value for their own item rather than creating near-duplicate products.
 - CrewAI's two reviewers must agree before a recommendation is routine. Every
   change remains human-approved; the admin can apply a safe tree change or
   create the recommended filter attribute.

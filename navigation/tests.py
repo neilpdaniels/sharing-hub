@@ -144,3 +144,27 @@ class CategorySuggestionPipelineTests(TestCase):
         self.assertTrue(attribute.filterable)
         self.assertEqual(attribute.name, 'Power source')
         self.assertEqual(attribute.get_allowed_values(), ['Petrol', 'Battery', 'Corded'])
+
+    def test_attribute_recommendation_defaults_to_listing_values_when_source_is_omitted(self):
+        category = Category.objects.create(title='Fancy dress')
+        review = CategoryTaxonomyReview.objects.create(requested_by=self.user)
+        recommendation = CategoryTaxonomyRecommendation.objects.create(
+            review=review,
+            position=0,
+            recommendation_type=CategoryTaxonomyRecommendation.TYPE_ATTRIBUTE,
+            title='Add an age range filter for fancy dress',
+            rationale='Listings need an age-range choice without creating a separate catalogue product for every size.',
+            evidence=['Listings include both children and adult fancy dress.'],
+            proposed_action={
+                'operation': 'add_attribute',
+                'category_id': category.pk,
+                'order': 1,
+                'name': 'Age range',
+                'allowed_values': ['Age 3-4', 'Age 5-6', 'Adult'],
+            },
+        )
+
+        result = apply_taxonomy_recommendation(recommendation, self.user)
+
+        attribute = CategoryAttribute.objects.get(pk=result['category_attribute_id'])
+        self.assertEqual(attribute.value_source, CategoryAttribute.VALUE_SOURCE_LISTING)

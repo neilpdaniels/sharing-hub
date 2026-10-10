@@ -473,6 +473,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       } else {
         _browseAttributeFilters = nextFilters;
       }
+      // Attribute filters should show things the member can rent now. This
+      // matches the website and avoids a filtered result containing a product
+      // with no live listing.
+      if (nextFilters.isNotEmpty) {
+        _includeZeroListings = false;
+      }
     });
   }
 

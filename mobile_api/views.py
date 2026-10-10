@@ -1472,6 +1472,17 @@ class CategoryProductsView(generics.ListAPIView):
             for definition in category.get_attribute_definitions()
             if definition.get('value_source') == 'listing'
         )
+        has_attribute_filter = any(
+            (self.request.GET.get(definition['query_param']) or '').strip()
+            for definition in category.get_attribute_definitions()
+            if definition.get('filterable')
+        )
+        # Filter options are meaningful only for something that can actually
+        # be rented. Mirror the website: an attribute selection hides products
+        # with no active listings even if the normal catalogue default is to
+        # include them.
+        if has_attribute_filter:
+            include_zero_listings = False
         if has_listing_filter:
             queryset = queryset.filter(
                 id__in=filtered_orders_queryset.values_list('product_id', flat=True).distinct()
@@ -1703,6 +1714,13 @@ class SearchProductsView(generics.ListAPIView):
                 for definition in category.get_attribute_definitions()
                 if definition.get('value_source') == 'listing'
             )
+            has_attribute_filter = any(
+                (self.request.GET.get(definition['query_param']) or '').strip()
+                for definition in category.get_attribute_definitions()
+                if definition.get('filterable')
+            )
+            if has_attribute_filter:
+                include_zero_listings = False
             if has_listing_filter:
                 products = products.filter(
                     id__in=filtered_orders_queryset.values_list('product_id', flat=True).distinct()

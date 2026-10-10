@@ -51,6 +51,21 @@ TURNSTILE_HOSTNAMES = frozenset(
     if hostname.strip()
 )
 
+# Category-suggestion AI is deliberately opt-in in production.  It has a
+# separate worker and guardrails because image generation incurs real cost.
+CATEGORY_AI_ENABLED = os.environ.get('CATEGORY_AI_ENABLED', '0') == '1'
+CATEGORY_AI_USER_WEEKLY_LIMIT = max(1, int(os.environ.get('CATEGORY_AI_USER_WEEKLY_LIMIT', '2')))
+CATEGORY_AI_USER_MONTHLY_LIMIT = max(1, int(os.environ.get('CATEGORY_AI_USER_MONTHLY_LIMIT', '5')))
+CATEGORY_AI_IP_DAILY_LIMIT = max(1, int(os.environ.get('CATEGORY_AI_IP_DAILY_LIMIT', '10')))
+# This is a count of generated image candidates, not suggestions. Two image
+# candidates are generated for each staff-approved suggestion.
+CATEGORY_AI_MONTHLY_IMAGE_LIMIT = max(0, int(os.environ.get('CATEGORY_AI_MONTHLY_IMAGE_LIMIT', '100')))
+# The taxonomy review is always available on demand to staff. Set this to 1
+# only after reviewing the first reports to have Celery create one each month.
+CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED = os.environ.get(
+    'CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED', '0'
+) == '1'
+
 # Listing images are resized and converted to JPEG by the Celery worker.
 ORDER_IMAGE_UPLOAD_MAX_BYTES = int(os.environ.get('ORDER_IMAGE_UPLOAD_MAX_BYTES', str(20 * 1024 * 1024)))
 

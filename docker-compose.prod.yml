@@ -31,7 +31,9 @@ services:
       - db
       - redis
     ports:
-      - "8000:8000"
+      # Public traffic must pass through host Nginx, which supplies the trusted
+      # X-Real-IP used by abuse controls. Do not expose Gunicorn directly.
+      - "127.0.0.1:8000:8000"
     restart: unless-stopped
 
   video-worker:
@@ -45,6 +47,21 @@ services:
     depends_on:
       - db
       - web
+      - redis
+    restart: unless-stopped
+
+  # Kept separate from transaction/video processing because LLM and image work
+  # is slow, rate-limited and paid. One task at a time is intentional.
+  catalog-ai-worker:
+    image: ${WEB_IMAGE}
+    build: null
+    command: uv run celery -A rentalution worker -Q catalog_ai --loglevel=info --concurrency=1 --hostname=catalog-ai-worker@%h
+    env_file:
+      - .env
+    volumes:
+      - ./media:/app/media
+    depends_on:
+      - db
       - redis
     restart: unless-stopped
 

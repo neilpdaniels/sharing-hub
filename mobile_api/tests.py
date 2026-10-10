@@ -223,6 +223,24 @@ class ProductAttributeFilteringApiTests(TestCase):
         self.assertEqual(payload[0]['attribute_definitions'][1]['value_source'], 'listing')
         self.assertEqual(payload[0]['attributes'][0]['value'], 'Halloween')
 
+    def test_attribute_selection_hides_products_without_a_live_listing(self):
+        Product.objects.create(
+            category_id=self.category,
+            name='Unavailable Halloween costume',
+            attribute_one_value='Halloween',
+        )
+
+        response = self.client.get(
+            reverse(
+                'mobile_api:categories_products',
+                kwargs={'category_slug': self.category.slug},
+            ),
+            {'attribute_1': 'Halloween', 'include_zero_listings': 'true'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)
+
     def test_search_products_support_attribute_sorting_for_selected_category(self):
         response = self.client.get(
             reverse('mobile_api:search_products'),

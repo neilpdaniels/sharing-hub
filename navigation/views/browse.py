@@ -393,8 +393,16 @@ def browseCategory(request, cat_slug=None):
     if not request.is_ajax():
         biscuit = _build_biscuit(cat)
 
+    # Attribute filter choices are assembled from live listings. Showing a
+    # product with no live listing after someone has narrowed by an attribute
+    # is both surprising and not actionable, so treat a chosen attribute as
+    # opting into the existing "Active listings only" behaviour.
+    has_selected_attribute_filter = any(
+        (request.GET.get(definition['query_param']) or '').strip()
+        for definition in filterable_attribute_definitions(cat)
+    )
     active_only = request.GET.get('active_only', None)
-    if active_only in ('True', '1', 'on'):
+    if active_only in ('True', '1', 'on') or has_selected_attribute_filter:
         products = products.filter(best_prices__numberActiveOrders__gt=0)
         chosen_attributes['active_only'] = "True"
 

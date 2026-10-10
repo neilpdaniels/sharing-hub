@@ -924,7 +924,17 @@
     }
 
     $(window).on('scroll', loadMoreProductsIfNeeded);
-    $('#attribute_one, #attribute_two, #attribute_three, #attribute_four, #attribute_five, #friends_only, #tag_filter').change(function() {
+    $('#browse-filter-popup select[name^="attribute_"], #friends_only, #tag_filter').change(function() {
+        // Attribute choices are based on available listings. Keep the UI in
+        // step with the server-side default so results are immediately useful.
+        var controlName = $(this).attr('name') || '';
+        if (controlName.indexOf('attribute_') === 0 && $(this).val()) {
+            $('#active_only').prop('checked', true);
+            $('.browse-active-hint').removeClass('inactive');
+            if ($('#distance_filter').val() === '-') {
+                $('#distance_filter').val('any');
+            }
+        }
         submitBrowseFilters();
     });
 

@@ -17,7 +17,6 @@ services:
 
   web:
     image: ${WEB_IMAGE}
-    build: null
     command: >
       sh -c "uv run python manage.py migrate &&
              uv run python manage.py collectstatic --noinput &&
@@ -38,7 +37,6 @@ services:
 
   video-worker:
     image: ${WEB_IMAGE}
-    build: null
     command: uv run celery -A rentalution worker -Q video --loglevel=info --autoscale=2,1 --hostname=video-worker@%h
     env_file:
       - .env
@@ -54,7 +52,6 @@ services:
   # is slow, rate-limited and paid. One task at a time is intentional.
   catalog-ai-worker:
     image: ${WEB_IMAGE}
-    build: null
     command: uv run celery -A rentalution worker -Q catalog_ai --loglevel=info --concurrency=1 --hostname=catalog-ai-worker@%h
     env_file:
       - .env

@@ -1113,7 +1113,10 @@ a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !importan
     /* `#rh-layout` is rendered at 80%.  Compensate so this fixed panel
        still reaches the physical bottom of the viewport. */
     height: 125vh;
-    overflow-y: auto;
+    /* Use the dynamic viewport on mobile browsers so the panel tracks the
+       browser chrome as it expands or collapses. */
+    height: 125dvh;
+    overflow: hidden;
     z-index: 1000;
     transition: transform 0.25s ease;
     box-shadow: 2px 0 8px rgba(0,0,0,0.04);
@@ -1190,7 +1193,13 @@ a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !importan
 .rh-sidebar-nav {
     padding: 0.75rem 0.6rem;
     flex: 1;
+    /* A flex item defaults to min-height:auto, which can prevent this area
+       from shrinking and scrolling on mobile. Keep the promo and footer
+       reachable while the navigation itself scrolls. */
+    min-height: 0;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 .rh-nav-link {

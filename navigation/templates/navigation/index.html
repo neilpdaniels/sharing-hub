@@ -180,8 +180,7 @@
         }
     </style>
 
-    {% url 'navigation:seeAll' as browse_all_url %}
-    {% include "common/partials/section_header.html" with title="Browse categories" action_url=browse_all_url action_text="Browse all" %}
+    {% include "common/partials/section_header.html" with title="Browse categories" %}
     <div class="rh-cat-links mt-3">
         {% for category in browse_categories %}
             <a class="rh-cat-link" href="{% url 'navigation:browseCategory' category.slug %}">

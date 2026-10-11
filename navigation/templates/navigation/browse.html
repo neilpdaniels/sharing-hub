@@ -464,15 +464,15 @@
         align-items: stretch;
     }
 
-    @media (max-width: 767.98px) {
+    @media (min-width: 768px) {
         .product-list-style {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
     }
 
     @media (min-width: 1200px) {
         .product-list-style {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
         }
     }
 

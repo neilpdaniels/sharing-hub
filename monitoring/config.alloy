@@ -1,0 +1,39 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+local.file_match "nginx" {
+  path_targets = [
+    {"__path__" = "/var/log/nginx/access.log", job = "nginx-access"},
+    {"__path__" = "/var/log/nginx/error.log", job = "nginx-error"},
+  ]
+}
+
+loki.source.file "nginx" {
+  targets    = local.file_match.nginx.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+local.file_match "docker" {
+  path_targets = [
+    {"__path__" = "/var/lib/docker/containers/*/*-json.log", job = "docker"},
+  ]
+}
+
+loki.process "docker" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.docker {}
+}
+
+loki.source.file "docker" {
+  targets    = local.file_match.docker.targets
+  forward_to = [loki.process.docker.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -1,0 +1,16 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Rentalution email
+    receivers:
+      - uid: rentalution_email
+        type: email
+        settings:
+          addresses: $MONITORING_ALERT_EMAIL
+
+policies:
+  - orgId: 1
+    receiver: Rentalution email
+    group_by:
+      - alertname

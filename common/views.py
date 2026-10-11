@@ -2,10 +2,17 @@ from django.contrib.auth.decorators import login_required
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.http import require_GET
 
 from rentalution.context_processors import get_transaction_notification_payload
 
 # Create your views here.
+
+
+@require_GET
+def healthcheck(request):
+	"""Minimal unauthenticated liveness probe for external uptime monitoring."""
+	return JsonResponse({'status': 'ok'})
 
 
 @login_required

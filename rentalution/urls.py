@@ -19,11 +19,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django_otp.admin import OTPAdminSite
 import navigation
-from common.views import android_asset_links, apple_app_site_association, mobile_payout_return, transaction_notifications_json
+from common.views import android_asset_links, apple_app_site_association, healthcheck, mobile_payout_return, transaction_notifications_json
 
 # admin.site.__class__ = OTPAdminSite
 
 urlpatterns = [
+	path('healthz/', healthcheck, name='healthcheck'),
 	path('.well-known/apple-app-site-association', apple_app_site_association, name='apple_app_site_association'),
 	path('.well-known/assetlinks.json', android_asset_links, name='android_asset_links'),
 	path('app/payouts/return/', mobile_payout_return, name='mobile_payout_return'),

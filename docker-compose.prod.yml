@@ -97,6 +97,63 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+
+  # Private observability services. Access Grafana and Uptime Kuma through an
+  # SSH tunnel; no monitoring UI is exposed to the public internet.
+  loki:
+    image: grafana/loki:3.7.8
+    command: -config.file=/etc/loki/config.yml
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:latest
+    command: run --disable-reporting --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    volumes:
+      - ./monitoring/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/log/nginx:/var/log/nginx:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SECURITY_SECRET_KEY: ${GRAFANA_SECRET_KEY}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: ${EMAIL_HOST:-smtp.zoho.com}:${EMAIL_PORT:-587}
+      GF_SMTP_USER: ${EMAIL_HOST_USER:-application@rentalution.co.uk}
+      GF_SMTP_PASSWORD: ${APP_EMAIL_PASSWORD}
+      GF_SMTP_FROM_ADDRESS: ${DEFAULT_FROM_EMAIL:-application@rentalution.co.uk}
+      GF_SMTP_FROM_NAME: Rentalution monitoring
+      GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.5
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"
+    restart: unless-stopped
 volumes:
   postgres_data:
   celery_beat_data:
+  loki_data:
+  alloy_data:
+  grafana_data:
+  uptime_kuma_data:

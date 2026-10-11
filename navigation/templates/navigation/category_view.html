@@ -3,7 +3,7 @@
 
 <a href="{% url 'navigation:browseCategory' category.slug %}">
     <div class="col-6 col-md-4 col-xl-3 mb-3">
-        <div class="card product-card" >
+        <div class="card product-card rh-category-card" >
             <div class="product-thumb">
                 {% if category.image %}
                 {% thumbnail category.image "200" format="PNG" as im %}
@@ -18,7 +18,7 @@
             <a href="{% url 'navigation:browseCategory' category.slug %}">
             <div class="card-body text-center">
                 <!-- end tag a .product-addto-collection -->
-                <h5 class="card-title">{{ category.title | title}}</h5>
+                <h5 class="card-title rh-category-card-title">{{ category.title | title}}</h5>
                 {% if category.description %}
                 <p class="card-text">{{ category.description|safe }}</p>
                 {% endif %}

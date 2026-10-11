@@ -1070,6 +1070,15 @@ a.bg-primary:hover,   a.bg-primary:focus   { background-color: #0d7474 !importan
     text-decoration: none;
 }
 
+/* Category cards remain readable when the responsive grid becomes compact. */
+.rh-category-card-title {
+    color: #132644;
+    font-size: 1.12rem !important;
+    font-weight: 800 !important;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
 /* btn-extra (Login / Logout in navbar) */
 .btn-extra {
     background: var(--rh-accent) !important;

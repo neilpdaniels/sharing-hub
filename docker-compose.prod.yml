@@ -98,6 +98,19 @@ services:
       - redis
     restart: unless-stopped
 
+  # Watches the application services' Docker state. The Docker socket grants
+  # privileged daemon access, so this service has no public port or other mounts.
+  container-watchdog:
+    image: docker:27.5.1-cli
+    command: ["/bin/sh", "/usr/local/bin/container-watchdog.sh"]
+    environment:
+      COMPOSE_PROJECT_NAME: rentalution
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/container-watchdog.sh:/usr/local/bin/container-watchdog.sh:ro
+      - container_watchdog_data:/var/lib/container-watchdog
+    restart: unless-stopped
+
   # Private observability services. Access Grafana and Uptime Kuma through an
   # SSH tunnel; no monitoring UI is exposed to the public internet.
   loki:
@@ -159,3 +172,4 @@ volumes:
   alloy_data:
   grafana_data:
   uptime_kuma_data:
+  container_watchdog_data:

@@ -24,8 +24,8 @@ RUN uv sync --frozen --no-dev
 
 COPY . /app
 
-RUN mkdir -p /app/media /app/staticfiles \
-    && chown -R rentalution:rentalution /app
+RUN mkdir -p /app/media /app/staticfiles /var/lib/celery \
+    && chown -R rentalution:rentalution /app /var/lib/celery
 
 USER rentalution
 

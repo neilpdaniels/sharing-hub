@@ -143,7 +143,7 @@ jobs:
             for attempt in $(seq 1 30); do
               running_services="$(docker compose -f docker-compose.prod.yml ps --status running --services)"
               missing_services=""
-              for service in web db redis worker video-worker catalog-ai-worker beat flower loki alloy grafana uptime-kuma; do
+              for service in web db redis worker video-worker catalog-ai-worker beat flower container-watchdog loki alloy grafana uptime-kuma; do
                 echo "$running_services" | grep -qx "$service" || missing_services="$missing_services $service"
               done
               if [ -z "$missing_services" ]; then
@@ -152,7 +152,7 @@ jobs:
               if [ "$attempt" -eq 30 ]; then
                 echo "Services failed to remain running:$missing_services" >&2
                 docker compose -f docker-compose.prod.yml ps
-                docker compose -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker beat flower loki alloy grafana uptime-kuma
+                docker compose -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker beat flower container-watchdog loki alloy grafana uptime-kuma
                 exit 1
               fi
               sleep 2

@@ -134,6 +134,8 @@ services:
       GF_SMTP_FROM_ADDRESS: ${DEFAULT_FROM_EMAIL:-application@rentalution.co.uk}
       GF_SMTP_FROM_NAME: Rentalution monitoring
       GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
+      # Referenced by the provisioned Grafana e-mail contact point.
+      MONITORING_ALERT_EMAIL: ${MONITORING_ALERT_EMAIL}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

@@ -15,21 +15,30 @@ loki.source.file "nginx" {
   forward_to = [loki.write.default.receiver]
 }
 
-local.file_match "docker" {
-  path_targets = [
-    {"__path__" = "/var/lib/docker/containers/*/*-json.log", job = "docker"},
-  ]
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
 }
 
-loki.process "docker" {
-  forward_to = [loki.write.default.receiver]
+discovery.relabel "container_labels" {
+  targets = []
 
-  stage.docker {}
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
 }
 
-loki.source.file "docker" {
-  targets    = local.file_match.docker.targets
-  forward_to = [loki.process.docker.receiver]
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  labels        = {job = "docker"}
+  relabel_rules = discovery.relabel.container_labels.rules
+  forward_to    = [loki.write.default.receiver]
 }
 
 loki.write "default" {

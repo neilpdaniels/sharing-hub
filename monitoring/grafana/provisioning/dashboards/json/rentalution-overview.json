@@ -13,7 +13,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
       "id": 6,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"editorMode": "code", "expr": "sum(count_over_time({job=\"docker\"} |~ \"CONTAINER_WATCHDOG_(NOT_RUNNING|RESTARTED)\" [15m]))", "legendFormat": "unhealthy containers", "queryType": "instant", "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(count_over_time({job=\"docker\", service=\"container-watchdog\"} |~ \"CONTAINER_WATCHDOG_(NOT_RUNNING|RESTARTED)\" [15m]))", "legendFormat": "unhealthy containers", "queryType": "instant", "refId": "A"}],
       "title": "Stopped/restarting containers (last 15 minutes)",
       "type": "stat"
     },
@@ -23,7 +23,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
       "id": 1,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"editorMode": "code", "expr": "sum(count_over_time({job=~\"nginx-access|nginx-error|docker\"}[5m]))", "legendFormat": "log lines", "queryType": "instant", "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(count_over_time({job=\"docker\", service=~\"web|worker|video-worker|catalog-ai-worker|beat\"}[5m]))", "legendFormat": "application log lines", "queryType": "instant", "refId": "A"}],
       "title": "Log lines (last 5 minutes)",
       "type": "stat"
     },
@@ -43,7 +43,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
       "id": 3,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"editorMode": "code", "expr": "sum(count_over_time({job=\"docker\"} |~ \"(?i)(traceback|critical|exception|permissionerror|celerybeat-schedule)\" [15m]))", "legendFormat": "application failures", "queryType": "instant", "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "sum(count_over_time({job=\"docker\", service=~\"web|worker|video-worker|catalog-ai-worker|beat\"} |~ \"(?i)(traceback|critical|exception|permissionerror|celerybeat-schedule)\" [15m]))", "legendFormat": "application failures", "queryType": "instant", "refId": "A"}],
       "title": "Application failures (last 15 minutes)",
       "type": "stat"
     },
@@ -62,7 +62,7 @@
       "gridPos": {"h": 14, "w": 24, "x": 0, "y": 16},
       "id": 5,
       "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyJSON": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
-      "targets": [{"editorMode": "code", "expr": "{job=~\"nginx-error|docker\"} |~ \"(?i)(error|critical|exception|traceback)\"", "refId": "A"}],
+      "targets": [{"editorMode": "code", "expr": "{job=\"docker\", service=~\"web|worker|video-worker|catalog-ai-worker|beat\"} |~ \"(?i)(error|critical|exception|traceback)\"", "refId": "A"}],
       "title": "Recent errors",
       "type": "logs"
     }

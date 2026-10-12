@@ -13,10 +13,16 @@ The production Compose stack runs these services on loopback-only ports:
 MONITORING_ALERT_EMAIL=neil_p_Daniels@hotmail.com
 GRAFANA_ADMIN_PASSWORD=<unique password>
 GRAFANA_SECRET_KEY=<long random value>
+# Private Tailscale Serve URL, used by links in Grafana alert emails.
+GRAFANA_ROOT_URL=https://vps-name.your-tailnet.ts.net
 ```
 
 Grafana uses the existing `APP_EMAIL_PASSWORD` and Zoho SMTP credentials. Do
 not duplicate that password in a monitoring configuration file.
+
+After enabling Tailscale Serve for Grafana, set `GRAFANA_ROOT_URL` to its
+HTTPS URL and recreate Grafana. Alert emails will then link to the private
+Grafana dashboard/alert pages rather than `localhost:3000`.
 
 ## First-use setup
 

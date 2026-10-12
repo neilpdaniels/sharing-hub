@@ -30,7 +30,7 @@ groups:
                 type: loki
                 uid: loki
               editorMode: code
-              expr: 'sum(count_over_time({job="docker"} |~ "CONTAINER_WATCHDOG_(NOT_RUNNING|RESTARTED)" [2m]))'
+              expr: 'sum(count_over_time({job="docker", service="container-watchdog"} |~ "CONTAINER_WATCHDOG_(NOT_RUNNING|RESTARTED)" [2m]))'
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200
@@ -178,7 +178,7 @@ groups:
                 type: loki
                 uid: loki
               editorMode: code
-              expr: 'sum(count_over_time({job="docker"} |~ "(?i)(traceback|critical|exception|permissionerror|celerybeat-schedule)" [5m]))'
+              expr: 'sum(count_over_time({job="docker", service=~"web|worker|video-worker|catalog-ai-worker|beat"} |~ "(?i)(traceback|critical|exception|permissionerror|celerybeat-schedule)" [5m]))'
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200

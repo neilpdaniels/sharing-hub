@@ -23,8 +23,11 @@ not duplicate that password in a monitoring configuration file.
 Tunnel the private monitoring ports from a trusted computer:
 
 ```bash
-ssh -L 3000:127.0.0.1:3000 -L 3001:127.0.0.1:3001 <deploy-user>@<server>
+./scripts/open_monitoring_tunnel.sh
 ```
+
+The wrapper defaults to `ubuntu@rentalution`; pass another SSH destination as
+its first argument when required.
 
 Open `http://localhost:3000` and sign in as `admin` with
 `GRAFANA_ADMIN_PASSWORD`. Grafana automatically has Loki configured as its

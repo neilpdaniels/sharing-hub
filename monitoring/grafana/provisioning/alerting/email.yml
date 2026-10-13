@@ -1,16 +1,48 @@
 apiVersion: 1
 
+templates:
+  - orgId: 1
+    name: rentalution_email
+    template: |
+      {{ define "rentalution.email" -}}
+      {{ if eq .Status "firing" }}Rentalution alert(s) firing: {{ len .Alerts.Firing }}{{ else }}Rentalution alerts resolved{{ end }}
+      {{ range .Alerts.Firing }}
+
+      {{ .Labels.alertname }} — {{ .Labels.severity }}
+      Service: {{ .Labels.service }}
+      {{ .Annotations.summary }}
+      Events in the evaluated window: {{ index .Annotations "event_count" }}
+      {{ .Annotations.description }}
+      {{ if .DashboardURL }}Investigate: {{ .DashboardURL }}{{ end }}
+      {{ end }}
+      {{- end }}
+
 contactPoints:
   - orgId: 1
     name: Rentalution email
     receivers:
       - uid: rentalution_email
         type: email
+        disableResolveMessage: true
         settings:
           addresses: $MONITORING_ALERT_EMAIL
+          subject: '[{{ .Status | toUpper }}] Rentalution: {{ .CommonLabels.alertname }}'
+          message: |
+            {{ template "rentalution.email" . }}
+      - uid: rentalution_discord
+        type: discord
+        disableResolveMessage: true
+        settings:
+          url: $DISCORD_WEBHOOK_URL
+          use_discord_username: true
+          message: |
+            {{ template "rentalution.email" . }}
 
 policies:
   - orgId: 1
     receiver: Rentalution email
     group_by:
       - alertname
+    group_wait: 1m
+    group_interval: 15m
+    repeat_interval: 12h

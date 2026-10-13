@@ -15,6 +15,9 @@ groups:
         annotations:
           summary: A required Rentalution container is stopped or restarting.
           description: Check Docker Compose status and the container's logs on the VPS.
+          event_count: '{{ printf "%.0f" $values.B.Value }}'
+          __dashboardUid__: rentalution-operations
+          __panelId__: '6'
         labels:
           severity: critical
           service: container-runtime
@@ -89,6 +92,9 @@ groups:
         annotations:
           summary: Stripe received a non-success response from the Connect webhook.
           description: Check Nginx access logs and the Django web container. Stripe retries failed deliveries, but action is required.
+          event_count: '{{ printf "%.0f" $values.B.Value }}'
+          __dashboardUid__: rentalution-operations
+          __panelId__: '4'
         labels:
           severity: critical
           service: stripe-webhook
@@ -163,6 +169,9 @@ groups:
         annotations:
           summary: Three or more critical application log entries appeared in five minutes.
           description: Inspect the Rentalution operations dashboard and the relevant container logs.
+          event_count: '{{ printf "%.0f" $values.B.Value }}'
+          __dashboardUid__: rentalution-operations
+          __panelId__: '5'
         labels:
           severity: critical
           service: application

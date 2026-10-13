@@ -49,6 +49,24 @@ These dashboard and alert resources are read-only in the Grafana UI because
 they are version controlled under `monitoring/grafana/provisioning/`. Change
 the files and redeploy to update them.
 
+Alert e-mails show the triggering alert, service, evaluated event count, and a
+direct link to the relevant dashboard panel. They are grouped by alert name,
+sent no more often than every 15 minutes while a condition persists, repeated
+after 12 hours, and do not send a separate resolved e-mail. Grafana alert
+templates cannot query Loki for raw log lines, so the e-mail deliberately links
+to the **Recent errors** panel rather than claiming to contain a top-ten log
+extract.
+
+## Discord notifications
+
+Grafana's Discord contact point requires a channel webhook URL, not merely the
+Discord server. In Discord, open the target channel's **Edit Channel** →
+**Integrations** → **Webhooks**, create a webhook, and copy its URL. Treat that
+URL as a secret: it permits posting to that channel. Set it as
+`DISCORD_WEBHOOK_URL` in the deployment environment; the provisioned
+`Rentalution email` contact point sends to Discord as well as e-mail. Rotate a
+webhook immediately if it is exposed.
+
 `container-watchdog` inspects Docker state for `web`, the Celery workers,
 Beat, PostgreSQL, and Redis. Access to Docker's Unix socket is privileged even
 when mounted read-only, so do not expose this service or mount that socket into

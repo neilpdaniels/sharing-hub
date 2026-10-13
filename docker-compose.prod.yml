@@ -116,6 +116,9 @@ services:
   loki:
     image: grafana/loki:3.7.8
     command: -config.file=/etc/loki/config.yml
+    # Hard resource ceilings: monitoring must not starve the application.
+    cpus: 0.75
+    mem_limit: 768m
     volumes:
       - ./monitoring/loki.yml:/etc/loki/config.yml:ro
       - loki_data:/loki
@@ -135,6 +138,9 @@ services:
 
   grafana:
     image: grafana/grafana:13.2.2
+    # Dashboard/alert queries are capped independently from application traffic.
+    cpus: 0.50
+    mem_limit: 512m
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
@@ -151,6 +157,9 @@ services:
       GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
       # Referenced by the provisioned Grafana e-mail contact point.
       MONITORING_ALERT_EMAIL: ${MONITORING_ALERT_EMAIL}
+      # Kept in the deployment environment: a Discord webhook can post to its
+      # configured channel and must never be committed to this repository.
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

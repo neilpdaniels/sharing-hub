@@ -1,2 +1,26 @@
 
+# Source-control, editor, local virtualenv, and transient runtime data are not
+# needed to build the server image. Keeping them out is especially important:
+# the Flutter workspace and local media can otherwise make the build context
+# many gigabytes large.
+.git/
+.github/
+.agents/
+.aws/
+.codex/
+.idea/
+.venv/
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.sqlite3
+celerybeat-schedule.db
+logs/
+media/
+staticfiles/
+tmp/
+_archive/
+rentalution_mobile/
 transaction/video_client/node_modules/
+node_modules/

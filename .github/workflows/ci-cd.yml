@@ -83,6 +83,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Keep BuildKit layers in GHCR alongside the application image. This
+          # avoids reinstalling system and Python dependencies on every run.
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -130,9 +134,10 @@ jobs:
             sudo cp -R /tmp/rentalution-compose/monitoring/. monitoring/
             export WEB_IMAGE="${{ env.IMAGE_NAME }}:latest"
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
-            # Reclaim old image layers before downloading the replacement.
-            docker system prune -af
-            docker compose -f docker-compose.prod.yml pull
+            # The application image is already built and cached in GHCR. Pull
+            # only that image; pulling every unchanged monitoring image makes
+            # each deployment unnecessarily slow.
+            docker pull "$WEB_IMAGE"
             # The application image now runs as UID/GID 10001, including Celery.
             # These bind mounts must remain writable after that privilege drop.
             sudo install -d -m 0755 media staticfiles
@@ -197,6 +202,10 @@ jobs:
             '
             printf '[%s] Deploy stage: install Nginx configuration\n' "$(date -Is)"
             sudo install -m 0644 /tmp/rentalution-nginx/deploy/nginx/rentalution.conf /etc/nginx/sites-available/rentalution
+            # Ubuntu's stock Nginx site also owns the default port-80 virtual
+            # host. Rentalution intentionally supplies the default vhosts to
+            # reject unknown Host headers before Django sees them.
+            sudo rm -f /etc/nginx/sites-enabled/default
             sudo ln -sfn /etc/nginx/sites-available/rentalution /etc/nginx/sites-enabled/rentalution
             printf '[%s] Deploy stage: renew or issue TLS certificate\n' "$(date -Is)"
             sudo certbot --nginx -d rentalution.co.uk -d www.rentalution.co.uk --non-interactive --agree-tos --redirect --keep-until-expiring -m "${{ secrets.CERTBOT_EMAIL }}"

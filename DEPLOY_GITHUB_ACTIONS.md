@@ -23,6 +23,9 @@
 - Docker Compose plugin is installed
 - the app lives in `/srv/rentalution`
 - the user in `DEPLOY_USER` can run Docker
+- Nginx's stock `/etc/nginx/sites-enabled/default` site is not retained. The
+  workflow removes it because Rentalution owns the default virtual hosts for
+  ports 80 and 443, rejecting unknown Host headers before they reach Django.
 
 ## Server setup
 

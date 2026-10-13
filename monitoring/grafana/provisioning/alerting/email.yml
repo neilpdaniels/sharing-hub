@@ -17,9 +17,22 @@ templates:
       {{ end }}
       {{- end }}
 
+      {{ define "rentalution.discord" -}}
+      {{ if eq .Status "firing" }}Rentalution alert(s) firing: {{ len .Alerts.Firing }}{{ else }}Rentalution alerts resolved{{ end }}
+      {{ range .Alerts.Firing }}
+
+      {{ .Labels.alertname }} — {{ .Labels.severity }}
+      Service: {{ .Labels.service }}
+      {{ .Annotations.summary }}
+      Events in the evaluated window: {{ index .Annotations "event_count" }}
+      {{ with index .Annotations "log_excerpt" }}Error excerpt: {{ . }}{{ end }}
+      {{ if .DashboardURL }}Investigate: {{ .DashboardURL }}{{ end }}
+      {{ end }}
+      {{- end }}
+
 contactPoints:
   - orgId: 1
-    name: Rentalution email
+    name: Rentalution alerts
     receivers:
       - uid: rentalution_email
         type: email
@@ -37,12 +50,35 @@ contactPoints:
           use_discord_username: true
           message: |
             {{ template "rentalution.email" . }}
+  - orgId: 1
+    name: Rentalution application error logs
+    receivers:
+      - uid: rentalution_application_error_email
+        type: email
+        disableResolveMessage: true
+        settings:
+          addresses: $MONITORING_ALERT_EMAIL
+          subject: '[{{ .Status | toUpper }}] Rentalution: {{ .CommonLabels.alertname }}'
+          message: |
+            {{ template "rentalution.email" . }}
+      - uid: rentalution_application_error_discord
+        type: discord
+        disableResolveMessage: true
+        settings:
+          url: $DISCORD_ERROR_LOG_WEBHOOK_URL
+          use_discord_username: true
+          message: |
+            {{ template "rentalution.discord" . }}
 
 policies:
   - orgId: 1
-    receiver: Rentalution email
+    receiver: Rentalution alerts
     group_by:
       - alertname
     group_wait: 1m
     group_interval: 15m
     repeat_interval: 12h
+    routes:
+      - receiver: Rentalution application error logs
+        object_matchers:
+          - ['service', '=', 'application']

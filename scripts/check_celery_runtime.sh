@@ -8,7 +8,7 @@ fi
 # A Redis/Celery 5.6 control client can receive a broadcast reply while a
 # destination-filtered request to the same node gets no reply.  Verify the
 # named worker from the complete control response instead.
-response="$(uv run celery -A rentalution inspect ping --timeout=10 2>&1)" || {
+response="$(celery -A rentalution inspect ping --timeout=10 2>&1)" || {
     printf '%s\n' "$response" >&2
     exit 1
 }

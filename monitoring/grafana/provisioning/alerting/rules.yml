@@ -167,9 +167,13 @@ groups:
         noDataState: OK
         execErrState: Alerting
         annotations:
-          summary: Three or more critical application log entries appeared in five minutes.
+          summary: One of the ten most frequent application error lines appeared in five minutes.
           description: Inspect the Rentalution operations dashboard and the relevant container logs.
           event_count: '{{ printf "%.0f" $values.B.Value }}'
+          # log_excerpt is a query-time label, not an indexed Loki label. It is
+          # deliberately capped at 500 characters before being sent to the
+          # restricted Discord alert channel.
+          log_excerpt: '{{ $labels.log_excerpt }}'
           __dashboardUid__: rentalution-operations
           __panelId__: '5'
         labels:
@@ -187,7 +191,7 @@ groups:
                 type: loki
                 uid: loki
               editorMode: code
-              expr: 'sum(count_over_time({job="docker", service=~"web|worker|video-worker|catalog-ai-worker|beat"} |~ "(?i)(traceback|critical|exception|permissionerror|celerybeat-schedule)" [5m]))'
+              expr: 'topk(10, sum by (log_excerpt) (count_over_time({job="docker", service=~"web|worker|video-worker|catalog-ai-worker|beat"} |~ "(?i)(traceback|critical|exception|permissionerror|celerybeat-schedule)" | regexp "(?P<log_excerpt>.{1,500})" [5m])))'
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200

@@ -18,9 +18,9 @@ services:
   web:
     image: ${WEB_IMAGE}
     command: >
-      sh -c "uv run python manage.py migrate &&
-             uv run python manage.py collectstatic --noinput &&
-             uv run gunicorn rentalution.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120"
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn rentalution.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120"
     env_file:
       - .env
     volumes:
@@ -37,7 +37,7 @@ services:
 
   video-worker:
     image: ${WEB_IMAGE}
-    command: uv run celery -A rentalution worker -Q video --loglevel=info --autoscale=2,1 --hostname=video-worker@%h
+    command: celery -A rentalution worker -Q video --loglevel=info --autoscale=2,1 --hostname=video-worker@%h
     env_file:
       - .env
     volumes:
@@ -52,7 +52,7 @@ services:
   # is slow, rate-limited and paid. One task at a time is intentional.
   catalog-ai-worker:
     image: ${WEB_IMAGE}
-    command: uv run celery -A rentalution worker -Q catalog_ai --loglevel=info --concurrency=1 --hostname=catalog-ai-worker@%h
+    command: celery -A rentalution worker -Q catalog_ai --loglevel=info --concurrency=1 --hostname=catalog-ai-worker@%h
     env_file:
       - .env
     volumes:
@@ -65,7 +65,7 @@ services:
 
   worker:
     image: ${WEB_IMAGE}
-    command: uv run celery -A rentalution worker -Q celery --loglevel=info --autoscale=4,1 --hostname=worker@%h
+    command: celery -A rentalution worker -Q celery --loglevel=info --autoscale=4,1 --hostname=worker@%h
     env_file:
       - .env
     volumes:
@@ -77,7 +77,7 @@ services:
 
   beat:
     image: ${WEB_IMAGE}
-    command: uv run celery -A rentalution beat --loglevel=info --schedule=/var/lib/celery/celerybeat-schedule
+    command: celery -A rentalution beat --loglevel=info --schedule=/var/lib/celery/celerybeat-schedule
     env_file:
       - .env
     volumes:
@@ -89,7 +89,7 @@ services:
 
   flower:
     image: ${WEB_IMAGE}
-    command: uv run celery -A rentalution flower --address=0.0.0.0 --port=5555 --basic_auth=${FLOWER_BASIC_AUTH}
+    command: celery -A rentalution flower --address=0.0.0.0 --port=5555 --basic_auth=${FLOWER_BASIC_AUTH}
     env_file:
       - .env
     ports:
@@ -160,6 +160,9 @@ services:
       # Kept in the deployment environment: a Discord webhook can post to its
       # configured channel and must never be committed to this repository.
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      # Raw error excerpts are deliberately sent to a separate restricted
+      # Discord channel from the general alert summaries.
+      DISCORD_ERROR_LOG_WEBHOOK_URL: ${DISCORD_ERROR_LOG_WEBHOOK_URL}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

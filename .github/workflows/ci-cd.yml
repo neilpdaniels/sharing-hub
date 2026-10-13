@@ -127,29 +127,41 @@ jobs:
           debug: true
           script: |
             set -e
+            deploy_started_epoch="$(date +%s)"
+            stage() {
+              stage_now_epoch="$(date +%s)"
+              printf '[%s] [+%ss] Deploy stage: %s\n' "$(date -Is)" "$((stage_now_epoch - deploy_started_epoch))" "$1"
+            }
             cd "${{ env.DEPLOY_PATH }}"
+            stage 'install Compose and monitoring configuration'
             install -m 0644 /tmp/rentalution-compose/docker-compose.yml docker-compose.yml
             install -m 0644 /tmp/rentalution-compose/docker-compose.prod.yml docker-compose.prod.yml
             sudo install -d -m 0755 monitoring
             sudo cp -R /tmp/rentalution-compose/monitoring/. monitoring/
             export WEB_IMAGE="${{ env.IMAGE_NAME }}:latest"
+            stage 'authenticate to GHCR'
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             # The application image is already built and cached in GHCR. Pull
             # only that image; pulling every unchanged monitoring image makes
             # each deployment unnecessarily slow.
+            stage 'pull application image'
             docker pull "$WEB_IMAGE"
             # The application image now runs as UID/GID 10001, including Celery.
             # These bind mounts must remain writable after that privilege drop.
+            stage 'prepare persistent application directories'
             sudo install -d -m 0755 media staticfiles
             sudo chown -R 10001:10001 media staticfiles
+            stage 'validate production environment'
             docker compose -f docker-compose.prod.yml run --rm --no-deps web sh scripts/check_prod_env.sh
-            printf '[%s] Deploy stage: start application containers\n' "$(date -Is)"
+            stage 'start application containers'
             docker compose -f docker-compose.prod.yml up -d
             # Grafana, Loki, Alloy, and the watchdog load configuration from
             # bind-mounted files. Compose does not recreate them merely because
             # those host files changed, so restart them explicitly after each
             # deployment to apply provisioning/configuration updates.
+            stage 'reload observability containers'
             docker compose -f docker-compose.prod.yml up -d --force-recreate loki alloy grafana container-watchdog
+            stage 'wait for required containers'
             for attempt in $(seq 1 30); do
               running_services="$(docker compose -f docker-compose.prod.yml ps --status running --services)"
               missing_services=""
@@ -167,7 +179,7 @@ jobs:
               fi
               sleep 2
             done
-            printf '[%s] Deploy stage: verify Celery workers\n' "$(date -Is)"
+            stage 'verify Celery workers'
             celery_ready=0
             worker_ping=""
             worker_name="worker@$(docker compose -f docker-compose.prod.yml exec -T worker hostname)"
@@ -189,8 +201,8 @@ jobs:
               docker compose -f docker-compose.prod.yml logs --tail=100 worker video-worker catalog-ai-worker
               exit 1
             fi
-            printf '[%s] Deploy stage: verify Flower\n' "$(date -Is)"
-            docker compose -f docker-compose.prod.yml exec -T flower uv run python -c '
+            stage 'verify Flower'
+            docker compose -f docker-compose.prod.yml exec -T flower python -c '
             from urllib.error import HTTPError
             from urllib.request import urlopen
 
@@ -200,16 +212,16 @@ jobs:
                 if error.code != 401:
                     raise
             '
-            printf '[%s] Deploy stage: install Nginx configuration\n' "$(date -Is)"
+            stage 'install Nginx configuration'
             sudo install -m 0644 /tmp/rentalution-nginx/deploy/nginx/rentalution.conf /etc/nginx/sites-available/rentalution
             # Ubuntu's stock Nginx site also owns the default port-80 virtual
             # host. Rentalution intentionally supplies the default vhosts to
             # reject unknown Host headers before Django sees them.
             sudo rm -f /etc/nginx/sites-enabled/default
             sudo ln -sfn /etc/nginx/sites-available/rentalution /etc/nginx/sites-enabled/rentalution
-            printf '[%s] Deploy stage: renew or issue TLS certificate\n' "$(date -Is)"
+            stage 'renew or issue TLS certificate'
             sudo certbot --nginx -d rentalution.co.uk -d www.rentalution.co.uk --non-interactive --agree-tos --redirect --keep-until-expiring -m "${{ secrets.CERTBOT_EMAIL }}"
-            printf '[%s] Deploy stage: validate and reload Nginx\n' "$(date -Is)"
+            stage 'validate and reload Nginx'
             sudo nginx -t
             sudo systemctl reload nginx
-            printf '[%s] Deployment complete\n' "$(date -Is)"
+            stage 'deployment complete'

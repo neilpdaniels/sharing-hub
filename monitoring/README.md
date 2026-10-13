@@ -64,8 +64,16 @@ Discord server. In Discord, open the target channel's **Edit Channel** →
 **Integrations** → **Webhooks**, create a webhook, and copy its URL. Treat that
 URL as a secret: it permits posting to that channel. Set it as
 `DISCORD_WEBHOOK_URL` in the deployment environment; the provisioned
-`Rentalution email` contact point sends to Discord as well as e-mail. Rotate a
-webhook immediately if it is exposed.
+`Rentalution alerts` contact point sends general alerts to Discord as well as
+e-mail. Set `DISCORD_ERROR_LOG_WEBHOOK_URL` to a different, restricted Discord
+channel; it receives the application error excerpts. Rotate a webhook
+immediately if it is exposed.
+
+Discord includes at most ten of the most frequent matching application-error
+lines per alert evaluation, with each excerpt capped at 500 characters. Those
+excerpts are intentionally Discord-only; e-mail retains the compact summary.
+Keep the Discord channel restricted, because application logs can contain
+operationally sensitive data.
 
 `container-watchdog` inspects Docker state for `web`, the Celery workers,
 Beat, PostgreSQL, and Redis. Access to Docker's Unix socket is privileged even

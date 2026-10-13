@@ -75,6 +75,23 @@ excerpts are intentionally Discord-only; e-mail retains the compact summary.
 Keep the Discord channel restricted, because application logs can contain
 operationally sensitive data.
 
+To test the application-error route after deployment, emit three identical
+synthetic critical lines through the web container's normal stdout stream:
+
+```bash
+cd /srv/rentalution
+docker compose -f docker-compose.prod.yml exec -T web sh -c '
+  for n in 1 2 3; do
+    printf "%s\n" "CRITICAL rentalution-discord-alert-test Exception: synthetic monitoring test" > /proc/1/fd/1
+  done
+'
+```
+
+The lines appear in the **Recent errors** panel. The alert evaluates every
+minute, must remain present for two minutes, and has a one-minute notification
+group wait, so allow up to four minutes for the restricted error-log Discord
+channel to receive it.
+
 `container-watchdog` inspects Docker state for `web`, the Celery workers,
 Beat, PostgreSQL, and Redis. Access to Docker's Unix socket is privileged even
 when mounted read-only, so do not expose this service or mount that socket into

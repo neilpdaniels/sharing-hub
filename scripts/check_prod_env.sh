@@ -50,6 +50,7 @@ check_var DISCORD_WEBHOOK_URL
 check_var DISCORD_ERROR_LOG_WEBHOOK_URL
 check_var GRAFANA_ADMIN_PASSWORD
 check_var GRAFANA_SECRET_KEY
+check_var GRAFANA_ROOT_URL
 check_var SITE_URL
 if [ "${MOBILE_APP_LINKS_REQUIRED:-0}" = "1" ]; then
     check_var MOBILE_APP_LINK_HOST
@@ -64,5 +65,12 @@ if [ -n "$missing" ]; then
     printf '%b' "$missing"
     exit 1
 fi
+
+case "$GRAFANA_ROOT_URL" in
+    http://localhost:*|https://localhost:*|http://127.0.0.1:*|https://127.0.0.1:*)
+        printf '%s\n' 'GRAFANA_ROOT_URL must be the private Tailscale Serve URL, not localhost.' >&2
+        exit 1
+        ;;
+esac
 
 printf 'All requested environment variables are set.\n'

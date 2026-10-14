@@ -19,6 +19,12 @@
     border-radius: 0.6rem;
     background: #fff;
     padding: 0.8rem;
+    cursor: pointer;
+}
+
+.txn-item:focus {
+    outline: 3px solid #0d9488;
+    outline-offset: 2px;
 }
 
 .txn-item-main {
@@ -197,18 +203,16 @@
                                 <tr>
                                 {% for cell in week %}
                                     <td class="p-0 {% if not cell.in_month %}text-muted{% endif %}" style="height:34px; position:relative;
-                                        {% if cell.in_month and cell.lending > 0 and cell.borrowing > 0 %}background:linear-gradient(135deg,#d4edda 49%,#dbeafe 51%);
+                                        {% if cell.pending %}background:#ef4444;
+                                        {% elif cell.in_month and cell.lending > 0 and cell.borrowing > 0 %}background:linear-gradient(135deg,#d4edda 49%,#dbeafe 51%);
                                         {% elif cell.in_month and cell.lending > 0 %}background:#d4edda;
                                         {% elif cell.in_month and cell.borrowing > 0 %}background:#dbeafe;
                                         {% endif %}">
                                         <a href="?view=calendar&month={{ calendar_month_key }}&day={{ cell.date|date:'Y-m-d' }}"
-                                           class="d-block text-center text-dark"
+                                           class="d-block text-center {% if cell.pending %}text-white{% else %}text-dark{% endif %}"
                                            style="line-height:34px; text-decoration:none; {% if selected_day_key == cell.date|date:'Y-m-d' %}outline:2px solid #0d9488; outline-offset:-2px; font-weight:700;{% endif %}">
                                             {{ cell.date.day }}
                                         </a>
-                                        {% if cell.pending %}
-                                        <span title="Awaiting your action" style="position:absolute;top:2px;right:2px;width:7px;height:7px;border-radius:50%;background:#dc2626;"></span>
-                                        {% endif %}
                                     </td>
                                 {% endfor %}
                                 </tr>
@@ -219,7 +223,7 @@
                             <div><span class="badge" style="background:#d4edda;color:#0f5132;">L</span> Lending</div>
                             <div><span class="badge" style="background:#dbeafe;color:#1e3a8a;">B</span> Borrowing</div>
                             <div><span class="badge" style="background:linear-gradient(135deg,#d4edda 49%,#dbeafe 51%);color:#111827;">L/B</span> Both</div>
-                            <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;"></span> Awaiting action</div>
+                            <div><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#ef4444;"></span> Awaiting your action</div>
                         </div>
                     </div>
                 </div>
@@ -234,7 +238,7 @@
                     <div class="card-body p-0">
                     <div class="txn-list">
                     {% for transaction in transactions %}
-                        <article class="txn-item">
+                        <article class="txn-item" tabindex="0" role="link" aria-label="Open booking" data-transaction-url="{% url 'transaction:view_transaction' transaction.transaction_reference %}">
                             <div class="txn-item-main">
                                 <div class="txn-item-section">
                                     <span class="txn-item-label">Parties</span>
@@ -299,7 +303,6 @@
                                     {% if transaction.unread_message_count > 0 %}
                                         <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
                                     {% endif %}
-                                    <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
                                 </div>
                             </div>
                         </article>
@@ -321,7 +324,7 @@
                 <div class="card-body p-0">
                 <div class="txn-list">
                 {% for transaction in transactions %}
-                    <article class="txn-item">
+                    <article class="txn-item" tabindex="0" role="link" aria-label="Open booking" data-transaction-url="{% url 'transaction:view_transaction' transaction.transaction_reference %}">
                         <div class="txn-item-main">
                             <div class="txn-item-section">
                                 <span class="txn-item-label">Parties</span>
@@ -386,7 +389,6 @@
                                 {% if transaction.unread_message_count > 0 %}
                                     <span class="badge badge-primary" title="you have {{ transaction.unread_message_count }} unread message(s)"><i class="fas fa-envelope"></i> {{ transaction.unread_message_count }}</span>
                                 {% endif %}
-                                <a class="btn txn-action-btn btn-outline-secondary" title="open booking" href="{% url 'transaction:view_transaction' transaction.transaction_reference %}">open</a>
                             </div>
                         </div>
                     </article>
@@ -408,4 +410,17 @@
 {% endblock %}
 
 {% block domready %}
+$('.txn-item[data-transaction-url]').on('click keydown', function(event) {
+    var isKeyboardOpen = event.type === 'keydown' && (event.key === 'Enter' || event.key === ' ');
+    if (event.type === 'keydown' && !isKeyboardOpen) {
+        return;
+    }
+    if ($(event.target).closest('a, button, input, textarea, select, label, [role="button"]').length) {
+        return;
+    }
+    if (isKeyboardOpen) {
+        event.preventDefault();
+    }
+    window.location.href = $(this).data('transaction-url');
+});
 {% endblock %}

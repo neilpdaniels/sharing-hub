@@ -725,6 +725,15 @@ def open_transactions(request):
                 return today >= txn_obj.rental_end_date
             return False
 
+        if status == txn_obj.RENTAL_ONGOING and txn_obj.rental_end_date:
+            # On/after return day the borrower must complete the return flow;
+            # after that date the lender can also report a missing return.
+            if is_renter_local and today >= txn_obj.rental_end_date:
+                return True
+            if is_lender_local and txn_obj.get_overdue_kind() == 'return':
+                return True
+            return False
+
         if status == txn_obj.RENTAL_RETURNED_DEPOSIT_PENDING:
             # Lender resolves deposit; no date restriction
             return is_lender_local

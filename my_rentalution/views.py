@@ -761,9 +761,12 @@ def open_transactions(request):
     (chain(object_pass_list, object_agg_list)),
     key=attrgetter('amended'), reverse=True)
 
-    active_view = request.GET.get('view', 'calendar')
+    # A calendar is useful for future rentals, but an open booking whose return
+    # date has passed has no slot on today's calendar.  Default to the list so
+    # every open workflow remains discoverable (including return-overdue ones).
+    active_view = request.GET.get('view', 'list')
     if active_view not in ('list', 'calendar'):
-        active_view = 'calendar'
+        active_view = 'list'
 
     month_param = (request.GET.get('month') or '').strip()
     day_param = (request.GET.get('day') or '').strip()

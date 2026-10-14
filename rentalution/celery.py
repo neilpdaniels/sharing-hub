@@ -1,4 +1,5 @@
 import os
+from zoneinfo import ZoneInfo
 from celery import Celery
 from celery.schedules import crontab
 
@@ -11,6 +12,16 @@ app = Celery('rentalution')
 
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
+UK_TIMEZONE = ZoneInfo('Europe/London')
+
+
+class UKCrontab(crontab):
+    """Run customer-facing deadline jobs in UK civil time across BST changes."""
+
+    @property
+    def tz(self):
+        return UK_TIMEZONE
+
 
 minutes_between_scrapes = 23
 app.conf.beat_schedule  = {
@@ -30,6 +41,14 @@ app.conf.beat_schedule  = {
     'send-pending-action-reminders': {
         'task': 'transaction.tasks.send_pending_action_reminders',
         'schedule': crontab(minute='5', hour='*'),
+    },
+    'return-resolution-alert-end-of-return-day': {
+        'task': 'transaction.tasks.process_uncontested_overdue_returns',
+        'schedule': UKCrontab(minute='0', hour='21'),
+    },
+    'return-resolution-auto-close': {
+        'task': 'transaction.tasks.process_uncontested_overdue_returns',
+        'schedule': UKCrontab(minute='30', hour='23'),
     },
     'send-rental-day-reminders': {
         'task': 'transaction.tasks.send_rental_day_reminders',

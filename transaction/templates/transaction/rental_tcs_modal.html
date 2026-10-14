@@ -60,18 +60,9 @@
                     <div class="card-body">
                         <h6 class="card-title mb-3">Rental Terms</h6>
                         <ul class="mb-0">
-                            <li><strong>Condition on Collection:</strong> You agree that you have inspected and accepted the item in its current condition. Any existing damage, wear, or faults are noted at collection.</li>
-                            <li class="mt-2"><strong>Use and Care:</strong> You agree to use the item only for its intended purpose and to exercise reasonable care and diligence to preserve it.</li>
-                            <li class="mt-2"><strong>Normal Wear and Tear:</strong> Normal wear and tear is accepted. This includes minor surface scratches, dust marks, fading from use, and other minor cosmetic changes resulting from ordinary use.</li>
-                            <li class="mt-2"><strong>Damage Beyond Wear and Tear:</strong> You agree to be responsible for any damage beyond normal wear and tear, including but not limited to: broken parts, cracks, dents, stains, burns, or mechanical/electrical failure caused by misuse, neglect, or accident.</li>
-                            <li class="mt-2"><strong>Return Condition:</strong> You agree to return the item in the same condition as received, allowing for normal wear and tear.</li>
-                            <li class="mt-2"><strong>Return Date and Time:</strong> The item must be returned on or before {{ transaction.rental_end_date }}. Late returns are not permitted and may incur additional charges.</li>
-                            <li class="mt-2"><strong>Return Location:</strong> You agree to return the item to the location specified by the lender.</li>
-                            <li class="mt-2"><strong>Deposit:</strong> A deposit of £{{ transaction.deposit|format_price }} will be held during this rental as security against damage beyond normal wear and tear.</li>
-                            <li class="mt-2"><strong>Deposit Return:</strong> The deposit will be returned within 7 business days of the item being returned in acceptable condition. If damage beyond normal wear and tear is identified, the deposit may be partially or fully retained to cover repair costs.</li>
-                            <li class="mt-2"><strong>Loss or Theft:</strong> You agree to be fully responsible for any loss or theft of the item during the rental period.</li>
-                            <li class="mt-2"><strong>Insurance:</strong> It is recommended that you arrange appropriate insurance coverage during the rental period.</li>
-                            <li class="mt-2"><strong>Disputes:</strong> Any disputes regarding item condition, missing return, missing rental, or deposit return will first be handled through the transaction flow. If unresolved, the matter may be escalated to the dispute team, and the deposit may be retained until the dispute outcome is final.</li>
+                            {% for term in rental_terms %}
+                            <li{% if not forloop.first %} class="mt-2"{% endif %}><strong>{{ term.title }}:</strong> {{ term.body }}</li>
+                            {% endfor %}
                         </ul>
                     </div>
                 </div>
@@ -113,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Handle confirm button click
         confirmButton.addEventListener('click', function() {
-            const form = document.getElementById('confirmRentalForm');
+            const form = document.getElementById('{{ tcs_form_id|default:"confirmLenderRentalForm" }}');
             if (form) {
                 form.submit();
             }

@@ -662,11 +662,12 @@
                     </p>
                     {% endif %}
                     {% if 'confirm_renter_contract' in allowed_actions %}
-                    <form method="post">
+                    <form method="post" id="confirmRenterRentalForm">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_renter_contract">
-                        <button class="btn btn-success btn-block" type="submit">Confirm Rental Agreement</button>
+                        <button class="btn btn-success btn-block" type="button" data-toggle="modal" data-target="#rentalTcsModal">Review Terms & Confirm</button>
                     </form>
+                    {% include "transaction/rental_tcs_modal.html" with tcs_form_id="confirmRenterRentalForm" %}
                     {% endif %}
                     {% if 'reject_rental_agreement' in allowed_actions %}
                     <button class="btn btn-outline-danger btn-block mt-2" type="button" data-toggle="modal" data-target="#rejectRentalAgreementModal">Reject Rental Agreement</button>
@@ -704,12 +705,12 @@
                 <div class="card-body">
                     <h5 class="card-title">Action: Confirm Contract</h5>
                     <p class="mb-2">Review and accept the rental terms and conditions to confirm this contract. Once you confirm, the other party will have 24 hours from now to accept their side too.</p>
-                    <form method="post" id="confirmRentalForm">
+                    <form method="post" id="confirmLenderRentalForm">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm_lender_contract">
                         <button class="btn btn-success btn-block" type="button" data-toggle="modal" data-target="#rentalTcsModal">Review Terms & Confirm</button>
                     </form>
-                    {% include "transaction/rental_tcs_modal.html" %}
+                    {% include "transaction/rental_tcs_modal.html" with tcs_form_id="confirmLenderRentalForm" %}
                 </div>
             </div>
             {% endif %}

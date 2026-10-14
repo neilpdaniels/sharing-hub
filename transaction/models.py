@@ -242,6 +242,9 @@ class Transaction(models.Model):
     rental_ready_email_sent_at = models.DateTimeField(blank=True, null=True)
     rental_day_reminder_sent_for = models.DateField(blank=True, null=True)
     return_day_reminder_sent_for = models.DateField(blank=True, null=True)
+    # Audit/idempotency markers for the no-response return resolution policy.
+    return_auto_resolution_eod_alert_at = models.DateTimeField(blank=True, null=True)
+    return_auto_resolved_at = models.DateTimeField(blank=True, null=True)
     deposit_proposed_return_amount = models.FloatField(
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(999999)],
@@ -938,7 +941,27 @@ class Transaction(models.Model):
             'timeline': timeline,
             'allowed_actions': self.get_allowed_actions(),
             'cancellation_banner': cancellation_banner,
+            'rental_terms': self.get_rental_terms(),
         }
+
+    def get_rental_terms(self):
+        """Canonical, booking-specific rental terms for web and mobile clients."""
+        return_date = self.rental_end_date.strftime('%-d %B %Y') if self.rental_end_date else 'the agreed return date'
+        deposit = f'£{float(self.deposit or 0):.2f}'
+        return [
+            {'title': 'Condition on Collection', 'body': 'You agree that you have inspected and accepted the item in its current condition. Any existing damage, wear, or faults are noted at collection.'},
+            {'title': 'Use and Care', 'body': 'You agree to use the item only for its intended purpose and to exercise reasonable care and diligence to preserve it.'},
+            {'title': 'Normal Wear and Tear', 'body': 'Normal wear and tear is accepted. This includes minor surface scratches, dust marks, fading from use, and other minor cosmetic changes resulting from ordinary use.'},
+            {'title': 'Damage Beyond Wear and Tear', 'body': 'You are responsible for damage beyond normal wear and tear, including broken parts, cracks, dents, stains, burns, or mechanical or electrical failure caused by misuse, neglect, or accident.'},
+            {'title': 'Return Condition', 'body': 'You agree to return the item in the same condition as received, allowing for normal wear and tear.'},
+            {'title': 'Return Date and Time', 'body': f'The item must be returned on or before {return_date}. Late returns are not permitted and may incur additional charges.'},
+            {'title': 'Return Location', 'body': 'You agree to return the item to the location specified by the lender.'},
+            {'title': 'Deposit', 'body': f'A deposit of {deposit} will be held during this rental as security against damage beyond normal wear and tear.'},
+            {'title': 'Deposit Return and Presumed Return', 'body': 'Rentalution presumes that the item is returned on the agreed return date unless a return problem is reported through the booking. At 21:00 UK time on that date, the lender will be reminded to report any missing return, damage, or other issue. If no problem is reported by 23:30 UK time, Rentalution will automatically return the full deposit and close the booking. Reporting a problem before that deadline stops automatic resolution; the deposit may then be partially or fully retained or returned in line with the resolution or dispute outcome.'},
+            {'title': 'Loss or Theft', 'body': 'You agree to be fully responsible for any loss or theft of the item during the rental period.'},
+            {'title': 'Insurance', 'body': 'It is recommended that you arrange appropriate insurance coverage during the rental period.'},
+            {'title': 'Disputes', 'body': 'Disputes regarding item condition, missing return, missing rental, or deposit return are handled through the transaction flow first. If unresolved, they may be escalated to the dispute team and the deposit may be retained until the outcome is final.'},
+        ]
 
     def get_workflow_timeline(self):
         return self.get_workflow_payload()['timeline']

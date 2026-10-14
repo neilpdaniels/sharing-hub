@@ -24,6 +24,7 @@ from common.failures import record_site_failure
 
 
 logger = logging.getLogger(__name__)
+RETURN_RESOLUTION_TIMEZONE = ZoneInfo('Europe/London')
 
 
 @shared_task
@@ -542,6 +543,78 @@ def auto_cancel_overdue_first_day_bookings():
     """
     stats_result = _recalculate_booking_stats()
     return {'cancelled': 0, 'stats_updated': stats_result.get('updated', 0)}
+
+
+def _send_return_auto_resolution_alert(txn, *, now):
+    """Warn the lender before the presumed-on-time return is settled."""
+    local_now = timezone.localtime(now, RETURN_RESOLUTION_TIMEZONE)
+    deadline = local_now.replace(hour=23, minute=30, second=0, microsecond=0)
+    _send_system_alert(
+        txn=txn,
+        user_from=txn.user_aggressive,
+        user_to=txn.user_passive,
+        subject=f'Return check needed tonight {txn.transaction_reference}',
+        description=(
+            f'The rental ends today. Unless you report a missing return or another problem by 23:30 '
+            f'({_format_time_left(deadline - local_now)} remaining), we will presume the item was returned, '
+            'return the full deposit, and close the booking automatically.'
+        ),
+    )
+
+
+@shared_task
+def process_uncontested_overdue_returns():
+    """Apply the presumed-on-time-return policy on the rental end date.
+
+    A report of missing return moves the booking into the dispute workflow, so it
+    is deliberately outside this candidate set and prevents automatic closure.
+    """
+    now = timezone.now()
+    # Bookings and customer-facing deadlines are UK local time, not the
+    # deployment's UTC clock (including across BST changes).
+    local_now = timezone.localtime(now, RETURN_RESOLUTION_TIMEZONE)
+    today = local_now.date()
+    active_statuses = (
+        Transaction.RENTAL_ONGOING,
+        Transaction.RENTAL_RETURN_DAY_AWAITING_VERIFICATION,
+    )
+    candidates = Transaction.objects.filter(
+        transaction_status__in=active_statuses,
+        rental_end_date__isnull=False,
+        return_auto_resolved_at__isnull=True,
+    ).select_related('user_passive', 'user_aggressive')
+    result = {'return_day_alerts': 0, 'resolved': 0}
+
+    if local_now.hour == 21 and local_now.minute == 0:
+        for txn in candidates.filter(rental_end_date=today, return_auto_resolution_eod_alert_at__isnull=True):
+            _send_return_auto_resolution_alert(txn, now=now)
+            txn.return_auto_resolution_eod_alert_at = now
+            txn.save(update_fields=['return_auto_resolution_eod_alert_at', 'amended'])
+            result['return_day_alerts'] += 1
+    elif local_now.hour == 23 and local_now.minute == 30:
+        for txn in candidates.filter(rental_end_date=today):
+            txn.prev_transaction_status = txn.transaction_status
+            txn.transaction_status = Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK
+            txn.deposit_status = Transaction.DEPOSIT_RETURNED_FULL
+            txn.deposit_proposed_return_amount = txn.deposit
+            txn.deposit_proposal_accepted_at = now
+            txn.return_auto_resolved_at = now
+            note = '[AUTO_RETURN_RESOLVED] No return problem reported by the deadline; full deposit returned.'
+            existing_notes = (txn.deposit_resolution_notes or '').strip()
+            if note not in existing_notes:
+                txn.deposit_resolution_notes = f'{existing_notes}\n{note}'.strip()
+            txn.save(update_fields=[
+                'prev_transaction_status', 'transaction_status', 'deposit_status',
+                'deposit_proposed_return_amount', 'deposit_proposal_accepted_at',
+                'return_auto_resolved_at', 'deposit_resolution_notes', 'amended',
+            ])
+            if txn.deposit > 0:
+                async_resolve_deposit_hold.delay(txn.id, txn.deposit)
+            result['resolved'] += 1
+
+    if result != {'return_day_alerts': 0, 'resolved': 0}:
+        logger.info('Processed uncontested overdue returns: %s', result)
+    return result
 
 
 @shared_task

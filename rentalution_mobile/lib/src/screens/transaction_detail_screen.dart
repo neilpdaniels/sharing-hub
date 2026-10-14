@@ -566,54 +566,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen>
   }
 
   Widget _rentalTermsCard(TransactionDetail detail) {
-    final rentalEnd = _friendlyDate(detail.rentalEndDate);
-    final deposit = '£${detail.deposit.toStringAsFixed(2)}';
-    final terms = [
-      (
-        'Condition on collection',
-        'Inspect the item at collection and raise any existing damage or faults through the transaction before accepting it.',
-      ),
-      (
-        'Use and care',
-        'Use the item only for its intended purpose and take reasonable care of it throughout the rental.',
-      ),
-      (
-        'Normal wear and tear',
-        'Minor surface scratches, dust marks, fading, and other small cosmetic changes from ordinary use are accepted.',
-      ),
-      (
-        'Damage beyond normal wear',
-        'You are responsible for damage caused by misuse, neglect, accident, or any damage beyond normal wear and tear.',
-      ),
-      (
-        'Return condition',
-        'Return the item in the same condition as received, allowing for normal wear and tear.',
-      ),
-      (
-        'Return date and location',
-        'Return the item on or before $rentalEnd, to the location agreed with the lender. Late returns may incur additional charges.',
-      ),
-      (
-        'Deposit',
-        'A deposit of $deposit may be held during the rental as security against damage, loss, theft, or other amounts allowed by the rental agreement.',
-      ),
-      (
-        'Deposit return',
-        'The deposit is returned after the item is checked. If damage or another valid claim is identified, some or all of the deposit may be retained while the matter is reviewed.',
-      ),
-      (
-        'Loss, theft, and insurance',
-        'The borrower is responsible for loss or theft during the rental. Appropriate insurance is recommended.',
-      ),
-      (
-        'Disputes',
-        'Condition, handover, missing rental, missing return, and deposit disputes are handled first through the transaction flow and may be escalated for review.',
-      ),
-      (
-        'Platform responsibilities',
-        'Rentalution provides the transaction workflow, messaging, evidence record, and payment/deposit handling. The lender and borrower remain responsible for the agreed rental and handover.',
-      ),
-    ];
+    final terms = detail.workflowPayload.rentalTerms;
 
     return Card(
       child: ExpansionTile(
@@ -640,10 +593,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen>
                         style: Theme.of(context).textTheme.bodyMedium,
                         children: [
                           TextSpan(
-                            text: '${term.$1}: ',
+                            text: '${term.title}: ',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
-                          TextSpan(text: term.$2),
+                          TextSpan(text: term.body),
                         ],
                       ),
                     ),

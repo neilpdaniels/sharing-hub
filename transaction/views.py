@@ -3081,6 +3081,7 @@ Transaction Ref: {txn.transaction_reference}"""
 
     context = {
         'transaction': txn,
+        'rental_terms': txn.get_rental_terms(),
         'charges': charges,
         'messages_': messages_,
         'show_message_subject': False,

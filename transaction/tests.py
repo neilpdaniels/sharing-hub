@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -17,6 +18,7 @@ from transaction.tasks import (
     auto_cancel_overdue_first_day_bookings,
     auto_close_feedback_windows,
     escalate_overdue_disputes,
+    process_uncontested_overdue_returns,
     send_pending_action_reminders,
     send_transaction_message_email,
 )
@@ -975,6 +977,46 @@ class PendingReminderWorkflowTests(TestCase):
 		).last()
 		self.assertIsNotNone(msg)
 		self.assertIn('Time left before auto-close', msg.description)
+
+	def test_return_policy_warns_lender_at_end_of_return_day(self):
+		now = timezone.make_aware(
+			datetime.combine(timezone.localdate(), time(21, 0)),
+			timezone=ZoneInfo('Europe/London'),
+		)
+		txn = self._create_txn(Transaction.RENTAL_ONGOING)
+		txn.rental_end_date = timezone.localdate(now)
+		txn.save(update_fields=['rental_end_date', 'amended'])
+
+		with patch('transaction.tasks.timezone.now', return_value=now):
+			result = process_uncontested_overdue_returns()
+
+		self.assertEqual(result['return_day_alerts'], 1)
+		self.assertEqual(TransactionMessage.objects.filter(
+			transaction=txn,
+			user_to=self.lender,
+			subject__startswith='Return check needed tonight',
+		).count(), 1)
+		txn.refresh_from_db()
+		self.assertIsNotNone(txn.return_auto_resolution_eod_alert_at)
+
+	def test_return_policy_auto_closes_and_returns_a_zero_deposit(self):
+		now = timezone.make_aware(
+			datetime.combine(timezone.localdate(), time(23, 30)),
+			timezone=ZoneInfo('Europe/London'),
+		)
+		txn = self._create_txn(Transaction.RENTAL_ONGOING)
+		txn.rental_end_date = timezone.localdate(now)
+		txn.deposit = 0
+		txn.save(update_fields=['rental_end_date', 'deposit', 'amended'])
+
+		with patch('transaction.tasks.timezone.now', return_value=now):
+			result = process_uncontested_overdue_returns()
+
+		self.assertEqual(result['resolved'], 1)
+		txn.refresh_from_db()
+		self.assertEqual(txn.transaction_status, Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK)
+		self.assertEqual(txn.deposit_status, Transaction.DEPOSIT_RETURNED_FULL)
+		self.assertIsNotNone(txn.return_auto_resolved_at)
 
 
 @override_settings(MOBILE_VERIFICATION_ENABLED=False)

@@ -461,6 +461,7 @@ class WorkflowPayload {
     required this.currentLabel,
     required this.timeline,
     required this.allowedActions,
+    required this.rentalTerms,
     this.message = '',
     this.overdueKind = '',
     this.contractDeadline,
@@ -470,6 +471,7 @@ class WorkflowPayload {
   final String currentLabel;
   final List<WorkflowStep> timeline;
   final List<String> allowedActions;
+  final List<RentalTerm> rentalTerms;
   final String message;
   final String overdueKind;
   final DateTime? contractDeadline;
@@ -491,8 +493,24 @@ class WorkflowPayload {
           .map((value) => value.toString())
           .where((value) => value.trim().isNotEmpty)
           .toList(growable: false),
+      rentalTerms: (json['rental_terms'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(RentalTerm.fromJson)
+          .toList(growable: false),
     );
   }
+}
+
+class RentalTerm {
+  RentalTerm({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  factory RentalTerm.fromJson(Map<String, dynamic> json) => RentalTerm(
+    title: json['title']?.toString() ?? '',
+    body: json['body']?.toString() ?? '',
+  );
 }
 
 class WorkflowStep {

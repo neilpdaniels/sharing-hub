@@ -28,6 +28,12 @@ class SearchHistory(models.Model):
 
 
 class CategorySuggestion(models.Model):
+	PROPOSAL_PRODUCT = 'PRODUCT'
+	PROPOSAL_CATEGORY = 'CATEGORY'
+	PROPOSAL_CHOICES = (
+		(PROPOSAL_PRODUCT, 'Product in an existing category'),
+		(PROPOSAL_CATEGORY, 'New category'),
+	)
 	STATUS_NEW = 'NEW'
 	STATUS_SCREENING = 'SCREENING'
 	STATUS_DUPLICATE = 'DUPLICATE'
@@ -62,6 +68,7 @@ class CategorySuggestion(models.Model):
 	name = models.CharField(max_length=120)
 	description = models.TextField()
 	photo = models.ImageField(upload_to='category_suggestions/', null=True, blank=True)
+	proposal_kind = models.CharField(max_length=12, choices=PROPOSAL_CHOICES, default=PROPOSAL_CATEGORY, db_index=True)
 	status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW, db_index=True)
 	admin_notes = models.TextField(blank=True)
 	# The source suggestion is intentionally retained separately from AI output so
@@ -96,6 +103,10 @@ class CategorySuggestion(models.Model):
 		on_delete=models.SET_NULL,
 		null=True,
 		blank=True,
+		related_name='published_from_suggestions',
+	)
+	published_product = models.ForeignKey(
+		'common.Product', on_delete=models.SET_NULL, null=True, blank=True,
 		related_name='published_from_suggestions',
 	)
 	promoted_at = models.DateTimeField(null=True, blank=True)

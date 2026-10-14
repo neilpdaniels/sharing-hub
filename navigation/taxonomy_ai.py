@@ -10,7 +10,42 @@ from crewai import Agent, Crew, LLM, Process, Task
 from django.db.models import Count, Max, Min, Q
 from django.utils import timezone
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class StrictStructuredOutput(BaseModel):
+    """OpenAI Structured Outputs requires every object to forbid extras."""
+
+    model_config = ConfigDict(extra='forbid')
+
+
+class SplitCategory(StrictStructuredOutput):
+    title: str
+    description: str
+
+
+class TaxonomyAction(StrictStructuredOutput):
+    """Schema-safe, explicit form of an executable recommendation.
+
+    A free-form ``dict[str, Any]`` produces a JSON schema with open-ended
+    ``additionalProperties``. OpenAI's strict response format rejects that
+    schema. All possible action fields are explicit and required; values that
+    do not apply to the selected operation must be returned as ``null``.
+    """
+
+    operation: Literal['create', 'move', 'merge', 'retire', 'split', 'add_attribute', 'none']
+    title: str | None
+    parent_category_id: int | None
+    description: str | None
+    category_id: int | None
+    source_category_id: int | None
+    target_category_id: int | None
+    new_categories: list[SplitCategory] | None
+    order: int | None
+    name: str | None
+    value_source: Literal['product', 'listing'] | None
+    allowed_values: list[str] | None
+    reason: str | None
 
 from common.models import Category, Order, Product
 from transaction.models import Transaction
@@ -24,27 +59,27 @@ from .models import (
 )
 
 
-class TaxonomyProposal(BaseModel):
+class TaxonomyProposal(StrictStructuredOutput):
     recommendation_type: Literal['MISSING', 'DUPLICATE', 'MOVE', 'SPLIT', 'RETIRE', 'ATTRIBUTE', 'KEEP']
     title: str = Field(min_length=8, max_length=255)
     rationale: str = Field(min_length=30, max_length=900)
     evidence: list[str] = Field(min_length=1, max_length=6)
-    affected_category_ids: list[int] = Field(default_factory=list, max_length=20)
-    proposed_action: dict[str, Any] = Field(default_factory=dict)
+    affected_category_ids: list[int] = Field(max_length=20)
+    proposed_action: TaxonomyAction
     confidence: float = Field(ge=0, le=1)
 
 
-class TaxonomyAssessment(BaseModel):
+class TaxonomyAssessment(StrictStructuredOutput):
     executive_summary: str = Field(min_length=30, max_length=1200)
-    strengths: list[str] = Field(default_factory=list, max_length=6)
-    recommendations: list[TaxonomyProposal] = Field(default_factory=list, max_length=20)
+    strengths: list[str] = Field(max_length=6)
+    recommendations: list[TaxonomyProposal] = Field(max_length=20)
 
 
-class TaxonomyCritique(BaseModel):
-    approved_indexes: list[int] = Field(default_factory=list)
-    concern_indexes: list[int] = Field(default_factory=list)
+class TaxonomyCritique(StrictStructuredOutput):
+    approved_indexes: list[int]
+    concern_indexes: list[int]
     summary: str = Field(max_length=900)
-    concerns: list[str] = Field(default_factory=list, max_length=12)
+    concerns: list[str] = Field(max_length=12)
 
 
 class TaxonomyState(TypedDict, total=False):
@@ -234,6 +269,9 @@ def _assessment_prompt(snapshot: dict[str, Any]) -> str:
         'evidence of two durable, meaningful rental groups. If a distinction is better used to filter comparable products '
         '(for example power source), recommend an ATTRIBUTE instead of a split. '
         'Every proposed_action must use exactly one operation: create, move, merge, retire, split, add_attribute, or none. '
+        'Every proposed_action must include every one of these keys: operation, title, parent_category_id, description, '
+        'category_id, source_category_id, target_category_id, new_categories, order, name, value_source, allowed_values, '
+        'and reason. Use null for every key that does not apply to that operation. '
         'For create use {operation:"create", title, parent_category_id, description}. '
         'For move use {operation:"move", category_id, parent_category_id}. '
         'For merge/retire use {operation:"merge"|"retire", source_category_id, target_category_id}; the target '

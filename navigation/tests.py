@@ -77,6 +77,29 @@ class CategorySuggestionPipelineTests(TestCase):
         self.assertEqual(suggestion.published_category, category)
         send_email.assert_called_once_with(suggestion.pk)
 
+    @patch('navigation.services.send_category_suggestion_decision_email.delay')
+    def test_admin_can_publish_a_product_proposal(self, send_email):
+        category = Category.objects.create(title='Garden tools')
+        suggestion = CategorySuggestion.objects.create(
+            user=self.user,
+            name='Electric hedge trimmer',
+            normalized_name='Electric hedge trimmer',
+            proposal_kind=CategorySuggestion.PROPOSAL_PRODUCT,
+            proposed_parent=category,
+            proposed_description='An electric hedge trimmer for maintaining garden hedges and shrubs.',
+            status=CategorySuggestion.STATUS_ADMIN_REVIEW,
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            product = promote_category_suggestion(suggestion, self.user)
+
+        suggestion.refresh_from_db()
+        self.assertIsInstance(product, Product)
+        self.assertEqual(product.category_id, category)
+        self.assertEqual(suggestion.published_product, product)
+        self.assertEqual(suggestion.status, CategorySuggestion.STATUS_APPROVED)
+        send_email.assert_called_once_with(suggestion.pk)
+
     @patch('navigation.rate_limits.record_site_failure')
     @override_settings(CATEGORY_AI_USER_WEEKLY_LIMIT=1, CATEGORY_AI_USER_MONTHLY_LIMIT=5, CATEGORY_AI_IP_DAILY_LIMIT=5)
     def test_submission_limit_stops_second_request(self, _record_failure):

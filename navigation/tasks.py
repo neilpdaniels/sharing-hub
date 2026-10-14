@@ -110,9 +110,9 @@ def send_category_suggestion_decision_email(suggestion_id: int) -> int:
     suggestion = CategorySuggestion.objects.select_related('user', 'published_category').get(pk=suggestion_id)
     if suggestion.status == CategorySuggestion.STATUS_APPROVED:
         return send_branded_email(
-            subject='Your Rentalution category suggestion is live',
+            subject='Your Rentalution catalogue suggestion is live',
             recipient=suggestion.user.email,
-            heading='Your category suggestion has been approved',
+            heading=f'Your {"product" if suggestion.proposal_kind == "PRODUCT" else "category"} suggestion has been approved',
             intro=(f'“{suggestion.normalized_name or suggestion.name}” is now available to browse '
                    'and use when listing items.'),
             cta_label='Browse categories',
@@ -120,12 +120,12 @@ def send_category_suggestion_decision_email(suggestion_id: int) -> int:
         )
     if suggestion.status == CategorySuggestion.STATUS_REJECTED:
         return send_branded_email(
-            subject='Update on your Rentalution category suggestion',
+            subject='Update on your Rentalution item suggestion',
             recipient=suggestion.user.email,
-            heading='We could not add this category',
+            heading='We could not add this item',
             intro=(f'Thanks for suggesting “{suggestion.name}”. It was not added at this time.'),
             details=[suggestion.admin_notes] if suggestion.admin_notes else [],
-            cta_label='Suggest another category',
+            cta_label='Suggest another item',
             cta_url=getattr(settings, 'SITE_URL', 'https://rentalution.co.uk') + '/navigation/suggest_category/',
         )
     return 0

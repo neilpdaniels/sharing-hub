@@ -41,21 +41,21 @@ class SearchHistoryAdmin(admin.ModelAdmin):
 @admin.register(CategorySuggestion)
 class CategorySuggestionAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/categorysuggestion/change_list.html'
-    list_display = ('name', 'user', 'category', 'proposed_parent', 'status', 'processing_attempts', 'created_at')
+    list_display = ('name', 'proposal_kind', 'user', 'category', 'proposed_parent', 'status', 'processing_attempts', 'created_at')
     list_filter = ('status', 'created_at')
     search_fields = ('name', 'description', 'user__username', 'user__email')
     readonly_fields = (
         'created_at', 'updated_at', 'normalized_name', 'duplicate_matches',
         'policy_result', 'quality_review', 'pipeline_state', 'pipeline_error',
         'processed_at', 'processing_attempts', 'reviewed_by', 'reviewed_at',
-        'published_category', 'promoted_at', 'proposed_image_prompt',
+        'published_category', 'published_product', 'promoted_at', 'proposed_image_prompt',
     )
     fields = (
-        'user', 'category', 'name', 'description', 'photo', 'status', 'admin_notes',
+        'user', 'category', 'name', 'description', 'photo', 'proposal_kind', 'status', 'admin_notes',
         'normalized_name', 'proposed_parent', 'proposed_description', 'proposed_image_prompt',
         'duplicate_matches', 'policy_result', 'quality_review', 'pipeline_state', 'pipeline_error',
         'processing_attempts', 'processed_at', 'reviewed_by', 'reviewed_at',
-        'published_category', 'promoted_at', 'created_at', 'updated_at',
+        'published_category', 'published_product', 'promoted_at', 'created_at', 'updated_at',
     )
     actions = ('queue_for_review', 'generate_image_candidates', 'promote_selected', 'reject_selected')
 
@@ -87,7 +87,7 @@ class CategorySuggestionAdmin(admin.ModelAdmin):
         else:
             self.message_user(request, 'Select suggestion(s) marked “Ready for staff image generation”.', messages.WARNING)
 
-    @admin.action(description='Promote selected ready suggestions')
+    @admin.action(description='Publish selected ready item suggestions')
     def promote_selected(self, request, queryset):
         promoted = 0
         for suggestion in queryset:

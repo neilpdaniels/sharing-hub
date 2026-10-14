@@ -842,7 +842,7 @@
                     {% if request.user.is_authenticated %}
                     <div class="mb-2 text-center">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'navigation:suggestCategory' %}?category_id={{ category.id }}&next={{ request.get_full_path|urlencode }}">
-                            Suggest new category
+                            Suggest an item
                         </a>
                     </div>
                     {% endif %}

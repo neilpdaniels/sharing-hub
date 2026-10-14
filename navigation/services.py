@@ -9,35 +9,47 @@ from .tasks import send_category_suggestion_decision_email
 from .models import CategoryTaxonomyRecommendation
 
 
-def promote_category_suggestion(suggestion: CategorySuggestion, reviewer) -> Category:
-    """Publish the selected reviewed candidate and notify the member after commit."""
+def promote_category_suggestion(suggestion: CategorySuggestion, reviewer) -> Category | Product:
+    """Publish the approved product or category proposal and notify the member."""
     if suggestion.status != CategorySuggestion.STATUS_ADMIN_REVIEW:
         raise ValueError('Only suggestions ready for admin review can be promoted.')
     if not suggestion.proposed_parent_id or not suggestion.proposed_description:
-        raise ValueError('A parent category and description are required before promotion.')
+        raise ValueError('A target category and description are required before promotion.')
 
     with transaction.atomic():
-        category = Category(
-            title=suggestion.normalized_name or suggestion.name,
-            parent_category=suggestion.proposed_parent,
-            description=suggestion.proposed_description,
-        )
         selected = suggestion.generated_images.filter(is_selected=True).first()
         if not selected:
             selected = suggestion.generated_images.first()
-        if selected and selected.image:
-            with selected.image.open('rb') as image_file:
-                category.image.save(selected.image.name.rsplit('/', 1)[-1], File(image_file), save=False)
-        category.save()
+        if suggestion.proposal_kind == CategorySuggestion.PROPOSAL_PRODUCT:
+            published = Product(
+                name=suggestion.normalized_name or suggestion.name,
+                category_id=suggestion.proposed_parent,
+                description=suggestion.proposed_description,
+            )
+            if selected and selected.image:
+                with selected.image.open('rb') as image_file:
+                    published.image.save(selected.image.name.rsplit('/', 1)[-1], File(image_file), save=False)
+            published.save()
+            suggestion.published_product = published
+        else:
+            published = Category(
+                title=suggestion.normalized_name or suggestion.name,
+                parent_category=suggestion.proposed_parent,
+                description=suggestion.proposed_description,
+            )
+            if selected and selected.image:
+                with selected.image.open('rb') as image_file:
+                    published.image.save(selected.image.name.rsplit('/', 1)[-1], File(image_file), save=False)
+            published.save()
+            suggestion.published_category = published
         suggestion.status = CategorySuggestion.STATUS_APPROVED
-        suggestion.published_category = category
         suggestion.reviewed_by = reviewer
         suggestion.reviewed_at = timezone.now()
         suggestion.promoted_at = timezone.now()
         suggestion.pipeline_error = ''
         suggestion.save()
         transaction.on_commit(lambda: send_category_suggestion_decision_email.delay(suggestion.pk))
-    return category
+    return published
 
 
 def reject_category_suggestion(suggestion: CategorySuggestion, reviewer) -> None:
@@ -46,7 +58,7 @@ def reject_category_suggestion(suggestion: CategorySuggestion, reviewer) -> None
         suggestion.reviewed_by = reviewer
         suggestion.reviewed_at = timezone.now()
         if not suggestion.admin_notes:
-            suggestion.admin_notes = 'This category is not a fit for the catalogue at the moment.'
+            suggestion.admin_notes = 'This item is not a fit for the catalogue at the moment.'
         suggestion.save()
         transaction.on_commit(lambda: send_category_suggestion_decision_email.delay(suggestion.pk))
 

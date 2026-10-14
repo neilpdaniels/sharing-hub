@@ -98,7 +98,7 @@ def suggestCategory(request):
                     db_transaction.on_commit(lambda: review_category_suggestion.delay(suggestion.pk))
                     messages.success(
                         request,
-                        'Thanks. We are checking your category suggestion and will email you when an admin has decided.',
+                        'Thanks. We are checking your item suggestion and will email you when an admin has decided.',
                     )
                 else:
                     messages.success(

@@ -56,6 +56,7 @@ class DuplicateDecision(BaseModel):
 
 class SuitabilityDecision(BaseModel):
     approved: bool
+    proposal_kind: Literal['PRODUCT', 'CATEGORY'] = 'PRODUCT'
     parent_category_id: int | None = None
     rationale: str = Field(max_length=700)
     concerns: list[str] = Field(default_factory=list)
@@ -173,32 +174,37 @@ def check_policy(state: ReviewState) -> ReviewState:
     suggestion = _suggestion(state['suggestion_id'])
     text = f'{suggestion.name} {suggestion.description}'.lower()
     hard_stop = [term for term in (*DISALLOWED_TERMS, *SINGLE_USE_TERMS) if term in text]
-    roots = _root_categories()
+    categories = _category_context()
+    roots = [item for item in categories if not item['parent'] and item['title'].lower() != 'top']
     if hard_stop:
         decision = SuitabilityDecision(
-            approved=False, rationale='The request triggered the catalogue safety/suitability rules.',
+            approved=False, proposal_kind='PRODUCT', rationale='The request triggered the catalogue safety/suitability rules.',
             concerns=[f'Contains disallowed or unsuitable term: {term}' for term in hard_stop],
         )
     else:
         decision = _chat_model().with_structured_output(SuitabilityDecision).invoke(
-            'You enforce Rentalution category policy for a UK peer-to-peer rental marketplace. '
+            'You decide whether an item suggestion should become a product or a new category in a UK peer-to-peer rental marketplace. '
             'Approve only reusable, lawful, practical items that a neighbour could reasonably lend. '
             'Reject adult/inappropriate material, weapons, drugs, disposable or single-use items, '
             'and consumer electronic products such as cameras, phones, laptops, TVs, drones or consoles. '
-            'If approved, choose exactly one fitting root category ID from the provided list.\n\n'
-            f'Requested category: {_clean(suggestion.name)}\n'
+            'Default to PRODUCT for a particular item or product type and choose the best existing category ID. '
+            'Use CATEGORY only for a broad, durable rental grouping with no fitting existing category; then choose a root parent ID.\n\n'
+            f'Requested item: {_clean(suggestion.name)}\n'
             f'Member context: {_clean(suggestion.description)[:900]}\n'
-            f'Permitted root categories: {roots}'
+            f'Existing categories: {categories}\nPermitted new-category parents: {roots}'
         )
     root_ids = {item['id'] for item in roots}
-    if decision.approved and decision.parent_category_id not in root_ids:
+    valid_ids = {item['id'] for item in categories}
+    permitted_ids = root_ids if decision.proposal_kind == 'CATEGORY' else valid_ids
+    if decision.approved and decision.parent_category_id not in permitted_ids:
         decision.approved = False
-        decision.concerns.append('The selected parent was not a permitted root category.')
+        decision.concerns.append('The selected category was not permitted for this proposal.')
     parent = Category.objects.filter(pk=decision.parent_category_id).first() if decision.approved else None
     data = decision.model_dump()
     _save_stage(
         suggestion,
         CategorySuggestion.STATUS_SCREENING if decision.approved else CategorySuggestion.STATUS_POLICY_REJECTED,
+        proposal_kind=decision.proposal_kind,
         proposed_parent=parent,
         policy_result=data,
         pipeline_state={**suggestion.pipeline_state, 'policy_checked_at': timezone.now().isoformat()},
@@ -213,9 +219,10 @@ def route_after_policy(state: ReviewState) -> Literal['end', 'description']:
 def draft_description(state: ReviewState) -> ReviewState:
     suggestion = _suggestion(state['suggestion_id'])
     parent = suggestion.proposed_parent
+    proposal_label = 'product' if suggestion.proposal_kind == CategorySuggestion.PROPOSAL_PRODUCT else 'category'
     draft = _chat_model().with_structured_output(DescriptionDraft).invoke(
-        'Write a factual 1–2 sentence category description for Rentalution, a UK neighbour-to-neighbour '
-        'rental marketplace. Describe the kinds of durable items users will find in the category and the '
+        f'Write a factual 1–2 sentence {proposal_label} description for Rentalution, a UK neighbour-to-neighbour '
+        'rental marketplace. Describe the durable item and its '
         'typical use. Use plain British English. Do not mention AI, Rentalution, safety claims, prices, '
         'marketing language, calls to action, or generic filler.\n\n'
         f'Category: {_clean(suggestion.name)}\nParent heading: {parent.title if parent else ""}\n'
@@ -248,7 +255,7 @@ def generate_image_candidates(
     """Reuse the existing OpenAI catalogue-image generator without its GUI."""
     parent_title = suggestion.proposed_parent.title if suggestion.proposed_parent else ''
     prompt = build_openai_prompt({
-        'type': 'category',
+        'type': 'product' if suggestion.proposal_kind == CategorySuggestion.PROPOSAL_PRODUCT else 'category',
         'title': suggestion.normalized_name or _clean(suggestion.name),
         'category_title': parent_title,
         'parent_title': parent_title,
@@ -352,11 +359,16 @@ def quality_review(suggestion: CategorySuggestion, candidates: list[CategorySugg
     if not isinstance(copy_result, QualityReview) or not isinstance(image_result, QualityReview):
         raise RuntimeError('CrewAI quality review returned an invalid structured response.')
     notes = [*copy_result.revision_notes, *image_result.revision_notes]
+    # Each specialist response is individually limited to 700 characters, but
+    # the combined audit summary includes both responses.  Keep the stored
+    # summary within the same schema bound rather than failing a successful
+    # image run merely because the two valid summaries together are longer.
+    combined_summary = _clean(f'Copy: {copy_result.summary} Image: {image_result.summary}')[:700]
     return QualityReview(
         approved=copy_result.approved and image_result.approved and copy_result.score >= 7 and image_result.score >= 7,
         score=min(copy_result.score, image_result.score),
         revision_notes=notes,
-        summary=f'Copy: {copy_result.summary} Image: {image_result.summary}',
+        summary=combined_summary,
     )
 
 

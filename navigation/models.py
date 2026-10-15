@@ -178,6 +178,60 @@ class CategoryTaxonomyReview(models.Model):
 		return f'Catalogue review {self.pk} ({self.get_status_display()})'
 
 
+class CatalogueProductReview(models.Model):
+	"""Read-only, product-level consumer rental-worthiness assessment."""
+	STATUS_QUEUED = 'QUEUED'
+	STATUS_RUNNING = 'RUNNING'
+	STATUS_READY = 'READY'
+	STATUS_FAILED = 'FAILED'
+	STATUS_CHOICES = (
+		(STATUS_QUEUED, 'Queued'), (STATUS_RUNNING, 'Running'),
+		(STATUS_READY, 'Ready for human review'), (STATUS_FAILED, 'Failed'),
+	)
+	requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
+	snapshot = models.JSONField(default=dict, blank=True)
+	llm_analysis = models.JSONField(default=dict, blank=True)
+	error = models.TextField(blank=True, default='')
+	started_at = models.DateTimeField(null=True, blank=True)
+	completed_at = models.DateTimeField(null=True, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+	class Meta:
+		ordering = ['-created_at']
+
+	def __str__(self):
+		return f'Product-worthiness review {self.pk} ({self.get_status_display()})'
+
+
+class CatalogueProductRecommendation(models.Model):
+	TYPE_DUPLICATE = 'DUPLICATE'
+	TYPE_LOW_VALUE = 'LOW_VALUE'
+	TYPE_KEEP = 'KEEP'
+	TYPE_CHOICES = ((TYPE_DUPLICATE, 'Possible duplicate / consolidate'), (TYPE_LOW_VALUE, 'Low-value / consumer-fit review'), (TYPE_KEEP, 'Keep — specialist exception'))
+	STATUS_PENDING = 'PENDING'
+	STATUS_REVIEWED = 'REVIEWED'
+	STATUS_REJECTED = 'REJECTED'
+	STATUS_CHOICES = ((STATUS_PENDING, 'Pending human review'), (STATUS_REVIEWED, 'Reviewed'), (STATUS_REJECTED, 'Rejected'))
+	review = models.ForeignKey(CatalogueProductReview, on_delete=models.CASCADE, related_name='recommendations')
+	position = models.PositiveSmallIntegerField()
+	recommendation_type = models.CharField(max_length=16, choices=TYPE_CHOICES)
+	title = models.CharField(max_length=255)
+	rationale = models.TextField()
+	evidence = models.JSONField(default=list, blank=True)
+	affected_product_ids = models.JSONField(default=list, blank=True)
+	consumer_assessment = models.JSONField(default=dict, blank=True)
+	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+	admin_notes = models.TextField(blank=True, default='')
+	reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+	reviewed_at = models.DateTimeField(null=True, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ['review', 'position']
+		unique_together = ('review', 'position')
+
+
 class CategoryTaxonomyRecommendation(models.Model):
 	"""A human-approved-only recommendation from a taxonomy review."""
 

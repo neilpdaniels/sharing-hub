@@ -13,7 +13,8 @@ from .category_ai import (
     generate_category_suggestion_assets,
     process_category_suggestion,
 )
-from .models import CategorySuggestion, CategoryTaxonomyReview
+from .models import CatalogueProductReview, CategorySuggestion, CategoryTaxonomyReview
+from .product_catalogue_ai import process_product_catalogue_review
 from .taxonomy_ai import process_taxonomy_review
 
 
@@ -89,6 +90,22 @@ def run_catalogue_taxonomy_review(review_id: int) -> str:
             context={'review_id': review_id},
         )
         return CategoryTaxonomyReview.STATUS_FAILED
+
+
+@shared_task(queue='catalog_ai', soft_time_limit=900, time_limit=960)
+def run_catalogue_product_review(review_id: int) -> str:
+    if not settings.CATEGORY_AI_ENABLED:
+        review = CatalogueProductReview.objects.get(pk=review_id)
+        review.status = CatalogueProductReview.STATUS_FAILED
+        review.error = 'Category AI is disabled. Set CATEGORY_AI_ENABLED=1 before running a product review.'
+        review.save(update_fields=['status', 'error'])
+        return review.status
+    try:
+        return process_product_catalogue_review(review_id)
+    except Exception as exc:
+        logger.exception('Catalogue product review %s failed', review_id)
+        record_site_failure('Catalogue product review failed', details=f'Catalogue product review {review_id} could not be completed.', exception=exc, context={'review_id': review_id})
+        return CatalogueProductReview.STATUS_FAILED
 
 
 @shared_task(queue='celery')

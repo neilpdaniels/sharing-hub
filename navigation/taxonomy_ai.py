@@ -385,7 +385,11 @@ def process_taxonomy_review(review_id: int) -> str:
                 title=proposal.title,
                 rationale=proposal.rationale,
                 evidence=proposal.evidence,
-                proposed_action={**proposal.proposed_action, 'affected_category_ids': affected, 'confidence': proposal.confidence},
+                proposed_action={
+                    **proposal.proposed_action.model_dump(),
+                    'affected_category_ids': affected,
+                    'confidence': proposal.confidence,
+                },
                 ai_critique={
                     'operator_approved': index in operator.approved_indexes,
                     'skeptic_approved': index in skeptic.approved_indexes,

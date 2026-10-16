@@ -32,6 +32,8 @@ class ProductProposal(StrictModel):
     title: str = Field(max_length=255)
     rationale: str = Field(max_length=900)
     evidence: list[str] = Field(max_length=6)
+    # Advisory for now; automatic application needs product-retirement support.
+    recommended_action: str = Field(max_length=700)
     affected_product_ids: list[int] = Field(max_length=12)
     consumer_assessment: ConsumerAssessment
 
@@ -90,7 +92,10 @@ def _prompt(snapshot: dict) -> str:
         'burden, rental wear/damage risk, and rental suitability. Use only supplied catalogue facts for listings/rentals/prices; '
         'your replacement-cost band is an explicitly labelled general estimate. Do not invent product IDs. '
         'Recommend only DUPLICATE, LOW_VALUE, or KEEP (for a specialist exception worth retaining). Never instruct automatic '
-        'deletion or merging; all recommendations are for human review. It is valid to produce no recommendations.\n\n'
+        'deletion or merging; all recommendations are for human review. Include a specific recommended_action: for a '
+        'duplicate, name the proposed canonical product ID and which IDs staff should manually consolidate; for LOW_VALUE, '
+        'say whether staff should retain, retire from future use, or request stronger rental evidence; for KEEP, explain why '
+        'it should remain. It is valid to produce no recommendations.\n\n'
         f'Product snapshot:\n{snapshot}'
     )
 
@@ -109,6 +114,7 @@ def process_product_catalogue_review(review_id: int) -> str:
             CatalogueProductRecommendation.objects.create(
                 review=review, position=position, recommendation_type=item.recommendation_type,
                 title=item.title, rationale=item.rationale, evidence=item.evidence,
+                recommended_action=item.recommended_action,
                 affected_product_ids=[pk for pk in item.affected_product_ids if pk in valid_ids],
                 consumer_assessment=item.consumer_assessment.model_dump(),
             )

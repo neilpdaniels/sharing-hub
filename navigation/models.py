@@ -219,6 +219,7 @@ class CatalogueProductRecommendation(models.Model):
 	title = models.CharField(max_length=255)
 	rationale = models.TextField()
 	evidence = models.JSONField(default=list, blank=True)
+	recommended_action = models.TextField(blank=True, default='')
 	affected_product_ids = models.JSONField(default=list, blank=True)
 	consumer_assessment = models.JSONField(default=dict, blank=True)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)

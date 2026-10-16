@@ -229,6 +229,7 @@ def catalogue_snapshot() -> dict[str, Any]:
             ),
             'subtree_product_count': subtree_product_count,
             'subtree_active_listing_count': subtree_active_listing_count,
+            'child_category_count': len(children_by_parent.get(category.id, [])),
             'attribute_definitions': attributes,
             'product_examples': samples.get(category.id, []),
         })
@@ -266,6 +267,10 @@ def _assessment_prompt(snapshot: dict[str, Any]) -> str:
         'is a clearly better existing target. Do '
         'not prune a new, seasonal, specialist or merely quiet category. A merge/move/split/retire recommendation must '
         'name category IDs and explain likely product/listing impact. Consider a split only for a category with enough '
+        'Explicitly recommend RETIRE for every category (except a title of "Top") whose entire subtree has zero products, '
+        'zero active listings, and zero completed rentals, regardless of whether it is top-level or nested. These are '
+        'catalogue clean-up recommendations for human approval; do not flag a parent merely because it has no direct '
+        'products when its descendants have activity. '
         'evidence of two durable, meaningful rental groups. If a distinction is better used to filter comparable products '
         '(for example power source), recommend an ATTRIBUTE instead of a split. '
         'Every proposed_action must use exactly one operation: create, move, merge, retire, split, add_attribute, or none. '

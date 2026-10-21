@@ -12,7 +12,16 @@
           "package_name": "com.rentalution.mobile"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "938503213951-lbbc0j9t26a3v3oo0p8p9kojralh6jrm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rentalution.mobile",
+            "certificate_hash": "df66987126ed6236bff9395f73527416821294de"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAn1y1tHN0Osad07rnAQI9-2nxqSBVqIDo"

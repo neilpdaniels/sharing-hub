@@ -1,3 +1,26 @@
+import java.util.Properties
+
+val signingProperties = Properties()
+val repositoryEnvFile = rootProject.projectDir.resolve("../../.env").canonicalFile
+if (repositoryEnvFile.isFile) {
+    repositoryEnvFile.inputStream().use(signingProperties::load)
+}
+
+fun signingValue(name: String): String =
+    System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: signingProperties.getProperty(name)?.trim().orEmpty()
+
+val releaseKeystorePath = signingValue("ANDROID_RELEASE_KEYSTORE_PATH")
+val releaseKeystorePassword = signingValue("ANDROID_RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingValue("ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = signingValue("ANDROID_RELEASE_KEY_PASSWORD")
+val releaseSigningReady = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it.isNotBlank() }
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -42,11 +65,38 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Production artifacts must never be signed with the debug key.
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("prodrelease", ignoreCase = true)) {
+        doFirst {
+            check(releaseSigningReady) {
+                "Production Android signing is not configured. Set all " +
+                    "ANDROID_RELEASE_KEYSTORE_* values in the repository .env " +
+                    "or the build environment."
+            }
+            check(file(releaseKeystorePath).isFile) {
+                "Android release keystore was not found at $releaseKeystorePath."
+            }
         }
     }
 }

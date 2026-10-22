@@ -65,6 +65,15 @@
                 <button type="submit" class="sh-btn-cta">Log in</button>
             </form>
 
+            {% if google_sign_in_enabled %}
+            <div style="display:flex; align-items:center; gap:.75rem; margin:1rem 0; color:#71808c; font-size:.9rem;">
+                <span style="height:1px; background:#dce3e7; flex:1;"></span><span>or</span><span style="height:1px; background:#dce3e7; flex:1;"></span>
+            </div>
+            <a class="btn btn-outline-secondary btn-block" href="{% url 'google_login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">
+                Continue with Google
+            </a>
+            {% endif %}
+
             <p class="sh-auth-hint" style="margin-top:.9rem;">
                 <a href="{% url 'password_reset' %}">Forgotten your password?</a>
             </p>

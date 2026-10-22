@@ -9,6 +9,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from sorl.thumbnail import get_thumbnail
 
 from account.models import PaymentMethod, Profile
+from account.validators import MinAgeValidator
+from common.phone_utils import is_valid_uk_phone, normalize_to_domestic
 from common.models import Category, FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, Product
 from mobile_api.models import MobileDevice
 from transaction.models import (
@@ -66,6 +68,30 @@ class ProfileSummarySerializer(serializers.Serializer):
     mobile_verified = serializers.BooleanField()
     address_verified = serializers.BooleanField()
     postcode = serializers.CharField(allow_blank=True, allow_null=True)
+
+
+class SocialProfileOnboardingSerializer(serializers.Serializer):
+    """The details a social provider cannot reliably supply or verify."""
+
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(validators=[MinAgeValidator])
+    mobile_number = serializers.CharField(max_length=20)
+    address_line_1 = serializers.CharField(max_length=255)
+    address_line_2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    town = serializers.CharField(max_length=255)
+    county = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    postcode = serializers.CharField(max_length=8)
+
+    def validate_mobile_number(self, value):
+        mobile_number = normalize_to_domestic(value)
+        if not is_valid_uk_phone(mobile_number):
+            raise serializers.ValidationError('Enter a valid UK mobile number.')
+        return mobile_number
+
+
+class MobileVerificationCodeSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=16)
 
 
 class MobileDeviceRegisterSerializer(serializers.Serializer):

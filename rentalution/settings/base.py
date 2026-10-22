@@ -79,6 +79,13 @@ REPLICATE_AVATAR_PROMPT = os.environ.get('REPLICATE_AVATAR_PROMPT', '')
 REPLICATE_AVATAR_TIMEOUT_SECONDS = int(os.environ.get('REPLICATE_AVATAR_TIMEOUT_SECONDS', '45'))
 
 MOBILE_VERIFICATION_ENABLED = os.environ.get('MOBILE_VERIFICATION_ENABLED', '1') == '1'
+GOOGLE_OAUTH_MOBILE_CLIENT_IDS = tuple(client_id.strip() for client_id in os.environ.get('GOOGLE_OAUTH_MOBILE_CLIENT_IDS', '').split(',') if client_id.strip())
+GOOGLE_OAUTH_WEB_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_WEB_CLIENT_ID', '').strip()
+GOOGLE_OAUTH_WEB_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_WEB_CLIENT_SECRET', '').strip()
+GOOGLE_OAUTH_WEB_REDIRECT_URI = os.environ.get(
+    'GOOGLE_OAUTH_WEB_REDIRECT_URI',
+    f"{SITE_URL.rstrip('/')}/account/google/callback/",
+).strip()
 LONG_TERM_RENTALS_ENABLED = os.environ.get('LONG_TERM_RENTALS_ENABLED', '0').strip().lower() in {
     '1', 'true', 'yes', 'on',
 }

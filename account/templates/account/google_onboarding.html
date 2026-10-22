@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% load bootstrap4 %}
+
+{% block title %}Complete your profile{% endblock %}
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<div class="sh-auth-wrap"><div class="sh-auth-card">
+  <div class="sh-auth-header"><span class="sh-emoji">👋</span><h1>Almost there</h1><p>Google verified your email. We need a few Rentalution details.</p></div>
+  <div class="sh-auth-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% bootstrap_form form %}
+      <button type="submit" class="sh-btn-cta">Continue</button>
+    </form>
+  </div>
+</div></div>
+{% endblock %}

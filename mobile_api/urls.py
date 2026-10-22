@@ -12,6 +12,10 @@ from .views import (
     MobileTransactionNotificationsView,
     MobileDeviceUnregisterView,
     MobileLoginView,
+    MobileGoogleSignInView,
+    MobileSocialProfileOnboardingView,
+    MobileSocialMobileVerificationSendView,
+    MobileSocialMobileVerificationCheckView,
     MobilePasswordChangeView,
     MobilePasswordResetRequestView,
     FriendsHubView,
@@ -59,6 +63,10 @@ app_name = 'mobile_api'
 
 urlpatterns = [
     path('auth/login/', MobileLoginView.as_view(), name='auth_login'),
+    path('auth/social/google/', MobileGoogleSignInView.as_view(), name='auth_social_google'),
+    path('auth/onboarding/profile/', MobileSocialProfileOnboardingView.as_view(), name='auth_onboarding_profile'),
+    path('auth/onboarding/mobile/send/', MobileSocialMobileVerificationSendView.as_view(), name='auth_onboarding_mobile_send'),
+    path('auth/onboarding/mobile/check/', MobileSocialMobileVerificationCheckView.as_view(), name='auth_onboarding_mobile_check'),
     path('auth/register/start/', MobileRegisterStartView.as_view(), name='auth_register_start'),
     path('auth/register/resend/', MobileRegisterResendView.as_view(), name='auth_register_resend'),
     path('auth/register/verify/', MobileRegisterVerifyView.as_view(), name='auth_register_verify'),

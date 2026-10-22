@@ -90,6 +90,21 @@ class Profile(models.Model):
         from account.tasks import process_profile_image
         process_profile_image.delay(self.id)
 
+
+class SocialIdentity(models.Model):
+    """A verified external identity linked to one Rentalution account."""
+    PROVIDER_GOOGLE = 'google'
+    PROVIDER_APPLE = 'apple'
+    PROVIDER_CHOICES = ((PROVIDER_GOOGLE, 'Google'), (PROVIDER_APPLE, 'Apple'))
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='social_identities')
+    provider = models.CharField(max_length=16, choices=PROVIDER_CHOICES)
+    provider_subject = models.CharField(max_length=255)
+    provider_email = models.EmailField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(auto_now=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('provider', 'provider_subject'), name='unique_social_provider_subject')]
+
 class RegistrationVerification(models.Model):
     email = models.EmailField(db_index=True)
     username = models.CharField(max_length=150, blank=True)

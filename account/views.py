@@ -2,9 +2,13 @@
 import importlib
 import json
 import logging
+import secrets
+import base64
+import hashlib
+from uuid import uuid4
 from datetime import timedelta
 from random import randint
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, urlencode
 
 # Third-party
 import requests
@@ -19,7 +23,7 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.core import signing
 from django.core.files.base import ContentFile
 from django.core.mail import send_mail
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseNotFound, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -45,7 +49,7 @@ from .forms import (
     UserRegistrationStartForm,
     UserRegistrationVerifyForm,
 )
-from .models import PaymentMethod, Profile, RegistrationVerification
+from .models import PaymentMethod, Profile, RegistrationVerification, SocialIdentity
 from .services import RegistrationService
 from .tasks import send_random_mail
 from .tokens import account_activation_token
@@ -69,6 +73,10 @@ class TurnstileLoginView(auth_views.LoginView):
         context = super().get_context_data(**kwargs)
         context['show_turnstile'] = self._show_turnstile()
         context['TURNSTILE_SITE_KEY'] = getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', '')
+        context['google_sign_in_enabled'] = bool(
+            settings.GOOGLE_OAUTH_WEB_CLIENT_ID
+            and settings.GOOGLE_OAUTH_WEB_CLIENT_SECRET
+        )
         return context
 
     def form_valid(self, form):
@@ -85,6 +93,148 @@ class TurnstileLoginView(auth_views.LoginView):
     def form_invalid(self, form):
         self.request.session['login_failed_attempts'] = self.request.session.get('login_failed_attempts', 0) + 1
         return super().form_invalid(form)
+
+
+def _google_web_is_configured():
+    return bool(settings.GOOGLE_OAUTH_WEB_CLIENT_ID and settings.GOOGLE_OAUTH_WEB_CLIENT_SECRET)
+
+
+def google_login(request):
+    """Start a server-side Google OAuth flow using PKCE and a one-time state."""
+    if not _google_web_is_configured():
+        return HttpResponseNotFound()
+
+    next_url = request.GET.get('next') or reverse('myaccount')
+    if not _is_safe_relative_path(next_url):
+        next_url = reverse('myaccount')
+    state = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode('ascii')).digest()
+    ).rstrip(b'=').decode('ascii')
+    request.session['google_oauth_state'] = state
+    request.session['google_oauth_verifier'] = verifier
+    request.session['google_oauth_next'] = next_url
+    query = urlencode({
+        'client_id': settings.GOOGLE_OAUTH_WEB_CLIENT_ID,
+        'redirect_uri': settings.GOOGLE_OAUTH_WEB_REDIRECT_URI,
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'state': state,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        'prompt': 'select_account',
+    })
+    return redirect(f'https://accounts.google.com/o/oauth2/v2/auth?{query}')
+
+
+def _google_username(email):
+    base = ''.join(char for char in email.split('@', 1)[0] if char.isalnum() or char == '_')[:120] or 'member'
+    username = base
+    while User.objects.filter(username=username).exists():
+        username = f'{base[:110]}{uuid4().hex[:8]}'
+    return username
+
+
+def google_callback(request):
+    """Validate Google's callback, then sign in an existing or new social user."""
+    if not _google_web_is_configured():
+        return HttpResponseNotFound()
+
+    state = request.session.pop('google_oauth_state', None)
+    verifier = request.session.pop('google_oauth_verifier', None)
+    next_url = request.session.pop('google_oauth_next', reverse('myaccount'))
+    if not state or not verifier or not secrets.compare_digest(state, request.GET.get('state', '')):
+        messages.error(request, 'Google sign-in expired or could not be verified. Please try again.')
+        return redirect('login')
+    if request.GET.get('error'):
+        messages.info(request, 'Google sign-in was cancelled.')
+        return redirect('login')
+
+    code = (request.GET.get('code') or '').strip()
+    if not code:
+        messages.error(request, 'Google did not return an authorisation code.')
+        return redirect('login')
+    try:
+        token_response = requests.post(
+            'https://oauth2.googleapis.com/token',
+            data={
+                'code': code,
+                'client_id': settings.GOOGLE_OAUTH_WEB_CLIENT_ID,
+                'client_secret': settings.GOOGLE_OAUTH_WEB_CLIENT_SECRET,
+                'redirect_uri': settings.GOOGLE_OAUTH_WEB_REDIRECT_URI,
+                'grant_type': 'authorization_code',
+                'code_verifier': verifier,
+            },
+            timeout=10,
+        )
+        token_response.raise_for_status()
+        id_token_value = token_response.json().get('id_token', '')
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token as google_id_token
+        claims = google_id_token.verify_oauth2_token(
+            id_token_value,
+            google_requests.Request(),
+            settings.GOOGLE_OAUTH_WEB_CLIENT_ID,
+        )
+    except Exception:
+        logger.warning('Google web sign-in verification failed.', exc_info=True)
+        messages.error(request, 'Google sign-in could not be verified. Please try again.')
+        return redirect('login')
+
+    subject = str(claims.get('sub') or '')
+    email = (claims.get('email') or '').strip().lower()
+    if not subject or not email or not claims.get('email_verified'):
+        messages.error(request, 'Google did not provide a verified email address.')
+        return redirect('login')
+
+    identity = SocialIdentity.objects.select_related('user').filter(
+        provider=SocialIdentity.PROVIDER_GOOGLE, provider_subject=subject
+    ).first()
+    if identity:
+        identity.provider_email = email
+        identity.save(update_fields=['provider_email', 'last_used_at'])
+        user = identity.user
+    elif User.objects.filter(email__iexact=email).exists():
+        messages.error(request, 'An account already uses this email. Sign in with your existing method before linking Google.')
+        return redirect('login')
+    else:
+        user = User.objects.create_user(
+            username=_google_username(email),
+            email=email,
+            first_name=(claims.get('given_name') or '')[:150],
+            last_name=(claims.get('family_name') or '')[:150],
+        )
+        user.set_unusable_password()
+        user.save(update_fields=['password'])
+        SocialIdentity.objects.create(
+            user=user,
+            provider=SocialIdentity.PROVIDER_GOOGLE,
+            provider_subject=subject,
+            provider_email=email,
+        )
+
+    login(request, user)
+    if not Profile.objects.filter(user=user).exists():
+        return redirect('google_onboarding')
+    return redirect(next_url)
+
+
+@login_required
+def google_onboarding(request):
+    """Collect Rentalution-only details Google cannot verify."""
+    profile = Profile.objects.filter(user=request.user).first()
+    if profile:
+        return redirect('myaccount')
+    form = ProfileAddForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        profile = form.save(commit=False)
+        profile.user = request.user
+        profile.email_confirmed = True
+        profile.save()
+        messages.success(request, 'Your Google email is verified. Please verify your mobile number next.')
+        return redirect('mobile_verify')
+    return render(request, 'account/google_onboarding.html', {'form': form})
 
 
 class TurnstilePasswordResetView(auth_views.PasswordResetView):

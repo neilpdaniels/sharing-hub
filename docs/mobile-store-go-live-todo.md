@@ -2,6 +2,18 @@
 
 This is the operational checklist for releasing `rentalution_mobile` to the App Store and Google Play. It is deliberately ordered: do the shared blockers first, then the two store tracks. Check off an item only when there is evidence (a screen recording, a test result, an uploaded build, or a saved credential).
 
+## Current pilot-release status — 16 October 2026
+
+**Status: amber — do not yet invite pilot users.** The mobile functionality is in place, but these release gates remain:
+
+- [x] Replace Android's current debug signing configuration: production builds now require a protected upload keystore configured through the untracked repository .env or CI environment. Create/backup the key, set the four ANDROID_RELEASE_KEYSTORE values, then prove the signed build.
+- [ ] Add and validate the genuine iOS production Firebase `GoogleService-Info.plist`; production push notifications cannot be relied on until this is complete.
+- [ ] Verify production app links, then set `MOBILE_APP_LINKS_REQUIRED=1` with the Apple Team ID and Android release-certificate SHA-256.
+- [ ] Create TestFlight Internal Testing and Google Play Internal Testing builds using the live API URL and live Stripe publishable key.
+- [ ] Complete a physical-device pilot test of sign-in, verification, media upload, notifications, Stripe/3DS, booking/deposit, QR/PIN handover, return/dispute, and account deletion.
+- [ ] Finish App Store Connect / Play Console metadata, privacy and data disclosures, reviewer credentials, screenshots, support URL/email, and privacy-policy URL.
+- [ ] Deploy the outstanding catalogue-review code and migrations before relying on those workflows in production.
+
 ## Release decision and ownership
 
 - [ ] Name a release owner, a technical release owner, and an out-of-hours contact for the first week after launch.
@@ -43,7 +55,7 @@ This is the operational checklist for releasing `rentalution_mobile` to the App 
 
 - [ ] Create or verify the Google Play Console developer account and create the app using `com.rentalution.mobile`. Package names are permanent in Play once used.
 - [ ] Create a dedicated upload keystore, retain its alias/password in the approved secret store, and enable Play App Signing. Keep an offline recovery copy under restricted access.
-- [ ] **Resolve the current release blocker:** `android/app/build.gradle.kts` signs `release` with the debug key. Replace this with a release signing configuration that reads a local/CI secret `key.properties`; keep that file and the keystore out of Git. Build and install a signed release to prove it works.
+- [ ] **Finish the release-signing proof:** set the four ANDROID_RELEASE_KEYSTORE values in the untracked repository .env (or CI environment), keep the keystore out of Git, then build and install a signed production bundle.
 - [ ] Confirm `targetSdk` from the installed Flutter/Android toolchain meets the current Google Play target API requirement; this changes annually, so verify it in Play Console before uploading.
 - [ ] Create the production app record and complete Store listing, App content, Data safety, content rating, target audience, ads declaration, app access/reviewer instructions, and privacy policy. Answer Data safety from the actual app and its SDKs.
 

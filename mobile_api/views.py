@@ -3,11 +3,13 @@ import hashlib
 import logging
 import random
 import re
+from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth.forms import PasswordChangeForm, PasswordResetForm
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.db import transaction as db_transaction
 from django.db.models import BooleanField, Q, Value
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -22,7 +24,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from account.forms import UserRegistrationStartForm, UserRegistrationVerifyForm
-from account.models import PaymentMethod, Profile
+from account.models import PaymentMethod, Profile, SocialIdentity
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
 from common.catalog.attributes import (
@@ -77,6 +79,8 @@ from .serializers import (
     FriendSummarySerializer,
     BlockedUserSerializer,
     ProfileSummarySerializer,
+    SocialProfileOnboardingSerializer,
+    MobileVerificationCodeSerializer,
     ProductDetailSerializer,
     ProductSummarySerializer,
     TransactionActionSerializer,
@@ -408,6 +412,17 @@ def _send_mobile_registration_code_email(request, email, code):
     send_registration_verification_email.delay(email, code, resume_link)
 
 
+def _mobile_twilio_verify_client():
+    if (
+        not settings.TWILIO_ACCOUNT_SID
+        or not settings.TWILIO_AUTH_TOKEN
+        or not settings.TWILIO_VERIFY_SERVICE_SID
+    ):
+        raise ValueError('Twilio Verify settings are not configured.')
+    from twilio.rest import Client
+    return Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+
+
 class TransactionAccessMixin:
     def _get_txn(self):
         txn = generics.get_object_or_404(
@@ -488,6 +503,196 @@ class MobileLoginView(APIView):
         serializer = MobileTokenObtainSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+class MobileGoogleSignInView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        token = (request.data.get('id_token') or '').strip()
+        audiences = getattr(settings, 'GOOGLE_OAUTH_MOBILE_CLIENT_IDS', ())
+        if not audiences:
+            return Response({'detail': 'Google sign-in is not configured.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not token:
+            return Response({'detail': 'Google ID token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from google.auth.transport import requests as google_requests
+            from google.oauth2 import id_token as google_id_token
+            claims = google_id_token.verify_oauth2_token(token, google_requests.Request(), audience=None)
+        except Exception:
+            logger.info('Rejected invalid Google ID token.')
+            return Response({'detail': 'Google sign-in could not be verified.'}, status=status.HTTP_401_UNAUTHORIZED)
+        if claims.get('aud') not in audiences or not claims.get('email_verified'):
+            return Response({'detail': 'Google sign-in could not be verified.'}, status=status.HTTP_401_UNAUTHORIZED)
+        subject, email = str(claims.get('sub') or ''), (claims.get('email') or '').strip().lower()
+        if not subject or not email:
+            return Response({'detail': 'Google did not provide a verified identity.'}, status=status.HTTP_400_BAD_REQUEST)
+        identity = SocialIdentity.objects.select_related('user').filter(provider=SocialIdentity.PROVIDER_GOOGLE, provider_subject=subject).first()
+        if identity:
+            identity.provider_email = email
+            identity.save(update_fields=['provider_email', 'last_used_at'])
+            payload = _mobile_auth_payload(identity.user)
+            payload['onboarding_required'] = not Profile.objects.filter(user=identity.user).exists()
+            return Response(payload)
+        if User.objects.filter(email__iexact=email).exists():
+            return Response({'detail': 'An account with this email already exists. Sign in with your existing method, then link Google from account settings.', 'account_link_required': True}, status=status.HTTP_409_CONFLICT)
+        base = re.sub(r'[^a-zA-Z0-9_]+', '', email.split('@', 1)[0])[:120] or 'member'
+        username = base
+        while User.objects.filter(username=username).exists():
+            username = f'{base[:110]}{uuid4().hex[:8]}'
+        with db_transaction.atomic():
+            user = User.objects.create_user(username=username, email=email, first_name=(claims.get('given_name') or '')[:150], last_name=(claims.get('family_name') or '')[:150])
+            SocialIdentity.objects.create(user=user, provider=SocialIdentity.PROVIDER_GOOGLE, provider_subject=subject, provider_email=email)
+        payload = _mobile_auth_payload(user)
+        payload['onboarding_required'] = True
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class MobileSocialProfileOnboardingView(APIView):
+    """Collect the regulated/account details omitted by social identity providers."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = SocialProfileOnboardingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        mobile_number = data['mobile_number']
+        address_fields = (
+            'address_line_1',
+            'address_line_2',
+            'town',
+            'county',
+            'postcode',
+        )
+        with db_transaction.atomic():
+            user = request.user
+            changed_user_fields = []
+            for field_name in ('first_name', 'last_name'):
+                if field_name in data and getattr(user, field_name) != data[field_name]:
+                    setattr(user, field_name, data[field_name])
+                    changed_user_fields.append(field_name)
+            if changed_user_fields:
+                user.save(update_fields=changed_user_fields)
+
+            profile = Profile.objects.filter(user=user).first()
+            if profile is None:
+                profile = Profile(
+                    user=user,
+                    email_confirmed=user.social_identities.exists(),
+                    date_of_birth=data['date_of_birth'],
+                    mobile_number=mobile_number,
+                    **{field_name: data.get(field_name, '') for field_name in address_fields},
+                )
+                profile.save()
+            else:
+                mobile_changed = profile.mobile_number != mobile_number
+                address_changed = any(
+                    (getattr(profile, field_name) or '') != (data.get(field_name) or '')
+                    for field_name in address_fields
+                )
+                profile.date_of_birth = data['date_of_birth']
+                profile.mobile_number = mobile_number
+                for field_name in address_fields:
+                    setattr(profile, field_name, data.get(field_name, ''))
+                if mobile_changed:
+                    profile.mobile_verified = False
+                if address_changed:
+                    profile.address_verified = False
+                    profile.stripe_identity_verified = False
+                    profile.stripe_identity_verified_at = None
+                    profile.stripe_identity_verification_id = ''
+                profile.save()
+
+        return Response(
+            {
+                'profile': ProfileSummarySerializer(profile).data,
+                'mobile_verification_required': not profile.mobile_verified,
+                'address_verification_required': not profile.address_verified,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class MobileSocialMobileVerificationSendView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            raise ValidationError('Complete your profile before verifying your mobile number.')
+
+        if profile.mobile_verified:
+            return Response({'detail': 'Mobile number is already verified.'})
+        if not getattr(settings, 'MOBILE_VERIFICATION_ENABLED', True):
+            profile.mobile_verified = True
+            profile.save(update_fields=['mobile_verified'])
+            return Response({'detail': 'Mobile verification is disabled in this environment.'})
+
+        from common.phone_utils import format_to_e164
+        e164_number = format_to_e164(profile.mobile_number)
+        if not e164_number:
+            raise ValidationError('Enter a valid UK mobile number before verifying it.')
+        try:
+            client = _mobile_twilio_verify_client()
+            client.verify.v2.services(settings.TWILIO_VERIFY_SERVICE_SID).verifications.create(
+                to=e164_number,
+                channel='sms',
+            )
+        except Exception as exc:
+            logger.warning('Twilio SMS send failed for user %s: %s', request.user.id, exc)
+            return Response(
+                {'detail': 'Could not send verification SMS right now. Please try again.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({'detail': 'Verification code sent by SMS.'}, status=status.HTTP_202_ACCEPTED)
+
+
+class MobileSocialMobileVerificationCheckView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = MobileVerificationCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            raise ValidationError('Complete your profile before verifying your mobile number.')
+
+        if profile.mobile_verified:
+            return Response({'detail': 'Mobile number is already verified.'})
+        if not getattr(settings, 'MOBILE_VERIFICATION_ENABLED', True):
+            profile.mobile_verified = True
+            profile.save(update_fields=['mobile_verified'])
+            return Response({'detail': 'Mobile verification is disabled in this environment.'})
+
+        from common.phone_utils import format_to_e164
+        e164_number = format_to_e164(profile.mobile_number)
+        if not e164_number:
+            raise ValidationError('Enter a valid UK mobile number before verifying it.')
+        try:
+            client = _mobile_twilio_verify_client()
+            check = client.verify.v2.services(settings.TWILIO_VERIFY_SERVICE_SID).verification_checks.create(
+                to=e164_number,
+                code=serializer.validated_data['code'].strip(),
+            )
+        except Exception as exc:
+            logger.warning('Twilio SMS verify failed for user %s: %s', request.user.id, exc)
+            return Response(
+                {'detail': 'Could not verify code right now. Please try again.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if check.status != 'approved':
+            return Response(
+                {'detail': 'That code is invalid or expired. Please try again.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        profile.mobile_verified = True
+        profile.save(update_fields=['mobile_verified'])
+        return Response({'detail': 'Mobile number verified.', 'profile': ProfileSummarySerializer(profile).data})
 
 
 class NearbyPeopleView(APIView):

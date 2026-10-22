@@ -12,6 +12,7 @@ celerybeat-schedule.db
 logs/
 db.sqlite3
 .env
+*.jks
 staticfiles/
 .rentalution_mobile.dev.env
 .rentalution_mobile.prod.env

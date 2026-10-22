@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from account.models import Profile
+from account.models import Profile, SocialIdentity
 from common.models import (
     Category,
     CategoryAttribute,
@@ -60,6 +60,114 @@ class MobileAppConfigViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()['long_term_rentals_enabled'])
         self.assertEqual(response.json()['max_rental_days'], 89)
+
+
+@override_settings(GOOGLE_OAUTH_MOBILE_CLIENT_IDS=('google-client-id.apps.googleusercontent.com',))
+class MobileSocialOnboardingTests(TestCase):
+    def _google_claims(self, **overrides):
+        claims = {
+            'aud': 'google-client-id.apps.googleusercontent.com',
+            'sub': 'google-subject-123',
+            'email': 'social@example.com',
+            'email_verified': True,
+            'given_name': 'Social',
+            'family_name': 'Member',
+        }
+        claims.update(overrides)
+        return claims
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_sign_in_creates_unonboarded_user(self, verify_token):
+        verify_token.return_value = self._google_claims()
+        response = self.client.post(
+            reverse('mobile_api:auth_social_google'),
+            data={'id_token': 'valid-token'},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()['onboarding_required'])
+        user = User.objects.get(email='social@example.com')
+        self.assertFalse(Profile.objects.filter(user=user).exists())
+        self.assertTrue(
+            SocialIdentity.objects.filter(
+                user=user,
+                provider=SocialIdentity.PROVIDER_GOOGLE,
+                provider_subject='google-subject-123',
+            ).exists()
+        )
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_sign_in_does_not_merge_existing_email_account(self, verify_token):
+        User.objects.create_user('existing', 'social@example.com', 'password')
+        verify_token.return_value = self._google_claims()
+        response = self.client.post(
+            reverse('mobile_api:auth_social_google'),
+            data={'id_token': 'valid-token'},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.json()['account_link_required'])
+        self.assertFalse(SocialIdentity.objects.exists())
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_sign_in_rejects_a_token_for_another_client(self, verify_token):
+        verify_token.return_value = self._google_claims(aud='another-client-id')
+        response = self.client.post(
+            reverse('mobile_api:auth_social_google'),
+            data={'id_token': 'wrong-audience-token'},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(User.objects.filter(email='social@example.com').exists())
+
+    def test_social_onboarding_creates_profile_and_resets_changed_verification(self):
+        user = User.objects.create_user('social-user', 'social-user@example.com', 'password')
+        SocialIdentity.objects.create(
+            user=user,
+            provider=SocialIdentity.PROVIDER_GOOGLE,
+            provider_subject='google-subject-456',
+            provider_email=user.email,
+        )
+        self.client.force_login(user)
+        payload = {
+            'first_name': 'Social',
+            'last_name': 'User',
+            'date_of_birth': '1990-01-01',
+            'mobile_number': '+44 7700 900123',
+            'address_line_1': '1 Test Street',
+            'address_line_2': '',
+            'town': 'London',
+            'county': '',
+            'postcode': 'SW1A 1AA',
+        }
+        response = self.client.post(
+            reverse('mobile_api:auth_onboarding_profile'),
+            data=payload,
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        profile = Profile.objects.get(user=user)
+        self.assertTrue(profile.email_confirmed)
+        self.assertEqual(profile.mobile_number, '07700900123')
+        self.assertFalse(profile.mobile_verified)
+        self.assertFalse(profile.address_verified)
+
+        profile.mobile_verified = True
+        profile.address_verified = True
+        profile.stripe_identity_verified = True
+        profile.save()
+        payload['mobile_number'] = '07700900124'
+        payload['postcode'] = 'SW1A 2AA'
+        response = self.client.post(
+            reverse('mobile_api:auth_onboarding_profile'),
+            data=payload,
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        profile.refresh_from_db()
+        self.assertFalse(profile.mobile_verified)
+        self.assertFalse(profile.address_verified)
+        self.assertFalse(profile.stripe_identity_verified)
 
 
 class LenderListingsViewTests(TestCase):

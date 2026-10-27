@@ -1,4 +1,8 @@
 from types import SimpleNamespace
+import json
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -11,6 +15,7 @@ from common.phone_utils import (
 	mask_mobile_number,
 	normalize_to_domestic,
 )
+from common.log_review import LogEvent, build_report, normalise_signature, report_as_text
 from common.security import verify_turnstile_token
 
 
@@ -37,6 +42,47 @@ class PhoneUtilsTests(TestCase):
 		self.assertFalse(is_valid_uk_phone('+14155552671'))
 		self.assertFalse(is_valid_uk_phone('02079460000'))
 		self.assertFalse(is_valid_uk_phone('12345'))
+
+
+class ProductionLogReviewTests(SimpleTestCase):
+	def test_groups_events_redacts_data_and_escalates_only_known_critical_failures(self):
+		events = [
+			LogEvent('2026-10-27T10:00:00+00:00', 'web', 'ERROR user=alice@example.com request=123456 failed'),
+			LogEvent('2026-10-27T10:01:00+00:00', 'web', 'ERROR user=bob@example.com request=987654 failed'),
+			LogEvent('2026-10-27T10:02:00+00:00', 'worker', 'CRITICAL no space left on device'),
+		]
+		with patch('common.log_review._loki_events', side_effect=[events[:2], events[2:]]):
+			report = build_report(
+				hours=6,
+				now=datetime(2026, 10, 27, 12, tzinfo=timezone.utc),
+				suppressions_path='/tmp/non-existent-log-review-suppressions.json',
+			)
+
+		self.assertEqual(report['status'], 'CRITICAL')
+		self.assertEqual(report['issues'][0]['severity'], 'CRITICAL')
+		self.assertIn('[EMAIL]', report_as_text(report))
+		self.assertNotIn('alice@example.com', report_as_text(report))
+
+	def test_suppression_is_explicit_and_reported(self):
+		with tempfile.TemporaryDirectory() as directory:
+			path = Path(directory) / 'suppressions.json'
+			path.write_text(json.dumps([{
+				'pattern': 'benign probe disconnect',
+				'reason': 'Known harmless load-balancer disconnect',
+			}]), encoding='utf-8')
+			event = LogEvent('2026-10-27T10:00:00+00:00', 'nginx-error', 'benign probe disconnect')
+			with patch('common.log_review._loki_events', side_effect=[[event], []]):
+				report = build_report(hours=1, suppressions_path=path)
+
+		self.assertEqual(report['status'], 'OK')
+		self.assertEqual(report['suppressed'], [{
+			'reason': 'Known harmless load-balancer disconnect', 'count': 1,
+		}])
+
+	def test_signature_redacts_secrets(self):
+		signature = normalise_signature('2026-10-27 10:00:00 token=super-secret-value user@example.com')
+		self.assertIn('[REDACTED]', signature)
+		self.assertIn('[EMAIL]', signature)
 
 
 class KycHelperTests(TestCase):

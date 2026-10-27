@@ -40,9 +40,10 @@ Open `http://localhost:3000` and sign in as `admin` with
 default data source, the **Rentalution / Rentalution operations** dashboard,
 and these configuration-backed email alerts:
 
-- non-2xx Stripe Connect webhook deliveries;
-- three or more application critical errors, exceptions, tracebacks, or Celery
-  Beat schedule failures within five minutes.
+- Stripe Connect webhook 5xx responses;
+- high-confidence application failures: explicit critical/fatal/panic entries,
+  out-of-memory or disk exhaustion, unavailable/corrupt database or Redis, and
+  Stripe/payment webhook or signature failures.
 - a required application container that is stopped or restarting.
 
 These dashboard and alert resources are read-only in the Grafana UI because
@@ -56,6 +57,46 @@ after 12 hours, and do not send a separate resolved e-mail. Grafana alert
 templates cannot query Loki for raw log lines, so the e-mail deliberately links
 to the **Recent errors** panel rather than claiming to contain a top-ten log
 extract.
+
+## Deterministic log-review digest
+
+Grafana is the immediate, minute-by-minute escalation path. Separately, the
+Celery Beat job can send a grouped review digest every six hours. It queries
+Loki for Docker application errors and Nginx errors, removes secrets and
+personal identifiers from the e-mail fingerprints, groups repeats, and labels
+only high-confidence infrastructure or payment failures as `CRITICAL`. Other
+unrecognised error groups are `ACTION_REQUIRED` for a person to investigate.
+No AI is used to decide whether an alert is critical.
+
+First test it manually on the VPS (this prints JSON only and sends nothing):
+
+```bash
+cd /srv/rentalution
+docker compose -f docker-compose.prod.yml exec -T web \
+  python manage.py review_production_logs --hours 6 --json
+```
+
+Then test e-mail delivery:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T web \
+  python manage.py review_production_logs --hours 6 --email
+```
+
+Once the output and recipient are right, add these to the production `.env`
+and redeploy:
+
+```dotenv
+LOG_REVIEW_SCHEDULED_ENABLED=1
+LOG_REVIEW_HOURS=6
+# Optional; defaults to MONITORING_ALERT_EMAIL.
+LOG_REVIEW_RECIPIENTS=neil_p_daniels@rentalution.co.uk
+```
+
+To suppress a confirmed benign fingerprint, add a narrowly-scoped regular
+expression and a human reason to `monitoring/log-review-suppressions.json`,
+then redeploy. Keep rules specific and review them periodically; a suppression
+must never be used to hide a real outage.
 
 ## Discord notifications
 
@@ -88,8 +129,8 @@ docker compose -f docker-compose.prod.yml exec -T web sh -c '
 ```
 
 The lines appear in the **Recent errors** panel. The alert evaluates every
-minute, must remain present for two minutes, and has a one-minute notification
-group wait, so allow up to four minutes for the restricted error-log Discord
+minute, must remain present for one minute, and has a one-minute notification
+group wait, so allow up to three minutes for the restricted error-log Discord
 channel to receive it.
 
 `container-watchdog` inspects Docker state for `web`, the Celery workers,
@@ -112,18 +153,20 @@ provider and route monitor failures to `MONITORING_ALERT_EMAIL`.
 The provisioned rules use these LogQL queries:
 
 ```logql
-sum(count_over_time({job="nginx-access"} |= "/transaction/stripe/connect/webhook/" |~ " (4|5)[0-9]{2} " [5m]))
+sum(count_over_time({job="nginx-access"} |= "/transaction/stripe/connect/webhook/" |~ " 5[0-9]{2} " [5m]))
 ```
 
-The Stripe alert fires above zero. This catches a delivery failure such as the
-previous Nginx Basic Auth rejection.
+The Stripe alert fires above zero. A webhook 4xx is retained in Nginx access
+logs for investigation, but it does not page Discord; this avoids waking you
+for malformed or unauthorised requests while retaining urgent 5xx failures.
 
 ```logql
-sum(count_over_time({job="docker"} |~ "(?i)(traceback|critical|exception|stripe webhook verification failed)" [5m]))
+sum(count_over_time({job="docker"} |~ "(?i)(\\bcritical\\b|\\bfatal\\b|\\bpanic\\b|out of memory|no space left|database.*(unavailable|corrupt)|could not connect to.*(database|redis)|(stripe|payment).*(webhook|signature).*(failed|error))" [5m]))
 ```
 
-The application alert fires at three events in five minutes to avoid a single
-noisy line paging you. Tune exclusions after observing normal traffic.
+The application alert fires for one high-confidence critical failure. Ordinary
+errors, exceptions and tracebacks are collected in the deterministic review
+digest instead of paging Discord.
 
 When Telegram is ready, add a Grafana Telegram contact point using the bot
 token and chat ID; keep email as the fallback contact point.

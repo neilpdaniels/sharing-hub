@@ -66,6 +66,23 @@ CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED = os.environ.get(
     'CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED', '0'
 ) == '1'
 
+# Deterministic Loki log-review digest. Grafana remains responsible for
+# minute-level paging; this produces a reviewable, grouped summary on a slower
+# cadence. It is deliberately opt-in until production has been checked.
+LOKI_URL = os.environ.get('LOKI_URL', 'http://loki:3100').rstrip('/')
+LOG_REVIEW_SCHEDULED_ENABLED = os.environ.get('LOG_REVIEW_SCHEDULED_ENABLED', '0') == '1'
+LOG_REVIEW_HOURS = max(1, min(168, int(os.environ.get('LOG_REVIEW_HOURS', '6'))))
+LOG_REVIEW_RECIPIENTS = tuple(
+    value.strip()
+    for value in os.environ.get(
+        'LOG_REVIEW_RECIPIENTS', os.environ.get('MONITORING_ALERT_EMAIL', '')
+    ).split(',')
+    if value.strip()
+)
+LOG_REVIEW_SUPPRESSIONS_FILE = os.environ.get(
+    'LOG_REVIEW_SUPPRESSIONS_FILE', 'monitoring/log-review-suppressions.json'
+)
+
 # Listing images are resized and converted to JPEG by the Celery worker.
 ORDER_IMAGE_UPLOAD_MAX_BYTES = int(os.environ.get('ORDER_IMAGE_UPLOAD_MAX_BYTES', str(20 * 1024 * 1024)))
 

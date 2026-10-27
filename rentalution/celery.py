@@ -58,6 +58,11 @@ app.conf.beat_schedule  = {
         'task': 'navigation.tasks.queue_monthly_catalogue_taxonomy_review',
         'schedule': crontab(minute='15', hour='3', day_of_month='1'),
     },
+    'review-production-logs': {
+        'task': 'common.tasks.review_production_logs',
+        # The task itself is opt-in through LOG_REVIEW_SCHEDULED_ENABLED.
+        'schedule': crontab(minute='20', hour='0,6,12,18'),
+    },
     # 'add-task-kitco-gold-am': {
     #     'task': 'reference_price.tasks.scrapeKitcoGoldPrice',
     #     'schedule': crontab(minute='35,45,59', hour='10', day_of_week='0-6'),

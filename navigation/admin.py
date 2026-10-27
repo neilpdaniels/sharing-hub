@@ -23,6 +23,7 @@ from .services import (
     promote_category_suggestion,
     reject_category_suggestion,
 )
+from .product_services import ProductRecommendationApplicationError, apply_product_recommendation
 from .tasks import (
     generate_category_suggestion_assets_task,
     review_category_suggestion,
@@ -131,11 +132,11 @@ class CategorySuggestionImageAdmin(admin.ModelAdmin):
 @admin.register(CategoryTaxonomyReview)
 class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/categorytaxonomyreview/change_list.html'
-    list_display = ('id', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'review_strength', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
     search_fields = ('error',)
-    readonly_fields = ('requested_by', 'status', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
-    fields = ('requested_by', 'status', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
+    fields = ('requested_by', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
     actions = ('apply_all_approved_recommendations', 'ignore_all_pending_recommendations')
 
     def has_add_permission(self, request):
@@ -168,7 +169,10 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
         if not settings.CATEGORY_AI_ENABLED:
             self.message_user(request, 'Category AI is disabled. Set CATEGORY_AI_ENABLED=1 before running a review.', messages.ERROR)
             return redirect(reverse('admin:navigation_categorytaxonomyreview_changelist'))
-        review = CategoryTaxonomyReview.objects.create(requested_by=request.user)
+        strength = request.POST.get('review_strength', CategoryTaxonomyReview.STRENGTH_MEDIUM)
+        if strength not in dict(CategoryTaxonomyReview.STRENGTH_CHOICES):
+            strength = CategoryTaxonomyReview.STRENGTH_MEDIUM
+        review = CategoryTaxonomyReview.objects.create(requested_by=request.user, review_strength=strength)
         transaction.on_commit(lambda: run_catalogue_taxonomy_review.delay(review.pk))
         self.message_user(request, 'Catalogue review queued. Refresh this list shortly to see its recommendations.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_categorytaxonomyreview_changelist'))
@@ -201,9 +205,9 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
 @admin.register(CatalogueProductReview)
 class CatalogueProductReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/catalogueproductreview/change_list.html'
-    list_display = ('id', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'review_strength', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
-    readonly_fields = ('requested_by', 'status', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'status', 'review_strength', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
     fields = readonly_fields
     def has_add_permission(self, request): return False
     def recommendation_count(self, obj): return obj.recommendations.count()
@@ -214,7 +218,10 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
         if not settings.CATEGORY_AI_ENABLED:
             self.message_user(request, 'Category AI is disabled. Set CATEGORY_AI_ENABLED=1 before running a product review.', messages.ERROR)
             return redirect(reverse('admin:navigation_catalogueproductreview_changelist'))
-        review = CatalogueProductReview.objects.create(requested_by=request.user)
+        strength = request.POST.get('review_strength', CatalogueProductReview.STRENGTH_MEDIUM)
+        if strength not in dict(CatalogueProductReview.STRENGTH_CHOICES):
+            strength = CatalogueProductReview.STRENGTH_MEDIUM
+        review = CatalogueProductReview.objects.create(requested_by=request.user, review_strength=strength)
         transaction.on_commit(lambda: run_catalogue_product_review.delay(review.pk))
         self.message_user(request, 'Product-worthiness review queued. Refresh shortly to see its recommendations.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_catalogueproductreview_changelist'))
@@ -225,9 +232,22 @@ class CatalogueProductRecommendationAdmin(admin.ModelAdmin):
     list_display = ('title', 'recommendation_type', 'status', 'review', 'position', 'created_at')
     list_filter = ('recommendation_type', 'status', 'review__created_at')
     search_fields = ('title', 'rationale', 'admin_notes')
-    readonly_fields = ('review', 'position', 'recommendation_type', 'title', 'rationale', 'evidence', 'recommended_action', 'affected_product_ids', 'consumer_assessment', 'created_at')
-    fields = ('review', 'position', 'recommendation_type', 'title', 'rationale', 'evidence', 'recommended_action', 'affected_product_ids', 'consumer_assessment', 'status', 'admin_notes', 'reviewed_by', 'reviewed_at', 'created_at')
-    actions = ('mark_reviewed', 'reject_recommendations')
+    readonly_fields = ('review', 'position', 'recommendation_type', 'title', 'rationale', 'evidence', 'recommended_action', 'proposed_action', 'affected_product_ids', 'consumer_assessment', 'application_result', 'created_at')
+    fields = ('review', 'position', 'recommendation_type', 'title', 'rationale', 'evidence', 'recommended_action', 'proposed_action', 'affected_product_ids', 'consumer_assessment', 'application_result', 'status', 'admin_notes', 'reviewed_by', 'reviewed_at', 'created_at')
+    actions = ('apply_selected_safe_product_changes', 'mark_reviewed', 'reject_recommendations')
+
+    @admin.action(description='Apply selected safe product retirements/consolidations')
+    def apply_selected_safe_product_changes(self, request, queryset):
+        applied = 0
+        for recommendation in queryset.exclude(status=CatalogueProductRecommendation.STATUS_APPLIED):
+            try:
+                apply_product_recommendation(recommendation, request.user)
+            except ProductRecommendationApplicationError as exc:
+                self.message_user(request, f'{recommendation.title}: {exc}', messages.ERROR)
+            else:
+                applied += 1
+        if applied:
+            self.message_user(request, f'Applied {applied} safe product catalogue change(s).', messages.SUCCESS)
     @admin.action(description='Mark selected recommendations reviewed')
     def mark_reviewed(self, request, queryset): queryset.update(status=CatalogueProductRecommendation.STATUS_REVIEWED, reviewed_by=request.user, reviewed_at=timezone.now())
     @admin.action(description='Reject selected recommendations')

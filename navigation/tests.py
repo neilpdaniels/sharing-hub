@@ -2,11 +2,19 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase, override_settings
+from django.utils import timezone
 
-from common.models import Category, CategoryAttribute, Product
+from common.models import Category, CategoryAttribute, Order, Product
 
 from .category_ai import check_duplicate, check_policy, process_category_suggestion
-from .models import CategorySuggestion, CategoryTaxonomyRecommendation, CategoryTaxonomyReview
+from .models import (
+    CatalogueProductRecommendation,
+    CatalogueProductReview,
+    CategorySuggestion,
+    CategoryTaxonomyRecommendation,
+    CategoryTaxonomyReview,
+)
+from .product_services import ProductRecommendationApplicationError, apply_product_recommendation
 from .rate_limits import consume_submission_quota
 from .services import apply_taxonomy_recommendation, promote_category_suggestion
 
@@ -191,3 +199,79 @@ class CategorySuggestionPipelineTests(TestCase):
 
         attribute = CategoryAttribute.objects.get(pk=result['category_attribute_id'])
         self.assertEqual(attribute.value_source, CategoryAttribute.VALUE_SOURCE_LISTING)
+
+
+class ProductRecommendationApplicationTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='catalogue-admin', email='catalogue-admin@example.test', password='test-password',
+        )
+        self.category = Category.objects.create(title='Garden tools')
+
+    def _recommendation(self, *, recommendation_type, affected_ids, action):
+        review = CatalogueProductReview.objects.create(requested_by=self.user)
+        return CatalogueProductRecommendation.objects.create(
+            review=review,
+            position=0,
+            recommendation_type=recommendation_type,
+            title='Safe catalogue cleanup',
+            rationale='No demand evidence exists.',
+            evidence=['No listings or rentals.'],
+            affected_product_ids=affected_ids,
+            proposed_action=action,
+        )
+
+    def test_applies_low_value_retirement_when_product_has_no_orders(self):
+        product = Product.objects.create(category_id=self.category, name='Disposable screwdriver')
+        recommendation = self._recommendation(
+            recommendation_type=CatalogueProductRecommendation.TYPE_LOW_VALUE,
+            affected_ids=[product.pk],
+            action={'operation': 'retire', 'canonical_product_id': None, 'retire_product_ids': [product.pk]},
+        )
+
+        result = apply_product_recommendation(recommendation, self.user)
+
+        recommendation.refresh_from_db()
+        self.assertFalse(Product.objects.filter(pk=product.pk).exists())
+        self.assertEqual(result['retired_product_ids'], [product.pk])
+        self.assertEqual(recommendation.status, CatalogueProductRecommendation.STATUS_APPLIED)
+
+    @patch('common.models.updateSummaryPrices.delay')
+    def test_refuses_retirement_when_product_has_any_historical_order(self, _update_prices):
+        product = Product.objects.create(category_id=self.category, name='Garden fork')
+        Order.objects.create(
+            product=product,
+            user=self.user,
+            direction=Order.TO_LET,
+            expiry_date=timezone.now(),
+            price=10,
+            status=Order.EXPIRED,
+        )
+        recommendation = self._recommendation(
+            recommendation_type=CatalogueProductRecommendation.TYPE_LOW_VALUE,
+            affected_ids=[product.pk],
+            action={'operation': 'retire', 'canonical_product_id': None, 'retire_product_ids': [product.pk]},
+        )
+
+        with self.assertRaisesMessage(ProductRecommendationApplicationError, 'active or historical order'):
+            apply_product_recommendation(recommendation, self.user)
+
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
+
+    def test_applies_duplicate_consolidation_only_when_all_affected_products_are_unused(self):
+        canonical = Product.objects.create(category_id=self.category, name='Plate compactor')
+        duplicate = Product.objects.create(category_id=self.category, name='Wacker plate')
+        recommendation = self._recommendation(
+            recommendation_type=CatalogueProductRecommendation.TYPE_DUPLICATE,
+            affected_ids=[canonical.pk, duplicate.pk],
+            action={
+                'operation': 'consolidate',
+                'canonical_product_id': canonical.pk,
+                'retire_product_ids': [duplicate.pk],
+            },
+        )
+
+        apply_product_recommendation(recommendation, self.user)
+
+        self.assertTrue(Product.objects.filter(pk=canonical.pk).exists())
+        self.assertFalse(Product.objects.filter(pk=duplicate.pk).exists())

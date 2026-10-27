@@ -4,7 +4,13 @@
   <li>
     <form method="post" action="{% url 'admin:navigation_categorytaxonomyreview_run_now' %}" style="display:inline">
       {% csrf_token %}
-      <button type="submit" class="addlink" style="border:0; cursor:pointer">Run catalogue review now</button>
+      <label for="taxonomy-review-strength" class="visually-hidden">Review strength</label>
+      <select id="taxonomy-review-strength" name="review_strength" aria-label="Review strength">
+        <option value="LIGHT">Light</option>
+        <option value="MEDIUM" selected>Medium</option>
+        <option value="HEAVY">Heavy</option>
+      </select>
+      <button type="submit" class="addlink" style="border:0; cursor:pointer">Run catalogue review</button>
     </form>
   </li>
   {{ block.super }}

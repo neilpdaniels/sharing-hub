@@ -253,9 +253,28 @@ def catalogue_snapshot() -> dict[str, Any]:
     }
 
 
-def _assessment_prompt(snapshot: dict[str, Any]) -> str:
+def _strength_instruction(strength: str) -> str:
+    instructions = {
+        CategoryTaxonomyReview.STRENGTH_LIGHT: (
+            'Requested review strength: LIGHT. Recommend only unmistakable duplicates, entirely empty category '
+            'subtrees, or a clear missing category with strong repeated-demand evidence. Prefer no recommendation when uncertain.'
+        ),
+        CategoryTaxonomyReview.STRENGTH_HEAVY: (
+            'Requested review strength: HEAVY. Actively look for evidence-backed consolidation, stale thin branches, '
+            'broad categories worth splitting, and missing filters. You may recommend substantial reorganisation, but '
+            'only when the supplied evidence identifies a safe target and concrete customer-browsing benefit.'
+        ),
+    }
+    return instructions.get(
+        strength,
+        'Requested review strength: MEDIUM. Recommend practical, evidence-backed cleanup and browsing improvements; avoid speculative churn.',
+    )
+
+
+def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
     return (
         'You are reviewing the Rentalution UK peer-to-peer rental catalogue taxonomy. '
+        f'{_strength_instruction(strength)} '
         'Use only the supplied evidence. Recommend changes only where material, specific and practical. '
         'Do not recommend electronics, cameras, phones, laptops, TVs, drones, adult content, disposable goods, '
         'or categories that have no evidence of a reusable rental use. Do not invent metrics or product names. '
@@ -305,7 +324,9 @@ def draft_taxonomy_assessment(state: TaxonomyState) -> TaxonomyState:
     review.started_at = timezone.now()
     review.error = ''
     review.save(update_fields=['snapshot', 'status', 'started_at', 'error'])
-    assessment = _chat_model().with_structured_output(TaxonomyAssessment).invoke(_assessment_prompt(snapshot))
+    assessment = _chat_model().with_structured_output(TaxonomyAssessment).invoke(
+        _assessment_prompt(snapshot, review.review_strength)
+    )
     data = assessment.model_dump()
     review.llm_analysis = data
     review.save(update_fields=['llm_analysis'])
@@ -320,10 +341,15 @@ def build_taxonomy_review_graph():
     return graph.compile()
 
 
-def critique_taxonomy_assessment(snapshot: dict[str, Any], assessment: TaxonomyAssessment) -> tuple[TaxonomyCritique, TaxonomyCritique]:
+def critique_taxonomy_assessment(
+    snapshot: dict[str, Any],
+    assessment: TaxonomyAssessment,
+    strength: str,
+) -> tuple[TaxonomyCritique, TaxonomyCritique]:
     """Use independent CrewAI reviewers; agreement is required for normal priority."""
     llm = LLM(model=f'openai/{DEFAULT_TEXT_MODEL}', api_key=_api_key(), temperature=0)
     context = (
+        f'{_strength_instruction(strength)}\n'
         f'Catalogue evidence: {snapshot}\n\n'
         f'Proposed assessment: {assessment.model_dump()}'
     )
@@ -371,7 +397,11 @@ def process_taxonomy_review(review_id: int) -> str:
         result = build_taxonomy_review_graph().invoke({'review_id': review_id})
         assessment = TaxonomyAssessment.model_validate(result['assessment'])
         review.refresh_from_db()
-        operator, skeptic = critique_taxonomy_assessment(review.snapshot, assessment)
+        operator, skeptic = critique_taxonomy_assessment(
+            review.snapshot,
+            assessment,
+            review.review_strength,
+        )
         normal_priority = set(operator.approved_indexes) & set(skeptic.approved_indexes)
         concern_indexes = set(operator.concern_indexes) | set(skeptic.concern_indexes)
         review.crew_critique = {

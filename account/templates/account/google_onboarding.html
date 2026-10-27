@@ -16,3 +16,23 @@
   </div>
 </div></div>
 {% endblock %}
+
+{% block domready %}
+(function () {
+  var postcode = document.getElementById('id_postcode');
+  if (!postcode) return;
+
+  postcode.setAttribute('autocomplete', 'postal-code');
+  postcode.setAttribute('autocapitalize', 'characters');
+  postcode.setAttribute('spellcheck', 'false');
+  postcode.setAttribute('maxlength', '8');
+  postcode.setAttribute('placeholder', 'e.g. SW1A 1AA');
+
+  postcode.addEventListener('input', function () {
+    var compact = postcode.value.toUpperCase().replace(/\s/g, '');
+    postcode.value = compact.length > 3
+      ? compact.slice(0, -3) + ' ' + compact.slice(-3)
+      : compact;
+  });
+}());
+{% endblock %}

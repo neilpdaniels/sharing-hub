@@ -1,3 +1,5 @@
+from datetime import date
+
 from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
@@ -8,6 +10,34 @@ from .profanity import username_contains_blocked_word
 from .models import Profile
 from .validators import calculate_age
 import re
+
+
+UK_POSTCODE_RE = re.compile(
+    r'(?:GIR\s?0AA|(?:[A-PR-UWYZ]\d[\dA-HJKSTUW]?|[A-PR-UWYZ][A-HK-Y]\d[\dABEHMNPRVWXY]?)\s?\d[ABD-HJLNP-UW-Z]{2})',
+    re.IGNORECASE,
+)
+
+
+def normalize_uk_postcode(value):
+    """Validate a full UK postcode and store it in its conventional form."""
+    postcode = re.sub(r'\s+', '', (value or '').upper())
+    if not UK_POSTCODE_RE.fullmatch(postcode):
+        raise forms.ValidationError('Enter a valid UK postcode, for example SW1A 1AA.')
+    return f'{postcode[:-3]} {postcode[-3:]}'
+
+
+def adult_date_input():
+    """A native date picker that prevents selecting an underage date in the UI."""
+    today = date.today()
+    try:
+        latest_eligible_date = today.replace(year=today.year - 18)
+    except ValueError:  # 29 February in a non-leap year
+        latest_eligible_date = today.replace(year=today.year - 18, day=28)
+    return forms.DateInput(attrs={
+        'type': 'date',
+        'max': latest_eligible_date.isoformat(),
+        'autocomplete': 'bday',
+    })
 
 class LoginForm(forms.Form):
     username = forms.CharField()
@@ -29,7 +59,11 @@ class UserRegistrationStartForm(AvatarFieldsMixin):
         help_text='3–30 characters. Letters, numbers, hyphens and underscores only.',
     )
     email = forms.EmailField(required=True)
-    date_of_birth = forms.DateField(required=True, input_formats=['%d-%m-%Y'])
+    date_of_birth = forms.DateField(
+        required=True,
+        input_formats=['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y'],
+        widget=adult_date_input(),
+    )
     mobile_number = forms.CharField(required=True, max_length=20)
     house_name_number = forms.CharField(required=False, max_length=255)
     address_line_1 = forms.CharField(required=True, max_length=255)
@@ -78,6 +112,9 @@ class UserRegistrationStartForm(AvatarFieldsMixin):
         if calculate_age(date_of_birth) < 18:
             raise forms.ValidationError("You must be at least 18 to register")
         return date_of_birth
+
+    def clean_postcode(self):
+        return normalize_uk_postcode(self.cleaned_data['postcode'])
 
     def clean(self):
         cleaned_data = super().clean()
@@ -129,10 +166,28 @@ class UserEditForm(forms.ModelForm):
 # picture functionality
 class ProfileAddForm(forms.ModelForm):
     required_css_class = 'required'
+    date_of_birth = forms.DateField(
+        required=True,
+        input_formats=['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y'],
+        widget=adult_date_input(),
+    )
 
     class Meta:
         model = Profile
         fields = ('date_of_birth', 'mobile_number', 'address_line_1', 'address_line_2', 'town', 'county', 'postcode')
+        widgets = {
+            'mobile_number': forms.TextInput(attrs={
+                'type': 'tel',
+                'inputmode': 'tel',
+                'autocomplete': 'tel-national',
+                'placeholder': 'e.g. 07700 900123',
+            }),
+            'address_line_1': forms.TextInput(attrs={'autocomplete': 'address-line1'}),
+            'address_line_2': forms.TextInput(attrs={'autocomplete': 'address-line2'}),
+            'town': forms.TextInput(attrs={'autocomplete': 'address-level2'}),
+            'county': forms.TextInput(attrs={'autocomplete': 'address-level1'}),
+            'postcode': forms.TextInput(attrs={'autocomplete': 'postal-code'}),
+        }
 
     def clean_date_of_birth(self):
         date_of_birth = self.cleaned_data['date_of_birth'] 
@@ -147,6 +202,9 @@ class ProfileAddForm(forms.ModelForm):
             raise forms.ValidationError('Enter a valid UK mobile number.')
         return normalized
 
+    def clean_postcode(self):
+        return normalize_uk_postcode(self.cleaned_data['postcode'])
+
 class ProfileImageForm(forms.ModelForm):
     class Meta:
         model = Profile
@@ -157,6 +215,7 @@ class ProfileEditForm(forms.ModelForm):
     date_of_birth = forms.DateField(
         required=True,
         input_formats=['%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d'],
+        widget=adult_date_input(),
     )
 
     class Meta:
@@ -170,3 +229,6 @@ class ProfileEditForm(forms.ModelForm):
         if not is_valid_uk_phone(normalized):
             raise forms.ValidationError('Enter a valid UK mobile number.')
         return normalized
+
+    def clean_postcode(self):
+        return normalize_uk_postcode(self.cleaned_data['postcode'])

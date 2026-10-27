@@ -154,6 +154,14 @@ class CategoryTaxonomyReview(models.Model):
 		(STATUS_READY, 'Ready for human review'),
 		(STATUS_FAILED, 'Failed'),
 	)
+	STRENGTH_LIGHT = 'LIGHT'
+	STRENGTH_MEDIUM = 'MEDIUM'
+	STRENGTH_HEAVY = 'HEAVY'
+	STRENGTH_CHOICES = (
+		(STRENGTH_LIGHT, 'Light — obvious cleanup only'),
+		(STRENGTH_MEDIUM, 'Medium — practical improvement'),
+		(STRENGTH_HEAVY, 'Heavy — proactive reorganisation'),
+	)
 
 	requested_by = models.ForeignKey(
 		settings.AUTH_USER_MODEL,
@@ -163,6 +171,7 @@ class CategoryTaxonomyReview(models.Model):
 		related_name='requested_taxonomy_reviews',
 	)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
+	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
 	snapshot = models.JSONField(default=dict, blank=True)
 	llm_analysis = models.JSONField(default=dict, blank=True)
 	crew_critique = models.JSONField(default=dict, blank=True)
@@ -188,8 +197,17 @@ class CatalogueProductReview(models.Model):
 		(STATUS_QUEUED, 'Queued'), (STATUS_RUNNING, 'Running'),
 		(STATUS_READY, 'Ready for human review'), (STATUS_FAILED, 'Failed'),
 	)
+	STRENGTH_LIGHT = 'LIGHT'
+	STRENGTH_MEDIUM = 'MEDIUM'
+	STRENGTH_HEAVY = 'HEAVY'
+	STRENGTH_CHOICES = (
+		(STRENGTH_LIGHT, 'Light — obvious cleanup only'),
+		(STRENGTH_MEDIUM, 'Medium — practical improvement'),
+		(STRENGTH_HEAVY, 'Heavy — proactive reorganisation'),
+	)
 	requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
+	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
 	snapshot = models.JSONField(default=dict, blank=True)
 	llm_analysis = models.JSONField(default=dict, blank=True)
 	error = models.TextField(blank=True, default='')
@@ -212,7 +230,13 @@ class CatalogueProductRecommendation(models.Model):
 	STATUS_PENDING = 'PENDING'
 	STATUS_REVIEWED = 'REVIEWED'
 	STATUS_REJECTED = 'REJECTED'
-	STATUS_CHOICES = ((STATUS_PENDING, 'Pending human review'), (STATUS_REVIEWED, 'Reviewed'), (STATUS_REJECTED, 'Rejected'))
+	STATUS_APPLIED = 'APPLIED'
+	STATUS_CHOICES = (
+		(STATUS_PENDING, 'Pending human review'),
+		(STATUS_REVIEWED, 'Reviewed without change'),
+		(STATUS_REJECTED, 'Rejected'),
+		(STATUS_APPLIED, 'Applied safely'),
+	)
 	review = models.ForeignKey(CatalogueProductReview, on_delete=models.CASCADE, related_name='recommendations')
 	position = models.PositiveSmallIntegerField()
 	recommendation_type = models.CharField(max_length=16, choices=TYPE_CHOICES)
@@ -220,8 +244,12 @@ class CatalogueProductRecommendation(models.Model):
 	rationale = models.TextField()
 	evidence = models.JSONField(default=list, blank=True)
 	recommended_action = models.TextField(blank=True, default='')
+	# A machine-readable, staff-reviewed plan. It is never applied by the AI
+	# worker itself; the admin action performs the live order-history guard.
+	proposed_action = models.JSONField(default=dict, blank=True)
 	affected_product_ids = models.JSONField(default=list, blank=True)
 	consumer_assessment = models.JSONField(default=dict, blank=True)
+	application_result = models.JSONField(default=dict, blank=True)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
 	admin_notes = models.TextField(blank=True, default='')
 	reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)

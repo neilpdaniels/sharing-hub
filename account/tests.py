@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from account.forms import AvatarEditForm, UserRegistrationStartForm
+from account.forms import AvatarEditForm, ProfileAddForm, UserRegistrationStartForm
 from account.models import Profile
 
 
@@ -74,6 +74,36 @@ class UserRegistrationStartFormTests(TestCase):
 
 		self.assertFalse(form.is_valid())
 		self.assertIn('date_of_birth', form.errors)
+
+	def test_normalizes_valid_uk_postcode(self):
+		form = UserRegistrationStartForm(data=self._valid_payload())
+
+		self.assertTrue(form.is_valid(), form.errors)
+		self.assertEqual(form.cleaned_data['postcode'], 'SW1A 1AA')
+
+	def test_rejects_invalid_postcode(self):
+		payload = self._valid_payload()
+		payload['postcode'] = 'not a postcode'
+		form = UserRegistrationStartForm(data=payload)
+
+		self.assertFalse(form.is_valid())
+		self.assertIn('postcode', form.errors)
+
+
+class ProfileAddFormTests(TestCase):
+	def test_accepts_native_date_input_and_normalizes_postcode(self):
+		form = ProfileAddForm(data={
+			'date_of_birth': '1990-01-01',
+			'mobile_number': '07700900123',
+			'address_line_1': '10 Main Street',
+			'address_line_2': '',
+			'town': 'London',
+			'county': '',
+			'postcode': 'sw1a1aa',
+		})
+
+		self.assertTrue(form.is_valid(), form.errors)
+		self.assertEqual(form.cleaned_data['postcode'], 'SW1A 1AA')
 
 	def test_rejects_invalid_avatar_hair_color(self):
 		payload = self._valid_payload()

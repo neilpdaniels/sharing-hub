@@ -27,20 +27,43 @@ class ConsumerAssessment(StrictModel):
     estimate_note: str = Field(max_length=500)
 
 
+class ProductAction(StrictModel):
+    """A plan that can be validated before staff apply it."""
+    operation: Literal['retire', 'consolidate', 'none']
+    canonical_product_id: int | None = None
+    retire_product_ids: list[int] = Field(default_factory=list, max_length=12)
+
+
 class ProductProposal(StrictModel):
     recommendation_type: Literal['DUPLICATE', 'LOW_VALUE', 'KEEP']
     title: str = Field(max_length=255)
     rationale: str = Field(max_length=900)
     evidence: list[str] = Field(max_length=6)
-    # Advisory for now; automatic application needs product-retirement support.
     recommended_action: str = Field(max_length=700)
     affected_product_ids: list[int] = Field(max_length=12)
+    proposed_action: ProductAction
     consumer_assessment: ConsumerAssessment
 
 
 class ProductAssessment(StrictModel):
     executive_summary: str = Field(max_length=1200)
     recommendations: list[ProductProposal] = Field(max_length=40)
+
+
+def _strength_instruction(strength: str) -> str:
+    instructions = {
+        CatalogueProductReview.STRENGTH_LIGHT: (
+            'Requested review strength: LIGHT. Recommend only near-certain duplicates or clearly disposable, low-value products with no meaningful rental evidence.'
+        ),
+        CatalogueProductReview.STRENGTH_HEAVY: (
+            'Requested review strength: HEAVY. Proactively identify evidence-backed duplicate names and low-value catalogue clutter. '
+            'Recommend more candidates than a medium review, but never use a weak or invented rationale.'
+        ),
+    }
+    return instructions.get(
+        strength,
+        'Requested review strength: MEDIUM. Recommend practical duplicate consolidation and low-value cleanup where evidence supports it.',
+    )
 
 
 def product_catalogue_snapshot() -> dict:
@@ -79,11 +102,16 @@ def product_catalogue_snapshot() -> dict:
     return {'generated_at': timezone.now().isoformat(), 'products': products, 'product_id_set': [p['id'] for p in products]}
 
 
-def _prompt(snapshot: dict) -> str:
+def _prompt(snapshot: dict, strength: str) -> str:
     return (
-        'You are conducting a read-only product catalogue-worthiness review for a UK peer-to-peer rental marketplace. '
         'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
-        'Identify near-duplicate products that should be manually consolidated into one canonical product (for example, '
+        'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
+        'You are conducting a read-only product catalogue-worthiness review for a UK peer-to-peer rental marketplace. '
+        f'{_strength_instruction(strength)} '
+        'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
+        'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
+        'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
+        'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
         'different names for the same plate compactor), and low-value generic products that consumers are more likely to buy. '
         'A £15–50 estimated replacement cost is a strong negative signal, not an automatic rejection: retain rare, one-off, '
         'specialist, hard-to-store, hard-to-transport, or costly-to-get-wrong tools. Treat model/brand variants as duplicates '
@@ -91,11 +119,14 @@ def _prompt(snapshot: dict) -> str:
         'For every recommendation, score likely use frequency, estimated replacement-cost band (estimate only), transport/storage '
         'burden, rental wear/damage risk, and rental suitability. Use only supplied catalogue facts for listings/rentals/prices; '
         'your replacement-cost band is an explicitly labelled general estimate. Do not invent product IDs. '
-        'Recommend only DUPLICATE, LOW_VALUE, or KEEP (for a specialist exception worth retaining). Never instruct automatic '
-        'deletion or merging; all recommendations are for human review. Include a specific recommended_action: for a '
-        'duplicate, name the proposed canonical product ID and which IDs staff should manually consolidate; for LOW_VALUE, '
-        'say whether staff should retain, retire from future use, or request stronger rental evidence; for KEEP, explain why '
-        'it should remain. It is valid to produce no recommendations.\n\n'
+        'Recommend only DUPLICATE, LOW_VALUE, or KEEP (for a specialist exception worth retaining). All recommendations '
+        'are for human review. Include a proposed_action object: for DUPLICATE use operation "consolidate", set '
+        'canonical_product_id to the one existing product ID to retain, and retire_product_ids to the duplicate IDs to remove. '
+        'For LOW_VALUE use operation "retire", canonical_product_id null, and retire_product_ids to the IDs to remove. '
+        'For KEEP use operation "none", canonical_product_id null, and an empty retire_product_ids list. Every ID must '
+        'come from the supplied snapshot and affected_product_ids must include every canonical or retired ID. A staff action '
+        'will refuse the plan if any affected product has active or historical orders, so never propose moving orders. '
+        'It is valid to produce no recommendations.\n\n'
         f'Product snapshot:\n{snapshot}'
     )
 
@@ -106,16 +137,27 @@ def process_product_catalogue_review(review_id: int) -> str:
         snapshot = product_catalogue_snapshot()
         review.snapshot, review.status, review.started_at, review.error = snapshot, review.STATUS_RUNNING, timezone.now(), ''
         review.save(update_fields=['snapshot', 'status', 'started_at', 'error'])
-        assessment = _chat_model().with_structured_output(ProductAssessment).invoke(_prompt(snapshot))
+        assessment = _chat_model().with_structured_output(ProductAssessment).invoke(
+            _prompt(snapshot, review.review_strength)
+        )
         review.llm_analysis = assessment.model_dump()
         review.recommendations.all().delete()
         valid_ids = set(snapshot['product_id_set'])
         for position, item in enumerate(assessment.recommendations):
+            action = item.proposed_action.model_dump()
+            action['canonical_product_id'] = (
+                action['canonical_product_id']
+                if action['canonical_product_id'] in valid_ids else None
+            )
+            action['retire_product_ids'] = [
+                pk for pk in action['retire_product_ids'] if pk in valid_ids
+            ]
             CatalogueProductRecommendation.objects.create(
                 review=review, position=position, recommendation_type=item.recommendation_type,
                 title=item.title, rationale=item.rationale, evidence=item.evidence,
                 recommended_action=item.recommended_action,
                 affected_product_ids=[pk for pk in item.affected_product_ids if pk in valid_ids],
+                proposed_action=action,
                 consumer_assessment=item.consumer_assessment.model_dump(),
             )
         review.status, review.completed_at, review.error = review.STATUS_READY, timezone.now(), ''

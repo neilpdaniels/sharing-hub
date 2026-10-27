@@ -19,11 +19,12 @@ from urllib.request import urlopen
 from django.conf import settings
 
 
-APPLICATION_QUERY = (
-    '{job="docker", service=~"web|worker|video-worker|catalog-ai-worker|beat"} '
-    '|~ "(?i)(error|exception|traceback|critical|fatal|panic|out of memory|no space left)"'
-)
+APPLICATION_SERVICES = ('web', 'worker', 'video-worker', 'catalog-ai-worker', 'beat')
 NGINX_QUERY = '{job="nginx-error"}'
+ERROR_EVENT_PATTERN = re.compile(
+    r'(?i)(\berror\b|\bexception\b|\btraceback\b|\bcritical\b|\bfatal\b|\bpanic\b|'
+    r'out of memory|no space left)'
+)
 
 # These are high-confidence operational failures.  Everything else remains in
 # the digest as ACTION_REQUIRED for a human to review; it cannot page merely
@@ -93,13 +94,17 @@ def _loki_events(
     loki_url: str,
     *,
     timeout_seconds: int,
+    limit: int = 500,
 ) -> list[LogEvent]:
     params = urlencode({
         'query': query,
         'start': str(int(start.timestamp() * 1_000_000_000)),
         'end': str(int(end.timestamp() * 1_000_000_000)),
-        'limit': '5000',
-        'direction': 'forward',
+        # A cap keeps an unexpectedly chatty service from causing a monitoring
+        # job to compete with the application. We want recent diagnosis, not a
+        # complete archival export.
+        'limit': str(limit),
+        'direction': 'backward',
     })
     with urlopen(  # nosec B310 - controlled internal URL
         f'{loki_url.rstrip("/")}/loki/api/v1/query_range?{params}',
@@ -128,6 +133,7 @@ def _chunked_loki_events(
     *,
     chunk_hours: int,
     timeout_seconds: int,
+    limit: int = 500,
 ) -> list[LogEvent]:
     """Keep broad regex searches bounded so one noisy day cannot time out."""
     events = []
@@ -138,7 +144,7 @@ def _chunked_loki_events(
         try:
             events.extend(_loki_events(
                 query, chunk_start, chunk_end, loki_url,
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=timeout_seconds, limit=limit,
             ))
         except TimeoutError as exc:
             raise RuntimeError(
@@ -164,10 +170,16 @@ def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str |
     query_chunk_minutes = query_chunk_minutes or getattr(settings, 'LOG_REVIEW_QUERY_CHUNK_MINUTES', 5)
     query_timeout_seconds = query_timeout_seconds or getattr(settings, 'LOG_REVIEW_QUERY_TIMEOUT_SECONDS', 45)
 
-    events = _chunked_loki_events(
-        APPLICATION_QUERY, 'application logs', start, end, loki_url,
-        chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
-    )
+    # Do not run a broad LogQL full-text regex across all container logs. It
+    # can stall a single-node Loki under load. Fetch bounded recent lines from
+    # each exact service label instead, then classify them locally.
+    events = []
+    for service in APPLICATION_SERVICES:
+        service_events = _chunked_loki_events(
+            f'{{job="docker", service="{service}"}}', f'{service} logs', start, end, loki_url,
+            chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
+        )
+        events.extend(event for event in service_events if ERROR_EVENT_PATTERN.search(event.message))
     events.extend(_chunked_loki_events(
         NGINX_QUERY, 'Nginx error logs', start, end, loki_url,
         chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,

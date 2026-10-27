@@ -90,7 +90,7 @@ and redeploy:
 LOG_REVIEW_SCHEDULED_ENABLED=1
 LOG_REVIEW_HOURS=6
 # Keep broad Loki regex scans bounded; defaults shown.
-LOG_REVIEW_QUERY_CHUNK_MINUTES=5
+LOG_REVIEW_QUERY_CHUNK_MINUTES=15
 LOG_REVIEW_QUERY_TIMEOUT_SECONDS=45
 # Optional; defaults to MONITORING_ALERT_EMAIL.
 LOG_REVIEW_RECIPIENTS=neil_p_daniels@rentalution.co.uk

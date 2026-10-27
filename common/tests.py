@@ -51,7 +51,7 @@ class ProductionLogReviewTests(SimpleTestCase):
 			LogEvent('2026-10-27T10:01:00+00:00', 'web', 'ERROR user=bob@example.com request=987654 failed'),
 			LogEvent('2026-10-27T10:02:00+00:00', 'worker', 'CRITICAL no space left on device'),
 		]
-		with patch('common.log_review._loki_events', side_effect=[events[:2], events[2:]]):
+		with patch('common.log_review._loki_events', return_value=events):
 			report = build_report(
 				hours=6,
 				now=datetime(2026, 10, 27, 12, tzinfo=timezone.utc),
@@ -72,7 +72,7 @@ class ProductionLogReviewTests(SimpleTestCase):
 				'reason': 'Known harmless load-balancer disconnect',
 			}]), encoding='utf-8')
 			event = LogEvent('2026-10-27T10:00:00+00:00', 'nginx-error', 'benign probe disconnect')
-			with patch('common.log_review._loki_events', side_effect=[[event], []]):
+			with patch('common.log_review._loki_events', return_value=[event]):
 				report = build_report(hours=1, suppressions_path=path, query_chunk_minutes=60)
 
 		self.assertEqual(report['status'], 'OK')

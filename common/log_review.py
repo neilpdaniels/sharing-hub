@@ -86,7 +86,14 @@ def _matching_suppression(message: str, suppressions: list[dict[str, str]]) -> s
     return None
 
 
-def _loki_events(query: str, start: datetime, end: datetime, loki_url: str) -> list[LogEvent]:
+def _loki_events(
+    query: str,
+    start: datetime,
+    end: datetime,
+    loki_url: str,
+    *,
+    timeout_seconds: int,
+) -> list[LogEvent]:
     params = urlencode({
         'query': query,
         'start': str(int(start.timestamp() * 1_000_000_000)),
@@ -94,7 +101,10 @@ def _loki_events(query: str, start: datetime, end: datetime, loki_url: str) -> l
         'limit': '5000',
         'direction': 'forward',
     })
-    with urlopen(f'{loki_url.rstrip("/")}/loki/api/v1/query_range?{params}', timeout=20) as response:  # nosec B310 - controlled internal URL
+    with urlopen(  # nosec B310 - controlled internal URL
+        f'{loki_url.rstrip("/")}/loki/api/v1/query_range?{params}',
+        timeout=timeout_seconds,
+    ) as response:
         payload = json.load(response)
     if payload.get('status') != 'success':
         raise RuntimeError(f'Loki returned an unsuccessful response: {payload!r}')
@@ -109,8 +119,40 @@ def _loki_events(query: str, start: datetime, end: datetime, loki_url: str) -> l
     return events
 
 
+def _chunked_loki_events(
+    query: str,
+    query_name: str,
+    start: datetime,
+    end: datetime,
+    loki_url: str,
+    *,
+    chunk_hours: int,
+    timeout_seconds: int,
+) -> list[LogEvent]:
+    """Keep broad regex searches bounded so one noisy day cannot time out."""
+    events = []
+    chunk_start = start
+    chunk_size = timedelta(hours=chunk_hours)
+    while chunk_start < end:
+        chunk_end = min(chunk_start + chunk_size, end)
+        try:
+            events.extend(_loki_events(
+                query, chunk_start, chunk_end, loki_url,
+                timeout_seconds=timeout_seconds,
+            ))
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f'Loki timed out after {timeout_seconds}s while scanning {query_name} '
+                f'from {chunk_start.isoformat()} to {chunk_end.isoformat()}. '
+                'Retry with a smaller --hours value or reduce LOG_REVIEW_QUERY_CHUNK_MINUTES.'
+            ) from exc
+        chunk_start = chunk_end
+    return events
+
+
 def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str | None = None,
-                 suppressions_path: str | Path | None = None) -> dict[str, Any]:
+                 suppressions_path: str | Path | None = None, query_chunk_minutes: int | None = None,
+                 query_timeout_seconds: int | None = None) -> dict[str, Any]:
     if hours < 1 or hours > 168:
         raise ValueError('hours must be between 1 and 168.')
     end = now or datetime.now(timezone.utc)
@@ -119,9 +161,25 @@ def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str |
     start = end - timedelta(hours=hours)
     loki_url = loki_url or getattr(settings, 'LOKI_URL', 'http://loki:3100')
     suppressions = load_suppressions(suppressions_path)
+    query_chunk_minutes = query_chunk_minutes or getattr(settings, 'LOG_REVIEW_QUERY_CHUNK_MINUTES', 5)
+    query_timeout_seconds = query_timeout_seconds or getattr(settings, 'LOG_REVIEW_QUERY_TIMEOUT_SECONDS', 45)
 
-    events = _loki_events(APPLICATION_QUERY, start, end, loki_url)
-    events.extend(_loki_events(NGINX_QUERY, start, end, loki_url))
+    events = _chunked_loki_events(
+        APPLICATION_QUERY, 'application logs', start, end, loki_url,
+        chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
+    )
+    events.extend(_chunked_loki_events(
+        NGINX_QUERY, 'Nginx error logs', start, end, loki_url,
+        chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
+    ))
+    # Loki query-range windows are inclusive; avoid double-counting a line
+    # exactly on the boundary between two chunks.
+    seen_events = set()
+    events = [
+        event for event in events
+        if not ((event.timestamp, event.source, event.message) in seen_events
+                or seen_events.add((event.timestamp, event.source, event.message)))
+    ]
     groups: dict[tuple[str, str], list[LogEvent]] = defaultdict(list)
     suppressed: dict[str, int] = defaultdict(int)
     for event in events:

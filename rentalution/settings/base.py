@@ -72,6 +72,8 @@ CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED = os.environ.get(
 LOKI_URL = os.environ.get('LOKI_URL', 'http://loki:3100').rstrip('/')
 LOG_REVIEW_SCHEDULED_ENABLED = os.environ.get('LOG_REVIEW_SCHEDULED_ENABLED', '0') == '1'
 LOG_REVIEW_HOURS = max(1, min(168, int(os.environ.get('LOG_REVIEW_HOURS', '6'))))
+LOG_REVIEW_QUERY_CHUNK_MINUTES = max(1, min(60, int(os.environ.get('LOG_REVIEW_QUERY_CHUNK_MINUTES', '5'))))
+LOG_REVIEW_QUERY_TIMEOUT_SECONDS = max(5, min(120, int(os.environ.get('LOG_REVIEW_QUERY_TIMEOUT_SECONDS', '45'))))
 LOG_REVIEW_RECIPIENTS = tuple(
     value.strip()
     for value in os.environ.get(

@@ -1,3 +1,5 @@
+FROM docker:27.5.1-cli AS docker_cli
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,6 +20,11 @@ RUN apt-get update \
 
 RUN pip install --upgrade pip uv
 RUN pip install gunicorn celery
+
+# Only the dedicated log-reviewer Compose service receives the Docker socket.
+# The binary is static in the Docker CLI image; normal web/worker services do
+# not get socket access and therefore cannot control the host Docker daemon.
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
 
 COPY pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -156,9 +157,57 @@ def _chunked_loki_events(
     return events
 
 
+def _docker_command(args: list[str], *, timeout_seconds: int = 30) -> str:
+    """Run the Docker CLI only from the dedicated log-reviewer service."""
+    try:
+        result = subprocess.run(
+            ['docker', *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f'Docker log source failed: {exc}') from exc
+    # `docker logs` preserves a container's stdout/stderr split. Both are
+    # operational logs and must be reviewed together.
+    return result.stdout + result.stderr
+
+
+def _docker_events(hours: int) -> list[LogEvent]:
+    """Read capped recent container logs without relying on Loki queries."""
+    project = getattr(settings, 'DOCKER_COMPOSE_PROJECT_NAME', 'rentalution')
+    events = []
+    for service in APPLICATION_SERVICES:
+        container_id = _docker_command([
+            'ps', '-q',
+            '--filter', f'label=com.docker.compose.project={project}',
+            '--filter', f'label=com.docker.compose.service={service}',
+        ]).strip().splitlines()
+        if not container_id:
+            events.append(LogEvent(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                source=service,
+                message=f'CRITICAL log-reviewer cannot find running container service={service}',
+            ))
+            continue
+        output = _docker_command([
+            'logs', '--timestamps', '--since', f'{hours}h', '--tail', '2000', container_id[0],
+        ])
+        for line in output.splitlines():
+            if not line:
+                continue
+            timestamp, separator, message = line.partition(' ')
+            if not separator:
+                timestamp, message = datetime.now(timezone.utc).isoformat(), line
+            if ERROR_EVENT_PATTERN.search(message):
+                events.append(LogEvent(timestamp=timestamp, source=service, message=message))
+    return events
+
+
 def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str | None = None,
                  suppressions_path: str | Path | None = None, query_chunk_minutes: int | None = None,
-                 query_timeout_seconds: int | None = None) -> dict[str, Any]:
+                 query_timeout_seconds: int | None = None, source: str = 'docker') -> dict[str, Any]:
     if hours < 1 or hours > 168:
         raise ValueError('hours must be between 1 and 168.')
     end = now or datetime.now(timezone.utc)
@@ -170,20 +219,24 @@ def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str |
     query_chunk_minutes = query_chunk_minutes or getattr(settings, 'LOG_REVIEW_QUERY_CHUNK_MINUTES', 5)
     query_timeout_seconds = query_timeout_seconds or getattr(settings, 'LOG_REVIEW_QUERY_TIMEOUT_SECONDS', 45)
 
-    # Do not run a broad LogQL full-text regex across all container logs. It
-    # can stall a single-node Loki under load. Fetch bounded recent lines from
-    # each exact service label instead, then classify them locally.
-    events = []
-    for service in APPLICATION_SERVICES:
-        service_events = _chunked_loki_events(
-            f'{{job="docker", service="{service}"}}', f'{service} logs', start, end, loki_url,
+    if source == 'docker':
+        events = _docker_events(hours)
+    elif source == 'loki':
+        # Retained as a diagnostic fallback; production uses Docker logs so a
+        # busy or starting Loki instance cannot block the digest.
+        events = []
+        for service in APPLICATION_SERVICES:
+            service_events = _chunked_loki_events(
+                f'{{job="docker", service="{service}"}}', f'{service} logs', start, end, loki_url,
+                chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
+            )
+            events.extend(event for event in service_events if ERROR_EVENT_PATTERN.search(event.message))
+        events.extend(_chunked_loki_events(
+            NGINX_QUERY, 'Nginx error logs', start, end, loki_url,
             chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
-        )
-        events.extend(event for event in service_events if ERROR_EVENT_PATTERN.search(event.message))
-    events.extend(_chunked_loki_events(
-        NGINX_QUERY, 'Nginx error logs', start, end, loki_url,
-        chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
-    ))
+        ))
+    else:
+        raise ValueError('source must be docker or loki.')
     # Loki query-range windows are inclusive; avoid double-counting a line
     # exactly on the boundary between two chunks.
     seen_events = set()
@@ -216,6 +269,7 @@ def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str |
     status = 'CRITICAL' if any(issue['severity'] == 'CRITICAL' for issue in issues) else ('ACTION_REQUIRED' if issues else 'OK')
     return {
         'schema_version': 1,
+        'source': source,
         'status': status,
         'window': {'hours': hours, 'start': start.isoformat(), 'end': end.isoformat()},
         'events_examined': len(events),

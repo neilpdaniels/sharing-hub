@@ -84,6 +84,7 @@ LOG_REVIEW_RECIPIENTS = tuple(
 LOG_REVIEW_SUPPRESSIONS_FILE = os.environ.get(
     'LOG_REVIEW_SUPPRESSIONS_FILE', 'monitoring/log-review-suppressions.json'
 )
+DOCKER_COMPOSE_PROJECT_NAME = os.environ.get('COMPOSE_PROJECT_NAME', 'rentalution')
 
 # Listing images are resized and converted to JPEG by the Celery worker.
 ORDER_IMAGE_UPLOAD_MAX_BYTES = int(os.environ.get('ORDER_IMAGE_UPLOAD_MAX_BYTES', str(20 * 1024 * 1024)))

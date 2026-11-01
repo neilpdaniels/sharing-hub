@@ -111,6 +111,25 @@ services:
       - container_watchdog_data:/var/lib/container-watchdog
     restart: unless-stopped
 
+  # A separate privileged reader for deterministic log digests. It is the only
+  # Django-based service given Docker's socket; web and task workers never get
+  # that host-level capability.
+  log-reviewer:
+    image: ${WEB_IMAGE}
+    command: ["/bin/sh", "/usr/local/bin/docker-log-reviewer.sh"]
+    user: "0:0"
+    env_file:
+      - .env
+    environment:
+      COMPOSE_PROJECT_NAME: rentalution
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/docker-log-reviewer.sh:/usr/local/bin/docker-log-reviewer.sh:ro
+    depends_on:
+      - web
+      - redis
+    restart: unless-stopped
+
   # Private observability services. Access Grafana and Uptime Kuma through an
   # SSH tunnel; no monitoring UI is exposed to the public internet.
   loki:

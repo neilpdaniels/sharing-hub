@@ -45,6 +45,21 @@ class PhoneUtilsTests(TestCase):
 
 
 class ProductionLogReviewTests(SimpleTestCase):
+	@patch('common.log_review._docker_command')
+	def test_docker_source_collects_stderr_error_lines(self, docker_command):
+		def docker_output(args, **_kwargs):
+			if args[0] == 'ps':
+				return 'container-id\n'
+			return '2026-10-27T10:00:00Z ERROR failed to send email to alice@example.com\n'
+
+		docker_command.side_effect = docker_output
+		report = build_report(hours=1, source='docker')
+
+		self.assertEqual(report['status'], 'ACTION_REQUIRED')
+		self.assertEqual(report['issues'][0]['count'], 1)
+		self.assertIn('[EMAIL]', report['issues'][0]['fingerprint'])
+		self.assertEqual(docker_command.call_count, 10)
+
 	def test_groups_events_redacts_data_and_escalates_only_known_critical_failures(self):
 		events = [
 			LogEvent('2026-10-27T10:00:00+00:00', 'web', 'ERROR user=alice@example.com request=123456 failed'),
@@ -57,6 +72,7 @@ class ProductionLogReviewTests(SimpleTestCase):
 				now=datetime(2026, 10, 27, 12, tzinfo=timezone.utc),
 				suppressions_path='/tmp/non-existent-log-review-suppressions.json',
 				query_chunk_minutes=360,
+				source='loki',
 			)
 
 		self.assertEqual(report['status'], 'CRITICAL')
@@ -73,7 +89,7 @@ class ProductionLogReviewTests(SimpleTestCase):
 			}]), encoding='utf-8')
 			event = LogEvent('2026-10-27T10:00:00+00:00', 'nginx-error', 'benign probe disconnect')
 			with patch('common.log_review._loki_events', return_value=[event]):
-				report = build_report(hours=1, suppressions_path=path, query_chunk_minutes=60)
+				report = build_report(hours=1, suppressions_path=path, query_chunk_minutes=60, source='loki')
 
 		self.assertEqual(report['status'], 'OK')
 		self.assertEqual(report['suppressed'], [{

@@ -2,8 +2,6 @@
 from celery import shared_task
 import logging 
 import time
-from django.conf import settings
-from django.core.management import call_command
 from django.shortcuts import get_object_or_404
 from celery.utils.log import get_task_logger
 import operator
@@ -346,9 +344,6 @@ def listEmptyCategories(  ):
 
 @shared_task
 def review_production_logs():
-    """E-mail the deterministic log digest when explicitly enabled in prod."""
-    if not settings.LOG_REVIEW_SCHEDULED_ENABLED:
-        logger.info('Production log review is disabled.')
-        return 'DISABLED'
-    call_command('review_production_logs', '--hours', str(settings.LOG_REVIEW_HOURS), '--email')
-    return 'SENT'
+    """Compatibility no-op; log-reviewer owns privileged Docker-log access."""
+    logger.warning('Log review runs in the dedicated log-reviewer service, not Celery.')
+    return 'EXTERNAL_SERVICE'

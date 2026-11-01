@@ -10,12 +10,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--hours', type=int, default=6, help='Lookback window (1–168; default: 6).')
+        parser.add_argument('--source', choices=('docker', 'loki'), default='docker', help='Log source (default: docker).')
         parser.add_argument('--json', action='store_true', help='Print machine-readable JSON.')
         parser.add_argument('--email', action='store_true', help='Send the digest to LOG_REVIEW_RECIPIENTS.')
 
     def handle(self, *args, **options):
         try:
-            report = build_report(hours=options['hours'])
+            report = build_report(hours=options['hours'], source=options['source'])
         except (OSError, ValueError, RuntimeError) as exc:
             raise CommandError(f'Log review failed: {exc}') from exc
         output = report_as_json(report) if options['json'] else report_as_text(report)

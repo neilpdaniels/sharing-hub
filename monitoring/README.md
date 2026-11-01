@@ -61,9 +61,10 @@ extract.
 ## Deterministic log-review digest
 
 Grafana is the immediate, minute-by-minute escalation path. Separately, the
-Celery Beat job can send a grouped review digest every six hours. It queries
-Loki for Docker application errors and Nginx errors, removes secrets and
-personal identifiers from the e-mail fingerprints, groups repeats, and labels
+dedicated `log-reviewer` service can send a grouped review digest every six
+hours. It reads only the named Rentalution containers through Docker's local
+socket, so a busy or starting Loki instance cannot prevent review. It removes
+secrets and personal identifiers from the e-mail fingerprints, groups repeats, and labels
 only high-confidence infrastructure or payment failures as `CRITICAL`. Other
 unrecognised error groups are `ACTION_REQUIRED` for a person to investigate.
 No AI is used to decide whether an alert is critical.
@@ -72,15 +73,15 @@ First test it manually on the VPS (this prints JSON only and sends nothing):
 
 ```bash
 cd /srv/rentalution
-docker compose -f docker-compose.prod.yml exec -T web \
-  python manage.py review_production_logs --hours 6 --json
+docker compose -f docker-compose.prod.yml exec -T log-reviewer \
+  python manage.py review_production_logs --source docker --hours 6 --json
 ```
 
 Then test e-mail delivery:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T web \
-  python manage.py review_production_logs --hours 6 --email
+docker compose -f docker-compose.prod.yml exec -T log-reviewer \
+  python manage.py review_production_logs --source docker --hours 6 --email
 ```
 
 Once the output and recipient are right, add these to the production `.env`

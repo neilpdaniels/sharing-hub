@@ -1993,6 +1993,10 @@ Transaction Ref: {txn.transaction_reference}"""
 
         elif action == 'send_message' and (is_lender or is_renter):
             body = (request.POST.get('message_body') or '').strip()
+            from account.profanity import contains_blocked_word
+            if body and contains_blocked_word(body):
+                messages.error(request, 'Your message contains language that is not allowed on Rentalution.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
             image_files = request.FILES.getlist('message_images')
             video_files = request.FILES.getlist('message_videos')
             is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
@@ -2073,6 +2077,10 @@ Transaction Ref: {txn.transaction_reference}"""
 
         elif action == 'send_dispute_private_message' and (is_lender or is_renter):
             body = (request.POST.get('message_body') or '').strip()
+            from account.profanity import contains_blocked_word
+            if body and contains_blocked_word(body):
+                messages.error(request, 'Your message contains language that is not allowed on Rentalution.')
+                return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
             is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
             if message_turnstile_required:
                 turnstile_token = request.POST.get('cf-turnstile-response', '')
@@ -2886,7 +2894,7 @@ Transaction Ref: {txn.transaction_reference}"""
 
         return redirect('transaction:view_transaction', transaction_reference=txn.transaction_reference)
 
-    messages_qs = txn.transactionmessage_set.all()
+    messages_qs = txn.transactionmessage_set.filter(moderation_hidden=False)
     messages_ = sorted(
         sorted(
             messages_qs.filter(

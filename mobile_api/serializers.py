@@ -10,8 +10,9 @@ from sorl.thumbnail import get_thumbnail
 
 from account.models import PaymentMethod, Profile
 from account.validators import MinAgeValidator
+from account.profanity import contains_blocked_word
 from common.phone_utils import is_valid_uk_phone, normalize_to_domestic
-from common.models import Category, FavouriteOrder, LetPriceBand, Order, OrderBlockedDate, Product
+from common.models import Category, FavouriteOrder, LetPriceBand, ModerationReport, Order, OrderBlockedDate, Product
 from mobile_api.models import MobileDevice
 from transaction.models import (
     Transaction,
@@ -121,6 +122,13 @@ class MobileNotificationPreferencesSerializer(serializers.Serializer):
     notify_transaction_enquiry = serializers.BooleanField(required=False)
     notify_transaction_messages = serializers.BooleanField(required=False)
     notify_in_app_alerts = serializers.BooleanField(required=False)
+
+
+class ModerationReportCreateSerializer(serializers.Serializer):
+    target_type = serializers.ChoiceField(choices=[choice[0] for choice in ModerationReport.TARGET_CHOICES])
+    target_id = serializers.IntegerField(min_value=1)
+    reason = serializers.ChoiceField(choices=[choice[0] for choice in ModerationReport.REASON_CHOICES])
+    details = serializers.CharField(required=False, allow_blank=True, max_length=1500)
 
 
 class MobileTokenObtainSerializer(serializers.Serializer):
@@ -613,6 +621,7 @@ class TransactionMessageSerializer(serializers.ModelSerializer):
     counterparty_name = serializers.SerializerMethodField()
     direction = serializers.SerializerMethodField()
     unread = serializers.SerializerMethodField()
+    is_mine = serializers.SerializerMethodField()
 
     class Meta:
         model = TransactionMessage
@@ -634,8 +643,13 @@ class TransactionMessageSerializer(serializers.ModelSerializer):
             'counterparty_name',
             'direction',
             'unread',
+            'is_mine',
             'attachments',
         )
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        return bool(request and request.user.is_authenticated and obj.user_from_id == request.user.id)
 
     def get_attachments(self, obj):
         queryset = obj.txn_msg_img.filter(active=True).order_by('uploaded_at')
@@ -965,6 +979,16 @@ class OrderAmendSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate_description(self, value):
+        if contains_blocked_word(value):
+            raise serializers.ValidationError('This description contains language that is not allowed on Rentalution.')
+        return value
+
+    def validate_additional_comments(self, value):
+        if contains_blocked_word(value):
+            raise serializers.ValidationError('These comments contain language that is not allowed on Rentalution.')
+        return value
+
     class Meta:
         model = Order
         fields = (
@@ -1012,6 +1036,16 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f'Maximum rental duration is {get_max_rental_days()} days.'
             )
+        return value
+
+    def validate_description(self, value):
+        if contains_blocked_word(value):
+            raise serializers.ValidationError('This description contains language that is not allowed on Rentalution.')
+        return value
+
+    def validate_additional_comments(self, value):
+        if contains_blocked_word(value):
+            raise serializers.ValidationError('These comments contain language that is not allowed on Rentalution.')
         return value
 
     class Meta:

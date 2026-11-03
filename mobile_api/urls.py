@@ -56,12 +56,14 @@ from .views import (
     TransactionDetailView,
     TransactionListView,
     TransactionMessagesView,
+    ModerationReportCreateView,
     MobileInboxView,
 )
 
 app_name = 'mobile_api'
 
 urlpatterns = [
+    path('moderation/reports/', ModerationReportCreateView.as_view(), name='moderation_report_create'),
     path('auth/login/', MobileLoginView.as_view(), name='auth_login'),
     path('auth/social/google/', MobileGoogleSignInView.as_view(), name='auth_social_google'),
     path('auth/onboarding/profile/', MobileSocialProfileOnboardingView.as_view(), name='auth_onboarding_profile'),

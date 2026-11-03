@@ -4,6 +4,13 @@ from common.models import Order, OrderImage, LetPriceBand
 from .models import TransactionMessage, TransactionMessageImage, get_max_rental_days
 from datetime import datetime, date
 import logging
+from account.profanity import contains_blocked_word
+
+
+def reject_prohibited_text(value):
+    if contains_blocked_word(value):
+        raise forms.ValidationError('This text contains language that is not allowed on Rentalution.')
+    return value
 
 class AdminTransactionDatesForm(forms.Form):
     rental_start_date = forms.DateField(
@@ -50,12 +57,14 @@ class OrderAddForm(forms.ModelForm):
         widget=forms.Textarea(attrs={'rows': 4}),
         required=False,
         max_length=500,
+        validators=[reject_prohibited_text],
     )
     additional_comments = forms.CharField(
         label='Additional comments',
         widget=forms.Textarea(attrs={'rows': 3}),
         required=False,
         max_length=500,
+        validators=[reject_prohibited_text],
     )
     collection_is_not_home_address = forms.BooleanField(
         label='Collection is not at my home address',
@@ -327,6 +336,9 @@ class OrderEditForm(forms.ModelForm):
             raise forms.ValidationError("Quantity cannot be zero")
         return quantity
 
+    def clean_description(self):
+        return reject_prohibited_text(self.cleaned_data.get('description', ''))
+
 class OrderExpireForm(forms.ModelForm):
     class Meta:
         model = Order
@@ -347,7 +359,7 @@ class RentalEnquiryForm(forms.Form):
         input_formats=['%d/%m/%Y', '%Y-%m-%d'],
         widget=forms.DateInput(attrs={'placeholder': 'dd/mm/yyyy', 'autocomplete': 'off'}),
     )
-    enquiry_message = forms.CharField(required=False, max_length=1000, widget=forms.Textarea(attrs={'rows': 4}))
+    enquiry_message = forms.CharField(required=False, max_length=1000, validators=[reject_prohibited_text], widget=forms.Textarea(attrs={'rows': 4}))
 
     def __init__(self, *args, **kwargs):
         self.blocked_dates = set(kwargs.pop('blocked_dates', set()))

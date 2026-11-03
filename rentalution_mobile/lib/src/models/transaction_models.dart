@@ -693,6 +693,7 @@ class TransactionMessage {
     required this.description,
     required this.created,
     required this.isSystemGenerated,
+    required this.isMine,
     required this.attachments,
   });
 
@@ -703,6 +704,7 @@ class TransactionMessage {
   final String description;
   final DateTime? created;
   final bool isSystemGenerated;
+  final bool isMine;
   final List<TransactionMessageAttachment> attachments;
 
   factory TransactionMessage.fromJson(Map<String, dynamic> json) {
@@ -714,6 +716,7 @@ class TransactionMessage {
       description: json['description'] as String? ?? '',
       created: TransactionSummary._parseDate(json['created'] as String?),
       isSystemGenerated: json['is_system_generated'] as bool? ?? false,
+      isMine: json['is_mine'] as bool? ?? false,
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(TransactionMessageAttachment.fromJson)

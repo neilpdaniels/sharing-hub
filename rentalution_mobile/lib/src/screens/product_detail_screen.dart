@@ -14,6 +14,7 @@ import '../services/catalog_repository.dart';
 import '../services/friends_repository.dart';
 import '../services/transaction_repository.dart';
 import '../services/account_repository.dart';
+import '../widgets/report_content_dialog.dart';
 import 'transaction_detail_screen.dart';
 
 Future<bool> _confirmAddAsFriendDialog(
@@ -112,6 +113,41 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _deliveryOnly = false;
   bool _addingFriend = false;
   String? _friendStatus;
+
+  Future<void> _reportContent({
+    required String targetType,
+    required int targetId,
+    required String label,
+  }) async {
+    if (!_isAuthenticated) {
+      widget.onRequireLogin?.call();
+      return;
+    }
+    final input = await showReportContentDialog(context, label: label);
+    if (input == null || !mounted) return;
+    try {
+      final repository = widget.catalogRepository;
+      if (repository == null) throw StateError('Reporting is unavailable.');
+      await repository.reportContent(
+        accessToken: widget.accessToken!,
+        targetType: targetType,
+        targetId: targetId,
+        reason: input.reason,
+        details: input.details,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thank you. Your report was sent to Rentalution.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
 
   bool get _isAuthenticated {
     final token = widget.accessToken;
@@ -1230,6 +1266,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     onPressed: () => _enquireOrder(order),
                     icon: const Icon(Icons.chat_bubble_outline),
                     label: const Text('Enquire'),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => _reportContent(
+                          targetType: 'listing',
+                          targetId: order.id,
+                          label: 'listing',
+                        ),
+                        child: const Text('Report listing'),
+                      ),
+                      TextButton(
+                        onPressed: () => _reportContent(
+                          targetType: 'user',
+                          targetId: order.lender.id,
+                          label: 'user',
+                        ),
+                        child: const Text('Report user'),
+                      ),
+                    ],
                   ),
                 ],
               ),

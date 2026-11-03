@@ -16,9 +16,45 @@ from common.models import (
     Product,
     TransactionFee,
     TransactionFeeBand,
+    ModerationReport,
 )
+from rest_framework.test import APIClient
 from friends.models import Friendship
 from transaction.models import Transaction, TransactionMessageImage
+
+
+class MobileModerationReportTests(TestCase):
+    def setUp(self):
+        self.reporter = User.objects.create_user(username='mobile-reporter', email='mobile-reporter@example.test', password='x')
+        self.owner = User.objects.create_user(username='mobile-owner', email='mobile-owner@example.test', password='x')
+        category = Category.objects.create(title='Mobile moderation')
+        product = Product.objects.create(category_id=category, name='Reported item')
+        with patch('common.models.updateSummaryPrices.delay'):
+            self.order = Order.objects.create(
+                product=product, user=self.owner, direction=Order.TO_LET,
+                expiry_date=timezone.now() + timedelta(days=30), status=Order.ACTIVE, price=10,
+            )
+        self.api_client = APIClient()
+        self.api_client.force_authenticate(self.reporter)
+
+    @patch('common.moderation.notify_staff_of_report')
+    def test_authenticated_member_can_report_listing(self, _notify):
+        response = self.api_client.post(reverse('mobile_api:moderation_report_create'), {
+            'target_type': 'listing',
+            'target_id': self.order.id,
+            'reason': ModerationReport.REASON_SCAM,
+            'details': 'Suspicious listing',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(ModerationReport.objects.filter(reporter=self.reporter, target_id=self.order.id).exists())
+
+    def test_report_endpoint_requires_authentication(self):
+        client = APIClient()
+        response = client.post(reverse('mobile_api:moderation_report_create'), {
+            'target_type': 'listing', 'target_id': self.order.id,
+            'reason': ModerationReport.REASON_SCAM,
+        }, format='json')
+        self.assertEqual(response.status_code, 401)
 
 
 class MobileAppConfigViewTests(TestCase):

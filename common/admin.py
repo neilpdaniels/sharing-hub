@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib import admin
-from .models import Order, Category, CategoryAttribute, CategoryTag, Product, OrderImage, System, SiteFailure
+from .models import Order, Category, CategoryAttribute, CategoryTag, Product, OrderImage, System, SiteFailure, ModerationReport
+from .moderation import resolve_report
 from .models import BestPricedForCategory, BestPricedForProduct
 from .models import TransactionFee, TransactionFeeBand
 from simple_history.admin import SimpleHistoryAdmin
@@ -202,6 +203,37 @@ class SiteFailureAdmin(admin.ModelAdmin):
     search_fields = ('title', 'details')
     readonly_fields = ('title', 'details', 'context', 'created_at')
     ordering = ('-created_at',)
+
+
+@admin.register(ModerationReport)
+class ModerationReportAdmin(admin.ModelAdmin):
+    list_display = ('id', 'target_type', 'target_id', 'reason', 'reporter', 'target_owner', 'content_hidden_pending_review', 'status', 'outcome', 'created_at')
+    list_filter = ('status', 'target_type', 'reason', 'content_hidden_pending_review', 'outcome')
+    search_fields = ('reporter__username', 'target_owner__username', 'details', 'moderator_notes')
+    readonly_fields = ('reporter', 'target_owner', 'target_type', 'target_id', 'reason', 'details', 'target_snapshot', 'content_hidden_pending_review', 'created_at', 'updated_at', 'reviewed_by', 'reviewed_at', 'outcome')
+    actions = ('remove_and_block_author', 'dismiss_report', 'dismiss_and_block_abusive_reporter')
+
+    def _resolve_selected(self, request, queryset, outcome):
+        completed = 0
+        for report in queryset.filter(status__in=(ModerationReport.STATUS_OPEN, ModerationReport.STATUS_REVIEWING)):
+            try:
+                resolve_report(report, outcome=outcome, moderator=request.user)
+                completed += 1
+            except Exception as exc:
+                self.message_user(request, 'Report #%s was not resolved: %s' % (report.pk, exc), level='error')
+        self.message_user(request, '%s report(s) resolved.' % completed)
+
+    @admin.action(description='Confirm bad content: remove it and block posting user')
+    def remove_and_block_author(self, request, queryset):
+        self._resolve_selected(request, queryset, ModerationReport.OUTCOME_REMOVE_AND_BLOCK)
+
+    @admin.action(description='Dismiss report: allow content')
+    def dismiss_report(self, request, queryset):
+        self._resolve_selected(request, queryset, ModerationReport.OUTCOME_DISMISS)
+
+    @admin.action(description='Dismiss abusive report and block reporter')
+    def dismiss_and_block_abusive_reporter(self, request, queryset):
+        self._resolve_selected(request, queryset, ModerationReport.OUTCOME_DISMISS_AND_BLOCK_REPORTER)
 
 # admin.site.register(Order)
 # admin.site.register(Category)

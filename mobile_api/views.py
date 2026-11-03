@@ -27,6 +27,7 @@ from account.forms import UserRegistrationStartForm, UserRegistrationVerifyForm
 from account.models import PaymentMethod, Profile, SocialIdentity
 from account.services import RegistrationService
 from account.tasks import send_registration_verification_email
+from account.profanity import contains_blocked_word
 from common.catalog.attributes import (
     apply_attribute_filters,
     collect_attribute_filter_options,
@@ -38,6 +39,7 @@ from common.helpers import get_ordered_top_categories, is_profile_kyc_verified
 from common.geocoding import PostcodeGeocoder
 from common.failures import record_site_failure
 from common.models import Category, FavouriteOrder, Order, OrderBlockedDate, OrderImage, Product
+from common.moderation import create_report
 from friends.models import BlockedUser, Friendship, FriendsHelper
 from mobile_api.models import MobileDevice
 from transaction.forms import RentalEnquiryForm
@@ -81,6 +83,7 @@ from .serializers import (
     ProfileSummarySerializer,
     SocialProfileOnboardingSerializer,
     MobileVerificationCodeSerializer,
+    ModerationReportCreateSerializer,
     ProductDetailSerializer,
     ProductSummarySerializer,
     TransactionActionSerializer,
@@ -2052,6 +2055,8 @@ class TransactionListView(generics.ListAPIView):
         user = request.user
         order_reference = request.data.get('order_reference', '').strip()
         enquiry_message = request.data.get('enquiry_message', '').strip()
+        if enquiry_message and contains_blocked_word(enquiry_message):
+            raise ValidationError({'enquiry_message': 'This message contains language that is not allowed on Rentalution.'})
         rental_start_date = request.data.get('rental_start_date', '').strip()
         rental_end_date = request.data.get('rental_end_date', '').strip()
 
@@ -2226,6 +2231,29 @@ class MobileTokenRefreshView(TokenRefreshView):
     permission_classes = (AllowAny,)
 
 
+class ModerationReportCreateView(APIView):
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (JSONParser,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = ModerationReportCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            report = create_report(
+                reporter=request.user,
+                target_type=data['target_type'],
+                target_id=data['target_id'],
+                reason=data['reason'],
+                details=data.get('details', ''),
+            )
+        except PermissionError as exc:
+            raise PermissionDenied(str(exc))
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+        return Response({'id': report.pk, 'status': report.status, 'content_hidden_pending_review': report.content_hidden_pending_review}, status=status.HTTP_201_CREATED)
+
+
 class TransactionMessagesView(TransactionAccessMixin, APIView):
     permission_classes = (IsAuthenticated,)
     parser_classes = (JSONParser, MultiPartParser, FormParser)
@@ -2233,7 +2261,7 @@ class TransactionMessagesView(TransactionAccessMixin, APIView):
     def get(self, request, *args, **kwargs):
         txn = self._get_txn()
         queryset = (
-            txn.transactionmessage_set.all()
+            txn.transactionmessage_set.filter(moderation_hidden=False)
             .prefetch_related('txn_msg_img')
             .order_by('-created')
         )
@@ -2258,6 +2286,8 @@ class TransactionMessagesView(TransactionAccessMixin, APIView):
 
         if not body and not image_files and not video_files:
             raise ValidationError('Please include a message body or attachment.')
+        if body and contains_blocked_word(body):
+            raise ValidationError('Your message contains language that is not allowed on Rentalution.')
 
         for video_file in video_files:
             content_type = (getattr(video_file, 'content_type', '') or '').lower()
@@ -2304,7 +2334,7 @@ class MobileInboxView(APIView):
     def get(self, request, *args, **kwargs):
         user = request.user
         queryset = list(
-            TransactionMessage.objects.filter(Q(user_from=user) | Q(user_to=user))
+            TransactionMessage.objects.filter(Q(user_from=user) | Q(user_to=user), moderation_hidden=False)
             .select_related('transaction', 'transaction__order_passive__product', 'user_from', 'user_to')
             .prefetch_related('txn_msg_img')
         )

@@ -261,6 +261,85 @@ class SiteFailure(models.Model):
     def __str__(self):
         return f'{self.title} ({self.created_at:%d %b %Y %H:%M})'
 
+
+class ModerationReport(models.Model):
+    """An immutable member report plus the staff decision made about it.
+
+    Target references deliberately use an id and a compact snapshot instead of
+    generic relations: the live service uses Djongo and reports must remain
+    readable even if content is later removed.
+    """
+
+    TARGET_LISTING = 'listing'
+    TARGET_USER = 'user'
+    TARGET_MESSAGE = 'message'
+    TARGET_CHOICES = (
+        (TARGET_LISTING, 'Listing'),
+        (TARGET_USER, 'User'),
+        (TARGET_MESSAGE, 'Message'),
+    )
+    REASON_SEXUAL = 'sexual_content'
+    REASON_CHILD_SAFETY = 'child_safety'
+    REASON_THREAT = 'threat_or_harassment'
+    REASON_VIOLENCE = 'graphic_violence'
+    REASON_ILLEGAL = 'illegal_or_unsafe_item'
+    REASON_HATE = 'hate_or_discrimination'
+    REASON_SCAM = 'scam_or_fraud'
+    REASON_OTHER = 'other'
+    REASON_CHOICES = (
+        (REASON_SEXUAL, 'Sexual or nudity content'),
+        (REASON_CHILD_SAFETY, 'Child safety concern'),
+        (REASON_THREAT, 'Threats, harassment or bullying'),
+        (REASON_VIOLENCE, 'Graphic violence'),
+        (REASON_ILLEGAL, 'Illegal or unsafe item/content'),
+        (REASON_HATE, 'Hate or discrimination'),
+        (REASON_SCAM, 'Scam or fraud'),
+        (REASON_OTHER, 'Other objectionable content'),
+    )
+    STATUS_OPEN = 'open'
+    STATUS_REVIEWING = 'reviewing'
+    STATUS_RESOLVED = 'resolved'
+    STATUS_CHOICES = (
+        (STATUS_OPEN, 'New'),
+        (STATUS_REVIEWING, 'Reviewing'),
+        (STATUS_RESOLVED, 'Resolved'),
+    )
+    OUTCOME_REMOVE_AND_BLOCK = 'remove_and_block_author'
+    OUTCOME_DISMISS = 'dismiss_report'
+    OUTCOME_DISMISS_AND_BLOCK_REPORTER = 'dismiss_and_block_reporter'
+    OUTCOME_CHOICES = (
+        (OUTCOME_REMOVE_AND_BLOCK, 'Remove content and block posting user'),
+        (OUTCOME_DISMISS, 'Dismiss report; allow content'),
+        (OUTCOME_DISMISS_AND_BLOCK_REPORTER, 'Dismiss abusive report and block reporter'),
+    )
+    IMMEDIATE_HIDE_REASONS = frozenset((
+        REASON_SEXUAL, REASON_CHILD_SAFETY, REASON_THREAT,
+        REASON_VIOLENCE, REASON_ILLEGAL,
+    ))
+
+    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='submitted_moderation_reports')
+    target_owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_moderation_reports')
+    target_type = models.CharField(max_length=12, choices=TARGET_CHOICES, db_index=True)
+    target_id = models.PositiveIntegerField(db_index=True)
+    reason = models.CharField(max_length=32, choices=REASON_CHOICES, db_index=True)
+    details = models.TextField(blank=True, default='', max_length=1500)
+    target_snapshot = models.JSONField(default=dict, blank=True)
+    content_hidden_pending_review = models.BooleanField(default=False)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
+    outcome = models.CharField(max_length=32, choices=OUTCOME_CHOICES, blank=True, default='')
+    moderator_notes = models.TextField(blank=True, default='')
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_moderation_reports')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        indexes = [models.Index(fields=('status', 'target_type', 'target_id'), name='common_mode_status_9aba26_idx')]
+
+    def __str__(self):
+        return f'Report #{self.pk}: {self.get_target_type_display()} {self.target_id}'
+
 class Product(models.Model):
     category_id = models.ForeignKey(Category, on_delete=models.CASCADE)
     categories = models.ManyToManyField(Category, blank=True, related_name='products')

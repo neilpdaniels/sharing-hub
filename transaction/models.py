@@ -1189,6 +1189,11 @@ class TransactionMessage(models.Model):
         help_text='If true, only the sender and admin should be able to see this message on the transaction view.',
     )
     is_system_generated = models.BooleanField(default=False)
+    moderation_hidden = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='Hidden from members following a confirmed moderation decision.',
+    )
     history = HistoricalRecords()
 
 

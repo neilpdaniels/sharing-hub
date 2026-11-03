@@ -10,6 +10,21 @@ class TransactionRepository {
 
   final ApiClient _apiClient;
 
+  Future<void> reportContent({
+    required String accessToken,
+    required String targetType,
+    required int targetId,
+    required String reason,
+    String details = '',
+  }) async {
+    await _apiClient.postJson('/moderation/reports/', {
+      'target_type': targetType,
+      'target_id': targetId,
+      'reason': reason,
+      'details': details,
+    }, accessToken: accessToken);
+  }
+
   Future<List<TransactionSummary>> fetchTransactions({
     required String accessToken,
   }) async {

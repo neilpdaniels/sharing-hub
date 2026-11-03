@@ -460,6 +460,10 @@
                                     </button>
                                   </form>
                                   <a class="btn btn-success js-enquire-link" href="{% url 'transaction:hit_order_reference' order.order_reference %}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
+                                  <span class="d-inline-flex flex-column align-items-start ml-1" style="font-size:.72rem;line-height:1.25">
+                                    <a class="text-muted" href="{% url 'report_content' %}?target_type=listing&amp;target_id={{ order.id }}&amp;next={{ request.get_full_path|urlencode }}">Report listing</a>
+                                    <a class="text-muted" href="{% url 'report_content' %}?target_type=user&amp;target_id={{ order.user.id }}&amp;next={{ request.get_full_path|urlencode }}">Report user</a>
+                                  </span>
                                     {% endif %}
                                 {% else %}
                                 <a class="btn btn-success js-enquire-link" href="{% url 'login' %}?next={{ request.path }}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>

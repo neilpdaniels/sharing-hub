@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4" style="max-width:680px">
+  <h2>Report content</h2>
+  <p class="text-muted">Reports are reviewed by Rentalution. Please only report content that breaks our rules.</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="target_type" value="{{ target_type }}">
+    <input type="hidden" name="target_id" value="{{ target_id }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="form-group">
+      <label for="report-reason">Reason</label>
+      <select class="form-control" id="report-reason" name="reason" required>
+        <option value="">Choose a reason</option>
+        {% for value, label in reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="report-details">Details <span class="text-muted">(optional)</span></label>
+      <textarea class="form-control" id="report-details" name="details" maxlength="1500" rows="5"></textarea>
+    </div>
+    <button class="btn btn-outline-danger" type="submit">Send report</button>
+    <a class="btn btn-link text-muted" href="{{ next }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

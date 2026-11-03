@@ -1,12 +1,14 @@
 from types import SimpleNamespace
 import json
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from django.contrib.auth.models import User
+from django.utils import timezone as django_timezone
 
 from common.helpers import is_profile_kyc_verified
 from common.phone_utils import (
@@ -17,6 +19,10 @@ from common.phone_utils import (
 )
 from common.log_review import LogEvent, build_report, normalise_signature, report_as_text
 from common.security import verify_turnstile_token
+from common.models import Category, ModerationReport, Order, Product
+from common.moderation import create_report, notify_staff_of_report, resolve_report
+from account.profanity import contains_blocked_word
+from transaction.models import Transaction, TransactionMessage
 
 
 class PhoneUtilsTests(TestCase):
@@ -42,6 +48,117 @@ class PhoneUtilsTests(TestCase):
 		self.assertFalse(is_valid_uk_phone('+14155552671'))
 		self.assertFalse(is_valid_uk_phone('02079460000'))
 		self.assertFalse(is_valid_uk_phone('12345'))
+
+
+class ModerationTests(TestCase):
+	def setUp(self):
+		self.reporter = User.objects.create_user(username='reporter', email='reporter@example.test', password='x')
+		self.owner = User.objects.create_user(username='owner', email='owner@example.test', password='x')
+		self.moderator = User.objects.create_user(username='moderator', email='mod@example.test', password='x', is_staff=True)
+		category = Category.objects.create(title='Tools')
+		product = Product.objects.create(category_id=category, name='Drill')
+		with patch('common.models.updateSummaryPrices.delay'):
+			self.order = Order.objects.create(
+				product=product, user=self.owner, direction=Order.TO_LET,
+				expiry_date=django_timezone.now() + timedelta(days=30),
+				status=Order.ACTIVE, price=10, description='A drill',
+			)
+
+	@patch('common.moderation.notify_staff_of_report')
+	def test_serious_listing_report_hides_then_dismiss_restores(self, _notify):
+		report = create_report(
+			reporter=self.reporter, target_type='listing', target_id=self.order.id,
+			reason=ModerationReport.REASON_ILLEGAL, details='Unsafe item',
+		)
+		self.order.refresh_from_db()
+		self.assertEqual(self.order.status, Order.EXPIRED)
+		self.assertTrue(report.content_hidden_pending_review)
+
+		resolve_report(report, outcome=ModerationReport.OUTCOME_DISMISS, moderator=self.moderator)
+		self.order.refresh_from_db()
+		self.assertEqual(self.order.status, Order.ACTIVE)
+
+	@patch('common.moderation.notify_staff_of_report')
+	def test_confirmed_report_removes_listing_and_blocks_owner(self, _notify):
+		report = create_report(
+			reporter=self.reporter, target_type='listing', target_id=self.order.id,
+			reason=ModerationReport.REASON_SCAM,
+		)
+		resolve_report(report, outcome=ModerationReport.OUTCOME_REMOVE_AND_BLOCK, moderator=self.moderator)
+		self.owner.refresh_from_db(); self.order.refresh_from_db()
+		self.assertFalse(self.owner.is_active)
+		self.assertEqual(self.order.status, Order.EXPIRED)
+
+	@patch('common.moderation.notify_staff_of_report')
+	def test_user_report_does_not_preemptively_disable_user(self, _notify):
+		report = create_report(
+			reporter=self.reporter, target_type='user', target_id=self.owner.id,
+			reason=ModerationReport.REASON_THREAT,
+		)
+		self.owner.refresh_from_db()
+		self.assertTrue(self.owner.is_active)
+		self.assertFalse(report.content_hidden_pending_review)
+
+	@patch('common.moderation.notify_staff_of_report')
+	def test_transaction_message_report_hides_then_dismiss_restores(self, _notify):
+		transaction = Transaction.objects.create(
+			user_passive=self.owner,
+			user_aggressive=self.reporter,
+			order_passive=self.order,
+			product=self.order.product,
+			rental_start_date=django_timezone.localdate() + timedelta(days=1),
+			rental_end_date=django_timezone.localdate() + timedelta(days=2),
+			price=10,
+			deposit=0,
+			current_spot_value=10,
+			price_as_pct_spot_value=100,
+		)
+		message = TransactionMessage.objects.create(
+			user_from=self.owner,
+			user_to=self.reporter,
+			transaction=transaction,
+			description='Threatening message',
+		)
+
+		report = create_report(
+			reporter=self.reporter,
+			target_type='message',
+			target_id=message.id,
+			reason=ModerationReport.REASON_THREAT,
+		)
+		message.refresh_from_db()
+		self.assertTrue(message.moderation_hidden)
+
+		resolve_report(report, outcome=ModerationReport.OUTCOME_DISMISS, moderator=self.moderator)
+		message.refresh_from_db()
+		self.assertFalse(message.moderation_hidden)
+
+	@override_settings(ADMINS=(), DISCORD_MODERATION_WEBHOOK_URL='')
+	@patch('common.moderation.send_mail')
+	def test_active_staff_receive_report_email(self, send_mail):
+		report = ModerationReport.objects.create(
+			reporter=self.reporter, target_owner=self.owner, target_type='user',
+			target_id=self.owner.id, reason=ModerationReport.REASON_OTHER,
+		)
+		notify_staff_of_report(report)
+		self.assertEqual(send_mail.call_args.args[3], ['mod@example.test'])
+
+	def test_web_report_form_is_available_and_creates_report(self):
+		self.client.force_login(self.reporter)
+		url = reverse('report_content')
+		response = self.client.get(url, {'target_type': 'listing', 'target_id': self.order.id, 'next': '/'})
+		self.assertEqual(response.status_code, 200)
+		with patch('common.moderation.notify_staff_of_report'):
+			response = self.client.post(url, {
+				'target_type': 'listing', 'target_id': self.order.id,
+				'reason': ModerationReport.REASON_SCAM, 'details': 'Looks fake', 'next': '/',
+			})
+		self.assertEqual(response.status_code, 302)
+		self.assertTrue(ModerationReport.objects.filter(reporter=self.reporter, target_id=self.order.id).exists())
+
+	def test_message_profanity_filter_has_local_fallback(self):
+		self.assertTrue(contains_blocked_word('This is bullshit'))
+		self.assertFalse(contains_blocked_word('Can I collect this tomorrow?'))
 
 
 class ProductionLogReviewTests(SimpleTestCase):

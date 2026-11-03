@@ -29,6 +29,13 @@ ANDROID_APP_LINK_SHA256 = os.environ.get('ANDROID_APP_LINK_SHA256', '').strip()
 # locally when the page is opened on localhost but the QR is scanned by a phone.
 PHONE_EVIDENCE_BASE_URL = os.environ.get('PHONE_EVIDENCE_BASE_URL', '').rstrip('/')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk')
+# Separate from operational/error alerts: staff moderation reports can include
+# member-generated text and should go only to a restricted Discord channel.
+DISCORD_MODERATION_WEBHOOK_URL = os.environ.get(
+    'DISCORD_MODERATION_WEBHOOK_URL',
+    os.environ.get('DISCORD_WEBHOOK_URL', ''),
+).strip()
+MODERATION_REPORT_DAILY_LIMIT = max(1, int(os.environ.get('MODERATION_REPORT_DAILY_LIMIT', '20')))
 
 
 # Quick-start development settings - unsuitable for production

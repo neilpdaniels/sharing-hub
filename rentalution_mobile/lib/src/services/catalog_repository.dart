@@ -22,6 +22,21 @@ class CatalogRepository {
   static const Duration _productCacheTtl = Duration(hours: 6);
   static const Duration _productDetailCacheTtl = Duration(hours: 6);
 
+  Future<void> reportContent({
+    required String accessToken,
+    required String targetType,
+    required int targetId,
+    required String reason,
+    String details = '',
+  }) async {
+    await _apiClient.postJson('/moderation/reports/', {
+      'target_type': targetType,
+      'target_id': targetId,
+      'reason': reason,
+      'details': details,
+    }, accessToken: accessToken);
+  }
+
   Future<List<CategorySummary>> fetchCategories({String? parentSlug}) async {
     final parent = parentSlug?.trim();
     if (parent?.isNotEmpty == true && _categoryCache.containsKey('@all')) {

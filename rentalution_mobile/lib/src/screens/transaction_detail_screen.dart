@@ -14,6 +14,7 @@ import '../services/account_repository.dart';
 import '../models/transaction_models.dart';
 import '../services/friends_repository.dart';
 import '../services/transaction_repository.dart';
+import '../widgets/report_content_dialog.dart';
 import 'qr_display_screen.dart';
 import 'qr_scanner_screen.dart';
 
@@ -63,6 +64,57 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen>
   Timer? _countdownTimer;
   String _lastLiveSignature = '';
   bool _payoutDetailsOpen = false;
+
+  Future<void> _reportMessage(TransactionMessage message) async {
+    final input = await showReportContentDialog(context, label: 'message');
+    if (input == null || !mounted) return;
+    try {
+      await widget.repository.reportContent(
+        accessToken: widget.accessToken,
+        targetType: 'message',
+        targetId: message.id,
+        reason: input.reason,
+        details: input.details,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thank you. Your report was sent to Rentalution.'),
+        ),
+      );
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _reportCounterparty(TransactionDetail detail) async {
+    final input = await showReportContentDialog(context, label: 'user');
+    if (input == null || !mounted) return;
+    try {
+      await widget.repository.reportContent(
+        accessToken: widget.accessToken,
+        targetType: 'user',
+        targetId: detail.counterparty.id,
+        reason: input.reason,
+        details: input.details,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thank you. Your report was sent to Rentalution.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
 
   @override
   void initState() {
@@ -1049,18 +1101,30 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen>
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: FilledButton.tonalIcon(
-                    onPressed: _addingCounterparty
-                        ? null
-                        : () => _addCounterpartyAsFriend(detail),
-                    icon: _addingCounterparty
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.person_add_alt_1_outlined),
-                    label: const Text('Add as friend'),
+                  child: Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => _reportCounterparty(detail),
+                        child: const Text('Report user'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: _addingCounterparty
+                            ? null
+                            : () => _addCounterpartyAsFriend(detail),
+                        icon: _addingCounterparty
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.person_add_alt_1_outlined),
+                        label: const Text('Add as friend'),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -3473,6 +3537,23 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen>
                                   })
                                   .toList(growable: false),
                             ),
+                          if (!m.isMine) ...[
+                            const SizedBox(height: 2),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () => _reportMessage(m),
+                                child: const Text('Report message'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

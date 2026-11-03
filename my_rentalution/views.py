@@ -352,7 +352,7 @@ def _decorate_inbox_message(message, user):
 def inbox(request):
     user = request.user
     object_list = list(
-        TransactionMessage.objects.filter(Q(user_from=user) | Q(user_to=user))
+        TransactionMessage.objects.filter(Q(user_from=user) | Q(user_to=user), moderation_hidden=False)
         .select_related('transaction', 'transaction__order_passive__product', 'user_from', 'user_to')
         .prefetch_related('txn_msg_img')
     )
@@ -1002,6 +1002,8 @@ def expand_message(request):
         id=message_id,
     )
     if not request.user.is_staff and request.user not in (message.user_from, message.user_to):
+        raise Http404
+    if message.moderation_hidden and not request.user.is_staff:
         raise Http404
     if request.user == message.user_to and message.read_by_user_to == False:
         message.read_by_user_to = True

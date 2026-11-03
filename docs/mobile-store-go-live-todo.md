@@ -2,7 +2,7 @@
 
 This is the operational checklist for releasing `rentalution_mobile` to the App Store and Google Play. It is deliberately ordered: do the shared blockers first, then the two store tracks. Check off an item only when there is evidence (a screen recording, a test result, an uploaded build, or a saved credential).
 
-## Current pilot-release status — 16 October 2026
+## Current pilot-release status — 2 November 2026
 
 **Status: amber — do not yet invite pilot users.** The mobile functionality is in place, but these release gates remain:
 
@@ -13,6 +13,18 @@ This is the operational checklist for releasing `rentalution_mobile` to the App 
 - [ ] Complete a physical-device pilot test of sign-in, verification, media upload, notifications, Stripe/3DS, booking/deposit, QR/PIN handover, return/dispute, and account deletion.
 - [ ] Finish App Store Connect / Play Console metadata, privacy and data disclosures, reviewer credentials, screenshots, support URL/email, and privacy-policy URL.
 - [ ] Deploy the outstanding catalogue-review code and migrations before relying on those workflows in production.
+
+### Play Console progress (recorded 2 November 2026)
+
+- [x] Receive the organisation D-U-N-S number.
+- [x] Create and verify the Google Play organisation developer account.
+- [x] Create the Google Play app record: **Rentalution** (`com.rentalution.mobile`).
+- [x] Set the Play Console privacy-policy URL to `https://www.rentalution.co.uk/pages/privacy_policy/`.
+- [ ] Open the privacy-policy URL in a signed-out/incognito browser and confirm it is public, HTTPS, and does not redirect to a login page.
+- [ ] Update the published privacy policy before store submission. It must explicitly apply to the Rentalution mobile app and accurately describe: Google sign-in; account/profile, listing, message, booking and address data; uploaded photos/video; optional location; device/diagnostic/security data; Stripe/payment processing; Firebase/push notifications; hosting and other processors; retention; and international processing/sharing where applicable.
+- [ ] Add a public, easy-to-find account-deletion route/page. It must explain how a user requests deletion, what is deleted, what is retained for legal/dispute/fraud reasons, and how long retained data is kept. Link to it from the app and privacy policy, then test it while signed out.
+- [ ] Check that the photo-marketing consent wording is separate and optional (not a condition of creating an account or listing an item), records the user’s choice, and is reflected in the privacy policy.
+- [ ] Complete Play Console **Sign-in details**, **Ads**, **Content rating**, **Target audience**, **Data safety**, **Government apps**, **Financial features**, **Health**, category/contact details, and Store Listing. Work through these together from the actual app behaviour and integrations.
 
 ## Release decision and ownership
 

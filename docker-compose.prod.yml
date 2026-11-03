@@ -118,6 +118,11 @@ services:
     image: ${WEB_IMAGE}
     command: ["/bin/sh", "/usr/local/bin/docker-log-reviewer.sh"]
     user: "0:0"
+    # The review handles at most 2,000 recent lines per application service.
+    # Hard limits ensure an unexpectedly slow Docker daemon can never starve
+    # customer-facing containers.
+    cpus: 0.25
+    mem_limit: 256m
     env_file:
       - .env
     environment:

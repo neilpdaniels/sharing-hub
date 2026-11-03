@@ -62,7 +62,7 @@ extract.
 
 Grafana is the immediate, minute-by-minute escalation path. Separately, the
 dedicated `log-reviewer` service can send a grouped review digest every six
-hours. It reads only the named Rentalution containers through Docker's local
+hour. It reads only the named Rentalution containers through Docker's local
 socket, so a busy or starting Loki instance cannot prevent review. It removes
 secrets and personal identifiers from the e-mail fingerprints, groups repeats, and labels
 only high-confidence infrastructure or payment failures as `CRITICAL`. Other
@@ -89,7 +89,10 @@ and redeploy:
 
 ```dotenv
 LOG_REVIEW_SCHEDULED_ENABLED=1
-LOG_REVIEW_HOURS=6
+LOG_REVIEW_HOURS=1
+# Keep clean hourly runs in the service log; e-mail only real findings.
+LOG_REVIEW_EMAIL_OK_SUMMARIES=0
+LOG_REVIEW_DOCKER_TIMEOUT_SECONDS=10
 # Keep broad Loki regex scans bounded; defaults shown.
 LOG_REVIEW_QUERY_CHUNK_MINUTES=15
 LOG_REVIEW_QUERY_TIMEOUT_SECONDS=45

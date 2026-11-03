@@ -13,6 +13,11 @@ class Command(BaseCommand):
         parser.add_argument('--source', choices=('docker', 'loki'), default='docker', help='Log source (default: docker).')
         parser.add_argument('--json', action='store_true', help='Print machine-readable JSON.')
         parser.add_argument('--email', action='store_true', help='Send the digest to LOG_REVIEW_RECIPIENTS.')
+        parser.add_argument(
+            '--email-on-problems-only',
+            action='store_true',
+            help='With --email, skip a clean OK report.',
+        )
 
     def handle(self, *args, **options):
         try:
@@ -22,7 +27,10 @@ class Command(BaseCommand):
         output = report_as_json(report) if options['json'] else report_as_text(report)
         self.stdout.write(output)
 
-        if options['email']:
+        should_email = options['email'] and (
+            report['status'] != 'OK' or not options['email_on_problems_only']
+        )
+        if should_email:
             recipients = tuple(getattr(settings, 'LOG_REVIEW_RECIPIENTS', ()))
             if not recipients:
                 raise CommandError('LOG_REVIEW_RECIPIENTS is not configured.')
@@ -33,4 +41,6 @@ class Command(BaseCommand):
                 recipient_list=recipients,
                 fail_silently=False,
             )
+        elif options['email']:
+            self.stdout.write('No e-mail sent: report status is OK.')
         return report['status']

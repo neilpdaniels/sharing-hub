@@ -1279,14 +1279,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ),
                         child: const Text('Report listing'),
                       ),
-                      TextButton(
-                        onPressed: () => _reportContent(
-                          targetType: 'user',
-                          targetId: order.lender.id,
-                          label: 'user',
-                        ),
-                        child: const Text('Report user'),
-                      ),
                     ],
                   ),
                 ],

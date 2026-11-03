@@ -177,23 +177,30 @@ def _docker_command(args: list[str], *, timeout_seconds: int = 30) -> str:
 def _docker_events(hours: int) -> list[LogEvent]:
     """Read capped recent container logs without relying on Loki queries."""
     project = getattr(settings, 'DOCKER_COMPOSE_PROJECT_NAME', 'rentalution')
+    timeout_seconds = getattr(settings, 'LOG_REVIEW_DOCKER_TIMEOUT_SECONDS', 10)
     events = []
     for service in APPLICATION_SERVICES:
-        container_id = _docker_command([
-            'ps', '-q',
-            '--filter', f'label=com.docker.compose.project={project}',
-            '--filter', f'label=com.docker.compose.service={service}',
-        ]).strip().splitlines()
-        if not container_id:
+        try:
+            container_id = _docker_command([
+                'ps', '-q',
+                '--filter', f'label=com.docker.compose.project={project}',
+                '--filter', f'label=com.docker.compose.service={service}',
+            ], timeout_seconds=timeout_seconds).strip().splitlines()
+            if not container_id:
+                raise RuntimeError(f'cannot find running container service={service}')
+            output = _docker_command([
+                'logs', '--timestamps', '--since', f'{hours}h', '--tail', '2000', container_id[0],
+            ], timeout_seconds=timeout_seconds)
+        except RuntimeError as exc:
+            # An unresponsive Docker daemon is operationally critical. Keep
+            # reviewing the other services rather than losing the entire
+            # digest, and make the fault visible to the normal alert route.
             events.append(LogEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 source=service,
-                message=f'CRITICAL log-reviewer cannot find running container service={service}',
+                message=f'CRITICAL log-reviewer {exc}',
             ))
             continue
-        output = _docker_command([
-            'logs', '--timestamps', '--since', f'{hours}h', '--tail', '2000', container_id[0],
-        ])
         for line in output.splitlines():
             if not line:
                 continue

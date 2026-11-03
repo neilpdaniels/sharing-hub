@@ -217,6 +217,15 @@ class ProductionLogReviewTests(SimpleTestCase):
 		self.assertIn('[EMAIL]', report['issues'][0]['fingerprint'])
 		self.assertEqual(docker_command.call_count, 10)
 
+	@patch('common.log_review._docker_command')
+	def test_docker_timeout_becomes_critical_issue_not_command_failure(self, docker_command):
+		docker_command.side_effect = RuntimeError('Docker log source failed: command timed out')
+		report = build_report(hours=1, source='docker')
+
+		self.assertEqual(report['status'], 'CRITICAL')
+		self.assertEqual(len(report['issues']), 5)
+		self.assertTrue(all(issue['severity'] == 'CRITICAL' for issue in report['issues']))
+
 	def test_groups_events_redacts_data_and_escalates_only_known_critical_failures(self):
 		events = [
 			LogEvent('2026-10-27T10:00:00+00:00', 'web', 'ERROR user=alice@example.com request=123456 failed'),

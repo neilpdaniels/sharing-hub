@@ -694,6 +694,7 @@ class TransactionMessage {
     required this.created,
     required this.isSystemGenerated,
     required this.isMine,
+    this.includeAdmin = false,
     required this.attachments,
   });
 
@@ -705,6 +706,7 @@ class TransactionMessage {
   final DateTime? created;
   final bool isSystemGenerated;
   final bool isMine;
+  final bool includeAdmin;
   final List<TransactionMessageAttachment> attachments;
 
   factory TransactionMessage.fromJson(Map<String, dynamic> json) {
@@ -717,6 +719,7 @@ class TransactionMessage {
       created: TransactionSummary._parseDate(json['created'] as String?),
       isSystemGenerated: json['is_system_generated'] as bool? ?? false,
       isMine: json['is_mine'] as bool? ?? false,
+      includeAdmin: json['include_admin'] as bool? ?? false,
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(TransactionMessageAttachment.fromJson)

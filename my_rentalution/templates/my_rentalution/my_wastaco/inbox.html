@@ -153,6 +153,7 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <a id="messageModalReport" class="btn btn-sm btn-outline-secondary d-none" href="#" title="Report this message" aria-label="Report this message"><span class="far fa-flag" aria-hidden="true"></span></a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             </div>
         </div>
@@ -164,6 +165,7 @@
 <script>
 (function() {
     const expandMessageUrl = "{% url 'my_rentalution:expand_message' %}";
+    const reportContentUrl = "{% url 'report_content' %}";
     const openButtons = document.querySelectorAll('[id^="expand_message_"]');
     openButtons.forEach((button) => {
         button.addEventListener('click', async () => {
@@ -177,6 +179,15 @@
             document.getElementById('messageModalFrom').textContent = data.from || '';
             document.getElementById('messageModalTo').textContent = data.to || '';
             document.getElementById('messageModalContent').textContent = data.body || '';
+            const reportNode = document.getElementById('messageModalReport');
+            if (data.can_report) {
+                const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+                reportNode.href = `${reportContentUrl}?target_type=message&target_id=${encodeURIComponent(data.message_id)}&next=${returnUrl}`;
+                reportNode.classList.remove('d-none');
+            } else {
+                reportNode.classList.add('d-none');
+                reportNode.removeAttribute('href');
+            }
             window.jQuery('#messageModal').modal('show');
             button.classList.remove('is-unread');
             button.classList.add('is-read');

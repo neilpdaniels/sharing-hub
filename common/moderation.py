@@ -65,6 +65,8 @@ def create_report(*, reporter=None, target_type, target_id, reason, details='', 
         target = TransactionMessage.objects.select_related('user_from', 'transaction').filter(pk=target_id).first()
         if target is None:
             raise ValueError('Message not found.')
+        if target.is_system_generated or target.include_admin:
+            raise ValueError('Rentalution system messages cannot be reported.')
         if reporter.id not in (target.user_from_id, target.user_to_id):
             raise PermissionError('You can only report a message in one of your transactions.')
         owner = target.user_from

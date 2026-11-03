@@ -1756,6 +1756,7 @@ if (messageForm) {
 }
 
 const expandMessageUrl = "{% url 'my_rentalution:expand_message' %}";
+const reportContentUrl = "{% url 'report_content' %}";
 
 const showMessageModal = () => {
     const modal = document.getElementById('messageModal');
@@ -1837,6 +1838,7 @@ const openMessageModal = (messageRef) => {
     const fromNode = document.getElementById('messageModalFrom');
     const toNode = document.getElementById('messageModalTo');
     const dateNode = document.getElementById('messageModalDateTime');
+    const reportNode = document.getElementById('messageModalReport');
 
     if (errorNode) {
         errorNode.textContent = '';
@@ -1849,6 +1851,10 @@ const openMessageModal = (messageRef) => {
     if (fromNode) fromNode.textContent = '';
     if (toNode) toNode.textContent = '';
     if (dateNode) dateNode.textContent = '';
+    if (reportNode) {
+        reportNode.classList.add('d-none');
+        reportNode.removeAttribute('href');
+    }
 
     showMessageModal();
 
@@ -1878,6 +1884,12 @@ const openMessageModal = (messageRef) => {
             if (toNode) toNode.textContent = data.to || '';
 
             if (dateNode) dateNode.textContent = data.created || '';
+
+            if (reportNode && data.can_report) {
+                const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+                reportNode.href = `${reportContentUrl}?target_type=message&target_id=${encodeURIComponent(data.message_id)}&next=${returnUrl}`;
+                reportNode.classList.remove('d-none');
+            }
         })
         .catch((error) => {
             if (errorNode) {

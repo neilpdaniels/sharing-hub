@@ -1016,5 +1016,11 @@ def expand_message(request):
         'title': friendly_title,
         'body' : message.description,
         'created' : message.created.strftime("%Y-%m-%d %H:%M"),
+        'can_report': bool(
+            request.user.id == message.user_to_id
+            and not message.is_system_generated
+            and not message.include_admin
+        ),
+        'message_id': message.id,
     }
     return JsonResponse(content)

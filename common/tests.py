@@ -129,9 +129,27 @@ class ModerationTests(TestCase):
 		message.refresh_from_db()
 		self.assertTrue(message.moderation_hidden)
 
+		self.client.force_login(self.reporter)
+		response = self.client.get(reverse('my_rentalution:expand_message'), {'message_id': message.id})
+		self.assertEqual(response.status_code, 404)
+
 		resolve_report(report, outcome=ModerationReport.OUTCOME_DISMISS, moderator=self.moderator)
 		message.refresh_from_db()
 		self.assertFalse(message.moderation_hidden)
+		response = self.client.get(reverse('my_rentalution:expand_message'), {'message_id': message.id})
+		self.assertTrue(response.json()['can_report'])
+
+		message.is_system_generated = True
+		message.save(update_fields=('is_system_generated',))
+		response = self.client.get(reverse('my_rentalution:expand_message'), {'message_id': message.id})
+		self.assertFalse(response.json()['can_report'])
+		with self.assertRaisesRegex(ValueError, 'system messages cannot be reported'):
+			create_report(
+				reporter=self.reporter,
+				target_type='message',
+				target_id=message.id,
+				reason=ModerationReport.REASON_THREAT,
+			)
 
 	@override_settings(ADMINS=(), DISCORD_MODERATION_WEBHOOK_URL='')
 	@patch('common.moderation.send_mail')
@@ -195,6 +213,12 @@ class ModerationTests(TestCase):
 		})
 		self.assertEqual(response.status_code, 302)
 		self.assertIn('/account/login/', response.url)
+
+	def test_inbox_template_renders_without_recursive_include(self):
+		self.client.force_login(self.reporter)
+		response = self.client.get(reverse('my_rentalution:inbox'))
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Inbox')
 
 	def test_message_profanity_filter_has_local_fallback(self):
 		self.assertTrue(contains_blocked_word('This is bullshit'))

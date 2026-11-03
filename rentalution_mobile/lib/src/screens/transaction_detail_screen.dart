@@ -3537,7 +3537,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen>
                                   })
                                   .toList(growable: false),
                             ),
-                          if (!m.isMine) ...[
+                          if (!m.isMine &&
+                              !m.isSystemGenerated &&
+                              !m.includeAdmin) ...[
                             const SizedBox(height: 2),
                             Align(
                               alignment: Alignment.centerLeft,

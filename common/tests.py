@@ -214,11 +214,16 @@ class ModerationTests(TestCase):
 		self.assertEqual(response.status_code, 302)
 		self.assertIn('/account/login/', response.url)
 
-	def test_inbox_template_renders_without_recursive_include(self):
+	def test_inbox_redirects_to_received_messages(self):
 		self.client.force_login(self.reporter)
 		response = self.client.get(reverse('my_rentalution:inbox'))
+		self.assertRedirects(
+			response,
+			reverse('my_rentalution:messages_received'),
+			fetch_redirect_response=False,
+		)
+		response = self.client.get(reverse('my_rentalution:messages_received'))
 		self.assertEqual(response.status_code, 200)
-		self.assertContains(response, 'Inbox')
 
 	def test_message_profanity_filter_has_local_fallback(self):
 		self.assertTrue(contains_blocked_word('This is bullshit'))

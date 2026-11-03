@@ -18,7 +18,12 @@
             tabindex="-1"
             onclick="if (window.openTransactionMessageModal) { window.openTransactionMessageModal('{{ message.id }}'); return false; }"
         ></button>
-        <div class="thread-message-time">{{ message.created|date:'d/m/Y H:i' }}</div>
+        <div class="thread-message-meta">
+            {% if not message.is_system_generated and not message.include_admin and message.user_from != request.user %}
+            <a class="btn btn-sm btn-outline-secondary thread-message-report" href="{% url 'report_content' %}?target_type=message&amp;target_id={{ message.id }}&amp;next={{ request.get_full_path|urlencode }}" title="Report this message" aria-label="Report this message" onclick="event.stopPropagation()"><span class="far fa-flag" aria-hidden="true"></span></a>
+            {% endif %}
+            <div class="thread-message-time">{{ message.created|date:'d/m/Y H:i' }}</div>
+        </div>
         <div class="thread-message-sender">
             {% if message.include_admin or message.is_system_generated %}
                 Rentalution
@@ -28,9 +33,6 @@
         </div>
         {% if message.preview_text %}
         <div class="thread-message-body">{{ message.preview_text }}</div>
-        {% endif %}
-        {% if not message.is_system_generated and not message.include_admin and message.user_from != request.user %}
-        <a class="btn btn-sm btn-outline-secondary mt-1" href="{% url 'report_content' %}?target_type=message&amp;target_id={{ message.id }}&amp;next={{ request.get_full_path|urlencode }}" title="Report this message" aria-label="Report this message" onclick="event.stopPropagation()"><span class="far fa-flag" aria-hidden="true"></span></a>
         {% endif %}
         {% for attachment in message.txn_msg_img.all %}
         {% if attachment.video and attachment.active %}
@@ -159,11 +161,23 @@
         display: none;
     }
 
+    .thread-message-meta {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.4rem;
+        margin-bottom: 0.15rem;
+    }
+
     .thread-message-time {
         font-size: 0.78rem;
         color: #5b6672;
         text-align: right;
-        margin-bottom: 0.15rem;
+    }
+
+    .thread-message-report {
+        padding: 0.12rem 0.38rem;
+        line-height: 1.2;
     }
 
     .thread-message-sender {

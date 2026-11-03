@@ -14,15 +14,31 @@ from .models import ModerationReport, Order
 logger = logging.getLogger(__name__)
 
 
-def create_report(*, reporter, target_type, target_id, reason, details=''):
+def create_report(*, reporter=None, target_type, target_id, reason, details='', anonymous_fingerprint=''):
     """Validate, snapshot and create one report from either web or mobile."""
     User = get_user_model()
     daily_limit = getattr(settings, 'MODERATION_REPORT_DAILY_LIMIT', 20)
-    if not reporter.is_staff and ModerationReport.objects.filter(
-        reporter=reporter,
+    authenticated_reporter = bool(reporter and getattr(reporter, 'is_authenticated', False))
+    anonymous_fingerprint = (anonymous_fingerprint or '').strip()
+    if not authenticated_reporter and not anonymous_fingerprint:
+        raise ValueError('Anonymous report verification is required.')
+
+    reporter_filter = (
+        {'reporter': reporter}
+        if authenticated_reporter
+        else {'reporter__isnull': True, 'anonymous_fingerprint': anonymous_fingerprint}
+    )
+    if not (authenticated_reporter and reporter.is_staff) and ModerationReport.objects.filter(
+        **reporter_filter,
         created_at__gte=timezone.now() - timedelta(hours=24),
     ).count() >= daily_limit:
         raise ValueError('You have reached the daily report limit. Contact support if there is an urgent safety issue.')
+    if not authenticated_reporter and ModerationReport.objects.filter(
+        **reporter_filter,
+        status=ModerationReport.STATUS_RESOLVED,
+        outcome=ModerationReport.OUTCOME_DISMISS_AND_BLOCK_REPORTER,
+    ).exists():
+        raise PermissionError('Reports from this visitor have been blocked due to previous abuse.')
     if target_type == ModerationReport.TARGET_LISTING:
         target = Order.objects.select_related('user', 'product').filter(pk=target_id).first()
         if target is None:
@@ -43,6 +59,8 @@ def create_report(*, reporter, target_type, target_id, reason, details=''):
         owner = target
         snapshot = {'user_id': target.pk, 'username': target.username}
     elif target_type == ModerationReport.TARGET_MESSAGE:
+        if not authenticated_reporter:
+            raise PermissionError('Sign in to report a private transaction message.')
         from transaction.models import TransactionMessage
         target = TransactionMessage.objects.select_related('user_from', 'transaction').filter(pk=target_id).first()
         if target is None:
@@ -62,10 +80,12 @@ def create_report(*, reporter, target_type, target_id, reason, details=''):
 
     if reason not in dict(ModerationReport.REASON_CHOICES):
         raise ValueError('Choose a valid report reason.')
-    if owner.id == reporter.id:
+    if authenticated_reporter and owner.id == reporter.id:
         raise ValueError('You cannot report your own content or account.')
     if ModerationReport.objects.filter(
-        reporter=reporter, target_type=target_type, target_id=target_id,
+        **reporter_filter,
+        target_type=target_type,
+        target_id=target_id,
         status__in=(ModerationReport.STATUS_OPEN, ModerationReport.STATUS_REVIEWING),
     ).exists():
         raise ValueError('You already have an open report for this content.')
@@ -76,6 +96,7 @@ def create_report(*, reporter, target_type, target_id, reason, details=''):
     )
     report = ModerationReport.objects.create(
         reporter=reporter,
+        anonymous_fingerprint='' if authenticated_reporter else anonymous_fingerprint,
         target_owner=owner,
         target_type=target_type,
         target_id=target_id,
@@ -107,11 +128,11 @@ def notify_staff_of_report(report):
     """Best-effort staff notification; reporting must not fail if mail/Discord does."""
     subject = '[Rentalution] New moderation report #%s' % report.pk
     message = (
-        'A member reported %s #%s.\n\nReason: %s\nReporter: %s\n'
+        'A visitor reported %s #%s.\n\nReason: %s\nReporter: %s\n'
         'Target owner: %s\n\nDetails:\n%s\n\nReview in Django admin: %s/site_cfg_admin/common/moderationreport/%s/change/'
     ) % (
         report.get_target_type_display().lower(), report.target_id,
-        report.get_reason_display(), report.reporter.username,
+        report.get_reason_display(), report.reporter.username if report.reporter else 'Anonymous visitor',
         report.target_owner.username if report.target_owner else 'unknown',
         report.details or '(none)', settings.SITE_URL.rstrip('/'), report.pk,
     )
@@ -147,7 +168,8 @@ def resolve_report(report, *, outcome, moderator, notes=''):
             if report.target_owner_id:
                 get_user_model().objects.filter(pk=report.target_owner_id).update(is_active=False)
         elif outcome == ModerationReport.OUTCOME_DISMISS_AND_BLOCK_REPORTER:
-            get_user_model().objects.filter(pk=report.reporter_id).update(is_active=False)
+            if report.reporter_id:
+                get_user_model().objects.filter(pk=report.reporter_id).update(is_active=False)
 
         if outcome in (
             ModerationReport.OUTCOME_DISMISS,

@@ -207,11 +207,15 @@ class SiteFailureAdmin(admin.ModelAdmin):
 
 @admin.register(ModerationReport)
 class ModerationReportAdmin(admin.ModelAdmin):
-    list_display = ('id', 'target_type', 'target_id', 'reason', 'reporter', 'target_owner', 'content_hidden_pending_review', 'status', 'outcome', 'created_at')
+    list_display = ('id', 'target_type', 'target_id', 'reason', 'reporter_identity', 'target_owner', 'content_hidden_pending_review', 'status', 'outcome', 'created_at')
     list_filter = ('status', 'target_type', 'reason', 'content_hidden_pending_review', 'outcome')
     search_fields = ('reporter__username', 'target_owner__username', 'details', 'moderator_notes')
-    readonly_fields = ('reporter', 'target_owner', 'target_type', 'target_id', 'reason', 'details', 'target_snapshot', 'content_hidden_pending_review', 'created_at', 'updated_at', 'reviewed_by', 'reviewed_at', 'outcome')
+    readonly_fields = ('reporter', 'anonymous_fingerprint', 'target_owner', 'target_type', 'target_id', 'reason', 'details', 'target_snapshot', 'content_hidden_pending_review', 'created_at', 'updated_at', 'reviewed_by', 'reviewed_at', 'outcome')
     actions = ('remove_and_block_author', 'dismiss_report', 'dismiss_and_block_abusive_reporter')
+
+    @admin.display(description='Reporter')
+    def reporter_identity(self, report):
+        return report.reporter.username if report.reporter else 'Anonymous visitor'
 
     def _resolve_selected(self, request, queryset, outcome):
         completed = 0

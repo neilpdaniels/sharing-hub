@@ -148,6 +148,7 @@ class ModerationTests(TestCase):
 		url = reverse('report_content')
 		response = self.client.get(url, {'target_type': 'listing', 'target_id': self.order.id, 'next': '/'})
 		self.assertEqual(response.status_code, 200)
+		self.assertNotContains(response, 'cf-turnstile')
 		with patch('common.moderation.notify_staff_of_report'):
 			response = self.client.post(url, {
 				'target_type': 'listing', 'target_id': self.order.id,
@@ -155,6 +156,45 @@ class ModerationTests(TestCase):
 			})
 		self.assertEqual(response.status_code, 302)
 		self.assertTrue(ModerationReport.objects.filter(reporter=self.reporter, target_id=self.order.id).exists())
+
+	def test_anonymous_report_requires_turnstile(self):
+		url = reverse('report_content')
+		response = self.client.get(url, {'target_type': 'listing', 'target_id': self.order.id, 'next': '/'})
+		self.assertContains(response, 'cf-turnstile')
+
+		with patch('common.views.verify_turnstile_token', return_value=False):
+			response = self.client.post(url, {
+				'target_type': 'listing', 'target_id': self.order.id,
+				'reason': ModerationReport.REASON_SCAM, 'next': '/',
+			})
+		self.assertEqual(response.status_code, 400)
+		self.assertFalse(ModerationReport.objects.exists())
+
+	def test_verified_anonymous_visitor_can_report_public_listing(self):
+		url = reverse('report_content')
+		with (
+			patch('common.views.verify_turnstile_token', return_value=True),
+			patch('common.moderation.notify_staff_of_report'),
+		):
+			response = self.client.post(url, {
+				'target_type': 'listing', 'target_id': self.order.id,
+				'reason': ModerationReport.REASON_SCAM,
+				'details': 'Anonymous concern', 'next': '/',
+				'cf-turnstile-response': 'verified-token',
+			}, REMOTE_ADDR='203.0.113.8')
+
+		self.assertEqual(response.status_code, 302)
+		report = ModerationReport.objects.get()
+		self.assertIsNone(report.reporter)
+		self.assertEqual(len(report.anonymous_fingerprint), 40)
+		self.assertNotIn('203.0.113.8', report.anonymous_fingerprint)
+
+	def test_anonymous_visitor_must_sign_in_to_report_private_message(self):
+		response = self.client.get(reverse('report_content'), {
+			'target_type': 'message', 'target_id': 1, 'next': '/',
+		})
+		self.assertEqual(response.status_code, 302)
+		self.assertIn('/account/login/', response.url)
 
 	def test_message_profanity_filter_has_local_fallback(self):
 		self.assertTrue(contains_blocked_word('This is bullshit'))

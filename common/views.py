@@ -1,6 +1,8 @@
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import redirect_to_login
 from django.contrib import messages
 from django.conf import settings
+from django.core.signing import salted_hmac
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
@@ -8,6 +10,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from common.moderation import create_report
 from common.models import ModerationReport
+from common.security import verify_turnstile_token
 from rentalution.context_processors import get_transaction_notification_payload
 
 # Create your views here.
@@ -64,10 +67,9 @@ def mobile_payout_return(request):
 	return redirect('/my_rentalution/my_details/?tab=payouts')
 
 
-@login_required
 @require_http_methods(['GET', 'POST'])
 def report_content(request):
-	"""Shared, deliberately low-key report form for website content."""
+	"""Report public content anonymously, or private messages as a member."""
 	target_type = request.POST.get('target_type') or request.GET.get('target_type', '')
 	target_id = request.POST.get('target_id') or request.GET.get('target_id', '')
 	next_url = request.POST.get('next') or request.GET.get('next') or '/'
@@ -79,15 +81,38 @@ def report_content(request):
 		target_id = int(target_id)
 	except (TypeError, ValueError):
 		return JsonResponse({'detail': 'Invalid report target.'}, status=400)
+	if target_type == ModerationReport.TARGET_MESSAGE and not request.user.is_authenticated:
+		return redirect_to_login(request.get_full_path())
+
+	show_turnstile = not request.user.is_authenticated
+	context = {
+		'target_type': target_type,
+		'target_id': target_id,
+		'next': next_url,
+		'reasons': ModerationReport.REASON_CHOICES,
+		'show_turnstile': show_turnstile,
+		'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+		'selected_reason': request.POST.get('reason', ''),
+		'details': request.POST.get('details', ''),
+	}
 
 	if request.method == 'POST':
+		anonymous_fingerprint = ''
+		if show_turnstile:
+			token = (request.POST.get('cf-turnstile-response') or '').strip()
+			remote_ip = (request.META.get('HTTP_CF_CONNECTING_IP') or request.META.get('REMOTE_ADDR') or '').strip()
+			if not verify_turnstile_token(token, remote_ip, expected_action='content_report'):
+				context['captcha_error'] = 'Please complete the human verification and try again.'
+				return render(request, 'common/report_content.html', context, status=400)
+			anonymous_fingerprint = salted_hmac('moderation.anonymous-reporter', remote_ip).hexdigest()
 		try:
 			create_report(
-				reporter=request.user,
+				reporter=request.user if request.user.is_authenticated else None,
 				target_type=target_type,
 				target_id=target_id,
 				reason=request.POST.get('reason', ''),
 				details=request.POST.get('details', ''),
+				anonymous_fingerprint=anonymous_fingerprint,
 			)
 		except (ValueError, PermissionError) as exc:
 			messages.error(request, str(exc))
@@ -95,9 +120,4 @@ def report_content(request):
 			messages.success(request, 'Thank you. Your report has been sent to the Rentalution moderation team.')
 		return redirect(next_url)
 
-	return render(request, 'common/report_content.html', {
-		'target_type': target_type,
-		'target_id': target_id,
-		'next': next_url,
-		'reasons': ModerationReport.REASON_CHOICES,
-	})
+	return render(request, 'common/report_content.html', context)

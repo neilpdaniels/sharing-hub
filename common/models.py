@@ -317,7 +317,21 @@ class ModerationReport(models.Model):
         REASON_VIOLENCE, REASON_ILLEGAL,
     ))
 
-    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='submitted_moderation_reports')
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='submitted_moderation_reports',
+        null=True,
+        blank=True,
+    )
+    anonymous_fingerprint = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        db_index=True,
+        editable=False,
+        help_text='One-way fingerprint used only for anonymous report rate limits and abuse blocking.',
+    )
     target_owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_moderation_reports')
     target_type = models.CharField(max_length=12, choices=TARGET_CHOICES, db_index=True)
     target_id = models.PositiveIntegerField(db_index=True)

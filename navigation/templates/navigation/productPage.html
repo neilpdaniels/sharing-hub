@@ -460,13 +460,17 @@
                                     </button>
                                   </form>
                                   <a class="btn btn-success js-enquire-link" href="{% url 'transaction:hit_order_reference' order.order_reference %}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
-                                  <span class="d-inline-flex flex-column align-items-start ml-1" style="font-size:.72rem;line-height:1.25">
-                                    <a class="text-muted" href="{% url 'report_content' %}?target_type=listing&amp;target_id={{ order.id }}&amp;next={{ request.get_full_path|urlencode }}">Report listing</a>
-                                    <a class="text-muted" href="{% url 'report_content' %}?target_type=user&amp;target_id={{ order.user.id }}&amp;next={{ request.get_full_path|urlencode }}">Report user</a>
+                                  <span class="btn-group btn-group-sm ml-1" role="group" aria-label="Report options">
+                                    <a class="btn btn-outline-secondary" href="{% url 'report_content' %}?target_type=listing&amp;target_id={{ order.id }}&amp;next={{ request.get_full_path|urlencode }}" title="Report this listing" aria-label="Report this listing"><span class="far fa-flag" aria-hidden="true"></span></a>
+                                    <a class="btn btn-outline-secondary" href="{% url 'report_content' %}?target_type=user&amp;target_id={{ order.user.id }}&amp;next={{ request.get_full_path|urlencode }}" title="Report this lender" aria-label="Report this lender"><span class="fas fa-user-shield" aria-hidden="true"></span></a>
                                   </span>
                                     {% endif %}
                                 {% else %}
                                 <a class="btn btn-success js-enquire-link" href="{% url 'login' %}?next={{ request.path }}" data-unavailable="{% if needed_date and not order.available_on_needed_date %}true{% else %}false{% endif %}" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>
+                                <span class="btn-group btn-group-sm ml-1" role="group" aria-label="Report options">
+                                  <a class="btn btn-outline-secondary" href="{% url 'report_content' %}?target_type=listing&amp;target_id={{ order.id }}&amp;next={{ request.get_full_path|urlencode }}" title="Report this listing" aria-label="Report this listing"><span class="far fa-flag" aria-hidden="true"></span></a>
+                                  <a class="btn btn-outline-secondary" href="{% url 'report_content' %}?target_type=user&amp;target_id={{ order.user.id }}&amp;next={{ request.get_full_path|urlencode }}" title="Report this lender" aria-label="Report this lender"><span class="fas fa-user-shield" aria-hidden="true"></span></a>
+                                </span>
                                 {% endif %}
                             </div>
                         </div>
@@ -682,6 +686,18 @@
   var userLon = {% if page_lon %}{{ page_lon }}{% else %}null{% endif %};
   var browserLat = null;
   var browserLon = null;
+  var reportContentUrl = '{% url "report_content" %}';
+
+  function reportActions(o) {
+    if (o.isOwner) return '';
+    var returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    var listingUrl = reportContentUrl + '?target_type=listing&target_id=' + encodeURIComponent(o.id) + '&next=' + returnUrl;
+    var userUrl = reportContentUrl + '?target_type=user&target_id=' + encodeURIComponent(o.userId) + '&next=' + returnUrl;
+    return '<span class="btn-group btn-group-sm ml-1" role="group" aria-label="Report options">'
+      + '<a class="btn btn-outline-secondary" href="' + listingUrl + '" title="Report this listing" aria-label="Report this listing"><span class="far fa-flag" aria-hidden="true"></span></a>'
+      + '<a class="btn btn-outline-secondary" href="' + userUrl + '" title="Report this lender" aria-label="Report this lender"><span class="fas fa-user-shield" aria-hidden="true"></span></a>'
+      + '</span>';
+  }
 
   // Request browser geolocation for contours
   if (navigator.geolocation) {
@@ -726,6 +742,7 @@
     } else if (o.loginRentUrl) {
       actions = '<a href="' + o.loginRentUrl + '" class="btn btn-success js-enquire-link" data-unavailable="' + (o.available === false ? 'true' : 'false') + '" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>';
     }
+    actions += reportActions(o);
 
     var locationLine = '';
     if (o.locationLabel || o.distanceKm) {
@@ -864,7 +881,10 @@
         if (o.deleteUrl) actions += '<a href="' + o.deleteUrl + '" class="btn btn-sm btn-outline-danger" title="Remove"><i class="fas fa-trash"></i></a>';
       } else if (o.rentUrl) {
         actions = '<a href="' + o.rentUrl + '" class="btn btn-success js-enquire-link" data-unavailable="' + (o.available === false ? 'true' : 'false') + '" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>';
+      } else if (o.loginRentUrl) {
+        actions = '<a href="' + o.loginRentUrl + '" class="btn btn-success js-enquire-link" data-unavailable="' + (o.available === false ? 'true' : 'false') + '" style="font-size:0.72rem;padding:0 10px;height:26px;display:inline-flex;align-items:center;">Enquire to rent</a>';
       }
+      actions += reportActions(o);
 
       var popup = '<div style="display:flex;align-items:center;min-width:220px;">'
         + img

@@ -122,6 +122,9 @@ if [[ -f "$DEFAULT_FCM_SERVICE_ACCOUNT_FILE" ]]; then
     fi
 fi
 
+echo "Checking and applying pending database migrations..."
+uv run python manage.py migrate --settings="$SETTINGS_MODULE"
+
 ALWAYS_EAGER="$(uv run python - <<'PY'
 from django.conf import settings
 print(int(bool(getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False))))

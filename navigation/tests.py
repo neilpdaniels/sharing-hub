@@ -16,7 +16,7 @@ from .models import (
 )
 from .product_services import ProductRecommendationApplicationError, apply_product_recommendation
 from .rate_limits import consume_submission_quota
-from .services import apply_taxonomy_recommendation, promote_category_suggestion
+from .services import TaxonomyApplicationError, apply_taxonomy_recommendation, promote_category_suggestion
 
 
 class CategorySuggestionPipelineTests(TestCase):
@@ -148,6 +148,71 @@ class CategorySuggestionPipelineTests(TestCase):
         self.assertTrue(product.categories.filter(pk=target.pk).exists())
         self.assertFalse(Category.objects.filter(pk=source.pk).exists())
         self.assertEqual(recommendation.status, CategoryTaxonomyRecommendation.STATUS_IMPLEMENTED)
+
+    def test_retiring_unused_category_subtree_removes_its_products_and_children(self):
+        root = Category.objects.create(title='Baby equipment')
+        source = Category.objects.create(title='Baby bouncers', parent_category=root)
+        child = Category.objects.create(title='Baby bouncer accessories', parent_category=source)
+        product = Product.objects.create(category_id=source, name='Baby bouncer')
+        child_product = Product.objects.create(category_id=child, name='Bouncer toy bar')
+        review = CategoryTaxonomyReview.objects.create(requested_by=self.user)
+        recommendation = CategoryTaxonomyRecommendation.objects.create(
+            review=review,
+            position=0,
+            recommendation_type=CategoryTaxonomyRecommendation.TYPE_RETIRE,
+            title='Retire unused baby bouncer area',
+            rationale='The whole subtree has no listings or rental history.',
+            evidence=['No active or historical listings.', 'No completed rentals.'],
+            proposed_action={
+                'operation': 'retire',
+                'source_category_id': source.pk,
+                'target_category_id': None,
+            },
+        )
+
+        result = apply_taxonomy_recommendation(recommendation, self.user)
+
+        recommendation.refresh_from_db()
+        self.assertEqual(result['retired_category_count'], 2)
+        self.assertEqual(result['retired_product_count'], 2)
+        self.assertFalse(Category.objects.filter(pk=source.pk).exists())
+        self.assertFalse(Category.objects.filter(pk=child.pk).exists())
+        self.assertFalse(Product.objects.filter(pk__in=[product.pk, child_product.pk]).exists())
+        self.assertEqual(recommendation.status, CategoryTaxonomyRecommendation.STATUS_IMPLEMENTED)
+
+    @patch('common.models.updateSummaryPrices.delay')
+    def test_retiring_category_subtree_refuses_any_order_history(self, _update_prices):
+        root = Category.objects.create(title='Baby equipment')
+        source = Category.objects.create(title='Baby bouncers', parent_category=root)
+        product = Product.objects.create(category_id=source, name='Baby bouncer')
+        Order.objects.create(
+            product=product,
+            user=self.user,
+            direction=Order.TO_LET,
+            expiry_date=timezone.now(),
+            price=10,
+            status=Order.EXPIRED,
+        )
+        review = CategoryTaxonomyReview.objects.create(requested_by=self.user)
+        recommendation = CategoryTaxonomyRecommendation.objects.create(
+            review=review,
+            position=0,
+            recommendation_type=CategoryTaxonomyRecommendation.TYPE_RETIRE,
+            title='Retire unused baby bouncer area',
+            rationale='The whole subtree has no active listings.',
+            evidence=['No active listings.'],
+            proposed_action={
+                'operation': 'retire',
+                'source_category_id': source.pk,
+                'target_category_id': None,
+            },
+        )
+
+        with self.assertRaisesMessage(TaxonomyApplicationError, 'active or historical order'):
+            apply_taxonomy_recommendation(recommendation, self.user)
+
+        self.assertTrue(Category.objects.filter(pk=source.pk).exists())
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
 
     def test_applying_attribute_recommendation_creates_a_filterable_product_attribute(self):
         category = Category.objects.create(title='Garden appliances')

@@ -174,20 +174,44 @@ def catalogue_snapshot() -> dict[str, Any]:
     for category in category_rows:
         children_by_parent[category.parent_category_id].append(category.id)
 
-    def subtree_counts(category_id: int) -> tuple[int, int]:
+    def subtree_counts(category_id: int) -> tuple[int, int, int, int, int]:
         product_total = product_counts.get(category_id, 0)
         active_listing_total = active_listing_counts.get(category_id, 0)
+        historical_listing_total = historical_listing_stats.get(category_id, {}).get('historical_lend_listing_count', 0)
+        transaction_total = transaction_stats.get(category_id, {}).get('transaction_count', 0)
+        completed_rental_total = transaction_stats.get(category_id, {}).get('completed_rental_count', 0)
         for child_id in children_by_parent.get(category_id, []):
-            child_products, child_active_listings = subtree_counts(child_id)
+            (
+                child_products,
+                child_active_listings,
+                child_historical_listings,
+                child_transactions,
+                child_completed_rentals,
+            ) = subtree_counts(child_id)
             product_total += child_products
             active_listing_total += child_active_listings
-        return product_total, active_listing_total
+            historical_listing_total += child_historical_listings
+            transaction_total += child_transactions
+            completed_rental_total += child_completed_rentals
+        return (
+            product_total,
+            active_listing_total,
+            historical_listing_total,
+            transaction_total,
+            completed_rental_total,
+        )
 
     for category in category_rows:
         valid_ids.add(category.id)
         stats = historical_listing_stats.get(category.id, {})
         category_transaction_stats = transaction_stats.get(category.id, {})
-        subtree_product_count, subtree_active_listing_count = subtree_counts(category.id)
+        (
+            subtree_product_count,
+            subtree_active_listing_count,
+            subtree_historical_lend_listing_count,
+            subtree_transaction_count,
+            subtree_completed_rental_count,
+        ) = subtree_counts(category.id)
         attributes = []
         for definition in category.get_attribute_definitions():
             name = (definition.get('name') or '').strip()
@@ -229,6 +253,9 @@ def catalogue_snapshot() -> dict[str, Any]:
             ),
             'subtree_product_count': subtree_product_count,
             'subtree_active_listing_count': subtree_active_listing_count,
+            'subtree_historical_lend_listing_count': subtree_historical_lend_listing_count,
+            'subtree_transaction_count': subtree_transaction_count,
+            'subtree_completed_rental_count': subtree_completed_rental_count,
             'child_category_count': len(children_by_parent.get(category.id, [])),
             'attribute_definitions': attributes,
             'product_examples': samples.get(category.id, []),
@@ -261,8 +288,13 @@ def _strength_instruction(strength: str) -> str:
         ),
         CategoryTaxonomyReview.STRENGTH_HEAVY: (
             'Requested review strength: HEAVY. Actively look for evidence-backed consolidation, stale thin branches, '
-            'broad categories worth splitting, and missing filters. You may recommend substantial reorganisation, but '
-            'only when the supplied evidence identifies a safe target and concrete customer-browsing benefit.'
+            'broad categories worth splitting, missing filters, and whole unproven launch areas to prune. Rentalution is '
+            'deliberately starting with a small, credible catalogue rather than retaining a large sparse seed catalogue. '
+            'Recommend RETIRE of a populated category subtree when every supplied subtree metric is zero (active and '
+            'historical listings, transactions and completed rentals), its products are not convincingly strong rental '
+            'items, and removing the area makes the launch catalogue more focused. Prefer one parent-branch retirement '
+            'over a scatter of leaf recommendations when it safely covers the whole weak area. You may recommend '
+            'substantial reorganisation, but only when the supplied evidence identifies a concrete customer-browsing benefit.'
         ),
     }
     return instructions.get(
@@ -285,12 +317,12 @@ def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
         'low historical as well as current lending activity, low rental demand, its last lending activity is old, and there '
         'is a clearly better existing target. Do '
         'not prune a new, seasonal, specialist or merely quiet category. A merge/move/split/retire recommendation must '
-        'name category IDs and explain likely product/listing impact. Consider a split only for a category with enough '
+        'name category IDs and explain likely product/listing impact. '
         'Explicitly recommend RETIRE for every category (except a title of "Top") whose entire subtree has zero products, '
         'zero active listings, and zero completed rentals, regardless of whether it is top-level or nested. These are '
         'catalogue clean-up recommendations for human approval; do not flag a parent merely because it has no direct '
         'products when its descendants have activity. '
-        'evidence of two durable, meaningful rental groups. If a distinction is better used to filter comparable products '
+        'Consider a split only for a category with enough evidence of two durable, meaningful rental groups. If a distinction is better used to filter comparable products '
         '(for example power source), recommend an ATTRIBUTE instead of a split. '
         'Every proposed_action must use exactly one operation: create, move, merge, retire, split, add_attribute, or none. '
         'Every proposed_action must include every one of these keys: operation, title, parent_category_id, description, '
@@ -298,8 +330,13 @@ def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
         'and reason. Use null for every key that does not apply to that operation. '
         'For create use {operation:"create", title, parent_category_id, description}. '
         'For move use {operation:"move", category_id, parent_category_id}. '
-        'For merge/retire use {operation:"merge"|"retire", source_category_id, target_category_id}; the target '
-        'must be an existing category and all source products/children will move to it. '
+        'For merge use {operation:"merge", source_category_id, target_category_id}; the target must be an existing '
+        'category and all source products/children will move to it. For retire, use either {operation:"retire", '
+        'source_category_id, target_category_id} to move a branch into an existing target, or use '
+        '{operation:"retire", source_category_id, target_category_id:null} only for a whole unproven branch. The '
+        'null-target retirement deletes the source subtree and its unused product templates, and is refused at apply time '
+        'if any product has an active or historical order or transaction. Never use it for Top or for a subtree with any '
+        'listing, transaction or completed-rental evidence. '
         'For split use {operation:"split", source_category_id, new_categories:[{title,description}]}; only use '
         'split when the source has no products, otherwise say none because product assignment needs human review. '
         'For add_attribute use {operation:"add_attribute", category_id, order, name, value_source, allowed_values}; '

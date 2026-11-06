@@ -2,7 +2,8 @@ from django.core.files import File
 from django.db import transaction
 from django.utils import timezone
 
-from common.models import Category, CategoryAttribute, Product
+from common.models import Category, CategoryAttribute, Order, Product
+from transaction.models import Transaction
 
 from .models import CategorySuggestion
 from .tasks import send_category_suggestion_decision_email
@@ -127,6 +128,58 @@ def _merge_categories(source, target):
     }
 
 
+def _retire_category_subtree(source):
+    """Delete an entirely unused branch and its primary product templates.
+
+    This is intentionally stricter than a category delete in Django admin: an
+    existing order or transaction makes the whole recommendation ineligible,
+    rather than allowing a cascade to discard marketplace history.
+    """
+    if source.title.strip().casefold() == 'top':
+        raise TaxonomyApplicationError('The Top category cannot be retired.')
+
+    category_ids = []
+    pending_ids = [source.pk]
+    while pending_ids:
+        category_id = pending_ids.pop()
+        if category_id in category_ids:
+            continue
+        category_ids.append(category_id)
+        pending_ids.extend(
+            Category.objects.filter(parent_category_id=category_id).values_list('pk', flat=True)
+        )
+
+    # Lock each category and product that is about to be removed. A live
+    # listing created while staff are reviewing cannot slip through the guard.
+    list(Category.objects.select_for_update().filter(pk__in=category_ids))
+    products = list(Product.objects.select_for_update().filter(category_id__in=category_ids))
+    product_ids = [product.pk for product in products]
+    if product_ids:
+        order_count = Order.objects.filter(product_id__in=product_ids).count()
+        if order_count:
+            raise TaxonomyApplicationError(
+                f'Not retired: {order_count} active or historical order(s) reference this category subtree.'
+            )
+        transaction_count = Transaction.objects.filter(product_id__in=product_ids).count()
+        if transaction_count:
+            raise TaxonomyApplicationError(
+                f'Not retired: {transaction_count} transaction record(s) reference this category subtree.'
+            )
+
+    product_count = len(product_ids)
+    category_count = len(category_ids)
+    source_title = source.title
+    if product_ids:
+        Product.objects.filter(pk__in=product_ids).delete()
+    source.delete()
+    return {
+        'operation': 'retire',
+        'source_category': source_title,
+        'retired_category_count': category_count,
+        'retired_product_count': product_count,
+    }
+
+
 def apply_taxonomy_recommendation(recommendation: CategoryTaxonomyRecommendation, reviewer):
     """Apply one approved, validated tree change and retain an audit result.
 
@@ -173,11 +226,14 @@ def apply_taxonomy_recommendation(recommendation: CategoryTaxonomyRecommendation
             category.parent_category = parent
             category.save(update_fields=['parent_category'])
             result = {'operation': 'move', 'category_id': category.pk, 'old_parent_category_id': old_parent_id, 'parent_category_id': parent.pk}
-        elif operation in {'merge', 'retire'}:
+        elif operation == 'merge' or (operation == 'retire' and action.get('target_category_id')):
             source = _locked_category(action.get('source_category_id'), 'Source category')
             target = _locked_category(action.get('target_category_id'), 'Target category')
             result = _merge_categories(source, target)
             result['operation'] = operation
+        elif operation == 'retire':
+            source = _locked_category(action.get('source_category_id'), 'Source category')
+            result = _retire_category_subtree(source)
         elif operation == 'split':
             source = _locked_category(action.get('source_category_id'), 'Source category')
             if Product.objects.filter(category_id=source).exists():

@@ -207,10 +207,35 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/catalogueproductreview/change_list.html'
     list_display = ('id', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
-    readonly_fields = ('requested_by', 'status', 'review_strength', 'prune_target_percent', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'status', 'review_strength', 'prune_target_percent', 'recommendations_link', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
     fields = readonly_fields
     def has_add_permission(self, request): return False
-    def recommendation_count(self, obj): return obj.recommendations.count()
+
+    def _recommendations_url(self, obj):
+        return f'{reverse("admin:navigation_catalogueproductrecommendation_changelist")}?review__id__exact={obj.pk}'
+
+    def recommendation_count(self, obj):
+        count = obj.recommendations.count()
+        return format_html(
+            '<a href="{}">{} recommendation{}</a>',
+            self._recommendations_url(obj),
+            count,
+            '' if count == 1 else 's',
+        )
+    recommendation_count.short_description = 'Recommendations'
+
+    def recommendations_link(self, obj):
+        if not obj or not obj.pk:
+            return 'Available after the review has been created.'
+        count = obj.recommendations.count()
+        return format_html(
+            '<a class="button" href="{}">View {} recommendation{}</a>',
+            self._recommendations_url(obj),
+            count,
+            '' if count == 1 else 's',
+        )
+    recommendations_link.short_description = 'Review results'
+
     def get_urls(self):
         return [path('run-now/', self.admin_site.admin_view(self.run_now), name='navigation_catalogueproductreview_run_now')] + super().get_urls()
     def run_now(self, request):

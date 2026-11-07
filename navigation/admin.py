@@ -205,9 +205,9 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
 @admin.register(CatalogueProductReview)
 class CatalogueProductReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/catalogueproductreview/change_list.html'
-    list_display = ('id', 'review_strength', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
-    readonly_fields = ('requested_by', 'status', 'review_strength', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'status', 'review_strength', 'prune_target_percent', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
     fields = readonly_fields
     def has_add_permission(self, request): return False
     def recommendation_count(self, obj): return obj.recommendations.count()
@@ -221,7 +221,16 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
         strength = request.POST.get('review_strength', CatalogueProductReview.STRENGTH_MEDIUM)
         if strength not in dict(CatalogueProductReview.STRENGTH_CHOICES):
             strength = CatalogueProductReview.STRENGTH_MEDIUM
-        review = CatalogueProductReview.objects.create(requested_by=request.user, review_strength=strength)
+        try:
+            prune_target_percent = int(request.POST.get('prune_target_percent', '0'))
+        except (TypeError, ValueError):
+            prune_target_percent = 0
+        prune_target_percent = min(80, max(0, prune_target_percent))
+        review = CatalogueProductReview.objects.create(
+            requested_by=request.user,
+            review_strength=strength,
+            prune_target_percent=prune_target_percent,
+        )
         transaction.on_commit(lambda: run_catalogue_product_review.delay(review.pk))
         self.message_user(request, 'Product-worthiness review queued. Refresh shortly to see its recommendations.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_catalogueproductreview_changelist'))

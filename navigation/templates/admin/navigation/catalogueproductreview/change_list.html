@@ -9,6 +9,9 @@
         <option value="MEDIUM" selected>Medium</option>
         <option value="HEAVY">Heavy</option>
       </select>
+      <label for="product-prune-target">Prune target</label>
+      <input id="product-prune-target" name="prune_target_percent" type="number" min="0" max="80" value="0" step="5" aria-label="Advisory percentage of product templates to prune">
+      <span aria-hidden="true">%</span>
       <button type="submit" class="addlink" style="border:0;cursor:pointer">Run product review</button>
     </form>
   </li>

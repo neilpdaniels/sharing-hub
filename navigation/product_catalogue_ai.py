@@ -1,6 +1,6 @@
-"""Read-only product catalogue quality and consumer rental-worthiness review."""
+"""Read-only product catalogue quality and short-hire rental-worthiness review."""
 
-from collections import defaultdict
+from math import ceil
 from typing import Literal
 
 from django.db.models import Count, Max, Min, Q
@@ -23,7 +23,9 @@ class ConsumerAssessment(StrictModel):
     estimated_replacement_cost_band: Literal['under_15', '15_to_50', '50_to_150', 'over_150', 'unknown']
     transport_storage_burden: Literal['low', 'medium', 'high']
     wear_damage_risk: Literal['low', 'medium', 'high']
-    rental_suitability: Literal['poor', 'borderline', 'good', 'strong']
+    one_week_rental_suitability: Literal['poor', 'borderline', 'good', 'strong']
+    two_week_rental_suitability: Literal['poor', 'borderline', 'good', 'strong']
+    four_week_rental_suitability: Literal['poor', 'borderline', 'good', 'strong']
     estimate_note: str = Field(max_length=500)
 
 
@@ -66,6 +68,20 @@ def _strength_instruction(strength: str) -> str:
     )
 
 
+def _prune_target_instruction(prune_target_percent: int, product_count: int) -> str:
+    if not prune_target_percent:
+        return (
+            'There is no numerical pruning target for this review. Recommend only genuinely worthwhile cleanup; '
+            'it is valid to return few or no retirement candidates.'
+        )
+    target_count = ceil(product_count * prune_target_percent / 100)
+    return (
+        f'Staff have set an advisory pruning target of {prune_target_percent}% ({target_count} of {product_count} product templates). '
+        'Rank and include enough well-supported retirement or consolidation candidates to approach that target where possible. '
+        'This is a discovery target, not a quota: never invent evidence or recommend a weak removal merely to reach it.'
+    )
+
+
 def product_catalogue_snapshot() -> dict:
     active = {
         row['product_id']: row['count'] for row in Order.objects.filter(status=Order.ACTIVE, direction=Order.TO_LET)
@@ -102,22 +118,26 @@ def product_catalogue_snapshot() -> dict:
     return {'generated_at': timezone.now().isoformat(), 'products': products, 'product_id_set': [p['id'] for p in products]}
 
 
-def _prompt(snapshot: dict, strength: str) -> str:
+def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str:
     return (
-        'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
-        'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
         'You are conducting a read-only product catalogue-worthiness review for a UK peer-to-peer rental marketplace. '
         f'{_strength_instruction(strength)} '
-        'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
-        'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
+        f'{_prune_target_instruction(prune_target_percent, len(snapshot.get("products", [])))} '
         'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
         'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
         'different names for the same plate compactor), and low-value generic products that consumers are more likely to buy. '
+        'Score three separate rental horizons: one_week_rental_suitability (up to seven consecutive days), '
+        'two_week_rental_suitability (eight to fourteen consecutive days), and four_week_rental_suitability '
+        '(fifteen to twenty-eight consecutive days). Do not treat a longer rental as automatically more suitable. '
+        'For each horizon, consider whether a household is realistically likely to pay to borrow the item rather than '
+        'buy it, borrow from family, or use an alternative. Give a poor score when a product is cheap, personal or '
+        'hygiene-sensitive, safety-sensitive, or normally owned for ongoing use; give a strong score only when that '
+        'specific hire period solves a clear, occasional problem. '
         'A £15–50 estimated replacement cost is a strong negative signal, not an automatic rejection: retain rare, one-off, '
         'specialist, hard-to-store, hard-to-transport, or costly-to-get-wrong tools. Treat model/brand variants as duplicates '
         'unless the supplied evidence shows a meaningful consumer-facing distinction. '
         'For every recommendation, score likely use frequency, estimated replacement-cost band (estimate only), transport/storage '
-        'burden, rental wear/damage risk, and rental suitability. Use only supplied catalogue facts for listings/rentals/prices; '
+        'burden, rental wear/damage risk, and all three rental-suitability horizons. Use only supplied catalogue facts for listings/rentals/prices; '
         'your replacement-cost band is an explicitly labelled general estimate. Do not invent product IDs. '
         'Recommend only DUPLICATE, LOW_VALUE, or KEEP (for a specialist exception worth retaining). All recommendations '
         'are for human review. Include a proposed_action object: for DUPLICATE use operation "consolidate", set '
@@ -138,7 +158,7 @@ def process_product_catalogue_review(review_id: int) -> str:
         review.snapshot, review.status, review.started_at, review.error = snapshot, review.STATUS_RUNNING, timezone.now(), ''
         review.save(update_fields=['snapshot', 'status', 'started_at', 'error'])
         assessment = _chat_model().with_structured_output(ProductAssessment).invoke(
-            _prompt(snapshot, review.review_strength)
+            _prompt(snapshot, review.review_strength, review.prune_target_percent)
         )
         review.llm_analysis = assessment.model_dump()
         review.recommendations.all().delete()

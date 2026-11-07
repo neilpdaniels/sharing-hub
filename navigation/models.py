@@ -208,6 +208,9 @@ class CatalogueProductReview(models.Model):
 	requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
 	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
+	# Zero means that staff want a normal qualitative review. A non-zero value is
+	# an advisory target for the AI's shortlist, never an automatic deletion rule.
+	prune_target_percent = models.PositiveSmallIntegerField(default=0)
 	snapshot = models.JSONField(default=dict, blank=True)
 	llm_analysis = models.JSONField(default=dict, blank=True)
 	error = models.TextField(blank=True, default='')

@@ -15,6 +15,7 @@ from .models import (
     CategoryTaxonomyReview,
 )
 from .product_services import ProductRecommendationApplicationError, apply_product_recommendation
+from .product_catalogue_ai import _prompt
 from .rate_limits import consume_submission_quota
 from .services import TaxonomyApplicationError, apply_taxonomy_recommendation, promote_category_suggestion
 
@@ -340,3 +341,18 @@ class ProductRecommendationApplicationTests(TestCase):
 
         self.assertTrue(Product.objects.filter(pk=canonical.pk).exists())
         self.assertFalse(Product.objects.filter(pk=duplicate.pk).exists())
+
+
+class ProductCataloguePromptTests(TestCase):
+    def test_prompt_uses_one_week_hire_and_advisory_prune_target(self):
+        prompt = _prompt(
+            {'products': [{'id': index} for index in range(8)]},
+            CatalogueProductReview.STRENGTH_HEAVY,
+            25,
+        )
+
+        self.assertIn('up to seven consecutive days', prompt)
+        self.assertIn('one_week_rental_suitability', prompt)
+        self.assertIn('two_week_rental_suitability', prompt)
+        self.assertIn('four_week_rental_suitability', prompt)
+        self.assertIn('25% (2 of 8 product templates)', prompt)

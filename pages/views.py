@@ -74,6 +74,7 @@ def help_and_support(request):
         'captcha_error': captcha_error,
         'support_email': 'admin@rentalution.co.uk',
         'TURNSTILE_SITE_KEY': getattr(settings, 'CLOUDFLARE_TURNSTILE_SITE_KEY', ''),
+        'subject': (request.GET.get('subject') or '').strip(),
     }
     if request.method == 'POST' and not captcha_error:
         context.update({
@@ -115,6 +116,11 @@ def terms_and_conditions(request):
 
 def privacy_policy(request):
     return render(request, 'pages/privacy_policy.html')
+
+
+def account_deletion(request):
+    """Public account-deletion information and request route for web/app users."""
+    return render(request, 'pages/account_deletion.html')
 
 
 def cookie_policy(request):

@@ -68,6 +68,10 @@ DATABASES = {
 
 STATIC_ROOT = os.environ.get('DJANGO_STATIC_ROOT', os.path.join(BASE_DIR, 'staticfiles'))
 MEDIA_ROOT = os.environ.get('DJANGO_MEDIA_ROOT', os.path.join(BASE_DIR, 'media'))
+CONDITION_MEDIA_ARCHIVE_ROOT = os.environ.get(
+    'DJANGO_CONDITION_MEDIA_ARCHIVE_ROOT',
+    os.path.join(os.path.dirname(MEDIA_ROOT.rstrip(os.sep)), 'condition-media-archive'),
+)
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SESSION_COOKIE_SECURE = True

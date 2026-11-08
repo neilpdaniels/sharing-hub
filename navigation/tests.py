@@ -150,6 +150,42 @@ class CategorySuggestionPipelineTests(TestCase):
         self.assertFalse(Category.objects.filter(pk=source.pk).exists())
         self.assertEqual(recommendation.status, CategoryTaxonomyRecommendation.STATUS_IMPLEMENTED)
 
+    def test_merging_sibling_categories_into_a_new_name_retires_both_old_categories(self):
+        root = Category.objects.create(title='Party')
+        costumes = Category.objects.create(title='Children costumes', parent_category=root)
+        dress_up = Category.objects.create(title='Kids dress-up', parent_category=root)
+        costume_product = Product.objects.create(category_id=costumes, name='Pirate costume')
+        dress_up_product = Product.objects.create(category_id=dress_up, name='Superhero cape')
+        costumes_id, dress_up_id = costumes.pk, dress_up.pk
+        review = CategoryTaxonomyReview.objects.create(requested_by=self.user)
+        recommendation = CategoryTaxonomyRecommendation.objects.create(
+            review=review,
+            position=0,
+            recommendation_type=CategoryTaxonomyRecommendation.TYPE_DUPLICATE,
+            title='Combine children costume categories',
+            rationale='Both sibling categories describe the same customer browsing area.',
+            evidence=['Both categories contain children’s fancy-dress products.'],
+            proposed_action={
+                'operation': 'merge_new',
+                'source_category_id': costumes.pk,
+                'target_category_id': dress_up.pk,
+                'parent_category_id': root.pk,
+                'title': 'Children’s fancy dress',
+                'description': 'Costumes and dress-up outfits for children.',
+            },
+        )
+
+        result = apply_taxonomy_recommendation(recommendation, self.user)
+
+        consolidated = Category.objects.get(pk=result['created_category_id'])
+        costume_product.refresh_from_db()
+        dress_up_product.refresh_from_db()
+        self.assertEqual(consolidated.title, 'Children’s fancy dress')
+        self.assertEqual(costume_product.category_id, consolidated)
+        self.assertEqual(dress_up_product.category_id, consolidated)
+        self.assertFalse(Category.objects.filter(pk=costumes_id).exists())
+        self.assertFalse(Category.objects.filter(pk=dress_up_id).exists())
+
     def test_retiring_unused_category_subtree_removes_its_products_and_children(self):
         root = Category.objects.create(title='Baby equipment')
         source = Category.objects.create(title='Baby bouncers', parent_category=root)
@@ -340,6 +376,27 @@ class ProductRecommendationApplicationTests(TestCase):
         apply_product_recommendation(recommendation, self.user)
 
         self.assertTrue(Product.objects.filter(pk=canonical.pk).exists())
+        self.assertFalse(Product.objects.filter(pk=duplicate.pk).exists())
+
+    def test_repairs_an_ai_affected_id_omission_when_action_ids_are_in_review_snapshot(self):
+        canonical = Product.objects.create(category_id=self.category, name='Costume set')
+        duplicate = Product.objects.create(category_id=self.category, name='Costume accessory')
+        recommendation = self._recommendation(
+            recommendation_type=CatalogueProductRecommendation.TYPE_DUPLICATE,
+            affected_ids=[canonical.pk],
+            action={
+                'operation': 'consolidate',
+                'canonical_product_id': canonical.pk,
+                'retire_product_ids': [duplicate.pk],
+            },
+        )
+        recommendation.review.snapshot = {'product_id_set': [canonical.pk, duplicate.pk]}
+        recommendation.review.save(update_fields=['snapshot'])
+
+        apply_product_recommendation(recommendation, self.user)
+
+        recommendation.refresh_from_db()
+        self.assertEqual(recommendation.affected_product_ids, [canonical.pk, duplicate.pk])
         self.assertFalse(Product.objects.filter(pk=duplicate.pk).exists())
 
 

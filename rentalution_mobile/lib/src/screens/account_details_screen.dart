@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../models/account_models.dart';
 import '../services/account_repository.dart';
 
@@ -202,6 +203,38 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen>
     }
   }
 
+  Future<void> _requestAccountDeletion() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Request account deletion?'),
+        content: const Text(
+          'This opens Rentalution’s secure deletion-request page. Your account will not be deleted immediately: '
+          'we may need to verify your identity and retain limited records where required for payments, disputes, '
+          'fraud prevention, or legal obligations.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+
+    final uri = Uri.parse('${AppConfig.websiteBaseUrl}/pages/account_deletion/');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the account-deletion page. Please try again later.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -295,6 +328,24 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen>
                   ElevatedButton(
                     onPressed: _saving ? null : _save,
                     child: Text(_saving ? 'Saving...' : 'Save changes'),
+                  ),
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Delete account',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Request deletion of your Rentalution account and personal data. Some records may need to be retained by law or to resolve an open issue.',
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _requestAccountDeletion,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Request account deletion'),
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
                   ),
                 ],
               ),

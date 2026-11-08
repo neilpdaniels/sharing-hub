@@ -172,11 +172,22 @@ def process_product_catalogue_review(review_id: int) -> str:
             action['retire_product_ids'] = [
                 pk for pk in action['retire_product_ids'] if pk in valid_ids
             ]
+            action_ids = set(action['retire_product_ids'])
+            if action['canonical_product_id']:
+                action_ids.add(action['canonical_product_id'])
+            # affected_product_ids is the review display/audit list. The
+            # executable action is the authoritative source of the IDs it
+            # needs, so retain any valid action ID the model accidentally
+            # omitted from that list rather than creating an unusable review.
+            affected_ids = sorted({
+                *[pk for pk in item.affected_product_ids if pk in valid_ids],
+                *action_ids,
+            })
             CatalogueProductRecommendation.objects.create(
                 review=review, position=position, recommendation_type=item.recommendation_type,
                 title=item.title, rationale=item.rationale, evidence=item.evidence,
                 recommended_action=item.recommended_action,
-                affected_product_ids=[pk for pk in item.affected_product_ids if pk in valid_ids],
+                affected_product_ids=affected_ids,
                 proposed_action=action,
                 consumer_assessment=item.consumer_assessment.model_dump(),
             )

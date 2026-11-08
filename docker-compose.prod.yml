@@ -25,6 +25,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
       - ./staticfiles:/app/staticfiles
     depends_on:
       - db
@@ -42,6 +43,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
     depends_on:
       - db
       - web
@@ -57,6 +59,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
     depends_on:
       - db
       - redis
@@ -70,6 +73,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
     depends_on:
       - db
       - redis

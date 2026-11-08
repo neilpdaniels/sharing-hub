@@ -1,0 +1,20 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li>
+    <form method="post" action="{% url 'admin:navigation_cataloguecleanupreview_run_now' %}" style="display:inline">
+      {% csrf_token %}
+      <label for="cleanup-review-strength" class="visually-hidden">Review strength</label>
+      <select id="cleanup-review-strength" name="review_strength" aria-label="Review strength">
+        <option value="LIGHT">Light</option>
+        <option value="MEDIUM" selected>Medium</option>
+        <option value="HEAVY">Heavy</option>
+      </select>
+      <label for="cleanup-prune-target">Prune target</label>
+      <input id="cleanup-prune-target" name="prune_target_percent" type="number" min="0" max="80" value="0" step="5" aria-label="Advisory percentage of product templates to prune">
+      <span aria-hidden="true">%</span>
+      <button type="submit" class="addlink" style="border:0;cursor:pointer">Run combined catalogue cleanup</button>
+    </form>
+  </li>
+  {{ block.super }}
+{% endblock %}

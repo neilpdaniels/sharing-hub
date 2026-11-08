@@ -225,6 +225,42 @@ class CatalogueProductReview(models.Model):
 		return f'Product-worthiness review {self.pk} ({self.get_status_display()})'
 
 
+class CatalogueCleanupReview(models.Model):
+	"""One human-facing run that joins product and taxonomy analysis."""
+	STATUS_QUEUED = 'QUEUED'
+	STATUS_RUNNING = 'RUNNING'
+	STATUS_READY = 'READY'
+	STATUS_PARTIAL = 'PARTIAL'
+	STATUS_FAILED = 'FAILED'
+	STATUS_CHOICES = (
+		(STATUS_QUEUED, 'Queued'), (STATUS_RUNNING, 'Running'),
+		(STATUS_READY, 'Ready for human review'),
+		(STATUS_PARTIAL, 'Partially complete — inspect results'),
+		(STATUS_FAILED, 'Failed'),
+	)
+	STRENGTH_LIGHT = CatalogueProductReview.STRENGTH_LIGHT
+	STRENGTH_MEDIUM = CatalogueProductReview.STRENGTH_MEDIUM
+	STRENGTH_HEAVY = CatalogueProductReview.STRENGTH_HEAVY
+	STRENGTH_CHOICES = CatalogueProductReview.STRENGTH_CHOICES
+	requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
+	review_strength = models.CharField(max_length=8, choices=CatalogueProductReview.STRENGTH_CHOICES, default=CatalogueProductReview.STRENGTH_MEDIUM)
+	prune_target_percent = models.PositiveSmallIntegerField(default=0)
+	product_review = models.OneToOneField(CatalogueProductReview, on_delete=models.SET_NULL, null=True, blank=True, related_name='cleanup_run')
+	taxonomy_review = models.OneToOneField(CategoryTaxonomyReview, on_delete=models.SET_NULL, null=True, blank=True, related_name='cleanup_run')
+	application_result = models.JSONField(default=dict, blank=True)
+	error = models.TextField(blank=True, default='')
+	started_at = models.DateTimeField(null=True, blank=True)
+	completed_at = models.DateTimeField(null=True, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+	class Meta:
+		ordering = ['-created_at']
+
+	def __str__(self):
+		return f'Catalogue cleanup {self.pk} ({self.get_status_display()})'
+
+
 class CatalogueProductRecommendation(models.Model):
 	TYPE_DUPLICATE = 'DUPLICATE'
 	TYPE_LOW_VALUE = 'LOW_VALUE'

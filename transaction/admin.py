@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from .models import (
     DisputeCase,
     PaymentAttempt,
@@ -21,8 +21,23 @@ class OrderAdmin(SimpleHistoryAdmin):
 
 @admin.register(TransactionMessageImage)
 class OrderAdmin(admin.ModelAdmin):
-    # list_display = ('user_from','user_to','transaction','description','created')
-    pass
+    list_display = ('id', 'transaction', 'evidence_stage', 'uploaded_at', 'archived_at', 'archive_expires_at', 'active')
+    list_filter = ('evidence_stage', 'active', 'archived_at')
+    readonly_fields = ('archived_at', 'archive_expires_at', 'archive_manifest')
+    actions = ('restore_archived_condition_media',)
+
+    @admin.action(description='Restore selected archived condition media')
+    def restore_archived_condition_media(self, request, queryset):
+        from .tasks import ConditionMediaArchiveError, restore_archived_condition_media
+
+        restored = 0
+        for evidence in queryset.select_related('transaction'):
+            try:
+                if restore_archived_condition_media(evidence):
+                    restored += 1
+            except ConditionMediaArchiveError as exc:
+                self.message_user(request, f'Evidence #{evidence.pk} was not restored: {exc}', level=messages.ERROR)
+        self.message_user(request, f'Restored {restored} condition-media record(s).')
 
 @admin.register(TransactionCharge)
 class TransactionChargeAdmin(admin.ModelAdmin):

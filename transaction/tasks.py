@@ -2,6 +2,7 @@ from zoneinfo import ZoneInfo
 from celery import shared_task
 import json
 import logging
+import shutil
 from pathlib import Path
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
@@ -18,13 +19,270 @@ from common.models import Order, OrderImage
 from common.emails import send_branded_email
 from account.models import PaymentMethod, Profile
 from account.models import NotificationPreference
-from .models import DisputeCase, StripeSettlement, Transaction
+from .models import DisputeCase, StripeSettlement, Transaction, TransactionMessageImage
 from .stripe_connect import stripe_connect_service
 from common.failures import record_site_failure
 
 
 logger = logging.getLogger(__name__)
 RETURN_RESOLUTION_TIMEZONE = ZoneInfo('Europe/London')
+
+
+# Evidence connected to an unresolved or historic dispute is deliberately
+# excluded.  Those files follow the longer dispute/claim retention schedule.
+CONDITION_MEDIA_RETENTION_DAYS = 90
+CONDITION_MEDIA_ARCHIVE_GRACE_DAYS = 90
+CONDITION_MEDIA_PURGEABLE_STATUSES = (
+    Transaction.CANCEL_ACCEPTED,
+    Transaction.RENTAL_RETURNED_DEPOSIT_RETURNED,
+    Transaction.RENTAL_PROCESS_COMPLETED,
+    Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
+    Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
+)
+
+
+class ConditionMediaArchiveError(Exception):
+    """The evidence could not be safely moved to or from the local archive."""
+
+
+def _clear_evidence_urls_from_transaction(transaction, evidence_urls):
+    """Remove URLs which would otherwise point to a just-purged local file."""
+    video_fields = (
+        'checkout_condition_video_url',
+        'checkout_borrower_video_url',
+        'return_condition_video_url',
+        'return_borrower_video_url',
+        'return_lender_video_url',
+    )
+    changed_fields = [
+        field for field in video_fields
+        if getattr(transaction, field) in evidence_urls
+    ]
+    if changed_fields:
+        for field in changed_fields:
+            setattr(transaction, field, '')
+        transaction.save(update_fields=[*changed_fields, 'amended'])
+
+
+def _archive_path(name):
+    archive_root = Path(settings.CONDITION_MEDIA_ARCHIVE_ROOT).resolve()
+    destination = (archive_root / name).resolve()
+    if archive_root not in destination.parents:
+        raise ConditionMediaArchiveError('Unsafe archive file name.')
+    return destination
+
+
+def _condition_media_fields(evidence):
+    return {
+        'video': evidence.video,
+        'video_raw': evidence.video_raw,
+        'video_preview': evidence.video_preview,
+    }
+
+
+def archive_condition_media(evidence):
+    """Move one evidence record out of live media, retaining restoration data."""
+    if evidence.archived_at:
+        return False
+    if evidence.transaction.dispute_cases.exists():
+        raise ConditionMediaArchiveError('Evidence belongs to a dispute.')
+
+    fields = _condition_media_fields(evidence)
+    names = {field.name for field in fields.values() if field and field.name}
+    if not names:
+        raise ConditionMediaArchiveError('Evidence has no stored media.')
+
+    storage = evidence.video.storage
+    moves = []
+    evidence_urls = set()
+    for name in names:
+        try:
+            source = Path(storage.path(name)).resolve()
+        except (AttributeError, NotImplementedError) as exc:
+            raise ConditionMediaArchiveError('Condition-media archiving requires local file storage.') from exc
+        if not source.is_file():
+            raise ConditionMediaArchiveError(f'Live evidence file is missing: {name}')
+        destination = _archive_path(name)
+        if destination.exists():
+            raise ConditionMediaArchiveError(f'Archive destination already exists: {name}')
+        moves.append((source, destination))
+    for field in fields.values():
+        if field and field.name:
+            try:
+                evidence_urls.add(field.url)
+            except Exception:
+                logger.warning('Could not resolve media URL for evidence %s.', evidence.pk)
+
+    moved = []
+    try:
+        for source, destination in moves:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+            moved.append((source, destination))
+    except Exception as exc:
+        for source, destination in reversed(moved):
+            try:
+                source.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(destination), str(source))
+            except Exception:
+                logger.exception('Could not roll back archive move for %s.', source)
+        raise ConditionMediaArchiveError('Could not move all evidence files to archive.') from exc
+
+    now = timezone.now()
+    manifest = {
+        'files': {name: field.name for name, field in fields.items() if field and field.name},
+        'transaction_urls': {
+            field: getattr(evidence.transaction, field)
+            for field in (
+                'checkout_condition_video_url', 'checkout_borrower_video_url',
+                'return_condition_video_url', 'return_borrower_video_url',
+                'return_lender_video_url',
+            )
+            if getattr(evidence.transaction, field) in evidence_urls
+        },
+        'preview_status': evidence.preview_status,
+    }
+    evidence.video = ''
+    evidence.video_raw = ''
+    evidence.video_preview = ''
+    evidence.active = False
+    evidence.archived_at = now
+    evidence.archive_expires_at = now + timedelta(days=CONDITION_MEDIA_ARCHIVE_GRACE_DAYS)
+    evidence.archive_manifest = manifest
+    evidence.save(update_fields=[
+        'video', 'video_raw', 'video_preview', 'active', 'archived_at',
+        'archive_expires_at', 'archive_manifest',
+    ])
+    _clear_evidence_urls_from_transaction(evidence.transaction, evidence_urls)
+    return True
+
+
+def restore_archived_condition_media(evidence):
+    """Restore archived evidence for a staff correction during its grace period."""
+    if not evidence.archived_at:
+        return False
+    manifest = evidence.archive_manifest or {}
+    files = manifest.get('files') or {}
+    if not files:
+        raise ConditionMediaArchiveError('Archived evidence has no restoration manifest.')
+    storage = evidence.video.storage
+    moves = []
+    for name, original_name in files.items():
+        source = _archive_path(original_name)
+        try:
+            destination = Path(storage.path(original_name)).resolve()
+        except (AttributeError, NotImplementedError) as exc:
+            raise ConditionMediaArchiveError('Condition-media restoration requires local file storage.') from exc
+        if not source.is_file():
+            raise ConditionMediaArchiveError(f'Archived evidence file is missing: {original_name}')
+        if destination.exists():
+            raise ConditionMediaArchiveError(f'Live destination already exists: {original_name}')
+        moves.append((name, source, destination))
+
+    moved = []
+    try:
+        for name, source, destination in moves:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+            moved.append((source, destination))
+    except Exception as exc:
+        for source, destination in reversed(moved):
+            try:
+                source.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(destination), str(source))
+            except Exception:
+                logger.exception('Could not roll back restoration move for %s.', source)
+        raise ConditionMediaArchiveError('Could not restore all archived evidence files.') from exc
+
+    for name, original_name in files.items():
+        setattr(evidence, name, original_name)
+    evidence.active = True
+    evidence.archived_at = None
+    evidence.archive_expires_at = None
+    evidence.preview_status = manifest.get('preview_status') or 'pending'
+    evidence.archive_manifest = {}
+    evidence.save(update_fields=[
+        *files.keys(), 'active', 'archived_at', 'archive_expires_at',
+        'preview_status', 'archive_manifest',
+    ])
+    transaction_urls = manifest.get('transaction_urls') or {}
+    update_fields = [field for field, value in transaction_urls.items() if not getattr(evidence.transaction, field)]
+    if update_fields:
+        for field in update_fields:
+            setattr(evidence.transaction, field, transaction_urls[field])
+        evidence.transaction.save(update_fields=[*update_fields, 'amended'])
+    return True
+
+
+@shared_task
+def archive_expired_condition_media():
+    """Archive routine, undisputed condition uploads after 90 days."""
+    cutoff = timezone.now() - timedelta(days=CONDITION_MEDIA_RETENTION_DAYS)
+    candidates = (
+        TransactionMessageImage.objects
+        .filter(
+            transaction__isnull=False,
+            evidence_stage__in=(
+                'checkout_lender', 'checkout_borrower',
+                'return_borrower', 'return_lender',
+            ),
+            uploaded_at__lt=cutoff,
+            transaction__transaction_status__in=CONDITION_MEDIA_PURGEABLE_STATUSES,
+            archived_at__isnull=True,
+        )
+        .filter(transaction__dispute_cases__isnull=True)
+        .exclude(video='')
+        .select_related('transaction')
+        .distinct()
+    )
+    result = {'archived': 0, 'skipped': 0, 'failed': 0}
+
+    for evidence in candidates.iterator():
+        # A case could be raised after this job's query has begun.
+        if evidence.transaction.dispute_cases.exists():
+            result['skipped'] += 1
+            continue
+
+        try:
+            if archive_condition_media(evidence):
+                result['archived'] += 1
+        except ConditionMediaArchiveError:
+            logger.warning('Could not archive condition evidence %s.', evidence.pk, exc_info=True)
+            result['failed'] += 1
+
+    if any(result.values()):
+        logger.info('Condition-media archive run: %s', result)
+    return result
+
+
+@shared_task
+def delete_expired_archived_condition_media():
+    """Permanently delete archive records after their 90-day restoration grace period."""
+    candidates = TransactionMessageImage.objects.filter(
+        archived_at__isnull=False,
+        archive_expires_at__lte=timezone.now(),
+    ).select_related('transaction')
+    result = {'deleted': 0, 'preserved_for_dispute': 0, 'failed': 0}
+    for evidence in candidates.iterator():
+        if evidence.transaction and evidence.transaction.dispute_cases.exists():
+            evidence.archive_expires_at = None
+            evidence.save(update_fields=['archive_expires_at'])
+            result['preserved_for_dispute'] += 1
+            continue
+        files = (evidence.archive_manifest or {}).get('files') or {}
+        try:
+            for name in set(files.values()):
+                path = _archive_path(name)
+                if path.exists():
+                    path.unlink()
+            evidence.delete()
+            result['deleted'] += 1
+        except Exception:
+            logger.exception('Failed to permanently delete archived condition evidence %s.', evidence.pk)
+            result['failed'] += 1
+    if any(result.values()):
+        logger.info('Archived condition-media deletion run: %s', result)
+    return result
 
 
 @shared_task

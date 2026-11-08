@@ -17,5 +17,6 @@ urlpatterns = [
     path('about_us/', views.about_us, name='aboutUs'),
     path('terms_and_conditions/', views.terms_and_conditions, name='termsAndConditions'),
     path('privacy_policy/', views.privacy_policy, name='privacyPolicy'),
+    path('account_deletion/', views.account_deletion, name='accountDeletion'),
     path('cookie_policy/', views.cookie_policy, name='cookiePolicy'),
 ]

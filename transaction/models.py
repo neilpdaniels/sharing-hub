@@ -1259,6 +1259,9 @@ class TransactionMessageImage(models.Model):
     evidence_stage = models.CharField(max_length=40, blank=True)
     external_video_url = models.URLField(blank=True, max_length=500)
     active = models.BooleanField(default=True)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archive_expires_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archive_manifest = models.JSONField(default=dict, blank=True)
     first_image = models.BooleanField(default=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Delete your Rentalution account{% endblock %}
+
+{% block content %}
+<div class="container py-4 py-lg-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-9">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4 p-lg-5">
+          <p class="text-uppercase text-muted mb-2" style="letter-spacing:.08em;font-weight:800;">Account and data</p>
+          <h1 class="mb-3" style="font-weight:900; color:#132644;">Delete your Rentalution account</h1>
+          <p class="lead mb-0" style="color:#4b5c6d;">
+            You can ask us to delete your Rentalution account and the personal data linked to it. This applies to the Rentalution website and mobile app.
+          </p>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4 p-lg-5">
+          <h2 class="h4 mb-3" style="font-weight:800; color:#132644;">How to request deletion</h2>
+          <ol class="mb-3 pl-3" style="color:#425366; line-height:1.75;">
+            <li>Use the account email address registered with Rentalution.</li>
+            <li>Send an account-deletion request through Help and Support.</li>
+            <li>We may ask you to verify that you control the account before acting on the request.</li>
+          </ol>
+          <a class="btn btn-primary" href="{% url 'pages:helpAndSupport' %}?subject=Account%20deletion%20request">Request account deletion</a>
+          <p class="small text-muted mt-3 mb-0">
+            If you cannot access the email address on your account, contact <a href="mailto:admin@rentalution.co.uk">admin@rentalution.co.uk</a> and explain the problem. Do not include passwords, payment-card details, or identity documents in an email.
+          </p>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4 p-lg-5">
+          <h2 class="h4 mb-3" style="font-weight:800; color:#132644;">What deletion means</h2>
+          <p class="text-muted">
+            We will assess your request and delete or anonymise account and profile information that we no longer need. This can include your profile, contact details, listings that are not needed for an open booking, and ordinary account preferences.
+          </p>
+          <p class="text-muted mb-0">
+            We normally erase or anonymise ordinary account data within 30 days of verifying a request. We may retain limited information where required for legal, accounting, fraud-prevention, safety, payment, dispute-resolution, or legal-claim purposes. For example, payment, payout, tax, transaction, serious safety, fraud, and dispute records may be retained for up to six years; routine safety and moderation records for up to three years. Routine, undisputed condition media is removed from the live service after 90 days, held in a restricted archive for a further 90 days, and then permanently deleted. If this applies, we will explain what remains and why when we respond to your request. Deleting an account does not automatically remove information that another person has lawfully retained outside Rentalution.
+          </p>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-4 p-lg-5">
+          <h2 class="h4 mb-3" style="font-weight:800; color:#132644;">More information</h2>
+          <p class="mb-0 text-muted">
+            Read our <a href="{% url 'pages:privacyPolicy' %}">Privacy Policy</a> for information about the data we process and your rights. Account deletion requests are considered individually; a request may not always result in every record being erased where an exception applies.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

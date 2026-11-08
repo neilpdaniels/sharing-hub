@@ -2,6 +2,9 @@
 
 {% block object-tools-items %}
   <li>
+    <a href="{% url 'admin:navigation_cataloguecleanupreview_changelist' %}">Combined product + taxonomy cleanup</a>
+  </li>
+  <li>
     <form method="post" action="{% url 'admin:navigation_categorytaxonomyreview_run_now' %}" style="display:inline">
       {% csrf_token %}
       <label for="taxonomy-review-strength" class="visually-hidden">Review strength</label>

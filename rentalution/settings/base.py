@@ -171,6 +171,10 @@ AUTHENTICATION_BACKENDS = [
 
 MEDIA_URL='/media/'
 MEDIA_ROOT=os.path.join(BASE_DIR, 'media/')
+CONDITION_MEDIA_ARCHIVE_ROOT = os.environ.get(
+    'DJANGO_CONDITION_MEDIA_ARCHIVE_ROOT',
+    os.path.join(os.path.dirname(MEDIA_ROOT.rstrip(os.sep)), 'condition-media-archive'),
+)
 # NPD - finished
 
 # Application definition

@@ -55,7 +55,15 @@ def apply_product_recommendation(recommendation, reviewer):
 
     declared_ids = set(recommendation.affected_product_ids or [])
     if not affected_ids.issubset(declared_ids):
-        raise ProductRecommendationApplicationError('The proposed action does not match the reviewed affected-product list.')
+        snapshot_ids = set((recommendation.review.snapshot or {}).get('product_id_set') or [])
+        if not snapshot_ids or not affected_ids.issubset(snapshot_ids):
+            raise ProductRecommendationApplicationError('The proposed action does not match the reviewed affected-product list.')
+        # Older reviews can contain an AI display-list omission even though the
+        # action itself uses only IDs in that review's immutable snapshot. Keep
+        # the audit record accurate before applying its normal history guards.
+        declared_ids.update(affected_ids)
+        recommendation.affected_product_ids = sorted(declared_ids)
+        recommendation.save(update_fields=['affected_product_ids'])
 
     with transaction.atomic():
         recommendation = CatalogueProductRecommendation.objects.select_for_update().get(pk=recommendation.pk)

@@ -9,6 +9,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
       - ./staticfiles:/app/staticfiles
       - ./db.sqlite3:/app/db.sqlite3
     ports:
@@ -26,6 +27,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
       - ./db.sqlite3:/app/db.sqlite3
     depends_on:
       - web
@@ -39,6 +41,7 @@ services:
       - .env
     volumes:
       - ./media:/app/media
+      - ./condition-media-archive:/app/condition-media-archive
       - ./db.sqlite3:/app/db.sqlite3
     depends_on:
       - web

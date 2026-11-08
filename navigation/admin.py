@@ -6,11 +6,12 @@ from django.http import HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.urls import path, reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
 from .models import (
     CategorySuggestion,
     CategorySuggestionImage,
+    CatalogueCleanupReview,
     CatalogueProductRecommendation,
     CatalogueProductReview,
     CategoryTaxonomyRecommendation,
@@ -24,11 +25,13 @@ from .services import (
     reject_category_suggestion,
 )
 from .product_services import ProductRecommendationApplicationError, apply_product_recommendation
+from .cleanup_services import apply_catalogue_cleanup_review
 from .tasks import (
     generate_category_suggestion_assets_task,
     review_category_suggestion,
     run_catalogue_taxonomy_review,
     run_catalogue_product_review,
+    run_catalogue_cleanup_review,
 )
 
 # Register your models here.
@@ -259,6 +262,78 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
         transaction.on_commit(lambda: run_catalogue_product_review.delay(review.pk))
         self.message_user(request, 'Product-worthiness review queued. Refresh shortly to see its recommendations.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_catalogueproductreview_changelist'))
+
+
+@admin.register(CatalogueCleanupReview)
+class CatalogueCleanupReviewAdmin(admin.ModelAdmin):
+    change_list_template = 'admin/navigation/cataloguecleanupreview/change_list.html'
+    list_display = ('id', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'results_links')
+    list_filter = ('status', 'created_at')
+    readonly_fields = ('requested_by', 'status', 'review_strength', 'prune_target_percent', 'product_review', 'taxonomy_review', 'results_links', 'application_result', 'error', 'started_at', 'completed_at', 'created_at')
+    fields = readonly_fields
+    actions = ('apply_all_safe_recommendations',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def results_links(self, obj):
+        if not obj or not obj.pk:
+            return 'Available once the review has started.'
+        links = []
+        if obj.product_review_id:
+            links.append(format_html(
+                '<a href="{}">Product recommendations ({})</a>',
+                reverse('admin:navigation_catalogueproductrecommendation_changelist') + f'?review__id__exact={obj.product_review_id}',
+                obj.product_review.recommendations.count(),
+            ))
+        if obj.taxonomy_review_id:
+            links.append(format_html(
+                '<a href="{}">Taxonomy recommendations ({})</a>',
+                reverse('admin:navigation_categorytaxonomyrecommendation_changelist') + f'?review__id__exact={obj.taxonomy_review_id}',
+                obj.taxonomy_review.recommendations.count(),
+            ))
+        return format_html_join(' &middot; ', '{}', ((link,) for link in links)) if links else 'Running…'
+    results_links.short_description = 'Results'
+
+    def get_urls(self):
+        return [path('run-now/', self.admin_site.admin_view(self.run_now), name='navigation_cataloguecleanupreview_run_now')] + super().get_urls()
+
+    def run_now(self, request):
+        if request.method != 'POST':
+            return HttpResponseNotAllowed(['POST'])
+        if not settings.CATEGORY_AI_ENABLED:
+            self.message_user(request, 'Category AI is disabled. Set CATEGORY_AI_ENABLED=1 before running a catalogue cleanup review.', messages.ERROR)
+            return redirect(reverse('admin:navigation_cataloguecleanupreview_changelist'))
+        strength = request.POST.get('review_strength', CatalogueCleanupReview.STRENGTH_MEDIUM)
+        if strength not in dict(CatalogueCleanupReview.STRENGTH_CHOICES):
+            strength = CatalogueCleanupReview.STRENGTH_MEDIUM
+        try:
+            prune_target_percent = int(request.POST.get('prune_target_percent', '0'))
+        except (TypeError, ValueError):
+            prune_target_percent = 0
+        cleanup = CatalogueCleanupReview.objects.create(
+            requested_by=request.user,
+            review_strength=strength,
+            prune_target_percent=min(80, max(0, prune_target_percent)),
+        )
+        transaction.on_commit(lambda: run_catalogue_cleanup_review.delay(cleanup.pk))
+        self.message_user(request, 'Combined product and taxonomy review queued. Refresh shortly to see both result sets.', messages.SUCCESS)
+        return redirect(reverse('admin:navigation_cataloguecleanupreview_changelist'))
+
+    @admin.action(description='Apply all safe recommendations in selected cleanup review(s)')
+    def apply_all_safe_recommendations(self, request, queryset):
+        for cleanup in queryset:
+            try:
+                result = apply_catalogue_cleanup_review(cleanup, request.user)
+            except ValueError as exc:
+                self.message_user(request, f'Cleanup {cleanup.pk}: {exc}', messages.ERROR)
+                continue
+            self.message_user(
+                request,
+                f'Cleanup {cleanup.pk}: applied {len(result["product_applied"])} product and {len(result["taxonomy_applied"])} taxonomy change(s); '
+                f'{len(result["skipped_extra_scrutiny"])} taxonomy recommendation(s) need separate review; {len(result["errors"])} could not be applied.',
+                messages.SUCCESS if not result['errors'] else messages.WARNING,
+            )
 
 
 @admin.register(CatalogueProductRecommendation)

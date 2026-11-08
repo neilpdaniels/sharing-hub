@@ -33,7 +33,7 @@ class TaxonomyAction(StrictStructuredOutput):
     do not apply to the selected operation must be returned as ``null``.
     """
 
-    operation: Literal['create', 'move', 'merge', 'retire', 'split', 'add_attribute', 'none']
+    operation: Literal['create', 'move', 'merge', 'merge_new', 'retire', 'split', 'add_attribute', 'none']
     title: str | None
     parent_category_id: int | None
     description: str | None
@@ -324,14 +324,17 @@ def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
         'products when its descendants have activity. '
         'Consider a split only for a category with enough evidence of two durable, meaningful rental groups. If a distinction is better used to filter comparable products '
         '(for example power source), recommend an ATTRIBUTE instead of a split. '
-        'Every proposed_action must use exactly one operation: create, move, merge, retire, split, add_attribute, or none. '
+        'Every proposed_action must use exactly one operation: create, move, merge, merge_new, retire, split, add_attribute, or none. '
         'Every proposed_action must include every one of these keys: operation, title, parent_category_id, description, '
         'category_id, source_category_id, target_category_id, new_categories, order, name, value_source, allowed_values, '
         'and reason. Use null for every key that does not apply to that operation. '
         'For create use {operation:"create", title, parent_category_id, description}. '
         'For move use {operation:"move", category_id, parent_category_id}. '
-        'For merge use {operation:"merge", source_category_id, target_category_id}; the target must be an existing '
-        'category and all source products/children will move to it. For retire, use either {operation:"retire", '
+        'For a duplicate/consolidation, normally use {operation:"merge_new", source_category_id, target_category_id, '
+        'title, parent_category_id, description}: source and target must be sibling categories, a new clearly named '
+        'category will be created, all their products and children moved into it, and both old categories retired. '
+        'Use a concise customer-facing title that covers both old areas. Use {operation:"merge", source_category_id, '
+        'target_category_id} only when the existing target name is already exactly right. For retire, use either {operation:"retire", '
         'source_category_id, target_category_id} to move a branch into an existing target, or use '
         '{operation:"retire", source_category_id, target_category_id:null} only for a whole unproven branch. The '
         'null-target retirement deletes the source subtree and its unused product templates, and is refused at apply time '

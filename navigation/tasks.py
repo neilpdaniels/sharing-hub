@@ -13,7 +13,7 @@ from .category_ai import (
     generate_category_suggestion_assets,
     process_category_suggestion,
 )
-from .models import CatalogueProductReview, CategorySuggestion, CategoryTaxonomyReview
+from .models import CatalogueCleanupReview, CatalogueProductReview, CategorySuggestion, CategoryTaxonomyReview
 from .product_catalogue_ai import process_product_catalogue_review
 from .taxonomy_ai import process_taxonomy_review
 
@@ -106,6 +106,56 @@ def run_catalogue_product_review(review_id: int) -> str:
         logger.exception('Catalogue product review %s failed', review_id)
         record_site_failure('Catalogue product review failed', details=f'Catalogue product review {review_id} could not be completed.', exception=exc, context={'review_id': review_id})
         return CatalogueProductReview.STATUS_FAILED
+
+
+@shared_task(queue='catalog_ai', soft_time_limit=1800, time_limit=1860)
+def run_catalogue_cleanup_review(cleanup_review_id: int) -> str:
+    """Run product and category-tree analysis as one staff-requested review."""
+    cleanup = CatalogueCleanupReview.objects.get(pk=cleanup_review_id)
+    if not settings.CATEGORY_AI_ENABLED:
+        cleanup.status = CatalogueCleanupReview.STATUS_FAILED
+        cleanup.error = 'Category AI is disabled. Set CATEGORY_AI_ENABLED=1 before running a catalogue cleanup review.'
+        cleanup.completed_at = timezone.now()
+        cleanup.save(update_fields=['status', 'error', 'completed_at'])
+        return cleanup.status
+
+    cleanup.status = CatalogueCleanupReview.STATUS_RUNNING
+    cleanup.started_at = timezone.now()
+    cleanup.error = ''
+    cleanup.save(update_fields=['status', 'started_at', 'error'])
+    product_review = CatalogueProductReview.objects.create(
+        requested_by=cleanup.requested_by,
+        review_strength=cleanup.review_strength,
+        prune_target_percent=cleanup.prune_target_percent,
+    )
+    taxonomy_review = CategoryTaxonomyReview.objects.create(
+        requested_by=cleanup.requested_by,
+        review_strength=cleanup.review_strength,
+    )
+    cleanup.product_review = product_review
+    cleanup.taxonomy_review = taxonomy_review
+    cleanup.save(update_fields=['product_review', 'taxonomy_review'])
+
+    errors = []
+    try:
+        process_product_catalogue_review(product_review.pk)
+    except Exception as exc:
+        logger.exception('Catalogue cleanup %s product review failed', cleanup.pk)
+        errors.append(f'Product review: {exc}')
+    try:
+        process_taxonomy_review(taxonomy_review.pk)
+    except Exception as exc:
+        logger.exception('Catalogue cleanup %s taxonomy review failed', cleanup.pk)
+        errors.append(f'Taxonomy review: {exc}')
+
+    cleanup.status = (
+        CatalogueCleanupReview.STATUS_READY if not errors
+        else CatalogueCleanupReview.STATUS_PARTIAL
+    )
+    cleanup.error = '\n'.join(errors)[:4000]
+    cleanup.completed_at = timezone.now()
+    cleanup.save(update_fields=['status', 'error', 'completed_at'])
+    return cleanup.status
 
 
 @shared_task(queue='celery')

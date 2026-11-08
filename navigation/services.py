@@ -128,6 +128,47 @@ def _merge_categories(source, target):
     }
 
 
+def _merge_categories_into_new(source, target, parent, title, description):
+    """Replace two sibling categories with one deliberately named category."""
+    if source.pk == target.pk:
+        raise TaxonomyApplicationError('Two different categories are required for a new consolidated category.')
+    if source.title.strip().casefold() == 'top' or target.title.strip().casefold() == 'top':
+        raise TaxonomyApplicationError('The Top category cannot be consolidated.')
+    if source.parent_category_id != target.parent_category_id:
+        raise TaxonomyApplicationError('New consolidated categories must start with two sibling categories.')
+    if source.parent_category_id != parent.pk:
+        raise TaxonomyApplicationError('The new category must use the shared parent of both source categories.')
+    normalized_title = ' '.join(str(title or '').split())
+    if not normalized_title:
+        raise TaxonomyApplicationError('A customer-facing name is required for the new consolidated category.')
+    if Category.objects.filter(title__iexact=normalized_title).exists():
+        raise TaxonomyApplicationError('A category with the proposed consolidated name already exists.')
+
+    source_id, target_id = source.pk, target.pk
+    consolidated = Category.objects.create(
+        title=normalized_title,
+        parent_category=parent,
+        description=' '.join(str(description or '').split()),
+    )
+    source_result = _merge_categories(source, consolidated)
+    target_result = _merge_categories(target, consolidated)
+    return {
+        'operation': 'merge_new',
+        'created_category_id': consolidated.pk,
+        'created_category_title': consolidated.title,
+        'retired_category_ids': [source_id, target_id],
+        'primary_products_reassigned': (
+            source_result['primary_products_reassigned'] + target_result['primary_products_reassigned']
+        ),
+        'secondary_products_reassigned': (
+            source_result['secondary_products_reassigned'] + target_result['secondary_products_reassigned']
+        ),
+        'child_categories_reparented': (
+            source_result['child_categories_reparented'] + target_result['child_categories_reparented']
+        ),
+    }
+
+
 def _retire_category_subtree(source):
     """Delete an entirely unused branch and its primary product templates.
 
@@ -194,7 +235,7 @@ def apply_taxonomy_recommendation(recommendation: CategoryTaxonomyRecommendation
     expected_operations = {
         CategoryTaxonomyRecommendation.TYPE_MISSING: {'create'},
         CategoryTaxonomyRecommendation.TYPE_MOVE: {'move'},
-        CategoryTaxonomyRecommendation.TYPE_DUPLICATE: {'merge'},
+        CategoryTaxonomyRecommendation.TYPE_DUPLICATE: {'merge', 'merge_new'},
         CategoryTaxonomyRecommendation.TYPE_RETIRE: {'retire', 'merge'},
         CategoryTaxonomyRecommendation.TYPE_SPLIT: {'split'},
         CategoryTaxonomyRecommendation.TYPE_ATTRIBUTE: {'add_attribute'},
@@ -226,6 +267,13 @@ def apply_taxonomy_recommendation(recommendation: CategoryTaxonomyRecommendation
             category.parent_category = parent
             category.save(update_fields=['parent_category'])
             result = {'operation': 'move', 'category_id': category.pk, 'old_parent_category_id': old_parent_id, 'parent_category_id': parent.pk}
+        elif operation == 'merge_new':
+            source = _locked_category(action.get('source_category_id'), 'Source category')
+            target = _locked_category(action.get('target_category_id'), 'Target category')
+            parent = _locked_category(action.get('parent_category_id'), 'New category parent')
+            result = _merge_categories_into_new(
+                source, target, parent, action.get('title'), action.get('description'),
+            )
         elif operation == 'merge' or (operation == 'retire' and action.get('target_category_id')):
             source = _locked_category(action.get('source_category_id'), 'Source category')
             target = _locked_category(action.get('target_category_id'), 'Target category')

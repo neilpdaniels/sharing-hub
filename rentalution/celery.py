@@ -54,6 +54,14 @@ app.conf.beat_schedule  = {
         'task': 'transaction.tasks.send_rental_day_reminders',
         'schedule': crontab(minute='0', hour='10'),
     },
+    'archive-expired-condition-media': {
+        'task': 'transaction.tasks.archive_expired_condition_media',
+        'schedule': UKCrontab(minute='30', hour='3'),
+    },
+    'delete-expired-archived-condition-media': {
+        'task': 'transaction.tasks.delete_expired_archived_condition_media',
+        'schedule': UKCrontab(minute='45', hour='3'),
+    },
     'queue-monthly-catalogue-taxonomy-review': {
         'task': 'navigation.tasks.queue_monthly_catalogue_taxonomy_review',
         'schedule': crontab(minute='15', hour='3', day_of_month='1'),

@@ -7,7 +7,7 @@
   <div class="row">
     <div class="col-lg-10">
       <h2>Privacy Policy</h2>
-      <p class="text-muted">Last updated: 2 November 2026</p>
+      <p class="text-muted">Last updated: 7 November 2026</p>
 
       <p>
         This policy explains how rentalution collects, uses, and protects personal data in line with UK GDPR and the Data Protection Act 2018.
@@ -20,10 +20,12 @@
 
       <h4>What We Collect</h4>
       <ul>
-        <li>Account data: name, username, email address, mobile number, date of birth.</li>
-        <li>Profile and listing data: profile image, item listings, messages, booking details.</li>
+        <li>Account data: name, username, email address, mobile number, date of birth, and sign-in information. If you use Google Sign-In, we receive the account information Google provides for that sign-in.</li>
+        <li>Profile and listing data: profile image, item listings, messages, booking details, reviews, and information you provide to set up payouts.</li>
+        <li>Uploaded content: photos, videos, condition evidence, and other content submitted with listings, messages, or bookings.</li>
         <li>Location data: postcode/town and optional device location when you choose to share it.</li>
-        <li>Technical data: device/browser information, IP address, and security logs.</li>
+        <li>Mobile-app data: device and app information, push-notification token and preferences, and technical/security logs.</li>
+        <li>Payment and payout data: Rentalution stores payment and payout references needed to operate bookings. Card details are handled by Stripe and are not stored by Rentalution as full card numbers.</li>
         <li>Safety and moderation data: reports, reported-content snapshots, moderator decisions, account restrictions, and related audit records.</li>
       </ul>
 
@@ -46,17 +48,30 @@
 
       <h4>Sharing Your Data</h4>
       <p>
-        We may share data with service providers that support hosting, messaging, notifications, and payment-related operations, and where required by law. We do not sell personal data.
+        We share data only where needed to run Rentalution, including with Google for Google Sign-In and Firebase Cloud Messaging, Stripe for payment, deposit, identity-verification and payout services, Cloudflare for security checks, hosting and infrastructure providers, and communications providers for email or mobile verification. We may also share data where required by law or to protect users, prevent fraud, resolve disputes, or enforce our terms. We do not sell personal data.
+      </p>
+
+      <h4>International Processing</h4>
+      <p>
+        Some service providers may process personal data outside the UK. Where this happens, we use appropriate safeguards required by applicable data-protection law.
       </p>
 
       <h4>Retention</h4>
       <p>
-        We keep personal data only as long as needed for service delivery, legal obligations, and dispute resolution. Retention periods may vary by data type.
+        We keep personal data only as long as needed for service delivery, legal obligations, fraud prevention, safety, payment, accounting, and dispute resolution. Our main retention periods are: payment, payout, tax, and transaction records for six years after the end of the relevant financial year; routine fraud, safety, and moderation records for three years after the decision or last relevant activity; and confirmed fraud, serious safety incidents, permanent account restrictions, and dispute or claim records for six years. Routine, undisputed condition media is removed from the live service after 90 days, retained in a restricted archive for a further 90 days, and then permanently deleted. We review retained data and limit access to those who need it.
+      </p>
+      <p>
+        After a verified account-deletion request, we erase or anonymise ordinary account, profile, listing, and preference data within 30 days unless there is an open booking, unpaid balance, dispute, safety matter, or a legal reason to retain it. Our <a href="{% url 'pages:accountDeletion' %}">Account Deletion page</a> explains how to make a request.
       </p>
 
       <h4>Your Rights</h4>
       <p>
         Subject to legal limits, you can request access, correction, deletion, restriction, objection, and data portability. You can also withdraw consent where processing is based on consent.
+      </p>
+
+      <h4>Account Deletion</h4>
+      <p>
+        You can request deletion of your Rentalution website or mobile-app account through our <a href="{% url 'pages:accountDeletion' %}">Account Deletion page</a>. We may retain limited information where this is necessary for legal, accounting, fraud-prevention, safety, payment, dispute-resolution, or legal-claim purposes.
       </p>
 
       <h4>Contact and Complaints</h4>

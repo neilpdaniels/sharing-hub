@@ -170,7 +170,7 @@ def _merge_categories_into_new(source, target, parent, title, description):
 
 
 def _retire_category_subtree(source):
-    """Delete an entirely unused branch and its primary product templates.
+    """Delete an entirely empty category branch.
 
     This is intentionally stricter than a category delete in Django admin: an
     existing order or transaction makes the whole recommendation ineligible,
@@ -196,22 +196,14 @@ def _retire_category_subtree(source):
     products = list(Product.objects.select_for_update().filter(category_id__in=category_ids))
     product_ids = [product.pk for product in products]
     if product_ids:
-        order_count = Order.objects.filter(product_id__in=product_ids).count()
-        if order_count:
-            raise TaxonomyApplicationError(
-                f'Not retired: {order_count} active or historical order(s) reference this category subtree.'
-            )
-        transaction_count = Transaction.objects.filter(product_id__in=product_ids).count()
-        if transaction_count:
-            raise TaxonomyApplicationError(
-                f'Not retired: {transaction_count} transaction record(s) reference this category subtree.'
-            )
+        raise TaxonomyApplicationError(
+            'Not retired: pre-launch taxonomy cleanup only removes genuinely empty category branches. '
+            'Use product-worthiness review to prune product templates first.'
+        )
 
     product_count = len(product_ids)
     category_count = len(category_ids)
     source_title = source.title
-    if product_ids:
-        Product.objects.filter(pk__in=product_ids).delete()
     source.delete()
     return {
         'operation': 'retire',

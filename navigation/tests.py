@@ -186,12 +186,10 @@ class CategorySuggestionPipelineTests(TestCase):
         self.assertFalse(Category.objects.filter(pk=costumes_id).exists())
         self.assertFalse(Category.objects.filter(pk=dress_up_id).exists())
 
-    def test_retiring_unused_category_subtree_removes_its_products_and_children(self):
+    def test_retiring_empty_category_subtree_removes_its_children(self):
         root = Category.objects.create(title='Baby equipment')
         source = Category.objects.create(title='Baby bouncers', parent_category=root)
         child = Category.objects.create(title='Baby bouncer accessories', parent_category=source)
-        product = Product.objects.create(category_id=source, name='Baby bouncer')
-        child_product = Product.objects.create(category_id=child, name='Bouncer toy bar')
         review = CategoryTaxonomyReview.objects.create(requested_by=self.user)
         recommendation = CategoryTaxonomyRecommendation.objects.create(
             review=review,
@@ -211,25 +209,16 @@ class CategorySuggestionPipelineTests(TestCase):
 
         recommendation.refresh_from_db()
         self.assertEqual(result['retired_category_count'], 2)
-        self.assertEqual(result['retired_product_count'], 2)
+        self.assertEqual(result['retired_product_count'], 0)
         self.assertFalse(Category.objects.filter(pk=source.pk).exists())
         self.assertFalse(Category.objects.filter(pk=child.pk).exists())
-        self.assertFalse(Product.objects.filter(pk__in=[product.pk, child_product.pk]).exists())
         self.assertEqual(recommendation.status, CategoryTaxonomyRecommendation.STATUS_IMPLEMENTED)
 
     @patch('common.models.updateSummaryPrices.delay')
-    def test_retiring_category_subtree_refuses_any_order_history(self, _update_prices):
+    def test_retiring_category_subtree_refuses_when_it_contains_products(self, _update_prices):
         root = Category.objects.create(title='Baby equipment')
         source = Category.objects.create(title='Baby bouncers', parent_category=root)
         product = Product.objects.create(category_id=source, name='Baby bouncer')
-        Order.objects.create(
-            product=product,
-            user=self.user,
-            direction=Order.TO_LET,
-            expiry_date=timezone.now(),
-            price=10,
-            status=Order.EXPIRED,
-        )
         review = CategoryTaxonomyReview.objects.create(requested_by=self.user)
         recommendation = CategoryTaxonomyRecommendation.objects.create(
             review=review,
@@ -245,7 +234,7 @@ class CategorySuggestionPipelineTests(TestCase):
             },
         )
 
-        with self.assertRaisesMessage(TaxonomyApplicationError, 'active or historical order'):
+        with self.assertRaisesMessage(TaxonomyApplicationError, 'only removes genuinely empty'):
             apply_taxonomy_recommendation(recommendation, self.user)
 
         self.assertTrue(Category.objects.filter(pk=source.pk).exists())

@@ -181,7 +181,8 @@ class ProductAdmin(SummernoteModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(SimpleHistoryAdmin):
-    list_display = ('product_id','user','expiry_date', 'create_date','direction')
+    list_display = ('display_name', 'product_id','user','expiry_date', 'create_date','direction')
+    search_fields = ('listing_title', 'product__name', 'user__username')
 
 @admin.register(OrderImage)
 class OrderImageAdmin(admin.ModelAdmin):

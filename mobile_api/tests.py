@@ -334,6 +334,7 @@ class ProductAttributeFilteringApiTests(TestCase):
             price=10,
             postcode='SW1A1AA',
             attribute_two_value='Adult M',
+            listing_title='Cow costume',
         )
         self.kids_order = Order.objects.create(
             product=self.kids_product,
@@ -412,6 +413,16 @@ class ProductAttributeFilteringApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual([item['name'] for item in payload], ['Adult fancy dress'])
+
+    def test_listing_api_uses_specific_listing_title_but_keeps_catalogue_name(self):
+        self.client.force_login(self.adult_order.user)
+        response = self.client.get(reverse('mobile_api:orders_list'))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        adult = next(item for item in payload if item['id'] == self.adult_order.id)
+        self.assertEqual(adult['product_name'], 'Cow costume')
+        self.assertEqual(adult['catalogue_product_name'], 'Adult fancy dress')
 
 
 class VerifiedUsersOnlyEnquiryTests(TestCase):

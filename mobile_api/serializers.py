@@ -744,7 +744,10 @@ class LetPriceBandSerializer(serializers.ModelSerializer):
 
 class OrderSummarySerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField(source='product.id', read_only=True)
-    product_name = serializers.CharField(source='product.name', read_only=True)
+    # Existing clients use product_name as the card title.  Keep that contract
+    # but make it the specific listing's name where a lender has supplied one.
+    product_name = serializers.CharField(source='display_name', read_only=True)
+    catalogue_product_name = serializers.CharField(source='product.name', read_only=True)
     product_slug = serializers.CharField(source='product.slug', read_only=True)
     category_slug = serializers.CharField(source='product.category_id.slug', read_only=True)
     distance_km = serializers.FloatField(read_only=True, allow_null=True)
@@ -774,6 +777,8 @@ class OrderSummarySerializer(serializers.ModelSerializer):
             'order_reference',
             'product_id',
             'product_name',
+            'catalogue_product_name',
+            'listing_title',
             'product_slug',
             'category_slug',
             'lender',
@@ -984,6 +989,11 @@ class OrderAmendSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('This description contains language that is not allowed on Rentalution.')
         return value
 
+    def validate_listing_title(self, value):
+        if contains_blocked_word(value):
+            raise serializers.ValidationError('This listing name contains language that is not allowed on Rentalution.')
+        return value
+
     def validate_additional_comments(self, value):
         if contains_blocked_word(value):
             raise serializers.ValidationError('These comments contain language that is not allowed on Rentalution.')
@@ -992,6 +1002,7 @@ class OrderAmendSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = (
+            'listing_title',
             'price',
             'quantity',
             'description',
@@ -1043,6 +1054,11 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('This description contains language that is not allowed on Rentalution.')
         return value
 
+    def validate_listing_title(self, value):
+        if contains_blocked_word(value):
+            raise serializers.ValidationError('This listing name contains language that is not allowed on Rentalution.')
+        return value
+
     def validate_additional_comments(self, value):
         if contains_blocked_word(value):
             raise serializers.ValidationError('These comments contain language that is not allowed on Rentalution.')
@@ -1052,6 +1068,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         model = Order
         fields = (
             'product_id',
+            'listing_title',
             'expiry_date',
             'price',
             'radius_km',

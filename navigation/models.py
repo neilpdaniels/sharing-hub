@@ -264,8 +264,14 @@ class CatalogueCleanupReview(models.Model):
 class CatalogueProductRecommendation(models.Model):
 	TYPE_DUPLICATE = 'DUPLICATE'
 	TYPE_LOW_VALUE = 'LOW_VALUE'
+	TYPE_LISTING_VARIANTS = 'LISTING_VARIANTS'
 	TYPE_KEEP = 'KEEP'
-	TYPE_CHOICES = ((TYPE_DUPLICATE, 'Possible duplicate / consolidate'), (TYPE_LOW_VALUE, 'Low-value / consumer-fit review'), (TYPE_KEEP, 'Keep — specialist exception'))
+	TYPE_CHOICES = (
+		(TYPE_DUPLICATE, 'Possible duplicate / consolidate'),
+		(TYPE_LOW_VALUE, 'Low-value / consumer-fit review'),
+		(TYPE_LISTING_VARIANTS, 'Use one product type with listing variants'),
+		(TYPE_KEEP, 'Keep — specialist exception'),
+	)
 	STATUS_PENDING = 'PENDING'
 	STATUS_REVIEWED = 'REVIEWED'
 	STATUS_REJECTED = 'REJECTED'

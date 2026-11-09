@@ -94,6 +94,7 @@
         <div class="card mb-3">
           <div class="card-header font-weight-bold">About the item</div>
           <div class="card-body">
+            {% bootstrap_field order_form.listing_title %}
             {% bootstrap_field order_form.description %}
             {% bootstrap_field order_form.additional_comments %}
           </div>

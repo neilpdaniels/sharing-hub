@@ -59,6 +59,13 @@ class OrderAddForm(forms.ModelForm):
         max_length=500,
         validators=[reject_prohibited_text],
     )
+    listing_title = forms.CharField(
+        label='Name your item',
+        help_text='This identifies this specific item to renters, e.g. “Cow costume”.',
+        required=False,
+        max_length=200,
+        validators=[reject_prohibited_text],
+    )
     additional_comments = forms.CharField(
         label='Additional comments',
         widget=forms.Textarea(attrs={'rows': 3}),
@@ -74,6 +81,7 @@ class OrderAddForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = (
+            'listing_title',
             'let_visibility',
             'verified_users_only',
             'expiry_date',

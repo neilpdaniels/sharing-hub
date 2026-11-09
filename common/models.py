@@ -456,6 +456,11 @@ class Order(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     create_date = models.DateTimeField('date created', auto_now_add=True)
 
+    # The curated Product is the reusable catalogue template.  This is the
+    # lender-facing name of this particular item, e.g. "Cow costume", when
+    # the product is the more general "Adult fancy dress".
+    listing_title = models.CharField(max_length=200, blank=True, default='')
+
     WANTED = 'W'
     TO_LET = 'L'
     DIRECTION_CHOICES = (
@@ -700,6 +705,11 @@ class Order(models.Model):
         
         super(Order, self).save(*args, **kwargs)
         updateSummaryPrices.delay(self.pk)
+
+    @property
+    def display_name(self):
+        """Public name for a particular listing, with a safe legacy fallback."""
+        return (self.listing_title or '').strip() or self.product.name
 
     def get_delivery_price_summary(self):
         if self.collection_policy == self.MUST_COLLECT:

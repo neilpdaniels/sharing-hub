@@ -4,6 +4,8 @@ class OrderSummary {
     required this.orderReference,
     required this.productId,
     required this.productName,
+    required this.catalogueProductName,
+    required this.listingTitle,
     required this.productSlug,
     required this.categorySlug,
     required this.lender,
@@ -55,6 +57,8 @@ class OrderSummary {
   final String orderReference;
   final int productId;
   final String productName;
+  final String catalogueProductName;
+  final String listingTitle;
   final String productSlug;
   final String categorySlug;
   final OrderLenderSummary lender;
@@ -114,6 +118,8 @@ class OrderSummary {
       orderReference: json['order_reference'] as String? ?? '',
       productId: json['product_id'] as int? ?? 0,
       productName: json['product_name'] as String? ?? '',
+      catalogueProductName: json['catalogue_product_name'] as String? ?? '',
+      listingTitle: json['listing_title'] as String? ?? '',
       productSlug: json['product_slug'] as String? ?? '',
       categorySlug: json['category_slug'] as String? ?? '',
       lender: OrderLenderSummary.fromJson(

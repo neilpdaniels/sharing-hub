@@ -68,6 +68,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
   final _collectionAddressController = TextEditingController();
   final _collectionPostcodeController = TextEditingController();
   final _maxRentalDaysController = TextEditingController(text: '7');
+  final _listingTitleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _additionalCommentsController = TextEditingController();
   final Map<int, TextEditingController> _listingAttributeControllers = {};
@@ -223,6 +224,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
         _band3PriceController.text = bands[2].pricePerDay.toStringAsFixed(2);
       }
     }
+    _listingTitleController.text = order.listingTitle;
     _descriptionController.text = order.description;
     _additionalCommentsController.text = order.additionalComments;
     _letVisibility = order.letVisibility.isNotEmpty
@@ -236,7 +238,9 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
         order.expiryDate ?? DateTime.now().add(const Duration(days: 30));
 
     _selectedProductId = order.productId;
-    _selectedProductName = order.productName;
+    _selectedProductName = order.catalogueProductName.isNotEmpty
+        ? order.catalogueProductName
+        : order.productName;
   }
 
   Future<void> _loadListingAttributeDefinitionsForExistingOrder() async {
@@ -694,6 +698,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
       'let_visibility': _letVisibility,
       'verified_users_only': _verifiedUsersOnly,
       'collection_policy': _collectionPolicy,
+      'listing_title': _listingTitleController.text.trim(),
       'description': _descriptionController.text.trim(),
       'additional_comments': _additionalCommentsController.text.trim(),
       'postcode': _postcodeController.text.trim(),
@@ -1085,6 +1090,16 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
                 );
               }),
             ],
+            TextFormField(
+              controller: _listingTitleController,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Name your item',
+                helperText: 'For example: Cow costume',
+              ),
+              onChanged: (_) => _clearValidationSummary(),
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               controller: _descriptionController,
               maxLines: 4,
@@ -1639,6 +1654,7 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
     _band3PriceController.dispose();
     _collectionDetailsController.dispose();
     _maxRentalDaysController.dispose();
+    _listingTitleController.dispose();
     _descriptionController.dispose();
     _additionalCommentsController.dispose();
     for (final controller in _listingAttributeControllers.values) {

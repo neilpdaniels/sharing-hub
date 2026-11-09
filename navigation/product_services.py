@@ -35,6 +35,11 @@ def apply_product_recommendation(recommendation, reviewer):
         CatalogueProductRecommendation.TYPE_DUPLICATE,
         CatalogueProductRecommendation.TYPE_LOW_VALUE,
     }:
+        if recommendation.recommendation_type == CatalogueProductRecommendation.TYPE_LISTING_VARIANTS:
+            raise ProductRecommendationApplicationError(
+                'This is a conversion review, not a one-click deletion. Review its proposed attributes and run the '
+                'preview-first catalogue conversion command before applying it.'
+            )
         raise ProductRecommendationApplicationError('Only duplicate or low-value product recommendations can be applied.')
 
     action = recommendation.proposed_action or {}

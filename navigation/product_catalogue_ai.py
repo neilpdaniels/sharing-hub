@@ -31,25 +31,28 @@ class ConsumerAssessment(StrictModel):
 
 class ProductAction(StrictModel):
     """A plan that can be validated before staff apply it."""
-    operation: Literal['retire', 'consolidate', 'none']
+    operation: Literal['retire', 'consolidate', 'listing_variants', 'none']
     canonical_product_id: int | None = None
-    retire_product_ids: list[int] = Field(default_factory=list, max_length=12)
+    retire_product_ids: list[int] = Field(default_factory=list, max_length=30)
+    target_category_title: str = Field(default='', max_length=200)
+    replacement_product_titles: list[str] = Field(default_factory=list, max_length=4)
+    listing_attribute_names: list[str] = Field(default_factory=list, max_length=5)
 
 
 class ProductProposal(StrictModel):
-    recommendation_type: Literal['DUPLICATE', 'LOW_VALUE', 'KEEP']
+    recommendation_type: Literal['DUPLICATE', 'LOW_VALUE', 'LISTING_VARIANTS', 'KEEP']
     title: str = Field(max_length=255)
     rationale: str = Field(max_length=900)
     evidence: list[str] = Field(max_length=6)
     recommended_action: str = Field(max_length=700)
-    affected_product_ids: list[int] = Field(max_length=12)
+    affected_product_ids: list[int] = Field(max_length=30)
     proposed_action: ProductAction
     consumer_assessment: ConsumerAssessment
 
 
 class ProductAssessment(StrictModel):
     executive_summary: str = Field(max_length=1200)
-    recommendations: list[ProductProposal] = Field(max_length=40)
+    recommendations: list[ProductProposal] = Field(max_length=80)
 
 
 def _strength_instruction(strength: str) -> str:
@@ -58,8 +61,10 @@ def _strength_instruction(strength: str) -> str:
             'Requested review strength: LIGHT. Recommend only near-certain duplicates or clearly disposable, low-value products with no meaningful rental evidence.'
         ),
         CatalogueProductReview.STRENGTH_HEAVY: (
-            'Requested review strength: HEAVY. Proactively identify evidence-backed duplicate names and low-value catalogue clutter. '
-            'Recommend more candidates than a medium review, but never use a weak or invented rationale.'
+            'Requested review strength: HEAVY / lean pre-launch launch. The marketplace must start deliberately small and '
+            'build up from proven demand, not publish speculative coverage. Proactively identify entire low-fit product families, '
+            'near-duplicate names and consumer-buy items for removal. Group up to 30 products in one recommendation when the '
+            'same specific rationale genuinely applies. Recommend more candidates than a medium review, but never invent evidence.'
         ),
     }
     return instructions.get(
@@ -78,6 +83,7 @@ def _prune_target_instruction(prune_target_percent: int, product_count: int) -> 
     return (
         f'Staff have set an advisory pruning target of {prune_target_percent}% ({target_count} of {product_count} product templates). '
         'Rank and include enough well-supported retirement or consolidation candidates to approach that target where possible. '
+        'Group similar items where one clear rationale applies, rather than spending one recommendation on each variant. '
         'This is a discovery target, not a quota: never invent evidence or recommend a weak removal merely to reach it.'
     )
 
@@ -126,6 +132,10 @@ def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str
         'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
         'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
         'different names for the same plate compactor), and low-value generic products that consumers are more likely to buy. '
+        'Also identify a distinct LISTING_VARIANTS pattern: several sparse product templates are really individual '
+        'variants of one rentable product type, where the useful differences should be chosen by the lender on each '
+        'listing (for example, individual costumes under Adult fancy dress, filtered by Theme and Size). Only make this '
+        'recommendation where it genuinely makes browsing simpler without hiding a meaningful hire distinction. '
         'Score three separate rental horizons: one_week_rental_suitability (up to seven consecutive days), '
         'two_week_rental_suitability (eight to fourteen consecutive days), and four_week_rental_suitability '
         '(fifteen to twenty-eight consecutive days). Do not treat a longer rental as automatically more suitable. '
@@ -139,13 +149,16 @@ def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str
         'For every recommendation, score likely use frequency, estimated replacement-cost band (estimate only), transport/storage '
         'burden, rental wear/damage risk, and all three rental-suitability horizons. Use only supplied catalogue facts for listings/rentals/prices; '
         'your replacement-cost band is an explicitly labelled general estimate. Do not invent product IDs. '
-        'Recommend only DUPLICATE, LOW_VALUE, or KEEP (for a specialist exception worth retaining). All recommendations '
-        'are for human review. Include a proposed_action object: for DUPLICATE use operation "consolidate", set '
+        'Recommend only DUPLICATE, LOW_VALUE, LISTING_VARIANTS, or KEEP (for a specialist exception worth retaining). All '
+        'recommendations are for human review. Include a proposed_action object: for DUPLICATE use operation "consolidate", set '
         'canonical_product_id to the one existing product ID to retain, and retire_product_ids to the duplicate IDs to remove. '
         'For LOW_VALUE use operation "retire", canonical_product_id null, and retire_product_ids to the IDs to remove. '
-        'For KEEP use operation "none", canonical_product_id null, and an empty retire_product_ids list. Every ID must '
-        'come from the supplied snapshot and affected_product_ids must include every canonical or retired ID. A staff action '
-        'will refuse the plan if any affected product has active or historical orders, so never propose moving orders. '
+        'For LISTING_VARIANTS use operation "listing_variants", set target_category_title, replacement_product_titles, and '
+        'listing_attribute_names; do not nominate a canonical ID or retire IDs because staff must inspect the data-conversion '
+        'preview before applying it. For KEEP use operation "none", canonical_product_id null, and an empty retire_product_ids list. '
+        'Every ID must come from the supplied snapshot and affected_product_ids must include every canonical or retired ID. A staff '
+        'action will refuse ordinary retirement/consolidation if any affected product has active or historical orders; never propose '
+        'moving orders except through a separately reviewed LISTING_VARIANTS conversion. '
         'It is valid to produce no recommendations.\n\n'
         f'Product snapshot:\n{snapshot}'
     )

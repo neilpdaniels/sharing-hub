@@ -316,11 +316,11 @@
           {% if order.images.first %}
           {% thumbnail order.images.first.image "360x180" crop="center" as im %}
           <img src="{{ im.url }}" class="card-img-top"
-               style="height:160px; object-fit:cover;" alt="{{ order.product.name }}">
+               style="height:160px; object-fit:cover;" alt="{{ order.display_name }}">
           {% endthumbnail %}
           {% endif %}
           <div class="card-body">
-            <h6 class="card-title">{{ order.product.name }}</h6>
+            <h6 class="card-title">{{ order.display_name }}</h6>
             <p class="card-text text-muted small mb-2">{{ order.product.category_id.title|capfirst }}</p>
             <p class="card-text mb-1">
               <span class="search-result-badge {% if order.direction == 'W' %}wanted{% else %}lend{% endif %}">

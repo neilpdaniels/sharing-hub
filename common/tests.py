@@ -401,3 +401,36 @@ class MobilePayoutReturnLinkTests(SimpleTestCase):
 			'/my_rentalution/my_details/?tab=payouts',
 			fetch_redirect_response=False,
 		)
+
+
+class ListingTitleTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(username='listing-title', password='x')
+		self.category = Category.objects.create(title='Fancy dress')
+		self.product = Product.objects.create(
+			category_id=self.category,
+			name='Adult fancy dress',
+		)
+
+	def test_listing_title_is_used_in_preference_to_generic_product_name(self):
+		order = Order.objects.create(
+			product=self.product,
+			user=self.user,
+			direction=Order.TO_LET,
+			expiry_date=django_timezone.now() + timedelta(days=7),
+			status=Order.ACTIVE,
+			price=10,
+			listing_title='Cow costume',
+		)
+		self.assertEqual(order.display_name, 'Cow costume')
+
+	def test_legacy_listing_falls_back_to_its_product_name(self):
+		order = Order.objects.create(
+			product=self.product,
+			user=self.user,
+			direction=Order.TO_LET,
+			expiry_date=django_timezone.now() + timedelta(days=7),
+			status=Order.ACTIVE,
+			price=10,
+		)
+		self.assertEqual(order.display_name, 'Adult fancy dress')

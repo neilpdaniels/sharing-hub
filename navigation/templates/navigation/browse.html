@@ -706,11 +706,11 @@
                             <article class="rh-popular-card">
                                 {% if order.images.first %}
                                     {% thumbnail order.images.first.image "320x160" crop="center" as im %}
-                                    <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.product.name }}">
+                                    <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.display_name }}">
                                     {% endthumbnail %}
                                 {% elif order.product.image %}
                                     {% thumbnail order.product.image "320x160" crop="center" as im %}
-                                    <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.product.name }}">
+                                    <img class="rh-popular-thumb" src="{{ im.url }}" alt="{{ order.display_name }}">
                                     {% endthumbnail %}
                                 {% else %}
                                     <div class="rh-popular-thumb d-flex align-items-center justify-content-center">
@@ -718,7 +718,7 @@
                                     </div>
                                 {% endif %}
                                 <div class="rh-popular-body">
-                                    <div class="rh-popular-name">{{ order.product.name }}</div>
+                                    <div class="rh-popular-name">{{ order.display_name }}</div>
                                     <div class="rh-popular-meta">{{ order.product.category_id.title }}</div>
                                     <div class="rh-popular-price">£{{ order.price|format_price }} / day</div>
                                     <div class="rh-popular-distance">

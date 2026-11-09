@@ -402,3 +402,5 @@ class ProductCataloguePromptTests(TestCase):
         self.assertIn('two_week_rental_suitability', prompt)
         self.assertIn('four_week_rental_suitability', prompt)
         self.assertIn('25% (2 of 8 product templates)', prompt)
+        self.assertIn('LISTING_VARIANTS', prompt)
+        self.assertIn('Theme and Size', prompt)

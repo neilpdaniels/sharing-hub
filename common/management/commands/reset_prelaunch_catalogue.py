@@ -28,7 +28,6 @@ REMOVE_SUBTREES = {
 # Low-rental-fit / consumable-like branches to remove while retaining their
 # useful siblings under Moving and storage.
 REMOVE_LEAVES = {
-    6: 'Themed group costumes',
     66: 'Boxes, crates and totes',
     68: 'Wrapping, covers and protection',
     69: 'Ratchets, ropes and securing',

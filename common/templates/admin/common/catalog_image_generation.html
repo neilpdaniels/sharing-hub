@@ -1,0 +1,45 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url opts|admin_urlname:'change' original.pk %}">← Back to {{ original }}</a></p>
+  <h1>{{ title }}</h1>
+  <p>Generation can take up to two minutes. Nothing becomes public until you select a candidate.</p>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p><strong>Output:</strong> square 1024×1024 image. The model, quality, prompt and number of candidates are recorded.</p>
+    <input type="submit" value="Generate candidates" class="default">
+  </form>
+
+  {% if generations %}
+    <hr>
+    <h2>Generated candidates</h2>
+    {% for generation in generations %}
+      <section style="margin: 1.5rem 0; padding: 1rem; background: #f8f8f8; border: 1px solid #ddd;">
+        <p><strong>Generation {{ generation.pk }}</strong> — {{ generation.model }}, {{ generation.quality }}, {{ generation.created_at }}</p>
+        <p style="white-space: pre-wrap;">{{ generation.prompt }}</p>
+        <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+          {% for candidate in generation.candidates.all %}
+            <div style="width:220px; background:#fff; padding:10px; border:1px solid {% if candidate.is_selected %}#2e8b57{% else %}#ddd{% endif %};">
+              <img src="{{ candidate.image.url }}" alt="Generated candidate {{ candidate.position }}" style="width:200px;height:200px;object-fit:cover;">
+              {% if candidate.is_selected %}
+                <p><strong>Currently live</strong></p>
+              {% else %}
+                <form method="post" action="{% url opts|admin_urlname:'select_generated_image' original.pk candidate.pk %}">
+                  {% csrf_token %}
+                  <input type="submit" value="Use this image">
+                </form>
+              {% endif %}
+            </div>
+          {% empty %}
+            <p>No image file was retained for this generation.</p>
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,14 +1,164 @@
 from django import forms
-from django.contrib import admin
-from .models import Order, Category, CategoryAttribute, CategoryTag, Product, OrderImage, System, SiteFailure, ModerationReport
+from django.contrib import admin, messages
+from django.core.files.base import ContentFile
+from django.core.management.base import CommandError
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import path, reverse
+from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.text import slugify
+from .management.commands.manage_midjourney_catalog_images import (
+    DEFAULT_OPENAI_IMAGE_QUALITY,
+    DEFAULT_OPENAI_IMAGE_MODEL,
+    OPENAI_IMAGE_MODELS,
+    OPENAI_IMAGE_QUALITIES,
+    OPENAI_IMAGE_SIZE,
+    generate_openai_images,
+)
+from .models import (
+    CatalogImageCandidate, CatalogImageGeneration, Order, Category, CategoryAttribute,
+    CategoryTag, Product, OrderImage, System, SiteFailure, ModerationReport,
+    IMAGE_REVIEW_REVIEWED,
+)
 from .moderation import resolve_report
 from .models import BestPricedForCategory, BestPricedForProduct
 from .models import TransactionFee, TransactionFeeBand
 from simple_history.admin import SimpleHistoryAdmin
 from django_summernote.admin import SummernoteModelAdmin
 
+
+class CatalogImageGenerationForm(forms.Form):
+    prompt = forms.CharField(widget=forms.Textarea(attrs={'rows': 8, 'class': 'vLargeTextField'}))
+    model = forms.ChoiceField(choices=[(key, value['label']) for key, value in OPENAI_IMAGE_MODELS.items()])
+    quality = forms.ChoiceField(choices=[(value, value.title()) for value in OPENAI_IMAGE_QUALITIES])
+    candidate_count = forms.TypedChoiceField(choices=((1, '1 candidate'), (2, '2 candidates')), coerce=int)
+
+
+class CatalogImageAdminMixin:
+    """Staff UI for generating and explicitly selecting catalogue images."""
+
+    image_generation_template = 'admin/common/catalog_image_generation.html'
+
+    def get_urls(self):
+        opts = self.model._meta
+        custom_urls = [
+            path(
+                '<int:object_id>/generate-image/',
+                self.admin_site.admin_view(self.generate_image_view),
+                name=f'{opts.app_label}_{opts.model_name}_generate_image',
+            ),
+            path(
+                '<int:object_id>/select-generated-image/<int:candidate_id>/',
+                self.admin_site.admin_view(self.select_generated_image_view),
+                name=f'{opts.app_label}_{opts.model_name}_select_generated_image',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def image_generation_link(self, obj):
+        if not obj or not obj.pk:
+            return 'Save this item before generating images.'
+        url = reverse(f'admin:{self.model._meta.app_label}_{self.model._meta.model_name}_generate_image', args=(obj.pk,))
+        return format_html('<a class="button" href="{}">Generate replacement image</a>', url)
+
+    image_generation_link.short_description = 'AI image generation'
+
+    def _generation_queryset(self, obj):
+        field = 'product' if isinstance(obj, Product) else 'category'
+        return CatalogImageGeneration.objects.filter(**{field: obj}).prefetch_related('candidates')
+
+    def _default_prompt(self, obj):
+        description = ' '.join((obj.description or '').split())
+        context = f' {description}' if description else ''
+        return (
+            f'{obj.name if isinstance(obj, Product) else obj.title}.{context} '
+            'Create a realistic, trustworthy UK rental catalogue image: one clear subject, plain light background, '
+            'soft studio lighting, square composition, no text, no watermark and no readable brand logos.'
+        )
+
+    def generate_image_view(self, request, object_id):
+        obj = get_object_or_404(self.model, pk=object_id)
+        if request.method == 'POST':
+            form = CatalogImageGenerationForm(request.POST)
+            if form.is_valid():
+                generation = CatalogImageGeneration(
+                    product=obj if isinstance(obj, Product) else None,
+                    category=obj if isinstance(obj, Category) else None,
+                    prompt=form.cleaned_data['prompt'].strip(),
+                    model=form.cleaned_data['model'],
+                    quality=form.cleaned_data['quality'],
+                    size=OPENAI_IMAGE_SIZE,
+                    requested_count=form.cleaned_data['candidate_count'],
+                    created_by=request.user,
+                )
+                generation.save()
+                try:
+                    paths = generate_openai_images(
+                        generation.prompt,
+                        count=generation.requested_count,
+                        model=generation.model,
+                        quality=generation.quality,
+                        size=generation.size,
+                    )
+                    for position, image_path in enumerate(paths, start=1):
+                        with image_path.open('rb') as handle:
+                            candidate = CatalogImageCandidate(generation=generation, position=position)
+                            candidate.image.save(
+                                f'{slugify(str(obj))}-{generation.pk}-{position}{image_path.suffix.lower()}',
+                                ContentFile(handle.read()),
+                                save=True,
+                            )
+                except (CommandError, OSError) as exc:
+                    generation.delete()
+                    self.message_user(request, f'Image generation failed: {exc}', messages.ERROR)
+                else:
+                    self.message_user(request, 'Image candidate(s) generated. Select one below to make it live.', messages.SUCCESS)
+                    return redirect(request.path)
+        else:
+            form = CatalogImageGenerationForm(initial={
+                'prompt': self._default_prompt(obj),
+                'model': DEFAULT_OPENAI_IMAGE_MODEL,
+                'quality': DEFAULT_OPENAI_IMAGE_QUALITY,
+                'candidate_count': 2,
+            })
+        context = {
+            **self.admin_site.each_context(request),
+            'title': f'Generate replacement image: {obj}',
+            'opts': self.model._meta,
+            'original': obj,
+            'form': form,
+            'generations': self._generation_queryset(obj),
+        }
+        return render(request, self.image_generation_template, context)
+
+    def select_generated_image_view(self, request, object_id, candidate_id):
+        if request.method != 'POST':
+            return redirect(reverse(f'admin:{self.model._meta.app_label}_{self.model._meta.model_name}_generate_image', args=(object_id,)))
+        obj = get_object_or_404(self.model, pk=object_id)
+        candidate = get_object_or_404(CatalogImageCandidate, pk=candidate_id)
+        if candidate.generation.target != obj:
+            self.message_user(request, 'That candidate does not belong to this catalogue item.', messages.ERROR)
+            return redirect(reverse(f'admin:{self.model._meta.app_label}_{self.model._meta.model_name}_generate_image', args=(object_id,)))
+        if candidate.generation.product_id:
+            CatalogImageCandidate.objects.filter(
+                generation__product_id=candidate.generation.product_id,
+            ).update(is_selected=False)
+        else:
+            CatalogImageCandidate.objects.filter(
+                generation__category_id=candidate.generation.category_id,
+            ).update(is_selected=False)
+        candidate.is_selected = True
+        candidate.save(update_fields=('is_selected',))
+        obj.image.name = candidate.image.name
+        obj.image_review_status = IMAGE_REVIEW_REVIEWED
+        obj.image_review_notes = f'AI candidate selected from generation #{candidate.generation_id}.'
+        obj.image_reviewed_at = timezone.now()
+        obj.save(update_fields=('image', 'image_review_status', 'image_review_notes', 'image_reviewed_at'))
+        self.message_user(request, 'Selected image is now live for this catalogue item.', messages.SUCCESS)
+        return redirect(reverse(f'admin:{self.model._meta.app_label}_{self.model._meta.model_name}_change', args=(obj.pk,)))
+
 @admin.register(Category)
-class CategoryAdmin(SummernoteModelAdmin):
+class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
     list_display = ('title', 'slug', 'image_review_status', 'create_date', 'parent_category_id')
     list_filter = ('image_review_status', 'parent_category')
     search_fields = ('title', 'slug', 'description')
@@ -20,9 +170,11 @@ class CategoryAdmin(SummernoteModelAdmin):
         'image_review_status',
         'image_review_notes',
         'image_reviewed_at',
+        'image_generation_link',
         'tags',
         'description',
     )
+    readonly_fields = ('image_generation_link',)
     filter_horizontal = ('tags',)
     summernote_fields = ('description',)
 
@@ -136,7 +288,7 @@ class ProductAdminForm(forms.ModelForm):
 
 
 @admin.register(Product)
-class ProductAdmin(SummernoteModelAdmin):
+class ProductAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
     form = ProductAdminForm
     list_display = ('name','slug', 'image_review_status', 'create_date','category_id')
     list_filter = ('image_review_status', 'category_id', 'categories')
@@ -149,11 +301,13 @@ class ProductAdmin(SummernoteModelAdmin):
         'image_review_status',
         'image_review_notes',
         'image_reviewed_at',
+        'image_generation_link',
         'tags',
         'description',
         'short_name',
         'risk_rating',
     )
+    readonly_fields = ('image_generation_link',)
     filter_horizontal = ('tags', 'categories')
     summernote_fields = ('description',)
 
@@ -183,6 +337,21 @@ class ProductAdmin(SummernoteModelAdmin):
 class OrderAdmin(SimpleHistoryAdmin):
     list_display = ('display_name', 'product_id','user','expiry_date', 'create_date','direction')
     search_fields = ('listing_title', 'product__name', 'user__username')
+
+
+@admin.register(CatalogImageGeneration)
+class CatalogImageGenerationAdmin(admin.ModelAdmin):
+    list_display = ('id', 'target_label', 'model', 'quality', 'requested_count', 'created_by', 'created_at')
+    list_filter = ('model', 'quality', 'created_at')
+    search_fields = ('prompt', 'product__name', 'category__title')
+    readonly_fields = ('product', 'category', 'prompt', 'model', 'quality', 'size', 'requested_count', 'created_by', 'created_at')
+
+
+@admin.register(CatalogImageCandidate)
+class CatalogImageCandidateAdmin(admin.ModelAdmin):
+    list_display = ('generation', 'position', 'is_selected', 'created_at')
+    list_filter = ('is_selected', 'created_at')
+    readonly_fields = ('generation', 'image', 'position', 'is_selected', 'created_at')
 
 @admin.register(OrderImage)
 class OrderImageAdmin(admin.ModelAdmin):

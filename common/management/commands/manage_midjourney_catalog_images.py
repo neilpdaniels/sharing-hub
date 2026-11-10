@@ -417,7 +417,7 @@ def _openai_debug_line(value):
     return str(value)
 
 
-def generate_openai_images(prompt, *, count=2, model=None, quality=None, debug=False, debug_log=None):
+def generate_openai_images(prompt, *, count=2, model=None, quality=None, size=None, debug=False, debug_log=None):
     api_key = os.environ.get('OPEN_AI_API_SECRET')
     if not api_key:
         raise CommandError('OPEN_AI_API_SECRET is not set.')
@@ -425,7 +425,7 @@ def generate_openai_images(prompt, *, count=2, model=None, quality=None, debug=F
     if image_model_name not in OPENAI_IMAGE_MODELS:
         image_model_name = DEFAULT_OPENAI_IMAGE_MODEL
     image_model = get_openai_image_model(image_model_name)
-    size = OPENAI_IMAGE_SIZE
+    size = size or OPENAI_IMAGE_SIZE
     image_quality = quality or DEFAULT_OPENAI_IMAGE_QUALITY
 
     payload = {

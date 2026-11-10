@@ -248,6 +248,7 @@
       {% if request.user.is_staff %}
       <div class="admin-quick-actions">
         <a href="{% url 'admin:common_product_change' product.id %}">Edit product and tags</a>
+        <a href="{% url 'admin:common_product_generate_image' product.id %}">Generate replacement image</a>
         <a href="{% url 'admin:common_category_change' category.id %}">Edit category and tags</a>
         <a href="{% url 'admin:catalog_workflow_productdraft_add' %}?parent_category={{ category.id }}">Add product draft</a>
         <a href="{% url 'admin:common_category_add' %}?parent_category={{ category.id }}">Add child category</a>

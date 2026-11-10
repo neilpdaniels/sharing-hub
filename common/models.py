@@ -451,6 +451,58 @@ class Product(models.Model):
             )
         return pairs
 
+
+class CatalogImageGeneration(models.Model):
+    """An auditable staff-requested image-generation run for a catalogue item."""
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='image_generations',
+    )
+    category = models.ForeignKey(
+        Category, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='image_generations',
+    )
+    prompt = models.TextField()
+    model = models.CharField(max_length=80, default='gpt-image-1')
+    quality = models.CharField(max_length=20, default='medium')
+    size = models.CharField(max_length=20, default='1024x1024')
+    requested_count = models.PositiveSmallIntegerField(default=2)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'Image generation {self.pk} for {self.target_label}'
+
+    @property
+    def target(self):
+        return self.product or self.category
+
+    @property
+    def target_label(self):
+        target = self.target
+        return str(target) if target else 'deleted catalogue item'
+
+
+class CatalogImageCandidate(models.Model):
+    generation = models.ForeignKey(
+        CatalogImageGeneration, on_delete=models.CASCADE, related_name='candidates',
+    )
+    image = models.ImageField(upload_to=RandomFileName('images/catalog-generated/'))
+    position = models.PositiveSmallIntegerField(default=1)
+    is_selected = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('generation', 'position', 'id')
+        unique_together = ('generation', 'position')
+
+    def __str__(self):
+        return f'Candidate {self.position} for generation {self.generation_id}'
+
 class Order(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

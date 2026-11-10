@@ -464,7 +464,7 @@ class CatalogImageGeneration(models.Model):
         related_name='image_generations',
     )
     prompt = models.TextField()
-    model = models.CharField(max_length=80, default='gpt-image-1')
+    model = models.CharField(max_length=80, default='gpt-image-2.5-flare')
     quality = models.CharField(max_length=20, default='medium')
     size = models.CharField(max_length=20, default='1024x1024')
     requested_count = models.PositiveSmallIntegerField(default=2)

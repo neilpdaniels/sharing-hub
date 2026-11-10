@@ -32,7 +32,7 @@ from .models import CategorySuggestion, CategorySuggestionImage
 
 
 DEFAULT_TEXT_MODEL = os.environ.get('CATEGORY_AI_TEXT_MODEL', 'gpt-4.1-mini')
-DEFAULT_IMAGE_MODEL = os.environ.get('CATEGORY_AI_IMAGE_MODEL', 'gpt-image-1')
+DEFAULT_IMAGE_MODEL = os.environ.get('CATEGORY_AI_IMAGE_MODEL', 'gpt-image-2.5-flare')
 
 # This is a deterministic backstop.  The policy model also receives the rules,
 # but clear-cut prohibited requests must not depend on a model call succeeding.

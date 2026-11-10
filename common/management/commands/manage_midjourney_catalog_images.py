@@ -28,24 +28,20 @@ from common.models import (
 
 STATE_VERSION = 1
 OPENAI_IMAGE_SIZE = '1024x1024'
-DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1'
+DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-2.5-flare'
 DEFAULT_OPENAI_IMAGE_QUALITY = 'medium'
 
 OPENAI_IMAGE_MODELS = {
-    'gpt-image-1': {
-        'label': 'gpt-image-1',
-        'model': 'gpt-image-1',
+    'gpt-image-2.5-flare': {
+        'label': 'GPT Image 2.5 Flare (default)',
+        'model': 'gpt-image-2.5-flare',
     },
-    'gpt-image-1.5': {
-        'label': 'gpt-image-1.5',
-        'model': 'gpt-image-1.5',
-    },
-    'gpt-image-1-mini': {
-        'label': 'gpt-image-1-mini',
-        'model': 'gpt-image-1-mini',
+    'gpt-image-2.5-sunburst': {
+        'label': 'GPT Image 2.5 Sunburst',
+        'model': 'gpt-image-2.5-sunburst',
     },
     'gpt-image-2': {
-        'label': 'gpt-image-2',
+        'label': 'GPT Image 2',
         'model': 'gpt-image-2',
     },
 }

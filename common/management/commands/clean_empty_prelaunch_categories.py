@@ -49,7 +49,7 @@ class Command(BaseCommand):
                 invalid.append(
                     f'#{category_id} is {category.title!r}, expected {expected_title!r}'
                 )
-            if Product.objects.filter(category=category).exists():
+            if Product.objects.filter(category_id=category).exists():
                 invalid.append(f'#{category_id} {category.title!r} now has product templates')
             if Category.objects.filter(parent_category=category).exists():
                 invalid.append(f'#{category_id} {category.title!r} is no longer a leaf category')

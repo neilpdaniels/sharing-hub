@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url opts|admin_urlname:'change' original.pk %}">← Back to {{ original }}</a></p>
+  <h1>{{ title }}</h1>
+  <p>This queues <strong>{{ target_count }}</strong> product image-generation request{{ target_count|pluralize }} with the current settings. Each image is saved as a candidate for review; no live product image is overwritten automatically.</p>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p><strong>Output:</strong> square 1024×1024 images. Every queued product makes {{ form.candidate_count.value|default:1 }} paid request{{ form.candidate_count.value|default:1|pluralize }}.</p>
+    <input type="submit" value="Queue image candidates" class="default">
+  </form>
+</div>
+{% endblock %}

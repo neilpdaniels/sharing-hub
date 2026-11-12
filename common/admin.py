@@ -34,6 +34,36 @@ class CatalogImageGenerationForm(forms.Form):
     candidate_count = forms.TypedChoiceField(choices=((1, '1 candidate'), (2, '2 candidates')), coerce=int)
 
 
+class CategoryProductImageBatchForm(forms.Form):
+    SCOPE_DIRECT = 'direct'
+    SCOPE_SUBTREE = 'subtree'
+
+    scope = forms.ChoiceField(
+        choices=(
+            (SCOPE_DIRECT, 'Products directly in this category'),
+            (SCOPE_SUBTREE, 'Products in this category and all subcategories'),
+        ),
+        initial=SCOPE_SUBTREE,
+    )
+    missing_images_only = forms.BooleanField(
+        required=False,
+        initial=True,
+        label='Generate only for products without an image',
+    )
+    prompt_prefix = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 4, 'class': 'vLargeTextField'}),
+        help_text='Optional style or subject instruction added before each product-specific prompt.',
+    )
+    model = forms.ChoiceField(choices=[(key, value['label']) for key, value in OPENAI_IMAGE_MODELS.items()])
+    quality = forms.ChoiceField(choices=[(value, value.title()) for value in OPENAI_IMAGE_QUALITIES])
+    candidate_count = forms.TypedChoiceField(choices=((1, '1 candidate per product'), (2, '2 candidates per product')), coerce=int)
+    confirm = forms.BooleanField(
+        required=True,
+        label='I understand this queues paid image-generation requests and does not make any image live automatically.',
+    )
+
+
 class CatalogImageAdminMixin:
     """Staff UI for generating and explicitly selecting catalogue images."""
 
@@ -171,14 +201,103 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         'image_review_notes',
         'image_reviewed_at',
         'image_generation_link',
+        'generate_product_images_link',
         'tags',
         'description',
     )
-    readonly_fields = ('image_generation_link',)
+    readonly_fields = ('image_generation_link', 'generate_product_images_link')
     filter_horizontal = ('tags',)
     summernote_fields = ('description',)
 
     actions = ['delete_selected']
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                '<int:object_id>/generate-product-images/',
+                self.admin_site.admin_view(self.generate_product_images_view),
+                name='common_category_generate_product_images',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def generate_product_images_link(self, obj):
+        if not obj or not obj.pk:
+            return 'Save this category before generating product images.'
+        url = reverse('admin:common_category_generate_product_images', args=(obj.pk,))
+        return format_html('<a class="button" href="{}">Generate product image candidates</a>', url)
+
+    generate_product_images_link.short_description = 'Batch product image generation'
+
+    @staticmethod
+    def _product_category_ids(category, scope):
+        if scope == CategoryProductImageBatchForm.SCOPE_DIRECT:
+            return [category.id]
+        children_by_parent = {}
+        for child_id, parent_id in Category.objects.values_list('id', 'parent_category_id'):
+            children_by_parent.setdefault(parent_id, []).append(child_id)
+        category_ids = []
+        pending = [category.id]
+        while pending:
+            category_id = pending.pop()
+            category_ids.append(category_id)
+            pending.extend(children_by_parent.get(category_id, []))
+        return category_ids
+
+    def _batch_products(self, category, form_data):
+        category_ids = self._product_category_ids(category, form_data['scope'])
+        products = Product.objects.filter(category_id__in=category_ids).order_by('category_id', 'name', 'id')
+        if form_data['missing_images_only']:
+            products = products.filter(image='')
+        return products
+
+    def generate_product_images_view(self, request, object_id):
+        category = get_object_or_404(Category, pk=object_id)
+        initial = {
+            'scope': CategoryProductImageBatchForm.SCOPE_SUBTREE,
+            'missing_images_only': True,
+            'model': DEFAULT_OPENAI_IMAGE_MODEL,
+            'quality': DEFAULT_OPENAI_IMAGE_QUALITY,
+            'candidate_count': 1,
+        }
+        if request.method == 'POST':
+            form = CategoryProductImageBatchForm(request.POST)
+            if form.is_valid():
+                products = list(self._batch_products(category, form.cleaned_data))
+                if not products:
+                    self.message_user(request, 'No products match those batch settings; no requests were queued.', messages.WARNING)
+                else:
+                    from navigation.tasks import generate_catalogue_product_image
+
+                    for product in products:
+                        generate_catalogue_product_image.delay(
+                            product.pk,
+                            prompt_prefix=form.cleaned_data['prompt_prefix'].strip(),
+                            model=form.cleaned_data['model'],
+                            quality=form.cleaned_data['quality'],
+                            candidate_count=form.cleaned_data['candidate_count'],
+                            skip_if_image_exists=form.cleaned_data['missing_images_only'],
+                            requested_by_id=request.user.pk,
+                        )
+                    self.message_user(
+                        request,
+                        f'Queued {len(products)} product image generation request(s). They will appear as review candidates on each product; none will go live automatically.',
+                        messages.SUCCESS,
+                    )
+                    return redirect(reverse('admin:common_category_change', args=(category.pk,)))
+        else:
+            form = CategoryProductImageBatchForm(initial=initial)
+
+        preview_data = form.cleaned_data if form.is_bound and form.is_valid() else initial
+        target_count = self._batch_products(category, preview_data).count()
+        return render(request, 'admin/common/category_product_image_batch.html', {
+            **self.admin_site.each_context(request),
+            'title': f'Generate product image candidates: {category}',
+            'opts': self.model._meta,
+            'original': category,
+            'form': form,
+            'target_count': target_count,
+        })
 
 
 @admin.register(CategoryAttribute)

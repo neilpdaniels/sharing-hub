@@ -3,10 +3,15 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.management.base import CommandError
 from django.utils import timezone
+from django.utils.text import slugify
 
 from common.emails import send_branded_email
 from common.failures import record_site_failure
+from common.management.commands.manage_midjourney_catalog_images import generate_openai_images
+from common.models import CatalogImageCandidate, CatalogImageGeneration, Product
 
 from .category_ai import (
     CategoryAIImageBudgetExceeded,
@@ -19,6 +24,67 @@ from .taxonomy_ai import process_taxonomy_review
 
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task(queue='catalog_ai', soft_time_limit=180, time_limit=240)
+def generate_catalogue_product_image(
+    product_id: int,
+    *,
+    prompt_prefix: str = '',
+    model: str,
+    quality: str,
+    candidate_count: int,
+    skip_if_image_exists: bool,
+    requested_by_id: int | None,
+) -> str:
+    """Generate review-only product image candidates from the category batch UI."""
+    product = Product.objects.get(pk=product_id)
+    if skip_if_image_exists and product.image:
+        return 'skipped_existing_image'
+
+    description = ' '.join((product.description or '').split())
+    prompt = ' '.join(part for part in (
+        prompt_prefix.strip(),
+        product.name + (f'. {description}' if description else ''),
+        'Create a realistic, trustworthy UK rental catalogue image: one clear subject, plain light background, '
+        'soft studio lighting, square composition, no text, no watermark and no readable brand logos.',
+    ) if part)
+    generation = CatalogImageGeneration.objects.create(
+        product=product,
+        prompt=prompt,
+        model=model,
+        quality=quality,
+        size='1024x1024',
+        requested_count=candidate_count,
+        created_by_id=requested_by_id,
+    )
+    try:
+        paths = generate_openai_images(
+            prompt,
+            count=candidate_count,
+            model=model,
+            quality=quality,
+            size=generation.size,
+        )
+        for position, image_path in enumerate(paths, start=1):
+            with image_path.open('rb') as handle:
+                candidate = CatalogImageCandidate(generation=generation, position=position)
+                candidate.image.save(
+                    f'{slugify(product.name)}-{generation.pk}-{position}{image_path.suffix.lower()}',
+                    ContentFile(handle.read()),
+                    save=True,
+                )
+    except (CommandError, OSError) as exc:
+        generation.delete()
+        logger.exception('Catalogue image generation failed for product %s', product_id)
+        record_site_failure(
+            'Batch catalogue image generation failed',
+            details=f'Product {product_id} image generation failed: {exc}',
+            exception=exc,
+            context={'product_id': product_id, 'model': model, 'quality': quality},
+        )
+        return 'failed'
+    return 'generated'
 
 
 @shared_task(queue='catalog_ai', soft_time_limit=720, time_limit=780)

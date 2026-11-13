@@ -38,7 +38,6 @@ from common.models import (
     BestPricedForCategory, BestPricedForProduct, Category, CategoryTag,
     FavouriteOrder, Order, Product, System,
 )
-from common.tasks import listEmptyCategories, runStaticMigration
 from transaction.helpers import get_user_feedback_breakdown, get_user_feedback_breakdown_map
 from transaction.models import Transaction
 
@@ -862,11 +861,6 @@ def seeAll(request):
 
 
 def index(request):
-
-    # run static migration via celery task to (hopefully) avoid webserver timeouts
-    runStaticMigration.delay() 
-    # listEmptyCategories.delay()
-
     try:
         latest_order = Order.objects.latest('amended')
         latestOrderAmend = slugify(str(latest_order.amended))

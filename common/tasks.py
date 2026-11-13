@@ -325,7 +325,14 @@ def updateSummaryPrices( order_pk ):
 
 @shared_task
 def runStaticMigration():
-    common.static_load.static_base.initialise_static()
+    """Retired legacy data seeder.
+
+    It used to be queued from every home-page request and recreated obsolete
+    category branches.  Keep this task name as a no-op so messages already in
+    Redis cannot restore retired categories after deployment.
+    """
+    logger.warning('Ignored retired static category seeder task.')
+    return 'RETIRED'
 
 
 @shared_task

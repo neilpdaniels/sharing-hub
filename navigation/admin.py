@@ -228,9 +228,9 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
 @admin.register(CatalogueProductReview)
 class CatalogueProductReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/catalogueproductreview/change_list.html'
-    list_display = ('id', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'scope_category', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
-    readonly_fields = ('requested_by', 'status', 'review_strength', 'prune_target_percent', 'recommendations_link', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'scope_category', 'status', 'review_strength', 'prune_target_percent', 'recommendations_link', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
     fields = readonly_fields
     def has_add_permission(self, request): return False
 
@@ -261,6 +261,12 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
 
     def get_urls(self):
         return [path('run-now/', self.admin_site.admin_view(self.run_now), name='navigation_catalogueproductreview_run_now')] + super().get_urls()
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['product_review_scope_categories'] = Category.objects.order_by('title', 'id')
+        return super().changelist_view(request, extra_context=extra_context)
+
     def run_now(self, request):
         if request.method != 'POST': return HttpResponseNotAllowed(['POST'])
         if not settings.CATEGORY_AI_ENABLED:
@@ -274,13 +280,23 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
         except (TypeError, ValueError):
             prune_target_percent = 0
         prune_target_percent = min(80, max(0, prune_target_percent))
+        scope_category = None
+        scope_category_id = request.POST.get('scope_category_id')
+        if scope_category_id:
+            try:
+                scope_category = Category.objects.get(pk=scope_category_id)
+            except (Category.DoesNotExist, ValueError):
+                self.message_user(request, 'Choose a valid category scope.', messages.ERROR)
+                return redirect(reverse('admin:navigation_catalogueproductreview_changelist'))
         review = CatalogueProductReview.objects.create(
             requested_by=request.user,
             review_strength=strength,
             prune_target_percent=prune_target_percent,
+            scope_category=scope_category,
         )
         transaction.on_commit(lambda: run_catalogue_product_review.delay(review.pk))
-        self.message_user(request, 'Product-worthiness review queued. Refresh shortly to see its recommendations.', messages.SUCCESS)
+        label = f' for {scope_category.title}' if scope_category else ''
+        self.message_user(request, f'Product-worthiness review{label} queued. Refresh shortly to see its recommendations.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_catalogueproductreview_changelist'))
 
 

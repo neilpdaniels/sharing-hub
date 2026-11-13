@@ -7,7 +7,7 @@ from django.db.models import Count, Max, Min, Q
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
 
-from common.models import LetPriceBand, Order, Product
+from common.models import Category, LetPriceBand, Order, Product
 from transaction.models import Transaction
 
 from .category_ai import _chat_model
@@ -88,28 +88,55 @@ def _prune_target_instruction(prune_target_percent: int, product_count: int) -> 
     )
 
 
-def product_catalogue_snapshot() -> dict:
+def _category_scope_ids(scope_category: Category | None) -> set[int] | None:
+    if scope_category is None:
+        return None
+    children_by_parent: dict[int | None, list[int]] = {}
+    for category_id, parent_id in Category.objects.values_list('id', 'parent_category_id'):
+        children_by_parent.setdefault(parent_id, []).append(category_id)
+    category_ids: set[int] = set()
+    pending = [scope_category.id]
+    while pending:
+        category_id = pending.pop()
+        if category_id in category_ids:
+            continue
+        category_ids.add(category_id)
+        pending.extend(children_by_parent.get(category_id, []))
+    return category_ids
+
+
+def product_catalogue_snapshot(scope_category: Category | None = None) -> dict:
+    scope_ids = _category_scope_ids(scope_category)
+    products_query = Product.objects.select_related('category_id')
+    orders_query = Order.objects.all()
+    transactions_query = Transaction.objects.filter(order_passive__isnull=False)
+    price_bands_query = LetPriceBand.objects.filter(order__direction=Order.TO_LET)
+    if scope_ids is not None:
+        products_query = products_query.filter(category_id__in=scope_ids)
+        orders_query = orders_query.filter(product__category_id__in=scope_ids)
+        transactions_query = transactions_query.filter(order_passive__product__category_id__in=scope_ids)
+        price_bands_query = price_bands_query.filter(order__product__category_id__in=scope_ids)
     active = {
-        row['product_id']: row['count'] for row in Order.objects.filter(status=Order.ACTIVE, direction=Order.TO_LET)
+        row['product_id']: row['count'] for row in orders_query.filter(status=Order.ACTIVE, direction=Order.TO_LET)
         .values('product_id').annotate(count=Count('id'))
     }
     historical = {
-        row['product_id']: row['count'] for row in Order.objects.filter(direction=Order.TO_LET)
+        row['product_id']: row['count'] for row in orders_query.filter(direction=Order.TO_LET)
         .values('product_id').annotate(count=Count('id'))
     }
     completed = {
         row['order_passive__product_id']: row['count']
-        for row in Transaction.objects.filter(order_passive__isnull=False, transaction_status__in=(
+        for row in transactions_query.filter(transaction_status__in=(
             Transaction.RENTAL_PROCESS_COMPLETED, Transaction.RENTAL_PROCESS_COMPLETED_ONE_SIDED,
             Transaction.RENTAL_PROCESS_COMPLETED_NO_FEEDBACK,
         )).values('order_passive__product_id').annotate(count=Count('id'))
     }
     prices = {
-        row['order__product_id']: row for row in LetPriceBand.objects.filter(order__direction=Order.TO_LET)
+        row['order__product_id']: row for row in price_bands_query
         .values('order__product_id').annotate(min_daily_price=Min('price_per_day'), max_daily_price=Max('price_per_day'))
     }
     products = []
-    for product in Product.objects.select_related('category_id').order_by('category_id__title', 'name', 'id'):
+    for product in products_query.order_by('category_id__title', 'name', 'id'):
         price = prices.get(product.id, {})
         products.append({
             'id': product.id, 'name': product.name, 'category_id': product.category_id_id,
@@ -121,17 +148,29 @@ def product_catalogue_snapshot() -> dict:
             'daily_rental_price_min': price.get('min_daily_price'),
             'daily_rental_price_max': price.get('max_daily_price'),
         })
-    return {'generated_at': timezone.now().isoformat(), 'products': products, 'product_id_set': [p['id'] for p in products]}
+    return {
+        'generated_at': timezone.now().isoformat(),
+        'scope': {'category_id': scope_category.id, 'category_title': scope_category.title} if scope_category else None,
+        'products': products,
+        'product_id_set': [p['id'] for p in products],
+    }
 
 
 def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str:
+    scope_instruction = (
+        'This is a scoped review: review and recommend actions only for the supplied category tree. '
+        if snapshot.get('scope') else ''
+    )
     return (
         'You are conducting a read-only product catalogue-worthiness review for a UK peer-to-peer rental marketplace. '
         f'{_strength_instruction(strength)} '
         f'{_prune_target_instruction(prune_target_percent, len(snapshot.get("products", [])))} '
+        f'{scope_instruction}'
         'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
         'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
         'different names for the same plate compactor), and low-value generic products that consumers are more likely to buy. '
+        'Within a product family, treat several basic templates that solve the same household need (for example multiple '
+        'commode templates) as consolidation candidates unless the supplied description shows a material rental distinction. '
         'Also identify a distinct LISTING_VARIANTS pattern: several sparse product templates are really individual '
         'variants of one rentable product type, where the useful differences should be chosen by the lender on each '
         'listing (for example, individual costumes under Adult fancy dress, filtered by Theme and Size). Only make this '
@@ -167,7 +206,7 @@ def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str
 def process_product_catalogue_review(review_id: int) -> str:
     review = CatalogueProductReview.objects.get(pk=review_id)
     try:
-        snapshot = product_catalogue_snapshot()
+        snapshot = product_catalogue_snapshot(review.scope_category)
         review.snapshot, review.status, review.started_at, review.error = snapshot, review.STATUS_RUNNING, timezone.now(), ''
         review.save(update_fields=['snapshot', 'status', 'started_at', 'error'])
         assessment = _chat_model().with_structured_output(ProductAssessment).invoke(

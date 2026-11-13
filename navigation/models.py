@@ -214,6 +214,14 @@ class CatalogueProductReview(models.Model):
 		(STRENGTH_HEAVY, 'Heavy — proactive reorganisation'),
 	)
 	requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+	scope_category = models.ForeignKey(
+		Category,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name='product_catalogue_reviews',
+		help_text='Optional category whose complete subtree is reviewed. Leave blank for the whole catalogue.',
+	)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
 	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
 	# Zero means that staff want a normal qualitative review. A non-zero value is

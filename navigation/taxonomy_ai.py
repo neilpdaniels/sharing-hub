@@ -87,21 +87,46 @@ class TaxonomyState(TypedDict, total=False):
     assessment: dict[str, Any]
 
 
-def catalogue_snapshot() -> dict[str, Any]:
+def _category_scope_ids(scope_category: Category | None) -> set[int] | None:
+    """Return a category and all descendants, or ``None`` for whole catalogue."""
+    if scope_category is None:
+        return None
+    children_by_parent: dict[int | None, list[int]] = defaultdict(list)
+    for category_id, parent_id in Category.objects.values_list('id', 'parent_category_id'):
+        children_by_parent[parent_id].append(category_id)
+    found: set[int] = set()
+    pending = [scope_category.id]
+    while pending:
+        category_id = pending.pop()
+        if category_id in found:
+            continue
+        found.add(category_id)
+        pending.extend(children_by_parent.get(category_id, []))
+    return found
+
+
+def catalogue_snapshot(scope_category: Category | None = None) -> dict[str, Any]:
     """Compact, evidence-rich snapshot. It never exposes member data to the LLM."""
+    scope_ids = _category_scope_ids(scope_category)
+    product_query = Product.objects.all()
+    listing_query = Order.objects.filter(direction=Order.TO_LET)
+    transaction_query = Transaction.objects.filter(order_passive__isnull=False)
+    if scope_ids is not None:
+        product_query = product_query.filter(category_id__in=scope_ids)
+        listing_query = listing_query.filter(product__category_id__in=scope_ids)
+        transaction_query = transaction_query.filter(order_passive__product__category_id__in=scope_ids)
+
     product_counts = {
         row['category_id']: row['count']
-        for row in Product.objects.values('category_id').annotate(count=Count('id'))
+        for row in product_query.values('category_id').annotate(count=Count('id'))
     }
     active_listing_counts = {
         row['product__category_id']: row['count']
-        for row in Order.objects.filter(
-            status=Order.ACTIVE, direction=Order.TO_LET,
-        ).values('product__category_id').annotate(count=Count('id'))
+        for row in listing_query.filter(status=Order.ACTIVE).values('product__category_id').annotate(count=Count('id'))
     }
     historical_listing_stats = {
         row['product__category_id']: row
-        for row in Order.objects.filter(direction=Order.TO_LET).values('product__category_id').annotate(
+        for row in listing_query.values('product__category_id').annotate(
             historical_lend_listing_count=Count('id'),
             first_lend_listing_at=Min('create_date'),
             last_lend_listing_at=Max('amended'),
@@ -114,7 +139,7 @@ def catalogue_snapshot() -> dict[str, Any]:
     )
     transaction_stats = {
         row['order_passive__product__category_id']: row
-        for row in Transaction.objects.filter(order_passive__isnull=False).values(
+        for row in transaction_query.values(
             'order_passive__product__category_id'
         ).annotate(
             transaction_count=Count('id'),
@@ -129,7 +154,7 @@ def catalogue_snapshot() -> dict[str, Any]:
         )
     }
     samples: dict[int, list[str]] = defaultdict(list)
-    for product in Product.objects.order_by('category_id', 'name').values('category_id', 'name'):
+    for product in product_query.order_by('category_id', 'name').values('category_id', 'name'):
         bucket = samples[product['category_id']]
         if len(bucket) < 5:
             bucket.append(product['name'])
@@ -137,7 +162,7 @@ def catalogue_snapshot() -> dict[str, Any]:
     # Give the reviewers evidence for an attribute recommendation without
     # exposing member details. Values are aggregated, capped examples only.
     product_value_counts: dict[int, dict[int, Counter]] = defaultdict(lambda: defaultdict(Counter))
-    for product in Product.objects.values(
+    for product in product_query.values(
         'category_id', 'attribute_one_value', 'attribute_two_value',
         'attribute_three_value', 'attribute_four_value', 'attribute_five_value',
     ):
@@ -149,9 +174,7 @@ def catalogue_snapshot() -> dict[str, Any]:
             if value:
                 product_value_counts[product['category_id']][order][value] += 1
     listing_value_counts: dict[int, dict[int, Counter]] = defaultdict(lambda: defaultdict(Counter))
-    for listing in Order.objects.filter(
-        direction=Order.TO_LET, status=Order.ACTIVE,
-    ).values(
+    for listing in listing_query.filter(status=Order.ACTIVE).values(
         'product__category_id', 'attribute_one_value', 'attribute_two_value',
         'attribute_three_value', 'attribute_four_value', 'attribute_five_value',
     ):
@@ -166,10 +189,10 @@ def catalogue_snapshot() -> dict[str, Any]:
 
     categories = []
     valid_ids = set()
-    category_rows = list(
-        Category.objects.select_related('parent_category').prefetch_related('category_attributes')
-        .order_by('parent_category__title', 'title', 'id')
-    )
+    category_query = Category.objects.select_related('parent_category').prefetch_related('category_attributes')
+    if scope_ids is not None:
+        category_query = category_query.filter(pk__in=scope_ids)
+    category_rows = list(category_query.order_by('parent_category__title', 'title', 'id'))
     children_by_parent: dict[int | None, list[int]] = defaultdict(list)
     for category in category_rows:
         children_by_parent[category.parent_category_id].append(category.id)
@@ -262,17 +285,24 @@ def catalogue_snapshot() -> dict[str, Any]:
         })
 
     since = timezone.now() - timedelta(days=365)
-    searches = list(
+    searches = [] if scope_ids is not None else list(
         SearchHistory.objects.filter(searched_at__gte=since).exclude(search_term='')
         .values('search_term').annotate(count=Count('id')).order_by('-count')[:40]
     )
+    suggestion_query = CategorySuggestion.objects.filter(created_at__gte=since)
+    if scope_ids is not None:
+        suggestion_query = suggestion_query.filter(category_id__in=scope_ids)
     suggestion_names = list(
-        CategorySuggestion.objects.filter(created_at__gte=since)
+        suggestion_query
         .exclude(status=CategorySuggestion.STATUS_APPROVED)
         .values_list('name', flat=True)[:40]
     )
     return {
         'generated_at': timezone.now().isoformat(),
+        'scope': {
+            'category_id': scope_category.id,
+            'category_title': scope_category.title,
+        } if scope_category else None,
         'categories': categories,
         'top_searches_last_365_days': searches,
         'unpublished_category_suggestions_last_365_days': suggestion_names,
@@ -303,10 +333,15 @@ def _strength_instruction(strength: str) -> str:
 
 
 def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
+    scope_instruction = (
+        'This is a scoped review: every recommended category change must stay within the supplied category tree. '
+        if snapshot.get('scope') else ''
+    )
     return (
         'You are reviewing the Rentalution UK peer-to-peer rental catalogue taxonomy. '
         f'{_strength_instruction(strength)} '
         'Use only the supplied evidence. Recommend changes only where material, specific and practical. '
+        f'{scope_instruction}'
         'Do not recommend electronics, cameras, phones, laptops, TVs, drones, adult content, disposable goods, '
         'or categories that have no evidence of a reusable rental use. Do not invent metrics or product names. '
         'A missing category needs evidence from repeated searches, suggestions, products or a clear gap in the tree. '
@@ -354,7 +389,7 @@ def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
 
 def draft_taxonomy_assessment(state: TaxonomyState) -> TaxonomyState:
     review = CategoryTaxonomyReview.objects.get(pk=state['review_id'])
-    snapshot = catalogue_snapshot()
+    snapshot = catalogue_snapshot(review.scope_category)
     review.snapshot = snapshot
     review.status = CategoryTaxonomyReview.STATUS_RUNNING
     review.started_at = timezone.now()

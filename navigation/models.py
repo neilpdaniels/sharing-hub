@@ -170,6 +170,14 @@ class CategoryTaxonomyReview(models.Model):
 		blank=True,
 		related_name='requested_taxonomy_reviews',
 	)
+	scope_category = models.ForeignKey(
+		Category,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name='taxonomy_reviews',
+		help_text='Optional category whose complete subtree is reviewed. Leave blank for the whole catalogue.',
+	)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
 	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
 	snapshot = models.JSONField(default=dict, blank=True)

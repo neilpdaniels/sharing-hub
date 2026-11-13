@@ -8,6 +8,8 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
+from common.models import Category
+
 from .models import (
     CategorySuggestion,
     CategorySuggestionImage,
@@ -135,11 +137,11 @@ class CategorySuggestionImageAdmin(admin.ModelAdmin):
 @admin.register(CategoryTaxonomyReview)
 class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/categorytaxonomyreview/change_list.html'
-    list_display = ('id', 'review_strength', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'scope_category', 'review_strength', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
     search_fields = ('error',)
-    readonly_fields = ('requested_by', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
-    fields = ('requested_by', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'scope_category', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
+    fields = ('requested_by', 'scope_category', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
     actions = ('apply_all_approved_recommendations', 'ignore_all_pending_recommendations')
 
     def has_add_permission(self, request):
@@ -166,6 +168,11 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
             path('run-now/', self.admin_site.admin_view(self.run_now), name='navigation_categorytaxonomyreview_run_now'),
         ] + super().get_urls()
 
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['taxonomy_scope_categories'] = Category.objects.order_by('title', 'id')
+        return super().changelist_view(request, extra_context=extra_context)
+
     def run_now(self, request):
         if request.method != 'POST':
             return HttpResponseNotAllowed(['POST'])
@@ -175,9 +182,22 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
         strength = request.POST.get('review_strength', CategoryTaxonomyReview.STRENGTH_MEDIUM)
         if strength not in dict(CategoryTaxonomyReview.STRENGTH_CHOICES):
             strength = CategoryTaxonomyReview.STRENGTH_MEDIUM
-        review = CategoryTaxonomyReview.objects.create(requested_by=request.user, review_strength=strength)
+        scope_category = None
+        scope_category_id = request.POST.get('scope_category_id')
+        if scope_category_id:
+            try:
+                scope_category = Category.objects.get(pk=scope_category_id)
+            except (Category.DoesNotExist, ValueError):
+                self.message_user(request, 'Choose a valid category scope.', messages.ERROR)
+                return redirect(reverse('admin:navigation_categorytaxonomyreview_changelist'))
+        review = CategoryTaxonomyReview.objects.create(
+            requested_by=request.user,
+            review_strength=strength,
+            scope_category=scope_category,
+        )
         transaction.on_commit(lambda: run_catalogue_taxonomy_review.delay(review.pk))
-        self.message_user(request, 'Catalogue review queued. Refresh this list shortly to see its recommendations.', messages.SUCCESS)
+        label = f' for {scope_category.title}' if scope_category else ''
+        self.message_user(request, f'Catalogue review{label} queued. Refresh this list shortly to see its recommendations.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_categorytaxonomyreview_changelist'))
 
     @admin.action(description='Apply all approved recommendations in selected review(s)')

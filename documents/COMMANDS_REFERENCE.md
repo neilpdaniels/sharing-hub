@@ -89,6 +89,14 @@ Notes:
 
 ## Deployment Commands
 
+### Repository push policy
+
+`main` pushes start the full GitHub Actions CI/CD deployment workflow. Before
+running any `git push`, Codex must show the commit(s) that would be pushed and
+get explicit confirmation from the project owner for that specific push.
+Committing locally is allowed; pushing is not implied by a completed change or
+commit.
+
 ### GitHub Actions deploy
 
 See [DEPLOY_GITHUB_ACTIONS.md](../DEPLOY_GITHUB_ACTIONS.md).

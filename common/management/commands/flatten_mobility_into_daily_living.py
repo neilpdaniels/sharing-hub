@@ -70,7 +70,7 @@ class Command(BaseCommand):
         # product-like leaf under Daily living support.
         conversion_categories = [
             category for category in Category.objects.filter(pk__in=source_ids).order_by('title', 'id')
-            if category.id == commodes.id or not (children_by_parent.get(category.id, []) & source_ids)
+            if category.id == commodes.id or not (set(children_by_parent.get(category.id, [])) & source_ids)
         ]
         non_leaf_products = Product.objects.filter(category_id__in=source_ids).exclude(
             category_id__in=[category.id for category in conversion_categories]

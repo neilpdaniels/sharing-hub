@@ -23,6 +23,7 @@
               {% csrf_token %}
               <input type="submit" value="Try again">
             </form>
+            <a class="button" href="{% url 'admin:common_category_retry_product_image_with_changes' original.pk candidate.generation_id %}">Retry with changes</a>
           </div>
         {% endfor %}
       </div>

@@ -101,16 +101,24 @@ def generate_catalogue_product_image(
 
 
 @shared_task(queue='catalog_ai', soft_time_limit=180, time_limit=240)
-def retry_catalogue_product_image(generation_id: int, *, requested_by_id: int | None) -> str:
+def retry_catalogue_product_image(
+    generation_id: int,
+    *,
+    requested_by_id: int | None,
+    prompt: str | None = None,
+    model: str | None = None,
+    quality: str | None = None,
+    candidate_count: int | None = None,
+) -> str:
     """Retry an image from the category review gallery with the exact same settings."""
     source = CatalogImageGeneration.objects.select_related('product').get(pk=generation_id, product__isnull=False)
     generation = CatalogImageGeneration.objects.create(
         product=source.product,
-        prompt=source.prompt,
-        model=source.model,
-        quality=source.quality,
+        prompt=(prompt or source.prompt).strip(),
+        model=model or source.model,
+        quality=quality or source.quality,
         size=source.size,
-        requested_count=source.requested_count,
+        requested_count=candidate_count or source.requested_count,
         created_by_id=requested_by_id,
     )
     return _run_catalogue_image_generation(generation)

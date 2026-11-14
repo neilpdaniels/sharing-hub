@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url 'admin:common_category_review_product_images' original.pk %}">← Back to image review</a></p>
+  <h1>{{ title }}</h1>
+  <p>Revise the complete prompt or generation settings. This queues paid work and creates new candidates; it does not replace the live image automatically.</p>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.as_p }}
+    <input type="submit" value="Queue revised image candidates" class="default">
+  </form>
+</div>
+{% endblock %}

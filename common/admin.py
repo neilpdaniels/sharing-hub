@@ -234,6 +234,11 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
                 self.admin_site.admin_view(self.retry_product_image_generation_view),
                 name='common_category_retry_product_image_generation',
             ),
+            path(
+                '<int:object_id>/review-product-images/<int:generation_id>/retry-with-changes/',
+                self.admin_site.admin_view(self.retry_product_image_with_changes_view),
+                name='common_category_retry_product_image_with_changes',
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -392,6 +397,45 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         retry_catalogue_product_image.delay(generation.pk, requested_by_id=request.user.pk)
         self.message_user(request, f'Retrying {generation.product.name} with the same prompt and settings. Refresh shortly.', messages.SUCCESS)
         return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+
+    def retry_product_image_with_changes_view(self, request, object_id, generation_id):
+        category = get_object_or_404(Category, pk=object_id)
+        generation = get_object_or_404(
+            CatalogImageGeneration.objects.select_related('product'), pk=generation_id, product__isnull=False,
+        )
+        if generation.product.category_id_id not in self._review_category_ids(category):
+            self.message_user(request, 'That generation is not in this category tree.', messages.ERROR)
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        if request.method == 'POST':
+            form = CatalogImageGenerationForm(request.POST)
+            if form.is_valid():
+                from navigation.tasks import retry_catalogue_product_image
+
+                retry_catalogue_product_image.delay(
+                    generation.pk,
+                    requested_by_id=request.user.pk,
+                    prompt=form.cleaned_data['prompt'].strip(),
+                    model=form.cleaned_data['model'],
+                    quality=form.cleaned_data['quality'],
+                    candidate_count=form.cleaned_data['candidate_count'],
+                )
+                self.message_user(request, f'Retrying {generation.product.name} with your revised settings. Refresh shortly.', messages.SUCCESS)
+                return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        else:
+            form = CatalogImageGenerationForm(initial={
+                'prompt': generation.prompt,
+                'model': generation.model,
+                'quality': generation.quality,
+                'candidate_count': generation.requested_count,
+            })
+        return render(request, 'admin/common/category_product_image_retry.html', {
+            **self.admin_site.each_context(request),
+            'title': f'Retry image: {generation.product.name}',
+            'opts': self.model._meta,
+            'original': category,
+            'generation': generation,
+            'form': form,
+        })
 
 
 @admin.register(CategoryAttribute)

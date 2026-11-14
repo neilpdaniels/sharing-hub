@@ -202,10 +202,11 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         'image_reviewed_at',
         'image_generation_link',
         'generate_product_images_link',
+        'review_product_images_link',
         'tags',
         'description',
     )
-    readonly_fields = ('image_generation_link', 'generate_product_images_link')
+    readonly_fields = ('image_generation_link', 'generate_product_images_link', 'review_product_images_link')
     filter_horizontal = ('tags',)
     summernote_fields = ('description',)
 
@@ -218,6 +219,21 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
                 self.admin_site.admin_view(self.generate_product_images_view),
                 name='common_category_generate_product_images',
             ),
+            path(
+                '<int:object_id>/review-product-images/',
+                self.admin_site.admin_view(self.review_product_images_view),
+                name='common_category_review_product_images',
+            ),
+            path(
+                '<int:object_id>/review-product-images/<int:candidate_id>/accept/',
+                self.admin_site.admin_view(self.accept_product_image_candidate_view),
+                name='common_category_accept_product_image_candidate',
+            ),
+            path(
+                '<int:object_id>/review-product-images/<int:generation_id>/retry/',
+                self.admin_site.admin_view(self.retry_product_image_generation_view),
+                name='common_category_retry_product_image_generation',
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -228,6 +244,14 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         return format_html('<a class="button" href="{}">Generate product image candidates</a>', url)
 
     generate_product_images_link.short_description = 'Batch product image generation'
+
+    def review_product_images_link(self, obj):
+        if not obj or not obj.pk:
+            return 'Save this category before reviewing product images.'
+        url = reverse('admin:common_category_review_product_images', args=(obj.pk,))
+        return format_html('<a class="button" href="{}">Review product image candidates</a>', url)
+
+    review_product_images_link.short_description = 'Batch image review'
 
     @staticmethod
     def _product_category_ids(category, scope):
@@ -298,6 +322,76 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
             'form': form,
             'target_count': target_count,
         })
+
+    def _review_category_ids(self, category):
+        return self._product_category_ids(category, CategoryProductImageBatchForm.SCOPE_SUBTREE)
+
+    def _candidate_in_category(self, category, candidate):
+        return (
+            candidate.generation.product_id is not None
+            and candidate.generation.product.category_id_id in self._review_category_ids(category)
+        )
+
+    def review_product_images_view(self, request, object_id):
+        category = get_object_or_404(Category, pk=object_id)
+        category_ids = self._review_category_ids(category)
+        candidates = list(
+            CatalogImageCandidate.objects.filter(
+                generation__product__category_id__in=category_ids,
+                is_selected=False,
+            ).select_related('generation', 'generation__product').order_by(
+                'generation__product__name', '-created_at', '-id'
+            )
+        )
+        products = {}
+        for candidate in candidates:
+            product = candidate.generation.product
+            products.setdefault(product.pk, {'product': product, 'candidates': []})['candidates'].append(candidate)
+        return render(request, 'admin/common/category_product_image_review.html', {
+            **self.admin_site.each_context(request),
+            'title': f'Review product image candidates: {category}',
+            'opts': self.model._meta,
+            'original': category,
+            'product_reviews': products.values(),
+        })
+
+    def accept_product_image_candidate_view(self, request, object_id, candidate_id):
+        category = get_object_or_404(Category, pk=object_id)
+        if request.method != 'POST':
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        candidate = get_object_or_404(
+            CatalogImageCandidate.objects.select_related('generation', 'generation__product'), pk=candidate_id,
+        )
+        if not self._candidate_in_category(category, candidate):
+            self.message_user(request, 'That candidate is not in this category tree.', messages.ERROR)
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        product = candidate.generation.product
+        CatalogImageCandidate.objects.filter(generation__product=product).update(is_selected=False)
+        candidate.is_selected = True
+        candidate.save(update_fields=('is_selected',))
+        product.image.name = candidate.image.name
+        product.image_review_status = IMAGE_REVIEW_REVIEWED
+        product.image_review_notes = f'AI candidate selected from generation #{candidate.generation_id}.'
+        product.image_reviewed_at = timezone.now()
+        product.save(update_fields=('image', 'image_review_status', 'image_review_notes', 'image_reviewed_at'))
+        self.message_user(request, f'Image for {product.name} is now live.', messages.SUCCESS)
+        return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+
+    def retry_product_image_generation_view(self, request, object_id, generation_id):
+        category = get_object_or_404(Category, pk=object_id)
+        if request.method != 'POST':
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        generation = get_object_or_404(
+            CatalogImageGeneration.objects.select_related('product'), pk=generation_id, product__isnull=False,
+        )
+        if generation.product.category_id_id not in self._review_category_ids(category):
+            self.message_user(request, 'That generation is not in this category tree.', messages.ERROR)
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        from navigation.tasks import retry_catalogue_product_image
+
+        retry_catalogue_product_image.delay(generation.pk, requested_by_id=request.user.pk)
+        self.message_user(request, f'Retrying {generation.product.name} with the same prompt and settings. Refresh shortly.', messages.SUCCESS)
+        return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
 
 
 @admin.register(CategoryAttribute)

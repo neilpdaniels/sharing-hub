@@ -26,6 +26,45 @@ from .taxonomy_ai import process_taxonomy_review
 logger = logging.getLogger(__name__)
 
 
+def _store_catalogue_image_candidates(generation: CatalogImageGeneration) -> None:
+    """Call the image API and persist review candidates for an existing run."""
+    paths = generate_openai_images(
+        generation.prompt,
+        count=generation.requested_count,
+        model=generation.model,
+        quality=generation.quality,
+        size=generation.size,
+    )
+    for position, image_path in enumerate(paths, start=1):
+        with image_path.open('rb') as handle:
+            candidate = CatalogImageCandidate(generation=generation, position=position)
+            candidate.image.save(
+                f'{slugify(generation.product.name)}-{generation.pk}-{position}{image_path.suffix.lower()}',
+                ContentFile(handle.read()),
+                save=True,
+            )
+
+
+def _run_catalogue_image_generation(generation: CatalogImageGeneration) -> str:
+    try:
+        _store_catalogue_image_candidates(generation)
+    except (CommandError, OSError) as exc:
+        generation.delete()
+        logger.exception('Catalogue image generation failed for product %s', generation.product_id)
+        record_site_failure(
+            'Batch catalogue image generation failed',
+            details=f'Product {generation.product_id} image generation failed: {exc}',
+            exception=exc,
+            context={
+                'product_id': generation.product_id,
+                'model': generation.model,
+                'quality': generation.quality,
+            },
+        )
+        return 'failed'
+    return 'generated'
+
+
 @shared_task(queue='catalog_ai', soft_time_limit=180, time_limit=240)
 def generate_catalogue_product_image(
     product_id: int,
@@ -58,33 +97,23 @@ def generate_catalogue_product_image(
         requested_count=candidate_count,
         created_by_id=requested_by_id,
     )
-    try:
-        paths = generate_openai_images(
-            prompt,
-            count=candidate_count,
-            model=model,
-            quality=quality,
-            size=generation.size,
-        )
-        for position, image_path in enumerate(paths, start=1):
-            with image_path.open('rb') as handle:
-                candidate = CatalogImageCandidate(generation=generation, position=position)
-                candidate.image.save(
-                    f'{slugify(product.name)}-{generation.pk}-{position}{image_path.suffix.lower()}',
-                    ContentFile(handle.read()),
-                    save=True,
-                )
-    except (CommandError, OSError) as exc:
-        generation.delete()
-        logger.exception('Catalogue image generation failed for product %s', product_id)
-        record_site_failure(
-            'Batch catalogue image generation failed',
-            details=f'Product {product_id} image generation failed: {exc}',
-            exception=exc,
-            context={'product_id': product_id, 'model': model, 'quality': quality},
-        )
-        return 'failed'
-    return 'generated'
+    return _run_catalogue_image_generation(generation)
+
+
+@shared_task(queue='catalog_ai', soft_time_limit=180, time_limit=240)
+def retry_catalogue_product_image(generation_id: int, *, requested_by_id: int | None) -> str:
+    """Retry an image from the category review gallery with the exact same settings."""
+    source = CatalogImageGeneration.objects.select_related('product').get(pk=generation_id, product__isnull=False)
+    generation = CatalogImageGeneration.objects.create(
+        product=source.product,
+        prompt=source.prompt,
+        model=source.model,
+        quality=source.quality,
+        size=source.size,
+        requested_count=source.requested_count,
+        created_by_id=requested_by_id,
+    )
+    return _run_catalogue_image_generation(generation)
 
 
 @shared_task(queue='catalog_ai', soft_time_limit=720, time_limit=780)

@@ -1,0 +1,34 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url opts|admin_urlname:'change' original.pk %}">← Back to {{ original }}</a></p>
+  <h1>{{ title }}</h1>
+  <p>Choose a candidate to make it live, or retry using the exact same prompt and model. Retrying creates new candidates and does not overwrite the current live image.</p>
+
+  {% for review in product_reviews %}
+    <section style="margin: 1.5rem 0; padding: 1rem; background: #f8f8f8; border: 1px solid #ddd;">
+      <h2 style="margin-top: 0;">{{ review.product.name }}</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+        {% for candidate in review.candidates %}
+          <div style="width:230px; background:#fff; padding:10px; border:1px solid #ddd;">
+            <img src="{{ candidate.image.url }}" alt="Candidate for {{ review.product.name }}" style="width:210px;height:210px;object-fit:cover;">
+            <p><small>{{ candidate.generation.model }}, {{ candidate.generation.quality }} — generation {{ candidate.generation_id }}</small></p>
+            <form method="post" action="{% url 'admin:common_category_accept_product_image_candidate' original.pk candidate.pk %}" style="display:inline">
+              {% csrf_token %}
+              <input type="submit" value="Use this image" class="default">
+            </form>
+            <form method="post" action="{% url 'admin:common_category_retry_product_image_generation' original.pk candidate.generation_id %}" style="display:inline">
+              {% csrf_token %}
+              <input type="submit" value="Try again">
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}
+    <p>No pending product image candidates in this category tree yet. Generated work may still be queued; refresh shortly.</p>
+  {% endfor %}
+</div>
+{% endblock %}

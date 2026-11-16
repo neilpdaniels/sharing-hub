@@ -344,7 +344,7 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
             CatalogImageCandidate.objects.filter(
                 generation__product__category_id__in=category_ids,
                 is_selected=False,
-            ).select_related('generation', 'generation__product').order_by(
+            ).select_related('generation', 'generation__product', 'generation__product__category_id').order_by(
                 'generation__product__name', '-created_at', '-id'
             )
         )

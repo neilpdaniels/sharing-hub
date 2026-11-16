@@ -9,10 +9,12 @@
 
   {% for review in product_reviews %}
     <section style="margin: 1.5rem 0; padding: 1rem; background: #f8f8f8; border: 1px solid #ddd;">
-      <h2 style="margin-top: 0;">{{ review.product.name }}</h2>
+      <h2 style="margin-top: 0;">Product: <a href="{% url 'admin:common_product_change' review.product.pk %}">{{ review.product.name }}</a></h2>
+      <p><strong>Category:</strong> {{ review.product.category_id.title }}</p>
       <div style="display:flex; flex-wrap:wrap; gap:1rem;">
         {% for candidate in review.candidates %}
           <div style="width:230px; background:#fff; padding:10px; border:1px solid #ddd;">
+            <p style="margin-top:0;"><strong>{{ review.product.name }}</strong><br><small>{{ review.product.category_id.title }}</small></p>
             <img src="{{ candidate.image.url }}" alt="Candidate for {{ review.product.name }}" style="width:210px;height:210px;object-fit:cover;">
             <p><small>{{ candidate.generation.model }}, {{ candidate.generation.quality }} — generation {{ candidate.generation_id }}</small></p>
             <form method="post" action="{% url 'admin:common_category_accept_product_image_candidate' original.pk candidate.pk %}" style="display:inline">

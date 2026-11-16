@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url opts|admin_urlname:'change' original.pk %}">← Back to {{ original }}</a></p>
+  <h1>{{ title }}</h1>
+  <p>This queues <strong>{{ target_count }}</strong> category image-generation request{{ target_count|pluralize }} with the current settings. By default it targets only categories with no image. No image becomes live until you select it in review.</p>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p><strong>Output:</strong> square 1024×1024 images. Each candidate is a paid generation request.</p>
+    <input type="submit" value="Queue category image candidates" class="default">
+  </form>
+</div>
+{% endblock %}

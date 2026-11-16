@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url opts|admin_urlname:'change' original.pk %}">← Back to {{ original }}</a></p>
+  <h1>{{ title }}</h1>
+  <p>Choose a candidate to make it live. To revise a prompt, open the category name and use its image-generation page.</p>
+  {% for review in category_reviews %}
+    <section style="margin: 1.5rem 0; padding: 1rem; background: #f8f8f8; border: 1px solid #ddd;">
+      <h2 style="margin-top: 0;">Category: <a href="{% url 'admin:common_category_change' review.category.pk %}">{{ review.category.title }}</a></h2>
+      <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+        {% for candidate in review.candidates %}
+          <div style="width:230px; background:#fff; padding:10px; border:1px solid #ddd;">
+            <p style="margin-top:0;"><strong>{{ review.category.title }}</strong></p>
+            <img src="{{ candidate.image.url }}" alt="Candidate for {{ review.category.title }}" style="width:210px;height:210px;object-fit:cover;">
+            <p><small>{{ candidate.generation.model }}, {{ candidate.generation.quality }} — generation {{ candidate.generation_id }}</small></p>
+            <form method="post" action="{% url 'admin:common_category_accept_category_image_candidate' original.pk candidate.pk %}">
+              {% csrf_token %}
+              <input type="submit" value="Use this image" class="default">
+            </form>
+            <a class="button" href="{% url 'admin:common_category_generate_image' review.category.pk %}">Retry with changes</a>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}
+    <p>No pending category image candidates in this category tree yet. Generated work may still be queued; refresh shortly.</p>
+  {% endfor %}
+</div>
+{% endblock %}

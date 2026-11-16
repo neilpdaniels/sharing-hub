@@ -35,11 +35,13 @@ def _store_catalogue_image_candidates(generation: CatalogImageGeneration) -> Non
         quality=generation.quality,
         size=generation.size,
     )
+    target = generation.target
+    target_name = target.name if generation.product_id else target.title
     for position, image_path in enumerate(paths, start=1):
         with image_path.open('rb') as handle:
             candidate = CatalogImageCandidate(generation=generation, position=position)
             candidate.image.save(
-                f'{slugify(generation.product.name)}-{generation.pk}-{position}{image_path.suffix.lower()}',
+                f'{slugify(target_name)}-{generation.pk}-{position}{image_path.suffix.lower()}',
                 ContentFile(handle.read()),
                 save=True,
             )
@@ -50,13 +52,14 @@ def _run_catalogue_image_generation(generation: CatalogImageGeneration) -> str:
         _store_catalogue_image_candidates(generation)
     except (CommandError, OSError) as exc:
         generation.delete()
-        logger.exception('Catalogue image generation failed for product %s', generation.product_id)
+        logger.exception('Catalogue image generation failed for %s', generation.target_label)
         record_site_failure(
             'Batch catalogue image generation failed',
-            details=f'Product {generation.product_id} image generation failed: {exc}',
+            details=f'{generation.target_label} image generation failed: {exc}',
             exception=exc,
             context={
                 'product_id': generation.product_id,
+                'category_id': generation.category_id,
                 'model': generation.model,
                 'quality': generation.quality,
             },
@@ -90,6 +93,42 @@ def generate_catalogue_product_image(
     ) if part)
     generation = CatalogImageGeneration.objects.create(
         product=product,
+        prompt=prompt,
+        model=model,
+        quality=quality,
+        size='1024x1024',
+        requested_count=candidate_count,
+        created_by_id=requested_by_id,
+    )
+    return _run_catalogue_image_generation(generation)
+
+
+@shared_task(queue='catalog_ai', soft_time_limit=180, time_limit=240)
+def generate_catalogue_category_image(
+    category_id: int,
+    *,
+    prompt_prefix: str = '',
+    model: str,
+    quality: str,
+    candidate_count: int,
+    skip_if_image_exists: bool,
+    requested_by_id: int | None,
+) -> str:
+    """Generate review-only category image candidates from the category batch UI."""
+    from common.models import Category
+
+    category = Category.objects.get(pk=category_id)
+    if skip_if_image_exists and category.image:
+        return 'skipped_existing_image'
+    description = ' '.join((category.description or '').split())
+    prompt = ' '.join(part for part in (
+        prompt_prefix.strip(),
+        category.title + (f'. {description}' if description else ''),
+        'Create a realistic, trustworthy UK rental category image: one clear subject, plain light background, '
+        'soft studio lighting, square composition, no text, no watermark and no readable brand logos.',
+    ) if part)
+    generation = CatalogImageGeneration.objects.create(
+        category=category,
         prompt=prompt,
         model=model,
         quality=quality,

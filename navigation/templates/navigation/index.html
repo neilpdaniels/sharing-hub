@@ -41,8 +41,10 @@
         }
         .rh-cat-links {
             display: grid;
-            grid-template-columns: repeat(8, minmax(0, 1fr));
-            gap: 0.65rem;
+            /* The launch catalogue has ten top-level areas: present them as
+               two intentional, balanced rows on a normal desktop. */
+            grid-template-columns: repeat(5, 150px);
+            gap: 1.25rem;
             margin-bottom: 2rem;
         }
         .rh-cat-link {
@@ -53,7 +55,7 @@
             color: #1a2a3f;
             text-decoration: none;
             transition: transform 0.12s ease;
-            max-width: 138px;
+            max-width: 150px;
             width: 100%;
             justify-self: center;
         }
@@ -64,7 +66,7 @@
         }
         .rh-cat-icon-wrap {
             width: 100%;
-            max-width: 124px;
+            max-width: 144px;
             aspect-ratio: 1 / 1;
             border-radius: 22px;
             border: 1px solid #dce8e5;
@@ -161,7 +163,7 @@
             font-size: 0.8rem;
         }
         @media (max-width: 1199px) {
-            .rh-cat-links { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+            .rh-cat-links { grid-template-columns: repeat(5, minmax(0, 1fr)); }
             .rh-popular-carousel-track { grid-auto-columns: calc((100% - 1rem) / 2); }
             .rh-cat-icon-wrap { max-width: 108px; }
             .rh-cat-fallback-icon { width: 56px; height: 56px; }
@@ -220,8 +222,7 @@
         {% endfor %}
     </div>
 
-    {% url 'navigation:search' as popular_all_url %}
-    {% include "common/partials/section_header.html" with title="Popular near you" action_url=popular_all_url action_text="View all" %}
+    {% include "common/partials/section_header.html" with title="Popular near you" %}
     <div class="rh-popular-carousel mt-3 mb-3">
         <div class="rh-popular-carousel-viewport" id="rh-popular-carousel-home">
             <div class="rh-popular-carousel-track">

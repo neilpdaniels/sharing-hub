@@ -17,6 +17,7 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic.base import RedirectView
 from django_otp.admin import OTPAdminSite
 import navigation
 from common.views import android_asset_links, apple_app_site_association, healthcheck, mobile_payout_return, report_content, transaction_notifications_json
@@ -40,6 +41,7 @@ urlpatterns = [
     path('pages/', include('pages.urls', namespace='pages')),
     path('my_rentalution/', include('my_rentalution.urls', namespace='my_rentalution')),
     path('notifications/transactions/', transaction_notifications_json, name='transaction_notifications_json'),
+    path('browse/', RedirectView.as_view(pattern_name='homepage', permanent=True)),
     path('', navigation.views.index, name='homepage'),
     re_path(r'^summernote/', include('django_summernote.urls')),
 ]

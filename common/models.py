@@ -494,6 +494,9 @@ class CatalogImageCandidate(models.Model):
     image = models.ImageField(upload_to=RandomFileName('images/catalog-generated/'))
     position = models.PositiveSmallIntegerField(default=1)
     is_selected = models.BooleanField(default=False)
+    # Dismissed candidates are retained for audit, but are not shown in the
+    # normal review queue again.
+    is_dismissed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

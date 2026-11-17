@@ -265,6 +265,11 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
                 name='common_category_accept_product_image_candidate',
             ),
             path(
+                '<int:object_id>/review-product-images/<int:product_id>/dismiss/',
+                self.admin_site.admin_view(self.dismiss_product_image_candidates_view),
+                name='common_category_dismiss_product_image_candidates',
+            ),
+            path(
                 '<int:object_id>/review-product-images/<int:generation_id>/retry/',
                 self.admin_site.admin_view(self.retry_product_image_generation_view),
                 name='common_category_retry_product_image_generation',
@@ -288,6 +293,11 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
                 '<int:object_id>/review-category-images/<int:candidate_id>/accept/',
                 self.admin_site.admin_view(self.accept_category_image_candidate_view),
                 name='common_category_accept_category_image_candidate',
+            ),
+            path(
+                '<int:object_id>/review-category-images/<int:target_category_id>/dismiss/',
+                self.admin_site.admin_view(self.dismiss_category_image_candidates_view),
+                name='common_category_dismiss_category_image_candidates',
             ),
         ]
         return custom_urls + super().get_urls()
@@ -465,6 +475,7 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
             CatalogImageCandidate.objects.filter(
                 generation__product__category_id__in=category_ids,
                 is_selected=False,
+                is_dismissed=False,
             ).select_related('generation', 'generation__product', 'generation__product__category_id').order_by(
                 'generation__product__name', '-created_at', '-id'
             )
@@ -505,13 +516,41 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         product = candidate.generation.product
         CatalogImageCandidate.objects.filter(generation__product=product).update(is_selected=False)
         candidate.is_selected = True
-        candidate.save(update_fields=('is_selected',))
+        candidate.is_dismissed = False
+        candidate.save(update_fields=('is_selected', 'is_dismissed'))
         product.image.name = candidate.image.name
         product.image_review_status = IMAGE_REVIEW_REVIEWED
         product.image_review_notes = f'AI candidate selected from generation #{candidate.generation_id}.'
         product.image_reviewed_at = timezone.now()
         product.save(update_fields=('image', 'image_review_status', 'image_review_notes', 'image_reviewed_at'))
         self.message_user(request, f'Image for {product.name} is now live.', messages.SUCCESS)
+        return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+
+    def dismiss_product_image_candidates_view(self, request, object_id, product_id):
+        category = get_object_or_404(Category, pk=object_id)
+        if request.method != 'POST':
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        product = get_object_or_404(Product.objects.select_related('category_id'), pk=product_id)
+        if product.category_id_id not in self._review_category_ids(category):
+            self.message_user(request, 'That product is not in this category tree.', messages.ERROR)
+            return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
+        candidates = CatalogImageCandidate.objects.filter(
+            generation__product=product,
+            is_selected=False,
+            is_dismissed=False,
+        )
+        selected_at = CatalogImageCandidate.objects.filter(
+            generation__product=product,
+            is_selected=True,
+        ).order_by('-created_at', '-id').values_list('created_at', flat=True).first()
+        if selected_at:
+            candidates = candidates.filter(created_at__gt=selected_at)
+        dismissed = candidates.update(is_dismissed=True)
+        self.message_user(
+            request,
+            f'Kept the current image for {product.name}; dismissed {dismissed} pending candidate(s).',
+            messages.SUCCESS,
+        )
         return redirect(reverse('admin:common_category_review_product_images', args=(category.pk,)))
 
     def retry_product_image_generation_view(self, request, object_id, generation_id):
@@ -575,6 +614,7 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
             CatalogImageCandidate.objects.filter(
                 generation__category_id__in=self._review_category_ids(category),
                 is_selected=False,
+                is_dismissed=False,
             ).select_related('generation', 'generation__category').order_by(
                 'generation__category__title', '-created_at', '-id'
             )
@@ -613,13 +653,41 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
             return redirect(reverse('admin:common_category_review_category_images', args=(category.pk,)))
         CatalogImageCandidate.objects.filter(generation__category=target).update(is_selected=False)
         candidate.is_selected = True
-        candidate.save(update_fields=('is_selected',))
+        candidate.is_dismissed = False
+        candidate.save(update_fields=('is_selected', 'is_dismissed'))
         target.image.name = candidate.image.name
         target.image_review_status = IMAGE_REVIEW_REVIEWED
         target.image_review_notes = f'AI candidate selected from generation #{candidate.generation_id}.'
         target.image_reviewed_at = timezone.now()
         target.save(update_fields=('image', 'image_review_status', 'image_review_notes', 'image_reviewed_at'))
         self.message_user(request, f'Image for {target.title} is now live.', messages.SUCCESS)
+        return redirect(reverse('admin:common_category_review_category_images', args=(category.pk,)))
+
+    def dismiss_category_image_candidates_view(self, request, object_id, target_category_id):
+        category = get_object_or_404(Category, pk=object_id)
+        if request.method != 'POST':
+            return redirect(reverse('admin:common_category_review_category_images', args=(category.pk,)))
+        target = get_object_or_404(Category, pk=target_category_id)
+        if target.pk not in self._review_category_ids(category):
+            self.message_user(request, 'That category is not in this category tree.', messages.ERROR)
+            return redirect(reverse('admin:common_category_review_category_images', args=(category.pk,)))
+        candidates = CatalogImageCandidate.objects.filter(
+            generation__category=target,
+            is_selected=False,
+            is_dismissed=False,
+        )
+        selected_at = CatalogImageCandidate.objects.filter(
+            generation__category=target,
+            is_selected=True,
+        ).order_by('-created_at', '-id').values_list('created_at', flat=True).first()
+        if selected_at:
+            candidates = candidates.filter(created_at__gt=selected_at)
+        dismissed = candidates.update(is_dismissed=True)
+        self.message_user(
+            request,
+            f'Kept the current image for {target.title}; dismissed {dismissed} pending candidate(s).',
+            messages.SUCCESS,
+        )
         return redirect(reverse('admin:common_category_review_category_images', args=(category.pk,)))
 
 
@@ -791,9 +859,9 @@ class CatalogImageGenerationAdmin(admin.ModelAdmin):
 
 @admin.register(CatalogImageCandidate)
 class CatalogImageCandidateAdmin(admin.ModelAdmin):
-    list_display = ('generation', 'position', 'is_selected', 'created_at')
-    list_filter = ('is_selected', 'created_at')
-    readonly_fields = ('generation', 'image', 'position', 'is_selected', 'created_at')
+    list_display = ('generation', 'position', 'is_selected', 'is_dismissed', 'created_at')
+    list_filter = ('is_selected', 'is_dismissed', 'created_at')
+    readonly_fields = ('generation', 'image', 'position', 'is_selected', 'is_dismissed', 'created_at')
 
 @admin.register(OrderImage)
 class OrderImageAdmin(admin.ModelAdmin):

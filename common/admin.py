@@ -469,9 +469,20 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
                 'generation__product__name', '-created_at', '-id'
             )
         )
+        selected_at_by_product = {}
+        for selected in CatalogImageCandidate.objects.filter(
+            generation__product_id__in={candidate.generation.product_id for candidate in candidates},
+            is_selected=True,
+        ).order_by('generation__product_id', '-created_at', '-id'):
+            selected_at_by_product.setdefault(selected.generation.product_id, selected.created_at)
         products = {}
         for candidate in candidates:
             product = candidate.generation.product
+            # Candidates made before the currently-live selection are stale:
+            # keep them for audit, but do not offer them again in review.
+            selected_at = selected_at_by_product.get(product.pk)
+            if selected_at and candidate.created_at <= selected_at:
+                continue
             products.setdefault(product.pk, {'product': product, 'candidates': []})['candidates'].append(candidate)
         return render(request, 'admin/common/category_product_image_review.html', {
             **self.admin_site.each_context(request),
@@ -568,9 +579,18 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
                 'generation__category__title', '-created_at', '-id'
             )
         )
+        selected_at_by_category = {}
+        for selected in CatalogImageCandidate.objects.filter(
+            generation__category_id__in={candidate.generation.category_id for candidate in candidates},
+            is_selected=True,
+        ).order_by('generation__category_id', '-created_at', '-id'):
+            selected_at_by_category.setdefault(selected.generation.category_id, selected.created_at)
         categories = {}
         for candidate in candidates:
             target = candidate.generation.category
+            selected_at = selected_at_by_category.get(target.pk)
+            if selected_at and candidate.created_at <= selected_at:
+                continue
             categories.setdefault(target.pk, {'category': target, 'candidates': []})['candidates'].append(candidate)
         return render(request, 'admin/common/category_image_review.html', {
             **self.admin_site.each_context(request),

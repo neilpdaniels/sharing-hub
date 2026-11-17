@@ -5,14 +5,22 @@
 <div id="content-main">
   <p><a href="{% url opts|admin_urlname:'change' original.pk %}">← Back to {{ original }}</a></p>
   <h1>{{ title }}</h1>
-  <p>Choose a candidate to make it live. To revise a prompt, open the category name and use its image-generation page.</p>
+  <p>The current live image is shown first for comparison. Only candidates generated after that image was selected are offered for review.</p>
   {% for review in category_reviews %}
     <section style="margin: 1.5rem 0; padding: 1rem; background: #f8f8f8; border: 1px solid #ddd;">
       <h2 style="margin-top: 0;">Category: <a href="{% url 'admin:common_category_change' review.category.pk %}">{{ review.category.title }}</a></h2>
       <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+        <div style="width:230px; background:#eef8f1; padding:10px; border:2px solid #2e8b57;">
+          <p style="margin-top:0;"><strong>Current live image</strong></p>
+          {% if review.category.image %}
+            <img src="{{ review.category.image.url }}" alt="Current image for {{ review.category.title }}" style="width:210px;height:210px;object-fit:cover;">
+          {% else %}
+            <p>No live image yet.</p>
+          {% endif %}
+        </div>
         {% for candidate in review.candidates %}
           <div style="width:230px; background:#fff; padding:10px; border:1px solid #ddd;">
-            <p style="margin-top:0;"><strong>{{ review.category.title }}</strong></p>
+            <p style="margin-top:0;"><strong>New candidate</strong><br><small>{{ review.category.title }}</small></p>
             <img src="{{ candidate.image.url }}" alt="Candidate for {{ review.category.title }}" style="width:210px;height:210px;object-fit:cover;">
             <p><small>{{ candidate.generation.model }}, {{ candidate.generation.quality }} — generation {{ candidate.generation_id }}</small></p>
             <details><summary>Prompt and selected catalogue subjects</summary><p style="white-space:pre-wrap;">{{ candidate.generation.prompt }}</p></details>

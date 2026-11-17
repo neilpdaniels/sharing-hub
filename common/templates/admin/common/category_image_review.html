@@ -15,6 +15,7 @@
             <p style="margin-top:0;"><strong>{{ review.category.title }}</strong></p>
             <img src="{{ candidate.image.url }}" alt="Candidate for {{ review.category.title }}" style="width:210px;height:210px;object-fit:cover;">
             <p><small>{{ candidate.generation.model }}, {{ candidate.generation.quality }} — generation {{ candidate.generation_id }}</small></p>
+            <details><summary>Prompt and selected catalogue subjects</summary><p style="white-space:pre-wrap;">{{ candidate.generation.prompt }}</p></details>
             <form method="post" action="{% url 'admin:common_category_accept_category_image_candidate' original.pk candidate.pk %}">
               {% csrf_token %}
               <input type="submit" value="Use this image" class="default">

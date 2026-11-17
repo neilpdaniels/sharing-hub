@@ -12,6 +12,7 @@ from common.emails import send_branded_email
 from common.failures import record_site_failure
 from common.management.commands.manage_midjourney_catalog_images import generate_openai_images
 from common.models import CatalogImageCandidate, CatalogImageGeneration, Product
+from common.catalog_image_prompts import build_category_image_prompt
 
 from .category_ai import (
     CategoryAIImageBudgetExceeded,
@@ -120,23 +121,25 @@ def generate_catalogue_category_image(
     category = Category.objects.get(pk=category_id)
     if skip_if_image_exists and category.image:
         return 'skipped_existing_image'
-    description = ' '.join((category.description or '').split())
-    prompt = ' '.join(part for part in (
-        prompt_prefix.strip(),
-        category.title + (f'. {description}' if description else ''),
-        'Create a realistic, trustworthy UK rental category image: one clear subject, plain light background, '
-        'soft studio lighting, square composition, no text, no watermark and no readable brand logos.',
-    ) if part)
-    generation = CatalogImageGeneration.objects.create(
-        category=category,
-        prompt=prompt,
-        model=model,
-        quality=quality,
-        size='1024x1024',
-        requested_count=candidate_count,
-        created_by_id=requested_by_id,
-    )
-    return _run_catalogue_image_generation(generation)
+    outcomes = []
+    # Each variant gets a different grounded subset of two to five actual
+    # catalogue subjects. A single API request with n>1 would reuse one prompt.
+    for variant_index in range(candidate_count):
+        generation = CatalogImageGeneration.objects.create(
+            category=category,
+            prompt=build_category_image_prompt(
+                category,
+                prompt_prefix=prompt_prefix,
+                variant_index=variant_index,
+            ),
+            model=model,
+            quality=quality,
+            size='1024x1024',
+            requested_count=1,
+            created_by_id=requested_by_id,
+        )
+        outcomes.append(_run_catalogue_image_generation(generation))
+    return 'generated' if all(outcome == 'generated' for outcome in outcomes) else 'partial_failure'
 
 
 @shared_task(queue='catalog_ai', soft_time_limit=180, time_limit=240)

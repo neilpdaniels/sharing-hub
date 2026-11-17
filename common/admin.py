@@ -7,6 +7,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.text import slugify
+from .catalog_image_prompts import build_category_image_prompt
 from .management.commands.manage_midjourney_catalog_images import (
     DEFAULT_OPENAI_IMAGE_QUALITY,
     DEFAULT_OPENAI_IMAGE_MODEL,
@@ -125,10 +126,12 @@ class CatalogImageAdminMixin:
         return CatalogImageGeneration.objects.filter(**{field: obj}).prefetch_related('candidates')
 
     def _default_prompt(self, obj):
+        if isinstance(obj, Category):
+            return build_category_image_prompt(obj)
         description = ' '.join((obj.description or '').split())
         context = f' {description}' if description else ''
         return (
-            f'{obj.name if isinstance(obj, Product) else obj.title}.{context} '
+            f'{obj.name}.{context} '
             'Create a realistic, trustworthy UK rental catalogue image: one clear subject, plain light background, '
             'soft studio lighting, square composition, no text, no watermark and no readable brand logos.'
         )

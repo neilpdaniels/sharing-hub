@@ -325,7 +325,7 @@ class CatalogueProductRecommendation(models.Model):
 	)
 	review = models.ForeignKey(CatalogueProductReview, on_delete=models.CASCADE, related_name='recommendations')
 	position = models.PositiveSmallIntegerField()
-	recommendation_type = models.CharField(max_length=16, choices=TYPE_CHOICES)
+	recommendation_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
 	title = models.CharField(max_length=255)
 	rationale = models.TextField()
 	evidence = models.JSONField(default=list, blank=True)

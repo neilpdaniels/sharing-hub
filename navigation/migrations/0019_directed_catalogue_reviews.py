@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                     ('PRODUCT_STRUCTURE', 'Create or split product templates (manual plan)'),
                     ('KEEP', 'Keep — specialist exception'),
                 ],
-                max_length=16,
+                max_length=20,
             ),
         ),
         migrations.AddField(

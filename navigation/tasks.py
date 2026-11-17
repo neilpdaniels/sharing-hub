@@ -272,10 +272,14 @@ def run_catalogue_cleanup_review(cleanup_review_id: int) -> str:
         requested_by=cleanup.requested_by,
         review_strength=cleanup.review_strength,
         prune_target_percent=cleanup.prune_target_percent,
+        scope_category=cleanup.scope_category,
+        operator_instruction=cleanup.operator_instruction,
     )
     taxonomy_review = CategoryTaxonomyReview.objects.create(
         requested_by=cleanup.requested_by,
         review_strength=cleanup.review_strength,
+        scope_category=cleanup.scope_category,
+        operator_instruction=cleanup.operator_instruction,
     )
     cleanup.product_review = product_review
     cleanup.taxonomy_review = taxonomy_review

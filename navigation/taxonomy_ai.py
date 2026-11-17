@@ -332,16 +332,23 @@ def _strength_instruction(strength: str) -> str:
     )
 
 
-def _assessment_prompt(snapshot: dict[str, Any], strength: str) -> str:
+def _assessment_prompt(snapshot: dict[str, Any], strength: str, operator_instruction: str = '') -> str:
     scope_instruction = (
         'This is a scoped review: every recommended category change must stay within the supplied category tree. '
         if snapshot.get('scope') else ''
+    )
+    directed_instruction = (
+        'The staff member supplied this directed brief. Treat it as the intended outcome to investigate and prioritise, '
+        'but do not invent supporting facts or make a change automatically: '
+        f'{operator_instruction.strip()}\n\n'
+        if operator_instruction.strip() else ''
     )
     return (
         'You are reviewing the Rentalution UK peer-to-peer rental catalogue taxonomy. '
         f'{_strength_instruction(strength)} '
         'Use only the supplied evidence. Recommend changes only where material, specific and practical. '
         f'{scope_instruction}'
+        f'{directed_instruction}'
         'Do not recommend electronics, cameras, phones, laptops, TVs, drones, adult content, disposable goods, '
         'or categories that have no evidence of a reusable rental use. Do not invent metrics or product names. '
         'A missing category needs evidence from repeated searches, suggestions, products or a clear gap in the tree. '
@@ -396,7 +403,7 @@ def draft_taxonomy_assessment(state: TaxonomyState) -> TaxonomyState:
     review.error = ''
     review.save(update_fields=['snapshot', 'status', 'started_at', 'error'])
     assessment = _chat_model().with_structured_output(TaxonomyAssessment).invoke(
-        _assessment_prompt(snapshot, review.review_strength)
+        _assessment_prompt(snapshot, review.review_strength, review.operator_instruction)
     )
     data = assessment.model_dump()
     review.llm_analysis = data

@@ -178,6 +178,11 @@ class CategoryTaxonomyReview(models.Model):
 		related_name='taxonomy_reviews',
 		help_text='Optional category whose complete subtree is reviewed. Leave blank for the whole catalogue.',
 	)
+	operator_instruction = models.TextField(
+		blank=True,
+		default='',
+		help_text='Optional staff brief that directs this review. It never makes changes automatically.',
+	)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
 	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
 	snapshot = models.JSONField(default=dict, blank=True)
@@ -222,6 +227,11 @@ class CatalogueProductReview(models.Model):
 		related_name='product_catalogue_reviews',
 		help_text='Optional category whose complete subtree is reviewed. Leave blank for the whole catalogue.',
 	)
+	operator_instruction = models.TextField(
+		blank=True,
+		default='',
+		help_text='Optional staff brief that directs this review. It never makes changes automatically.',
+	)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
 	review_strength = models.CharField(max_length=8, choices=STRENGTH_CHOICES, default=STRENGTH_MEDIUM)
 	# Zero means that staff want a normal qualitative review. A non-zero value is
@@ -259,6 +269,19 @@ class CatalogueCleanupReview(models.Model):
 	STRENGTH_HEAVY = CatalogueProductReview.STRENGTH_HEAVY
 	STRENGTH_CHOICES = CatalogueProductReview.STRENGTH_CHOICES
 	requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+	scope_category = models.ForeignKey(
+		Category,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name='cleanup_reviews',
+		help_text='Optional category whose complete subtree is reviewed. Leave blank for the whole catalogue.',
+	)
+	operator_instruction = models.TextField(
+		blank=True,
+		default='',
+		help_text='Optional staff brief that directs both parts of this review. It never makes changes automatically.',
+	)
 	status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_QUEUED, db_index=True)
 	review_strength = models.CharField(max_length=8, choices=CatalogueProductReview.STRENGTH_CHOICES, default=CatalogueProductReview.STRENGTH_MEDIUM)
 	prune_target_percent = models.PositiveSmallIntegerField(default=0)
@@ -281,11 +304,13 @@ class CatalogueProductRecommendation(models.Model):
 	TYPE_DUPLICATE = 'DUPLICATE'
 	TYPE_LOW_VALUE = 'LOW_VALUE'
 	TYPE_LISTING_VARIANTS = 'LISTING_VARIANTS'
+	TYPE_PRODUCT_STRUCTURE = 'PRODUCT_STRUCTURE'
 	TYPE_KEEP = 'KEEP'
 	TYPE_CHOICES = (
 		(TYPE_DUPLICATE, 'Possible duplicate / consolidate'),
 		(TYPE_LOW_VALUE, 'Low-value / consumer-fit review'),
 		(TYPE_LISTING_VARIANTS, 'Use one product type with listing variants'),
+		(TYPE_PRODUCT_STRUCTURE, 'Create or split product templates (manual plan)'),
 		(TYPE_KEEP, 'Keep — specialist exception'),
 	)
 	STATUS_PENDING = 'PENDING'

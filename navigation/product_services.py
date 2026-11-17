@@ -40,6 +40,11 @@ def apply_product_recommendation(recommendation, reviewer):
                 'This is a conversion review, not a one-click deletion. Review its proposed attributes and run the '
                 'preview-first catalogue conversion command before applying it.'
             )
+        if recommendation.recommendation_type == CatalogueProductRecommendation.TYPE_PRODUCT_STRUCTURE:
+            raise ProductRecommendationApplicationError(
+                'This is a manual product-template plan. Create or amend the proposed templates after reviewing it; '
+                'it is intentionally not a one-click conversion.'
+            )
         raise ProductRecommendationApplicationError('Only duplicate or low-value product recommendations can be applied.')
 
     action = recommendation.proposed_action or {}

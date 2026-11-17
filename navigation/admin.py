@@ -137,11 +137,11 @@ class CategorySuggestionImageAdmin(admin.ModelAdmin):
 @admin.register(CategoryTaxonomyReview)
 class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/categorytaxonomyreview/change_list.html'
-    list_display = ('id', 'scope_category', 'review_strength', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'scope_category', 'review_strength', 'has_operator_instruction', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
     search_fields = ('error',)
-    readonly_fields = ('requested_by', 'scope_category', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
-    fields = ('requested_by', 'scope_category', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'scope_category', 'operator_instruction', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
+    fields = ('requested_by', 'scope_category', 'operator_instruction', 'status', 'review_strength', 'recommendations_link', 'snapshot', 'llm_analysis', 'crew_critique', 'error', 'started_at', 'completed_at', 'created_at')
     actions = ('apply_all_approved_recommendations', 'ignore_all_pending_recommendations')
 
     def has_add_permission(self, request):
@@ -150,6 +150,10 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
     def recommendation_count(self, obj):
         return obj.recommendations.count()
     recommendation_count.short_description = 'Recommendations'
+
+    @admin.display(boolean=True, description='Directed')
+    def has_operator_instruction(self, obj):
+        return bool(obj.operator_instruction.strip())
 
     def recommendations_link(self, obj):
         if not obj or not obj.pk:
@@ -194,6 +198,7 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
             requested_by=request.user,
             review_strength=strength,
             scope_category=scope_category,
+            operator_instruction=request.POST.get('operator_instruction', '').strip()[:4000],
         )
         transaction.on_commit(lambda: run_catalogue_taxonomy_review.delay(review.pk))
         label = f' for {scope_category.title}' if scope_category else ''
@@ -228,11 +233,15 @@ class CategoryTaxonomyReviewAdmin(admin.ModelAdmin):
 @admin.register(CatalogueProductReview)
 class CatalogueProductReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/catalogueproductreview/change_list.html'
-    list_display = ('id', 'scope_category', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
+    list_display = ('id', 'scope_category', 'review_strength', 'prune_target_percent', 'has_operator_instruction', 'status', 'requested_by', 'created_at', 'completed_at', 'recommendation_count')
     list_filter = ('status', 'created_at')
-    readonly_fields = ('requested_by', 'scope_category', 'status', 'review_strength', 'prune_target_percent', 'recommendations_link', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'scope_category', 'operator_instruction', 'status', 'review_strength', 'prune_target_percent', 'recommendations_link', 'snapshot', 'llm_analysis', 'error', 'started_at', 'completed_at', 'created_at')
     fields = readonly_fields
     def has_add_permission(self, request): return False
+
+    @admin.display(boolean=True, description='Directed')
+    def has_operator_instruction(self, obj):
+        return bool(obj.operator_instruction.strip())
 
     def _recommendations_url(self, obj):
         return f'{reverse("admin:navigation_catalogueproductrecommendation_changelist")}?review__id__exact={obj.pk}'
@@ -293,6 +302,7 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
             review_strength=strength,
             prune_target_percent=prune_target_percent,
             scope_category=scope_category,
+            operator_instruction=request.POST.get('operator_instruction', '').strip()[:4000],
         )
         transaction.on_commit(lambda: run_catalogue_product_review.delay(review.pk))
         label = f' for {scope_category.title}' if scope_category else ''
@@ -303,14 +313,18 @@ class CatalogueProductReviewAdmin(admin.ModelAdmin):
 @admin.register(CatalogueCleanupReview)
 class CatalogueCleanupReviewAdmin(admin.ModelAdmin):
     change_list_template = 'admin/navigation/cataloguecleanupreview/change_list.html'
-    list_display = ('id', 'review_strength', 'prune_target_percent', 'status', 'requested_by', 'created_at', 'completed_at', 'results_links')
+    list_display = ('id', 'scope_category', 'review_strength', 'prune_target_percent', 'has_operator_instruction', 'status', 'requested_by', 'created_at', 'completed_at', 'results_links')
     list_filter = ('status', 'created_at')
-    readonly_fields = ('requested_by', 'status', 'review_strength', 'prune_target_percent', 'product_review', 'taxonomy_review', 'results_links', 'application_result', 'error', 'started_at', 'completed_at', 'created_at')
+    readonly_fields = ('requested_by', 'scope_category', 'operator_instruction', 'status', 'review_strength', 'prune_target_percent', 'product_review', 'taxonomy_review', 'results_links', 'application_result', 'error', 'started_at', 'completed_at', 'created_at')
     fields = readonly_fields
     actions = ('apply_all_safe_recommendations',)
 
     def has_add_permission(self, request):
         return False
+
+    @admin.display(boolean=True, description='Directed')
+    def has_operator_instruction(self, obj):
+        return bool(obj.operator_instruction.strip())
 
     def results_links(self, obj):
         if not obj or not obj.pk:
@@ -334,6 +348,12 @@ class CatalogueCleanupReviewAdmin(admin.ModelAdmin):
     def get_urls(self):
         return [path('run-now/', self.admin_site.admin_view(self.run_now), name='navigation_cataloguecleanupreview_run_now')] + super().get_urls()
 
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['cleanup_scope_categories'] = Category.objects.order_by('title', 'id')
+        extra_context['selected_scope_category_id'] = str(request.GET.get('scope_category_id', ''))
+        return super().changelist_view(request, extra_context=extra_context)
+
     def run_now(self, request):
         if request.method != 'POST':
             return HttpResponseNotAllowed(['POST'])
@@ -347,13 +367,24 @@ class CatalogueCleanupReviewAdmin(admin.ModelAdmin):
             prune_target_percent = int(request.POST.get('prune_target_percent', '0'))
         except (TypeError, ValueError):
             prune_target_percent = 0
+        scope_category = None
+        scope_category_id = request.POST.get('scope_category_id')
+        if scope_category_id:
+            try:
+                scope_category = Category.objects.get(pk=scope_category_id)
+            except (Category.DoesNotExist, ValueError):
+                self.message_user(request, 'Choose a valid category scope.', messages.ERROR)
+                return redirect(reverse('admin:navigation_cataloguecleanupreview_changelist'))
         cleanup = CatalogueCleanupReview.objects.create(
             requested_by=request.user,
             review_strength=strength,
             prune_target_percent=min(80, max(0, prune_target_percent)),
+            scope_category=scope_category,
+            operator_instruction=request.POST.get('operator_instruction', '').strip()[:4000],
         )
         transaction.on_commit(lambda: run_catalogue_cleanup_review.delay(cleanup.pk))
-        self.message_user(request, 'Combined product and taxonomy review queued. Refresh shortly to see both result sets.', messages.SUCCESS)
+        label = f' for {scope_category.title}' if scope_category else ''
+        self.message_user(request, f'Combined product and taxonomy review{label} queued. Refresh shortly to see both result sets.', messages.SUCCESS)
         return redirect(reverse('admin:navigation_cataloguecleanupreview_changelist'))
 
     @admin.action(description='Apply all safe recommendations in selected cleanup review(s)')

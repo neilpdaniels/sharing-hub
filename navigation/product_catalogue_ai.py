@@ -31,7 +31,7 @@ class ConsumerAssessment(StrictModel):
 
 class ProductAction(StrictModel):
     """A plan that can be validated before staff apply it."""
-    operation: Literal['retire', 'consolidate', 'listing_variants', 'none']
+    operation: Literal['retire', 'consolidate', 'listing_variants', 'product_templates', 'none']
     canonical_product_id: int | None = None
     retire_product_ids: list[int] = Field(default_factory=list, max_length=30)
     target_category_title: str = Field(default='', max_length=200)
@@ -40,7 +40,7 @@ class ProductAction(StrictModel):
 
 
 class ProductProposal(StrictModel):
-    recommendation_type: Literal['DUPLICATE', 'LOW_VALUE', 'LISTING_VARIANTS', 'KEEP']
+    recommendation_type: Literal['DUPLICATE', 'LOW_VALUE', 'LISTING_VARIANTS', 'PRODUCT_STRUCTURE', 'KEEP']
     title: str = Field(max_length=255)
     rationale: str = Field(max_length=900)
     evidence: list[str] = Field(max_length=6)
@@ -156,16 +156,23 @@ def product_catalogue_snapshot(scope_category: Category | None = None) -> dict:
     }
 
 
-def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str:
+def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0, operator_instruction: str = '') -> str:
     scope_instruction = (
         'This is a scoped review: review and recommend actions only for the supplied category tree. '
         if snapshot.get('scope') else ''
+    )
+    directed_instruction = (
+        'The staff member supplied this directed brief. Treat it as the intended outcome to investigate and prioritise, '
+        'but do not invent supporting facts or make a change automatically: '
+        f'{operator_instruction.strip()}\n\n'
+        if operator_instruction.strip() else ''
     )
     return (
         'You are conducting a read-only product catalogue-worthiness review for a UK peer-to-peer rental marketplace. '
         f'{_strength_instruction(strength)} '
         f'{_prune_target_instruction(prune_target_percent, len(snapshot.get("products", [])))} '
         f'{scope_instruction}'
+        f'{directed_instruction}'
         'Assess from the perspective of a general household consumer, not a trade business. Be usefully critical. '
         'Identify near-duplicate products that can be consolidated into one canonical product (for example, '
         'different names for the same plate compactor), and low-value generic products that consumers are more likely to buy. '
@@ -188,13 +195,18 @@ def _prompt(snapshot: dict, strength: str, prune_target_percent: int = 0) -> str
         'For every recommendation, score likely use frequency, estimated replacement-cost band (estimate only), transport/storage '
         'burden, rental wear/damage risk, and all three rental-suitability horizons. Use only supplied catalogue facts for listings/rentals/prices; '
         'your replacement-cost band is an explicitly labelled general estimate. Do not invent product IDs. '
-        'Recommend only DUPLICATE, LOW_VALUE, LISTING_VARIANTS, or KEEP (for a specialist exception worth retaining). All '
+        'Recommend only DUPLICATE, LOW_VALUE, LISTING_VARIANTS, PRODUCT_STRUCTURE, or KEEP (for a specialist exception worth retaining). All '
         'recommendations are for human review. Include a proposed_action object: for DUPLICATE use operation "consolidate", set '
         'canonical_product_id to the one existing product ID to retain, and retire_product_ids to the duplicate IDs to remove. '
         'For LOW_VALUE use operation "retire", canonical_product_id null, and retire_product_ids to the IDs to remove. '
         'For LISTING_VARIANTS use operation "listing_variants", set target_category_title, replacement_product_titles, and '
         'listing_attribute_names; do not nominate a canonical ID or retire IDs because staff must inspect the data-conversion '
-        'preview before applying it. For KEEP use operation "none", canonical_product_id null, and an empty retire_product_ids list. '
+        'preview before applying it. For PRODUCT_STRUCTURE use operation "product_templates" when a directed brief asks for '
+        'meaningfully separate product templates rather than a browsing/listing attribute. Set target_category_title and 2-4 concise '
+        'replacement_product_titles; this is a manual implementation plan only, so do not set canonical_product_id or retire_product_ids. '
+        'Use this, for example, for battery versus air-powered tools only where the brief or supplied evidence says the distinction matters '
+        'to a borrower. Do not replace it with a filter merely because filters are easier to implement. For KEEP use operation "none", '
+        'canonical_product_id null, and an empty retire_product_ids list. '
         'Every ID must come from the supplied snapshot and affected_product_ids must include every canonical or retired ID. A staff '
         'action will refuse ordinary retirement/consolidation if any affected product has active or historical orders; never propose '
         'moving orders except through a separately reviewed LISTING_VARIANTS conversion. '
@@ -210,7 +222,7 @@ def process_product_catalogue_review(review_id: int) -> str:
         review.snapshot, review.status, review.started_at, review.error = snapshot, review.STATUS_RUNNING, timezone.now(), ''
         review.save(update_fields=['snapshot', 'status', 'started_at', 'error'])
         assessment = _chat_model().with_structured_output(ProductAssessment).invoke(
-            _prompt(snapshot, review.review_strength, review.prune_target_percent)
+            _prompt(snapshot, review.review_strength, review.prune_target_percent, review.operator_instruction)
         )
         review.llm_analysis = assessment.model_dump()
         review.recommendations.all().delete()

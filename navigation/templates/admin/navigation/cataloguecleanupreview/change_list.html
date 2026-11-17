@@ -13,7 +13,16 @@
       <label for="cleanup-prune-target">Prune target</label>
       <input id="cleanup-prune-target" name="prune_target_percent" type="number" min="0" max="80" value="0" step="5" aria-label="Advisory percentage of product templates to prune">
       <span aria-hidden="true">%</span>
-      <button type="submit" class="addlink" style="border:0;cursor:pointer">Run combined catalogue cleanup</button>
+      <label for="cleanup-review-scope" class="visually-hidden">Category scope</label>
+      <select id="cleanup-review-scope" name="scope_category_id" aria-label="Category scope">
+        <option value="">Whole catalogue</option>
+        {% for category in cleanup_scope_categories %}
+          <option value="{{ category.id }}"{% if selected_scope_category_id == category.id|stringformat:'s' %} selected{% endif %}>{{ category.title }}</option>
+        {% endfor %}
+      </select>
+      <label for="cleanup-operator-instruction" class="visually-hidden">Directed review brief</label>
+      <textarea id="cleanup-operator-instruction" name="operator_instruction" rows="2" cols="42" placeholder="Optional direction, e.g. split first-fix and second-fix nail guns; treat battery versions as distinct product templates."></textarea>
+      <button type="submit" class="addlink" style="border:0;cursor:pointer">Run directed catalogue review</button>
     </form>
   </li>
   {{ block.super }}

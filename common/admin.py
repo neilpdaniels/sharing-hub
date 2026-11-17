@@ -235,12 +235,14 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         'review_product_images_link',
         'generate_category_images_link',
         'review_category_images_link',
+        'directed_ai_review_link',
         'tags',
         'description',
     )
     readonly_fields = (
         'image_generation_link', 'generate_product_images_link', 'review_product_images_link',
         'generate_category_images_link', 'review_category_images_link',
+        'directed_ai_review_link',
     )
     filter_horizontal = ('tags',)
     summernote_fields = ('description',)
@@ -333,6 +335,18 @@ class CategoryAdmin(CatalogImageAdminMixin, SummernoteModelAdmin):
         return format_html('<a class="button" href="{}">Review category image candidates</a>', url)
 
     review_category_images_link.short_description = 'Batch category image review'
+
+    def directed_ai_review_link(self, obj):
+        if not obj or not obj.pk:
+            return 'Save this category before running a directed AI review.'
+        url = reverse('admin:navigation_cataloguecleanupreview_changelist')
+        return format_html(
+            '<a class="button" href="{}?scope_category_id={}">Run directed AI catalogue review</a>',
+            url,
+            obj.pk,
+        )
+
+    directed_ai_review_link.short_description = 'Directed AI catalogue review'
 
     @staticmethod
     def _product_category_ids(category, scope):

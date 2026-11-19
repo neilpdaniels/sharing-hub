@@ -1,3 +1,11 @@
+x-local-logging: &local-logging
+  driver: local
+  options:
+    # Docker rotates and compresses these files itself. Keep up to 100 MB of
+    # recent logs per container; Loki retains the searchable 14-day history.
+    max-size: "20m"
+    max-file: "5"
+
 services:
   db:
     image: postgres:16-alpine
@@ -9,10 +17,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    logging: *local-logging
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    logging: *local-logging
     restart: unless-stopped
 
   web:
@@ -34,6 +44,7 @@ services:
       # Public traffic must pass through host Nginx, which supplies the trusted
       # X-Real-IP used by abuse controls. Do not expose Gunicorn directly.
       - "127.0.0.1:8000:8000"
+    logging: *local-logging
     restart: unless-stopped
 
   video-worker:
@@ -48,6 +59,7 @@ services:
       - db
       - web
       - redis
+    logging: *local-logging
     restart: unless-stopped
 
   # Kept separate from transaction/video processing because LLM and image work
@@ -63,6 +75,7 @@ services:
     depends_on:
       - db
       - redis
+    logging: *local-logging
     restart: unless-stopped
 
 
@@ -77,6 +90,7 @@ services:
     depends_on:
       - db
       - redis
+    logging: *local-logging
     restart: unless-stopped
 
   beat:
@@ -89,6 +103,7 @@ services:
     depends_on:
       - db
       - redis
+    logging: *local-logging
     restart: unless-stopped
 
   flower:
@@ -100,6 +115,7 @@ services:
       - "127.0.0.1:5555:5555"
     depends_on:
       - redis
+    logging: *local-logging
     restart: unless-stopped
 
   # Watches the application services' Docker state. The Docker socket grants
@@ -113,30 +129,27 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./monitoring/container-watchdog.sh:/usr/local/bin/container-watchdog.sh:ro
       - container_watchdog_data:/var/lib/container-watchdog
+    logging: *local-logging
     restart: unless-stopped
 
-  # A separate reader for deterministic log digests. It reads Docker's local
-  # JSON log files directly, avoiding an API dependency on the Docker daemon.
+  # A separate deterministic reader of the Loki log store. It intentionally has
+  # neither Docker socket nor host-log access.
   log-reviewer:
     image: ${WEB_IMAGE}
     command: ["/bin/sh", "/usr/local/bin/docker-log-reviewer.sh"]
-    user: "0:0"
-    # The review handles at most 2,000 recent lines per application service.
-    # Hard limits ensure an unexpectedly slow Docker daemon can never starve
-    # customer-facing containers.
+    # Bounded Loki queries ensure review cannot starve customer-facing services.
     cpus: 0.25
     mem_limit: 256m
     env_file:
       - .env
     environment:
       COMPOSE_PROJECT_NAME: rentalution
-      LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH: /var/lib/docker/containers
     volumes:
-      - ${DOCKER_CONTAINER_LOGS_HOST_PATH:-/var/lib/docker/containers}:/var/lib/docker/containers:ro
       - ./monitoring/docker-log-reviewer.sh:/usr/local/bin/docker-log-reviewer.sh:ro
     depends_on:
       - web
       - redis
+    logging: *local-logging
     restart: unless-stopped
 
   # Private observability services. Access Grafana and Uptime Kuma through an
@@ -150,6 +163,7 @@ services:
     volumes:
       - ./monitoring/loki.yml:/etc/loki/config.yml:ro
       - loki_data:/loki
+    logging: *local-logging
     restart: unless-stopped
 
   alloy:
@@ -162,6 +176,7 @@ services:
       - alloy_data:/var/lib/alloy/data
     depends_on:
       - loki
+    logging: *local-logging
     restart: unless-stopped
 
   grafana:
@@ -198,6 +213,7 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - loki
+    logging: *local-logging
     restart: unless-stopped
 
   uptime-kuma:
@@ -206,6 +222,7 @@ services:
       - uptime_kuma_data:/app/data
     ports:
       - "127.0.0.1:3001:3001"
+    logging: *local-logging
     restart: unless-stopped
 volumes:
   postgres_data:

@@ -79,9 +79,6 @@ CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED = os.environ.get(
 LOKI_URL = os.environ.get('LOKI_URL', 'http://loki:3100').rstrip('/')
 LOG_REVIEW_SCHEDULED_ENABLED = os.environ.get('LOG_REVIEW_SCHEDULED_ENABLED', '0') == '1'
 LOG_REVIEW_HOURS = max(1, min(168, int(os.environ.get('LOG_REVIEW_HOURS', '6'))))
-LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH = os.environ.get(
-    'LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH', '/var/lib/docker/containers'
-)
 LOG_REVIEW_QUERY_CHUNK_MINUTES = max(1, min(60, int(os.environ.get('LOG_REVIEW_QUERY_CHUNK_MINUTES', '15'))))
 LOG_REVIEW_QUERY_TIMEOUT_SECONDS = max(5, min(120, int(os.environ.get('LOG_REVIEW_QUERY_TIMEOUT_SECONDS', '45'))))
 LOG_REVIEW_RECIPIENTS = tuple(
@@ -94,8 +91,6 @@ LOG_REVIEW_RECIPIENTS = tuple(
 LOG_REVIEW_SUPPRESSIONS_FILE = os.environ.get(
     'LOG_REVIEW_SUPPRESSIONS_FILE', 'monitoring/log-review-suppressions.json'
 )
-DOCKER_COMPOSE_PROJECT_NAME = os.environ.get('COMPOSE_PROJECT_NAME', 'rentalution')
-
 # Listing images are resized and converted to JPEG by the Celery worker.
 ORDER_IMAGE_UPLOAD_MAX_BYTES = int(os.environ.get('ORDER_IMAGE_UPLOAD_MAX_BYTES', str(20 * 1024 * 1024)))
 

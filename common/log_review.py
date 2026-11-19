@@ -1,4 +1,4 @@
-"""Deterministic production-log review backed by local Docker logs or Loki.
+"""Deterministic production-log review backed by Loki.
 
 This deliberately does not use an LLM.  A notification about an outage must
 be repeatable, auditable and still work if a third-party AI service is down.
@@ -46,14 +46,6 @@ class LogEvent:
     timestamp: str
     source: str
     message: str
-
-
-@dataclass
-class DockerLogCollection:
-    """Application events plus non-alerting diagnostics from their collection."""
-
-    events: list[LogEvent]
-    warnings: list[str]
 
 
 def _redact(value: str) -> str:
@@ -164,78 +156,9 @@ def _chunked_loki_events(
     return events
 
 
-def _tail_lines(path: Path, limit: int) -> list[str]:
-    """Read the final lines of a JSON log without loading an entire file."""
-    with path.open('rb') as handle:
-        handle.seek(0, 2)
-        position = handle.tell()
-        chunks = []
-        newline_count = 0
-        while position and newline_count <= limit:
-            read_size = min(64 * 1024, position)
-            position -= read_size
-            handle.seek(position)
-            chunk = handle.read(read_size)
-            chunks.append(chunk)
-            newline_count += chunk.count(b'\n')
-    return b''.join(reversed(chunks)).decode('utf-8', errors='replace').splitlines()[-limit:]
-
-
-def _docker_events(*, start: datetime) -> DockerLogCollection:
-    """Read Rentalution's local Docker JSON logs without calling the daemon."""
-    project = getattr(settings, 'DOCKER_COMPOSE_PROJECT_NAME', 'rentalution')
-    log_root = Path(getattr(settings, 'LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH', '/var/lib/docker/containers'))
-    events = []
-    warnings = []
-    if not log_root.is_dir():
-        return DockerLogCollection(
-            events=[],
-            warnings=[f'Docker JSON log directory is unavailable: {log_root}'],
-        )
-
-    found_services = set()
-    for metadata_path in log_root.glob('*/config.v2.json'):
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
-            labels = metadata.get('Config', {}).get('Labels') or {}
-        except (OSError, json.JSONDecodeError) as exc:
-            warnings.append(f'Unable to read Docker metadata {metadata_path.parent.name}: {exc}')
-            continue
-
-        service = labels.get('com.docker.compose.service')
-        if labels.get('com.docker.compose.project') != project or service not in APPLICATION_SERVICES:
-            continue
-        found_services.add(service)
-        log_paths = list(metadata_path.parent.glob('*-json.log'))
-        if not log_paths:
-            warnings.append(f'No Docker JSON log file found for service={service}.')
-            continue
-        for log_path in log_paths:
-            try:
-                lines = _tail_lines(log_path, limit=2000)
-            except OSError as exc:
-                warnings.append(f'Unable to read Docker logs for service={service}: {exc}')
-                continue
-            for line in lines:
-                try:
-                    entry = json.loads(line)
-                    timestamp = entry['time']
-                    message = entry['log'].rstrip('\n')
-                    event_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                    continue
-                if event_time < start or not ERROR_EVENT_PATTERN.search(message):
-                    continue
-                events.append(LogEvent(timestamp=timestamp, source=service, message=message))
-    for service in APPLICATION_SERVICES:
-        if service not in found_services:
-            warnings.append(f'No Docker metadata found for service={service}.')
-    return DockerLogCollection(events=events, warnings=warnings)
-
-
 def build_report(hours: float = 6, *, now: datetime | None = None, loki_url: str | None = None,
                  suppressions_path: str | Path | None = None, query_chunk_minutes: int | None = None,
-                 query_timeout_seconds: int | None = None, source: str = 'docker') -> dict[str, Any]:
+                 query_timeout_seconds: int | None = None, source: str = 'loki') -> dict[str, Any]:
     if hours < 1 or hours > 168:
         raise ValueError('hours must be between 1 and 168.')
     end = now or datetime.now(timezone.utc)
@@ -247,27 +170,20 @@ def build_report(hours: float = 6, *, now: datetime | None = None, loki_url: str
     query_chunk_minutes = query_chunk_minutes or getattr(settings, 'LOG_REVIEW_QUERY_CHUNK_MINUTES', 5)
     query_timeout_seconds = query_timeout_seconds or getattr(settings, 'LOG_REVIEW_QUERY_TIMEOUT_SECONDS', 45)
 
-    collection_warnings: list[str] = []
-    if source == 'docker':
-        collection = _docker_events(start=start)
-        events = collection.events
-        collection_warnings = collection.warnings
-    elif source == 'loki':
-        # Retained as a diagnostic fallback; production uses Docker logs so a
-        # busy or starting Loki instance cannot block the digest.
-        events = []
-        for service in APPLICATION_SERVICES:
-            service_events = _chunked_loki_events(
-                f'{{job="docker", service="{service}"}}', f'{service} logs', start, end, loki_url,
-                chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
-            )
-            events.extend(event for event in service_events if ERROR_EVENT_PATTERN.search(event.message))
-        events.extend(_chunked_loki_events(
-            NGINX_QUERY, 'Nginx error logs', start, end, loki_url,
-            chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
-        ))
-    else:
-        raise ValueError('source must be docker or loki.')
+    if source != 'loki':
+        raise ValueError('source must be loki.')
+    # Query all application services together to keep a 70-minute review to a
+    # small number of bounded Loki requests rather than one request per service.
+    application_query = '{job="docker", service=~"' + '|'.join(APPLICATION_SERVICES) + '"}'
+    events = _chunked_loki_events(
+        application_query, 'application logs', start, end, loki_url,
+        chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
+    )
+    events = [event for event in events if ERROR_EVENT_PATTERN.search(event.message)]
+    events.extend(_chunked_loki_events(
+        NGINX_QUERY, 'Nginx error logs', start, end, loki_url,
+        chunk_hours=query_chunk_minutes / 60, timeout_seconds=query_timeout_seconds,
+    ))
     # Loki query-range windows are inclusive; avoid double-counting a line
     # exactly on the boundary between two chunks.
     seen_events = set()
@@ -286,11 +202,11 @@ def build_report(hours: float = 6, *, now: datetime | None = None, loki_url: str
         groups[(event.source, normalise_signature(event.message))].append(event)
 
     issues = []
-    for (source, signature), grouped_events in groups.items():
+    for (issue_source, signature), grouped_events in groups.items():
         severity = 'CRITICAL' if CRITICAL_PATTERN.search(signature) else 'ACTION_REQUIRED'
         issues.append({
             'severity': severity,
-            'source': source,
+            'source': issue_source,
             'count': len(grouped_events),
             'first_seen': grouped_events[0].timestamp,
             'last_seen': grouped_events[-1].timestamp,
@@ -311,9 +227,6 @@ def build_report(hours: float = 6, *, now: datetime | None = None, loki_url: str
         'events_examined': len(events),
         'issues': issues,
         'suppressed': [{'reason': reason, 'count': count} for reason, count in sorted(suppressed.items())],
-        # Collection problems are visible in manual output and the reviewer
-        # container logs, but do not change application alert status.
-        'collection_warnings': collection_warnings,
     }
 
 
@@ -341,10 +254,6 @@ def report_as_text(report: dict[str, Any]) -> str:
         lines.append('')
         lines.append('Suppressed by local policy:')
         lines.extend(f"- {item['reason']}: {item['count']} event(s)" for item in report['suppressed'])
-    if report.get('collection_warnings'):
-        lines.append('')
-        lines.append('Log collection warnings (not application incidents):')
-        lines.extend(f'- {warning}' for warning in report['collection_warnings'])
     lines.extend(('', 'To adjust false positives, edit monitoring/log-review-suppressions.json, review its reason, then redeploy.'))
     return '\n'.join(lines)
 

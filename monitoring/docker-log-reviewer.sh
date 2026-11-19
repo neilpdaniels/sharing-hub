@@ -1,6 +1,5 @@
 #!/bin/sh
-# The service reads a read-only mount of Docker's local JSON log files. Do not
-# add that host-level mount to web or task-worker containers.
+# The service queries Loki, so it needs neither Docker's socket nor host log files.
 set -eu
 
 review_hours="${LOG_REVIEW_HOURS:-6}"
@@ -14,7 +13,7 @@ fi
 while :; do
     if [ "${LOG_REVIEW_SCHEDULED_ENABLED:-0}" = "1" ]; then
         # shellcheck disable=SC2086 # Intentional split of the two fixed flags.
-        python manage.py review_production_logs --source docker --minutes "$review_minutes" $email_args \
+        python manage.py review_production_logs --source loki --minutes "$review_minutes" $email_args \
             || echo "LOG_REVIEW_FAILED at $(date -u +%FT%TZ)" >&2
     else
         echo "LOG_REVIEW_DISABLED" >&2

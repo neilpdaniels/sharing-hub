@@ -231,59 +231,30 @@ class ModerationTests(TestCase):
 
 
 class ProductionLogReviewTests(SimpleTestCase):
-	def write_docker_log(self, root, container_id, service, entries):
-		container_dir = root / container_id
-		container_dir.mkdir()
-		(container_dir / 'config.v2.json').write_text(json.dumps({
-			'Config': {'Labels': {
-				'com.docker.compose.project': 'rentalution',
-				'com.docker.compose.service': service,
-			}},
-		}), encoding='utf-8')
-		(container_dir / f'{container_id}-json.log').write_text(
-			''.join(json.dumps(entry) + '\n' for entry in entries), encoding='utf-8'
+	@patch('common.log_review._loki_events')
+	def test_loki_source_collects_application_error_lines(self, loki_events):
+		loki_events.return_value = [LogEvent(
+			'2026-10-27T10:00:00+00:00', 'web', 'ERROR failed to send email to alice@example.com'
+		)]
+		report = build_report(
+			hours=1, now=datetime(2026, 10, 27, 10, 30, tzinfo=timezone.utc), query_chunk_minutes=60
 		)
-
-	def test_docker_source_collects_local_json_error_lines(self):
-		with tempfile.TemporaryDirectory() as directory:
-			root = Path(directory)
-			self.write_docker_log(root, 'web-id', 'web', [{
-				'time': '2026-10-27T10:00:00Z',
-				'log': 'ERROR failed to send email to alice@example.com\n',
-			}])
-			with override_settings(LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH=str(root)):
-				report = build_report(
-					hours=1, now=datetime(2026, 10, 27, 10, 30, tzinfo=timezone.utc), source='docker'
-				)
 
 		self.assertEqual(report['status'], 'ACTION_REQUIRED')
 		self.assertEqual(report['issues'][0]['count'], 1)
 		self.assertIn('[EMAIL]', report['issues'][0]['fingerprint'])
+		self.assertEqual(report['source'], 'loki')
+		self.assertEqual(loki_events.call_count, 2)
 
-	def test_missing_docker_log_directory_is_a_single_non_alerting_warning(self):
-		with override_settings(LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH='/tmp/not-a-docker-log-directory'):
-			report = build_report(hours=1, source='docker')
-
-		self.assertEqual(report['status'], 'OK')
-		self.assertEqual(report['issues'], [])
-		self.assertEqual(len(report['collection_warnings']), 1)
-		self.assertIn('not application incidents', report_as_text(report))
-
-	def test_docker_source_can_use_an_overlapping_70_minute_window(self):
-		with tempfile.TemporaryDirectory() as directory:
-			root = Path(directory)
-			self.write_docker_log(root, 'web-id', 'web', [{
-				'time': '2026-10-27T09:25:00Z',
-				'log': 'ERROR overlap test\n',
-			}])
-			with override_settings(LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH=str(root)):
-				report = build_report(
-					hours=70 / 60, now=datetime(2026, 10, 27, 10, 30, tzinfo=timezone.utc), source='docker'
-				)
+	@patch('common.log_review._loki_events', return_value=[])
+	def test_loki_source_can_use_an_overlapping_70_minute_window(self, loki_events):
+		now = datetime(2026, 10, 27, 10, 30, tzinfo=timezone.utc)
+		report = build_report(hours=70 / 60, now=now, query_chunk_minutes=70)
 
 		self.assertEqual(report['window']['minutes'], 70)
-		self.assertEqual(report['issues'][0]['count'], 1)
 		self.assertIn('(70 minutes)', report_as_text(report))
+		self.assertEqual(loki_events.call_count, 2)
+		self.assertTrue(all(call.args[1] == now - timedelta(minutes=70) for call in loki_events.call_args_list))
 
 	def test_groups_events_redacts_data_and_escalates_only_known_critical_failures(self):
 		events = [

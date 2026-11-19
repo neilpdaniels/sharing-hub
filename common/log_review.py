@@ -233,7 +233,7 @@ def _docker_events(*, start: datetime) -> DockerLogCollection:
     return DockerLogCollection(events=events, warnings=warnings)
 
 
-def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str | None = None,
+def build_report(hours: float = 6, *, now: datetime | None = None, loki_url: str | None = None,
                  suppressions_path: str | Path | None = None, query_chunk_minutes: int | None = None,
                  query_timeout_seconds: int | None = None, source: str = 'docker') -> dict[str, Any]:
     if hours < 1 or hours > 168:
@@ -302,7 +302,12 @@ def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str |
         'schema_version': 1,
         'source': source,
         'status': status,
-        'window': {'hours': hours, 'start': start.isoformat(), 'end': end.isoformat()},
+        'window': {
+            'hours': hours,
+            'minutes': round(hours * 60),
+            'start': start.isoformat(),
+            'end': end.isoformat(),
+        },
         'events_examined': len(events),
         'issues': issues,
         'suppressed': [{'reason': reason, 'count': count} for reason, count in sorted(suppressed.items())],
@@ -314,9 +319,11 @@ def build_report(hours: int = 6, *, now: datetime | None = None, loki_url: str |
 
 def report_as_text(report: dict[str, Any]) -> str:
     window = report['window']
+    window_minutes = window.get('minutes', round(window['hours'] * 60))
+    window_label = f'{window_minutes // 60} hours' if window_minutes % 60 == 0 else f'{window_minutes} minutes'
     lines = [
         f"Rentalution log review — {report['status']}",
-        f"Window: {window['start']} to {window['end']} ({window['hours']} hours)",
+        f"Window: {window['start']} to {window['end']} ({window_label})",
         f"Events examined: {report['events_examined']}",
     ]
     if not report['issues']:

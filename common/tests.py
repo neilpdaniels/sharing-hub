@@ -269,6 +269,22 @@ class ProductionLogReviewTests(SimpleTestCase):
 		self.assertEqual(len(report['collection_warnings']), 1)
 		self.assertIn('not application incidents', report_as_text(report))
 
+	def test_docker_source_can_use_an_overlapping_70_minute_window(self):
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			self.write_docker_log(root, 'web-id', 'web', [{
+				'time': '2026-10-27T09:25:00Z',
+				'log': 'ERROR overlap test\n',
+			}])
+			with override_settings(LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH=str(root)):
+				report = build_report(
+					hours=70 / 60, now=datetime(2026, 10, 27, 10, 30, tzinfo=timezone.utc), source='docker'
+				)
+
+		self.assertEqual(report['window']['minutes'], 70)
+		self.assertEqual(report['issues'][0]['count'], 1)
+		self.assertIn('(70 minutes)', report_as_text(report))
+
 	def test_groups_events_redacts_data_and_escalates_only_known_critical_failures(self):
 		events = [
 			LogEvent('2026-10-27T10:00:00+00:00', 'web', 'ERROR user=alice@example.com request=123456 failed'),

@@ -7,7 +7,7 @@
 {% endif %}
 {% endblock %}
 
-{% block title %}Log in{% endblock %}
+{% block title %}Join or sign in{% endblock %}
 {% block page_header %}{% endblock %}
 
 {% block styles %}
@@ -35,8 +35,8 @@
 
         <div class="sh-auth-header">
             <span class="sh-emoji">🔑</span>
-            <h1>Welcome back!</h1>
-            <p>Log in to your account</p>
+            <h1>Join or sign in</h1>
+            <p>Use the same option whether you're new or returning.</p>
         </div>
 
         <div class="sh-auth-body">
@@ -78,7 +78,7 @@
                 <a href="{% url 'password_reset' %}">Forgotten your password?</a>
             </p>
             <p class="sh-auth-hint">
-                No account yet? <a href="{% url 'register' %}">Register here</a>
+                New to Rentalution? <a href="{% url 'register' %}">Create an account with email</a>
             </p>
         </div>
 

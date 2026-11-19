@@ -89,7 +89,10 @@ and redeploy:
 
 ```dotenv
 LOG_REVIEW_SCHEDULED_ENABLED=1
+# Run every hour.
 LOG_REVIEW_HOURS=1
+# Review 70 minutes each time, leaving a 10-minute overlap between runs.
+LOG_REVIEW_LOOKBACK_MINUTES=70
 # Keep clean hourly runs in the service log; e-mail only real findings.
 LOG_REVIEW_EMAIL_OK_SUMMARIES=0
 # Override only if Docker's data-root is not /var/lib/docker.

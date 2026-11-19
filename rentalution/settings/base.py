@@ -73,13 +73,15 @@ CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED = os.environ.get(
     'CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED', '0'
 ) == '1'
 
-# Deterministic Loki log-review digest. Grafana remains responsible for
-# minute-level paging; this produces a reviewable, grouped summary on a slower
-# cadence. It is deliberately opt-in until production has been checked.
+# Deterministic log-review digest. Grafana remains responsible for minute-level
+# paging; this produces a reviewable, grouped summary on a slower cadence. It
+# is deliberately opt-in until production has been checked.
 LOKI_URL = os.environ.get('LOKI_URL', 'http://loki:3100').rstrip('/')
 LOG_REVIEW_SCHEDULED_ENABLED = os.environ.get('LOG_REVIEW_SCHEDULED_ENABLED', '0') == '1'
 LOG_REVIEW_HOURS = max(1, min(168, int(os.environ.get('LOG_REVIEW_HOURS', '6'))))
-LOG_REVIEW_DOCKER_TIMEOUT_SECONDS = max(3, min(30, int(os.environ.get('LOG_REVIEW_DOCKER_TIMEOUT_SECONDS', '10'))))
+LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH = os.environ.get(
+    'LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH', '/var/lib/docker/containers'
+)
 LOG_REVIEW_QUERY_CHUNK_MINUTES = max(1, min(60, int(os.environ.get('LOG_REVIEW_QUERY_CHUNK_MINUTES', '15'))))
 LOG_REVIEW_QUERY_TIMEOUT_SECONDS = max(5, min(120, int(os.environ.get('LOG_REVIEW_QUERY_TIMEOUT_SECONDS', '45'))))
 LOG_REVIEW_RECIPIENTS = tuple(

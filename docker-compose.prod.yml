@@ -115,9 +115,8 @@ services:
       - container_watchdog_data:/var/lib/container-watchdog
     restart: unless-stopped
 
-  # A separate privileged reader for deterministic log digests. It is the only
-  # Django-based service given Docker's socket; web and task workers never get
-  # that host-level capability.
+  # A separate reader for deterministic log digests. It reads Docker's local
+  # JSON log files directly, avoiding an API dependency on the Docker daemon.
   log-reviewer:
     image: ${WEB_IMAGE}
     command: ["/bin/sh", "/usr/local/bin/docker-log-reviewer.sh"]
@@ -131,8 +130,9 @@ services:
       - .env
     environment:
       COMPOSE_PROJECT_NAME: rentalution
+      LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH: /var/lib/docker/containers
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DOCKER_CONTAINER_LOGS_HOST_PATH:-/var/lib/docker/containers}:/var/lib/docker/containers:ro
       - ./monitoring/docker-log-reviewer.sh:/usr/local/bin/docker-log-reviewer.sh:ro
     depends_on:
       - web

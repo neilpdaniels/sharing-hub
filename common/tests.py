@@ -231,29 +231,43 @@ class ModerationTests(TestCase):
 
 
 class ProductionLogReviewTests(SimpleTestCase):
-	@patch('common.log_review._docker_command')
-	def test_docker_source_collects_stderr_error_lines(self, docker_command):
-		def docker_output(args, **_kwargs):
-			if args[0] == 'ps':
-				return 'container-id\n'
-			return '2026-10-27T10:00:00Z ERROR failed to send email to alice@example.com\n'
+	def write_docker_log(self, root, container_id, service, entries):
+		container_dir = root / container_id
+		container_dir.mkdir()
+		(container_dir / 'config.v2.json').write_text(json.dumps({
+			'Config': {'Labels': {
+				'com.docker.compose.project': 'rentalution',
+				'com.docker.compose.service': service,
+			}},
+		}), encoding='utf-8')
+		(container_dir / f'{container_id}-json.log').write_text(
+			''.join(json.dumps(entry) + '\n' for entry in entries), encoding='utf-8'
+		)
 
-		docker_command.side_effect = docker_output
-		report = build_report(hours=1, source='docker')
+	def test_docker_source_collects_local_json_error_lines(self):
+		with tempfile.TemporaryDirectory() as directory:
+			root = Path(directory)
+			self.write_docker_log(root, 'web-id', 'web', [{
+				'time': '2026-10-27T10:00:00Z',
+				'log': 'ERROR failed to send email to alice@example.com\n',
+			}])
+			with override_settings(LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH=str(root)):
+				report = build_report(
+					hours=1, now=datetime(2026, 10, 27, 10, 30, tzinfo=timezone.utc), source='docker'
+				)
 
 		self.assertEqual(report['status'], 'ACTION_REQUIRED')
 		self.assertEqual(report['issues'][0]['count'], 1)
 		self.assertIn('[EMAIL]', report['issues'][0]['fingerprint'])
-		self.assertEqual(docker_command.call_count, 10)
 
-	@patch('common.log_review._docker_command')
-	def test_docker_timeout_becomes_critical_issue_not_command_failure(self, docker_command):
-		docker_command.side_effect = RuntimeError('Docker log source failed: command timed out')
-		report = build_report(hours=1, source='docker')
+	def test_missing_docker_log_directory_is_a_single_non_alerting_warning(self):
+		with override_settings(LOG_REVIEW_DOCKER_CONTAINER_LOGS_PATH='/tmp/not-a-docker-log-directory'):
+			report = build_report(hours=1, source='docker')
 
-		self.assertEqual(report['status'], 'CRITICAL')
-		self.assertEqual(len(report['issues']), 5)
-		self.assertTrue(all(issue['severity'] == 'CRITICAL' for issue in report['issues']))
+		self.assertEqual(report['status'], 'OK')
+		self.assertEqual(report['issues'], [])
+		self.assertEqual(len(report['collection_warnings']), 1)
+		self.assertIn('not application incidents', report_as_text(report))
 
 	def test_groups_events_redacts_data_and_escalates_only_known_critical_failures(self):
 		events = [

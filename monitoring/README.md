@@ -62,8 +62,8 @@ extract.
 
 Grafana is the immediate, minute-by-minute escalation path. Separately, the
 dedicated `log-reviewer` service can send a grouped review digest every six
-hour. It reads only the named Rentalution containers through Docker's local
-socket, so a busy or starting Loki instance cannot prevent review. It removes
+hour. It reads only the named Rentalution containers' local Docker JSON log
+files, so a busy Docker API or starting Loki instance cannot prevent review. It removes
 secrets and personal identifiers from the e-mail fingerprints, groups repeats, and labels
 only high-confidence infrastructure or payment failures as `CRITICAL`. Other
 unrecognised error groups are `ACTION_REQUIRED` for a person to investigate.
@@ -92,7 +92,8 @@ LOG_REVIEW_SCHEDULED_ENABLED=1
 LOG_REVIEW_HOURS=1
 # Keep clean hourly runs in the service log; e-mail only real findings.
 LOG_REVIEW_EMAIL_OK_SUMMARIES=0
-LOG_REVIEW_DOCKER_TIMEOUT_SECONDS=10
+# Override only if Docker's data-root is not /var/lib/docker.
+DOCKER_CONTAINER_LOGS_HOST_PATH=/var/lib/docker/containers
 # Keep broad Loki regex scans bounded; defaults shown.
 LOG_REVIEW_QUERY_CHUNK_MINUTES=15
 LOG_REVIEW_QUERY_TIMEOUT_SECONDS=45
@@ -104,6 +105,19 @@ To suppress a confirmed benign fingerprint, add a narrowly-scoped regular
 expression and a human reason to `monitoring/log-review-suppressions.json`,
 then redeploy. Keep rules specific and review them periodically; a suppression
 must never be used to hide a real outage.
+
+The reviewer requires Docker's `json-file` logging driver and a readable
+container-log directory. Before enabling it on a new host, check this on the
+VPS:
+
+```bash
+docker info --format '{{.LoggingDriver}}'
+```
+
+It must report `json-file`. If the Docker data-root differs from
+`/var/lib/docker`, set `DOCKER_CONTAINER_LOGS_HOST_PATH` to its `containers`
+directory before deploying. A missing or unreadable directory is reported as a
+single collection warning, never as five application CRITICAL incidents.
 
 ## Discord notifications
 

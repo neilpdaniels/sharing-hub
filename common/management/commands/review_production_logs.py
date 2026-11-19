@@ -6,7 +6,7 @@ from common.log_review import build_report, report_as_json, report_as_text
 
 
 class Command(BaseCommand):
-    help = 'Create a deterministic Loki error-log digest and optionally e-mail it.'
+    help = 'Create a deterministic error-log digest and optionally e-mail it.'
 
     def add_arguments(self, parser):
         parser.add_argument('--hours', type=int, default=6, help='Lookback window (1–168; default: 6).')

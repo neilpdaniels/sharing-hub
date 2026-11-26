@@ -29,6 +29,27 @@ ANDROID_APP_LINK_SHA256 = os.environ.get('ANDROID_APP_LINK_SHA256', '').strip()
 # locally when the page is opened on localhost but the QR is scanned by a phone.
 PHONE_EVIDENCE_BASE_URL = os.environ.get('PHONE_EVIDENCE_BASE_URL', '').rstrip('/')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@rentalution.co.uk')
+OPERATIONAL_ALERT_RECIPIENTS = tuple(
+    email.strip()
+    for email in os.environ.get(
+        'OPERATIONAL_ALERT_RECIPIENTS', os.environ.get('MONITORING_ALERT_EMAIL', '')
+    ).split(',')
+    if email.strip()
+)
+DISCORD_OPERATIONAL_ALERT_WEBHOOK_URL = os.environ.get(
+    'DISCORD_OPERATIONAL_ALERT_WEBHOOK_URL', os.environ.get('DISCORD_WEBHOOK_URL', '')
+).strip()
+# Set any of these to 0 if alert volume becomes too high. Delivery is always
+# best-effort and cannot interrupt a registration, listing, or booking.
+NEW_USER_REGISTRATION_ALERTS_ENABLED = os.environ.get(
+    'NEW_USER_REGISTRATION_ALERTS_ENABLED', '1'
+).strip().lower() in {'1', 'true', 'yes', 'on'}
+NEW_ORDER_ALERTS_ENABLED = os.environ.get(
+    'NEW_ORDER_ALERTS_ENABLED', '1'
+).strip().lower() in {'1', 'true', 'yes', 'on'}
+NEW_TRANSACTION_ALERTS_ENABLED = os.environ.get(
+    'NEW_TRANSACTION_ALERTS_ENABLED', '1'
+).strip().lower() in {'1', 'true', 'yes', 'on'}
 # Separate from operational/error alerts: staff moderation reports can include
 # member-generated text and should go only to a restricted Discord channel.
 DISCORD_MODERATION_WEBHOOK_URL = os.environ.get(

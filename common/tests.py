@@ -21,6 +21,7 @@ from common.log_review import LogEvent, build_report, normalise_signature, repor
 from common.security import verify_turnstile_token
 from common.models import Category, ModerationReport, Order, Product
 from common.moderation import create_report, notify_staff_of_report, resolve_report
+from common.operational_alerts import send_operational_alert
 from account.profanity import contains_blocked_word
 from transaction.models import Transaction, TransactionMessage
 
@@ -48,6 +49,57 @@ class PhoneUtilsTests(TestCase):
 		self.assertFalse(is_valid_uk_phone('+14155552671'))
 		self.assertFalse(is_valid_uk_phone('02079460000'))
 		self.assertFalse(is_valid_uk_phone('12345'))
+
+
+class OperationalAlertTests(TestCase):
+	def setUp(self):
+		self.owner = User.objects.create_user(
+			username='listing-owner', email='owner@example.test', password='x',
+		)
+		self.borrower = User.objects.create_user(
+			username='borrower', email='borrower@example.test', password='x',
+		)
+		category = Category.objects.create(title='Tools')
+		product = Product.objects.create(category_id=category, name='Drill')
+		with patch('common.models.updateSummaryPrices.delay'):
+			self.order = Order.objects.create(
+				product=product, user=self.owner, direction=Order.TO_LET,
+				expiry_date=django_timezone.now() + timedelta(days=30),
+				status=Order.ACTIVE, price=10, description='A drill',
+			)
+		self.transaction = Transaction.objects.create(
+			user_passive=self.owner, user_aggressive=self.borrower,
+			order_passive=self.order, product=product, quantity=1, price=10,
+			transaction_status=Transaction.RENTAL_ENQUIRY,
+			prev_transaction_status=Transaction.RENTAL_ENQUIRY,
+			payment_status=Transaction.PAYMENT_PENDING,
+			deposit_status=Transaction.DEPOSIT_PENDING,
+			product_status=Transaction.CONDITION_PENDING,
+		)
+
+	@override_settings(
+		OPERATIONAL_ALERT_RECIPIENTS=('operator@example.test',),
+		DISCORD_OPERATIONAL_ALERT_WEBHOOK_URL='https://discord.example.test/webhook',
+	)
+	@patch('common.operational_alerts.requests.post')
+	@patch('common.operational_alerts.send_mail')
+	def test_transaction_alert_sends_email_and_discord(self, send_mail_mock, post_mock):
+		post_mock.return_value.raise_for_status.return_value = None
+
+		result = send_operational_alert.run('transaction', self.transaction.pk)
+
+		self.assertTrue(result['email_sent'])
+		self.assertTrue(result['discord_sent'])
+		self.assertIn(self.transaction.transaction_reference, send_mail_mock.call_args.args[1])
+		self.assertIn(self.transaction.transaction_reference, post_mock.call_args.kwargs['json']['content'])
+
+	@override_settings(NEW_ORDER_ALERTS_ENABLED=False)
+	@patch('common.operational_alerts.send_mail')
+	def test_disabled_alert_does_not_send(self, send_mail_mock):
+		result = send_operational_alert.run('order', self.order.pk)
+
+		self.assertEqual(result['reason'], 'disabled')
+		send_mail_mock.assert_not_called()
 
 
 class ModerationTests(TestCase):

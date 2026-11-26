@@ -6,6 +6,7 @@ from .models import DisputeCase, Transaction, TransactionMessage
 from .tasks import send_new_message_push_notification, send_transaction_message_email
 from common.models import System
 from account.models import NotificationPreference
+from common.operational_alerts import is_operational_alert_enabled, send_operational_alert
 
 
 MAJOR_STATUS_NOTIFICATION_SET = {
@@ -14,6 +15,15 @@ MAJOR_STATUS_NOTIFICATION_SET = {
     Transaction.DISPUTE_DECIDED,
     Transaction.CANCEL_ACCEPTED,
 }
+
+
+@receiver(post_save, sender=Transaction)
+def notify_new_transaction(sender, instance, created, **kwargs):
+    if not created or not is_operational_alert_enabled('transaction'):
+        return
+    db_transaction.on_commit(
+        lambda: send_operational_alert.delay('transaction', instance.pk)
+    )
 
 
 def _configured_major_statuses():

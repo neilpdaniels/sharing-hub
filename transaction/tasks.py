@@ -19,6 +19,7 @@ from common.models import Order, OrderImage
 from common.emails import send_branded_email
 from account.models import PaymentMethod, Profile
 from account.models import NotificationPreference
+from common.celery_tasks import scheduled_task
 from .models import DisputeCase, StripeSettlement, Transaction, TransactionMessageImage
 from .stripe_connect import stripe_connect_service
 from common.failures import record_site_failure
@@ -214,7 +215,7 @@ def restore_archived_condition_media(evidence):
     return True
 
 
-@shared_task
+@scheduled_task()
 def archive_expired_condition_media():
     """Archive routine, undisputed condition uploads after 90 days."""
     cutoff = timezone.now() - timedelta(days=CONDITION_MEDIA_RETENTION_DAYS)
@@ -255,7 +256,7 @@ def archive_expired_condition_media():
     return result
 
 
-@shared_task
+@scheduled_task()
 def delete_expired_archived_condition_media():
     """Permanently delete archive records after their 90-day restoration grace period."""
     candidates = TransactionMessageImage.objects.filter(
@@ -393,7 +394,7 @@ def send_rental_ready_email(transaction_id):
     return {'sent': True}
 
 
-@shared_task
+@scheduled_task()
 def send_rental_day_reminders():
     """Send one collection and one return reminder the day before each handover."""
     tomorrow = timezone.localdate() + timedelta(days=1)
@@ -744,7 +745,7 @@ def _is_invalid_fcm_token_error(parsed_error):
     return False
 
 
-@shared_task
+@scheduled_task()
 def expireOrders():
     logging.info('Running order expiry')
     orders = Order.objects.filter(expiry_date__lte=timezone.now(), status=Order.ACTIVE)
@@ -753,7 +754,7 @@ def expireOrders():
         order.save()
 
 
-@shared_task
+@scheduled_task()
 def auto_close_feedback_windows():
     """
     Auto-close transactions once feedback window has expired.
@@ -792,7 +793,7 @@ def auto_close_feedback_windows():
     return {'updated': updated}
 
 
-@shared_task
+@scheduled_task()
 def auto_cancel_overdue_first_day_bookings():
     """Keep the scheduled entry compatible; overdue bookings need participant confirmation.
 
@@ -820,7 +821,7 @@ def _send_return_auto_resolution_alert(txn, *, now):
     )
 
 
-@shared_task
+@scheduled_task()
 def process_uncontested_overdue_returns():
     """Apply the presumed-on-time-return policy on the rental end date.
 
@@ -875,7 +876,7 @@ def process_uncontested_overdue_returns():
     return result
 
 
-@shared_task
+@scheduled_task()
 def send_pending_action_reminders():
     """
     Send reminder nudges for pending contract confirmations, return verification,

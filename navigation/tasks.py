@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from common.emails import send_branded_email
+from common.celery_tasks import scheduled_task
 from common.failures import record_site_failure
 from common.management.commands.manage_midjourney_catalog_images import generate_openai_images
 from common.models import CatalogImageCandidate, CatalogImageGeneration, Product
@@ -307,7 +308,7 @@ def run_catalogue_cleanup_review(cleanup_review_id: int) -> str:
     return cleanup.status
 
 
-@shared_task(queue='celery')
+@scheduled_task(queue='celery')
 def queue_monthly_catalogue_taxonomy_review() -> str:
     """Optional monthly scheduler; never runs more often than every 28 days."""
     if not settings.CATEGORY_TAXONOMY_REVIEW_SCHEDULED_ENABLED:

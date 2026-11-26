@@ -89,7 +89,8 @@ class RentalutionMobileApp extends StatefulWidget {
   State<RentalutionMobileApp> createState() => _RentalutionMobileAppState();
 }
 
-class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
+class _RentalutionMobileAppState extends State<RentalutionMobileApp>
+    with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final ThemeService _themeService = ThemeService();
   AuthSession? _session;
@@ -102,7 +103,14 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
   bool _deviceBiometricsAvailable = false;
   bool _biometricUnlockEnabled = false;
   bool _biometricPreferenceSet = false;
-  bool _isDarkMode = false;
+  bool? _darkModeOverride;
+  bool get _isDarkMode =>
+      _darkModeOverride ??
+      WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+          Brightness.dark;
+  ThemeMode get _themeMode => _darkModeOverride == null
+      ? ThemeMode.system
+      : (_darkModeOverride! ? ThemeMode.dark : ThemeMode.light);
   bool _showingTxnNotices = false;
   bool _showingForegroundAlert = false;
   NotificationPreferences _notificationPreferences =
@@ -113,6 +121,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.pushNotificationService.setForegroundAlertHandler(
       _handleForegroundPushAlert,
     );
@@ -121,6 +130,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.pushNotificationService.setForegroundAlertHandler(null);
     super.dispose();
   }
@@ -146,9 +156,16 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
       _deviceBiometricsAvailable = deviceBiometricsAvailable;
       _biometricUnlockEnabled = biometricUnlockEnabled;
       _biometricPreferenceSet = biometricPreferenceSet;
-      _isDarkMode = isDarkMode;
+      _darkModeOverride = isDarkMode;
       _initializing = false;
     });
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    if (_darkModeOverride == null && mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _maybePromptEnableBiometricAfterLogin() async {
@@ -528,13 +545,13 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
     }
   }
 
-  Future<void> _toggleDarkMode(bool isDark) async {
+  Future<void> _setDarkModeOverride(bool? isDark) async {
     await _themeService.setDarkMode(isDark);
     if (!mounted) {
       return;
     }
     setState(() {
-      _isDarkMode = isDark;
+      _darkModeOverride = isDark;
     });
   }
 
@@ -679,7 +696,7 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
       title: AppConfig.appName,
       theme: rentalutionLightTheme,
       darkTheme: rentalutionDarkTheme,
-      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: _themeMode,
       home: _buildHome(),
       // TODO: Add Nunito font to pubspec.yaml and use logo in AppBar or login screen
     );
@@ -731,7 +748,8 @@ class _RentalutionMobileAppState extends State<RentalutionMobileApp> {
       onBiometricToggle: _setBiometricUnlockEnabled,
       onOpenPasswordReset: _openPasswordReset,
       isDarkMode: _isDarkMode,
-      onThemeToggle: _toggleDarkMode,
+      themeMode: _themeMode,
+      onThemeModeChanged: _setDarkModeOverride,
       authRepository: widget.authRepository,
       onRegistered: _onRegistered,
       authBusy: _authBusy,

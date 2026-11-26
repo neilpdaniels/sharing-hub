@@ -34,6 +34,7 @@ import 'product_detail_screen.dart';
 import 'listing_form_screen.dart';
 import 'register_screen.dart';
 import 'transaction_detail_screen.dart';
+import 'legal_acceptance_screen.dart';
 import '../widgets/rentalution_app_bar_logo.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -55,7 +56,8 @@ class HomeScreen extends StatefulWidget {
     required this.onBiometricToggle,
     required this.onOpenPasswordReset,
     required this.isDarkMode,
-    required this.onThemeToggle,
+    required this.themeMode,
+    required this.onThemeModeChanged,
     required this.authRepository,
     required this.onRegistered,
     required this.authBusy,
@@ -86,7 +88,8 @@ class HomeScreen extends StatefulWidget {
   final Future<void> Function(bool enabled)? onBiometricToggle;
   final Future<void> Function()? onOpenPasswordReset;
   final bool isDarkMode;
-  final Future<void> Function(bool isDark)? onThemeToggle;
+  final ThemeMode themeMode;
+  final Future<void> Function(bool? isDark)? onThemeModeChanged;
   final AuthRepository authRepository;
   final Future<void> Function(AuthSession session)? onRegistered;
   final bool authBusy;
@@ -901,10 +904,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(height: 4),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Hide products with no listings'),
-              subtitle: const Text(
-                'Unchecked by default, so products with no listings are shown.',
-              ),
+              title: const Text('Hide unlisted products'),
               value: !_includeZeroListings,
               onChanged: (value) {
                 setState(() {
@@ -2275,46 +2275,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  PopupMenuItem<ThemeMode> _appearanceMenuItem(
+    ThemeMode mode,
+    String label,
+    IconData icon,
+  ) =>
+      PopupMenuItem<ThemeMode>(
+        value: mode,
+        child: Row(
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 12),
+            Text(label),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (!widget.privacyNoticeAccepted) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Privacy notice')),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Before you continue',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'To use rentalution, we process your account details, listings, messages, and booking data. We may also process location data when you choose location-based features.\n\nWe use strictly necessary app storage for login/session security. Website cookies that are not strictly necessary are optional and can be accepted or rejected.',
-                ),
-                const SizedBox(height: 16),
-                const Text('Read our policies:'),
-                const SizedBox(height: 6),
-                SelectableText(
-                  '${AppConfig.websiteBaseUrl}/pages/privacy_policy/',
-                ),
-                SelectableText(
-                  '${AppConfig.websiteBaseUrl}/pages/cookie_policy/',
-                ),
-                SelectableText(
-                  '${AppConfig.websiteBaseUrl}/pages/terms_and_conditions/',
-                ),
-                const Spacer(),
-                FilledButton(
-                  onPressed: () async => widget.onAcceptPrivacyNotice(),
-                  child: const Text('I understand and continue'),
-                ),
-              ],
-            ),
-          ),
-        ),
+      return LegalAcceptanceScreen(
+        onAccept: widget.onAcceptPrivacyNotice,
       );
     }
 
@@ -2348,14 +2329,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 icon: const Icon(Icons.settings_ethernet),
                 tooltip: 'Development server',
               ),
-            IconButton(
-              onPressed: widget.onThemeToggle == null
-                  ? null
-                  : () => widget.onThemeToggle!(!widget.isDarkMode),
-              icon: Icon(
-                widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+            PopupMenuButton<ThemeMode>(
+              tooltip: 'Appearance',
+              initialValue: widget.themeMode,
+              onSelected: (mode) => widget.onThemeModeChanged?.call(
+                mode == ThemeMode.system ? null : mode == ThemeMode.dark,
               ),
-              tooltip: widget.isDarkMode ? 'Light mode' : 'Dark mode',
+              icon: Icon(
+                widget.themeMode == ThemeMode.system
+                    ? Icons.brightness_auto
+                    : widget.isDarkMode
+                    ? Icons.dark_mode
+                    : Icons.light_mode,
+              ),
+              itemBuilder: (context) => [
+                _appearanceMenuItem(
+                  ThemeMode.system,
+                  'System',
+                  Icons.brightness_auto,
+                ),
+                _appearanceMenuItem(
+                  ThemeMode.light,
+                  'Light',
+                  Icons.light_mode,
+                ),
+                _appearanceMenuItem(
+                  ThemeMode.dark,
+                  'Dark',
+                  Icons.dark_mode,
+                ),
+              ],
             ),
             if (_showFilterDrawerAction)
               IconButton(

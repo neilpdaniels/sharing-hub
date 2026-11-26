@@ -15,13 +15,33 @@ cd "$ROOT_DIR/rentalution_mobile"
 : "${APP_NAME:=Rentalution}"
 : "${STRIPE_CONNECT_PUBLIC_KEY:=}"
 
+echo "Select a target build:"
+echo "  1) Android production release"
+echo "  2) iOS simulator (debug)"
+echo "  q) Cancel"
+read -r -p "Build: " build_selection
+
+case "$build_selection" in
+  1)
+    flutter_args=(run --release --flavor prod)
+    echo "Choose the Android device or emulator in Flutter's device picker."
+    ;;
+  2)
+    # Flutter cannot run release builds on iOS simulators. The iOS project uses
+    # its Runner scheme, so do not pass the Android-only prod flavor.
+    flutter_args=(run)
+    echo "Choose an iOS simulator in Flutter's device picker. This runs a debug build."
+    ;;
+  q|Q) exit 0 ;;
+  *) echo "Please choose 1, 2, or q to cancel."; exit 2 ;;
+esac
+
 if [[ -z "$STRIPE_CONNECT_PUBLIC_KEY" ]]; then
   echo "STRIPE_CONNECT_PUBLIC_KEY is not set in your shell"
   exit 1
 fi
 
-flutter run --release \
-  --flavor prod \
+flutter "${flutter_args[@]}" \
   --dart-define=APP_NAME="$APP_NAME" \
   --dart-define=API_BASE_URL="$API_BASE_URL" \
   --dart-define=STRIPE_PUBLISHABLE_KEY="$STRIPE_CONNECT_PUBLIC_KEY"

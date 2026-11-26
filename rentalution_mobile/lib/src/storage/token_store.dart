@@ -5,7 +5,7 @@ class TokenStore {
   static const _refreshKey = 'auth_refresh_token';
   static const _biometricEnabledKey = 'biometric_unlock_enabled';
   static const _biometricPreferenceSetKey = 'biometric_unlock_preference_set';
-  static const _privacyNoticeAcceptedKey = 'privacy_notice_accepted';
+  static const _privacyNoticeAcceptedKey = 'legal_acceptance_v2';
 
   Future<void> saveTokens({
     required String accessToken,
